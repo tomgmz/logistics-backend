@@ -74,6 +74,16 @@ router.post('/', validate(createDriverSchema), DriverController.createDriver)
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UpdateDriverRequest'
+ *           example:
+ *             first_name: Juan
+ *             license_number: N01-12-999999
+ *             license_expiry: "2028-12-31"
  *     responses:
  *       200: { description: Driver updated successfully }
  *       400: { description: Validation error }
