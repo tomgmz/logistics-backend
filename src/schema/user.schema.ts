@@ -26,7 +26,7 @@ export const createUserSchema = z.object({
   //subcontractor
   company_name_subcon: z.string().max(100).optional(),
   business_permit: z.string().max(100).optional(),
-  subccontractor_type: z.string().max(50).optional(),
+  subcontractor_type: z.string().max(50).optional(),
 }).superRefine((data, ctx) => {
   if (data.role === 'driver') {
     if (!data.license_number) {
