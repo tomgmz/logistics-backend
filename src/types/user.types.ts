@@ -1,47 +1,30 @@
 export type UserRole = 'admin' | 'super_admin' | 'driver' | 'porter' | 'client' | 'subcontractor'
 export type UserStatus = 'active' | 'inactive' | 'archived'
 
-export interface User {
+export interface BaseUser {
   user_id: string
-  first_name: string
-  last_name: string
-  middle_initial?: string
-  suffix?: string
   username: string
   email: string
-  phone?: string
+  first_name: string
+  last_name: string
+  middle_initial?: string | null
+  suffix?: string | null
+  phone?: string | null
   role: UserRole
   status: UserStatus
   created_at: string
   updated_at: string
-  created_by?: string
+  created_by?: string | null
 }
 
-export interface CreateUserDTO {
-  first_name: string
-  last_name: string
-  suffix?: string
-  middle_initial?: string
+export interface BaseCreateDTO {
   username: string
   email: string
   password: string
-  phone?: string
-  role: UserRole
-  created_by?: string
-
-  // driver role
-  license_number?: string
-  license_expiry?: string
-  is_subcontractor_driver?: boolean
-  subcontractor_id?: string
-
-  // client role
-  company_name?: string
-  billing_address?: string
-  payment_terms?: number
-
-  // subcotractor role
-  subcon_company_name?: string
-  business_permit?: string
-  subcontractor_type?: string
+  first_name: string
+  last_name: string
+  middle_initial?: string | null
+  suffix?: string | null
+  phone?: string | null
+  created_by?: string | null
 }

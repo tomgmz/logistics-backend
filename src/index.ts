@@ -5,7 +5,9 @@ import cors from 'cors';
 import rateLimit from "express-rate-limit";
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
-import userRoutes from './routes/user.routes.js';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './swagger.js';
+import driverRoutes from './routes/admin/driver.route.js';
 
 dotenv.config();
 
@@ -19,7 +21,7 @@ const limiter = rateLimit({
 });
 
 app.use(limiter);
-app.use(helmet());
+app.use(helmet({contentSecurityPolicy: false}));
 app.use(
   cors({
     origin: ["http://localhost:3000", "frontnend-url-here"],
@@ -33,7 +35,8 @@ app.use(express.json());
 app.use(morgan('dev'));
 app.use(express.urlencoded({ extended: true }));
 
-app.use('/api/user', userRoutes);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use('/api/drivers', driverRoutes);
 
 app.get("/", (req: Request, res: Response) => {
   res.json({ status: "OK", message: "Logistics Backend API is running..." });
