@@ -5,6 +5,7 @@ import cors from 'cors';
 import rateLimit from "express-rate-limit";
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
+import userRoutes from './routes/user.routes.js';
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.use(express.json());
 app.use(morgan('dev'));
 app.use(express.urlencoded({ extended: true }));
 
+app.use('/api/user', userRoutes);
 
 app.get("/", (req: Request, res: Response) => {
   res.json({ status: "OK", message: "Logistics Backend API is running..." });
