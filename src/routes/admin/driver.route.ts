@@ -46,7 +46,7 @@ router.get('/:id', DriverController.getDriverById)
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/CreateDriver'
+ *             $ref: '#/components/schemas/CreateDriverRequest'
  *           example:
  *             first_name: Juan
  *             last_name: dela Cruz
