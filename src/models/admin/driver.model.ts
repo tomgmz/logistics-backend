@@ -18,7 +18,7 @@ async function findById(userId: string) {
     .select(`*, drivers(*)`)
     .eq('user_id', userId)
     .eq('role', 'driver')
-    .single()
+    .maybeSingle()
 
   if (error) throw error
   return data
