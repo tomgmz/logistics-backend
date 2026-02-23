@@ -1,67 +1,65 @@
 import { Router } from 'express'
 import { validate } from '../../middlewares/validate.middleware.js'
-import { createDriverSchema, updateDriverSchema } from '../../schema/admin/driver.schema.js'
-import * as DriverController from '../../controllers/admin/driver.controller.js'
+import { createClientSchema, updateClientSchema } from '../../schema/admin/client.schema.js'
+import * as ClientController from '../../controllers/admin/client.controller.js'
 
 const router = Router()
 
 /**
  * @swagger
- * /drivers:
+ * /clients:
  *   get:
- *     tags: [Drivers]
- *     summary: Get all drivers
+ *     tags: [Clients]
+ *     summary: Get all clients
  *     responses:
- *       200: { description: List of drivers }
+ *       200: { description: List of clients }
  *       500: { description: Internal server error }
  */
-router.get('/', DriverController.getAllDrivers)
+router.get('/', ClientController.getAllClients)
 
 /**
  * @swagger
- * /drivers/{id}:
+ * /clients/{id}:
  *   get:
- *     tags: [Drivers]
- *     summary: Get driver by ID
+ *     tags: [Clients]
+ *     summary: Get clients by ID
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
  *     responses:
- *       200: { description: Driver found }
- *       404: { description: Driver not found }
+ *       200: { description: Client found }
+ *       404: { description: Client not found }
  *       500: { description: Internal server error }
  */
-router.get('/:id', DriverController.getDriverById)
+router.get('/:id', ClientController.getClientById)
 
 /**
  * @swagger
- * /drivers:
+ * /clients:
  *   post:
- *     tags: [Drivers]
- *     summary: Create a new driver
+ *     tags: [Clients]
+ *     summary: Create a new client
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/CreateDriverRequest'
+ *             $ref: '#/components/schemas/CreateClientRequest'
  *           example:
  *             first_name: Juan
  *             last_name: dela Cruz
  *             username: juandc
  *             email: juan@example.com
  *             password: secret12345
- *             license_number: N01-12-123456
- *             license_expiry: "2027-12-31"
- *             is_subcontractor_driver: false
+ *             all other fields goes here
  *     responses:
- *       201: { description: Driver created successfully }
+ *       201: { description: Client created successfully }
  *       400: { description: Validation error }
  *       500: { description: Internal server error }
  */
-router.post('/', validate(createDriverSchema), DriverController.createDriver)
+router.post('/', validate(createClientSchema), ClientController.createClient)
 
 /**
  * @swagger
@@ -89,23 +87,23 @@ router.post('/', validate(createDriverSchema), DriverController.createDriver)
  *       400: { description: Validation error }
  *       500: { description: Internal server error }
  */
-router.patch('/:id', validate(updateDriverSchema), DriverController.updateDriver)
+router.patch('/:id', validate(updateClientSchema), ClientController.updateClient)
 
 /**
  * @swagger
- * /drivers/{id}:
+ * /clients/{id}:
  *   delete:
- *     tags: [Drivers]
- *     summary: Delete a driver
+ *     tags: [Clients]
+ *     summary: Delete a client
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
  *         schema: { type: string, format: uuid }
  *     responses:
- *       200: { description: Driver deleted successfully }
+ *       200: { description: Client deleted successfully }
  *       500: { description: Internal server error }
  */
-router.delete('/:id', DriverController.deleteDriver)
+router.delete('/:id', ClientController.deleteClient)
 
 export default router
