@@ -76,13 +76,14 @@ router.post('/', validate(createClientSchema), ClientController.createClient)
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/UpdateDriverRequest'
+ *             $ref: '#/components/schemas/UpdateClientRequest'
  *           example:
  *             first_name: Juan
- *             license_number: N01-12-999999
- *             license_expiry: "2028-12-31"
+ *             last_name: dela Cruz
+ *             username: juandc
+ *             email: juan@example.com
  *     responses:
- *       200: { description: Driver updated successfully }
+ *       200: { description: Client updated successfully }
  *       400: { description: Validation error }
  *       500: { description: Internal server error }
  */
