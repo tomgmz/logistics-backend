@@ -20,7 +20,7 @@ const options: swaggerJsdoc.Options = {
     ],
     tags: [
       { name: 'Drivers', description: 'Driver management' },
-      // { name: 'Clients', description: 'Client management' },
+      { name: 'Clients', description: 'Client management' },
       // { name: 'Subcontractors', description: 'Subcontractor management' },
     ],
     components: {
