@@ -67,11 +67,11 @@ async function create(userId: string, input: CreateClientInput){
 
 async function update(userId: string, input: UpdateClientInput){
     const userFields: Record<string, any> = {}
-    if (input.first_name != undefined) userFields.first_name = input.first_name
-    if (input.last_name != undefined) userFields.last_name = input.last_name
+    if (input.first_name     != undefined) userFields.first_name = input.first_name
+    if (input.last_name      != undefined) userFields.last_name = input.last_name
     if (input.middle_initial != undefined) userFields.middle_initial = input.middle_initial
-    if (input.suffix != undefined) userFields.suffix = input.suffix
-    if (input.phone != undefined) userFields.phone = input.phone
+    if (input.suffix         != undefined) userFields.suffix = input.suffix
+    if (input.phone          != undefined) userFields.phone = input.phone
 
     if (Object.keys(userFields).length > 0) {
         const { error } = await supabase.from('users').update(userFields).eq('user_id', userId)
@@ -79,9 +79,9 @@ async function update(userId: string, input: UpdateClientInput){
     }
 
     const clientFields: Record<string, any> = {}
-    if (input.company_name != undefined) clientFields.company_name = input.company_name
+    if (input.company_name    != undefined) clientFields.company_name = input.company_name
     if (input.billing_address != undefined) clientFields.billing_address = input.billing_address
-    if (input.payment_terms != undefined) clientFields.payment_terms = input.payment_terms
+    if (input.payment_terms   != undefined) clientFields.payment_terms = input.payment_terms
 
     if (Object.keys(clientFields).length > 0) {
         const { error } = await supabase.from('clients').update(clientFields).eq('user_id', userId)

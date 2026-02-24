@@ -9,6 +9,7 @@ import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './swagger.js';
 import driverRoutes from './routes/admin/driver.route.js';
 import clientRoutes from './routes/admin/client.route.js'
+import adminRoutes from './routes/admin/admin.route.js'
 
 dotenv.config();
 
@@ -39,6 +40,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use('/api/drivers', driverRoutes);
 app.use('/api/clients', clientRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get("/", (req: Request, res: Response) => {
   res.json({ status: "OK", message: "Logistics Backend API is running..." });

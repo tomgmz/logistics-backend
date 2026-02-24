@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const createClientSchema = z.object({
+export const createAdminSchema = z.object({
   first_name:     z.string().min(2).max(50),
   last_name:      z.string().min(2).max(50),
   middle_initial: z.string().max(1).optional().nullable(),
@@ -10,13 +10,9 @@ export const createClientSchema = z.object({
   password:       z.string().min(8),
   phone:          z.string().max(13).optional(),
   created_by:     z.string().uuid().optional(),
-
-  company_name:    z.string().max(100).optional(),
-  billing_address: z.string().optional(),
-  payment_terms:   z.number().int().positive().default(30).optional(),
 })
 
-export const updateClientSchema = z.object({
+export const updateAdminSchema = z.object({
   first_name:     z.string().min(2).max(50).optional(),
   last_name:      z.string().min(2).max(50).optional(),
   middle_initial: z.string().max(1).optional().nullable(),
@@ -24,8 +20,4 @@ export const updateClientSchema = z.object({
   username:       z.string().min(2).max(50).optional(),
   email:          z.string().email().optional(),
   phone:          z.string().max(13).optional(),
-
-  company_name:    z.string().max(100).optional(),
-  billing_address: z.string().optional(),
-  payment_terms:   z.number().int().positive().optional(),
 })

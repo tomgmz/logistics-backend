@@ -66,7 +66,7 @@ router.post('/', validate(createDriverSchema), DriverController.createDriver)
 /**
  * @swagger
  * /drivers/{id}:
- *   patch:
+ *   post:
  *     tags: [Drivers]
  *     summary: Update a driver
  *     parameters:
@@ -89,7 +89,7 @@ router.post('/', validate(createDriverSchema), DriverController.createDriver)
  *       400: { description: Validation error }
  *       500: { description: Internal server error }
  */
-router.patch('/:id', validate(updateDriverSchema), DriverController.updateDriver)
+router.post('/:id', validate(updateDriverSchema), DriverController.updateDriver)
 
 /**
  * @swagger
