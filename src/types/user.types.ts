@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'super_admin' | 'driver' | 'porter' | 'client' | 'subcontractor'
+export type UserRole = 'admin' | 'super_admin' | 'driver' | 'helper' | 'client' | 'subcontractor'
 export type UserStatus = 'active' | 'inactive' | 'archived'
 
 export interface BaseUser {
