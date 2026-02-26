@@ -1,11 +1,10 @@
-import { email } from "zod";
 import { supabase } from "../../lib/supabase.js";
 import { CreateAdminInput, UpdateAdminInput } from "../../types/admin.types.js";
 
 async function findAll() {
     const { data, error } = await supabase
     .from('users')
-    .select(`*, users(*)`)
+    .select('*')
     .eq('role', 'admin')
     .order('last_name', { ascending: true })
 
@@ -16,7 +15,7 @@ async function findAll() {
 async function findById(userId: string) {
     const { data, error } = await supabase
     .from('users')
-    .select(`*, users(*)`)
+    .select('*')
     .eq('user_id', userId)
     .eq('role', 'admin')
     .maybeSingle()
@@ -34,20 +33,22 @@ async function create(userId: string, input: CreateAdminInput) {
         email:       input.email,
         first_name:  input.first_name,
         last_name:   input.last_name,
-        middle_name: input.middle_initial ?? null,
+        middle_initial: input.middle_initial ?? null,
         suffix:      input.suffix,
         phone:       input.phone,
         role:        'admin',
         created_by:  input.created_by ?? null,
     })
+    .select()
+    .single()
 
     if (userError) throw userError
 
         await supabase.from('system_logs').insert({
         user_id:     input.created_by ?? null,
-        log_type:    'admin_activity',
-        action:      'user_creation',
-        description: `Client ${input.username} created.`,
+        log_type:    'user_activity',
+        action:      'admin_creation',
+        description: `Admin ${input.username} created.`,
     })
 
     return data
@@ -60,6 +61,8 @@ async function update(userId: string, input: UpdateAdminInput) {
     if (input.middle_initial != undefined) userFields.middle_initial = input.middle_initial
     if (input.suffix         != undefined) userFields.suffix =         input.suffix
     if (input.phone          != undefined) userFields.phone =          input.phone
+    if (input.email          != undefined) userFields.email =          input.email
+    if (input.username       != undefined) userFields.username =       input.username
 
     if (Object.keys(userFields).length > 0) {
         const { error } = await supabase.from('users').update(userFields).eq('user_id', userId)

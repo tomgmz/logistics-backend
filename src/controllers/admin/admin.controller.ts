@@ -1,7 +1,5 @@
 import { Request, Response } from 'express'
 import * as AdminService from '../../services/admin/admin.service.js'
-import { stat } from 'node:fs'
-
 
 export async function getAllAdmins(req: Request, res: Response) {
     try {

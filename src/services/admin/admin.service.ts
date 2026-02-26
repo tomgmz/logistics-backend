@@ -8,7 +8,7 @@ export async function getAllAdmin() {
 
 export async function getAdminById(userId: string) {
     const admin = await AdminModel.findById(userId)
-    if (admin) throw new Error('Admin not found')
+    if (!admin) throw new Error('Admin not found')
     return admin
 }
 
@@ -31,10 +31,18 @@ export async function createAdmin(input: CreateAdminInput) {
         const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
         if (rollbackError) console.error('ROLLBACK FAILED. Orphan with user ID:', userId)
         else console.log('Rolback successful')
+        throw err
     }
 }
 
 export async function updateAdmin(userId: string, input: UpdateAdminInput) {
+    if (input.email) {
+        const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
+            email: input.email,
+        })
+        if (authError) throw new Error(`Auth update failed: ${authError.message}`)
+    }
+
     return AdminModel.update(userId, input)
 }
 

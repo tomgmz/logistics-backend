@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { validate } from '../../middlewares/validate.middleware.js'
-import { createAdminSchema, updateAdminSchema } from '../../schema/admin/admin.client.js'
+import { createAdminSchema, updateAdminSchema } from '../../schema/admin/admin.schema.js'
 import * as AdminController from '../../controllers/admin/admin.controller.js'
 
 const router = Router()
@@ -64,7 +64,7 @@ router.post('/', validate(createAdminSchema), AdminController.createAdmin)
 /**
  * @swagger
  * /admin/{id}:
- *   post:
+ *   patch:
  *     tags: [Admins]
  *     summary: Update an admin
  *     parameters:
@@ -88,7 +88,7 @@ router.post('/', validate(createAdminSchema), AdminController.createAdmin)
  *       400: { description: Validation error }
  *       500: { description: Internal server error }
  */
-router.post('/:id', validate(updateAdminSchema), AdminController.updateAdmin)
+router.patch('/:id', validate(updateAdminSchema), AdminController.updateAdmin)
 
 /**
  * @swagger

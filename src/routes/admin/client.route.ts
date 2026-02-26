@@ -63,7 +63,7 @@ router.post('/', validate(createClientSchema), ClientController.createClient)
 /**
  * @swagger
  * /clients/{id}:
- *   post:
+ *   patch:
  *     tags: [Clients]
  *     summary: Update a client
  *     parameters:
@@ -87,7 +87,7 @@ router.post('/', validate(createClientSchema), ClientController.createClient)
  *       400: { description: Validation error }
  *       500: { description: Internal server error }
  */
-router.post('/:id', validate(updateClientSchema), ClientController.updateClient)
+router.patch('/:id', validate(updateClientSchema), ClientController.updateClient)
 
 /**
  * @swagger
