@@ -24,7 +24,7 @@ export interface CreateAdminInput {
   password:        string
   phone?:          string
   role:            'admin' | 'super_admin'
-  created_by?:     string | null //null for testing only
+  created_by?:     string
 }
 
 export interface UpdateAdminInput {
