@@ -6,6 +6,7 @@ async function findAll() {
     .from('users')
     .select(`*, clients(*)`)
     .eq('role', 'client')
+    .neq('status', 'active')
     .order('last_name', { ascending: true })
 
   if (error) throw error
@@ -89,10 +90,13 @@ async function update(userId: string, input: UpdateClientInput){
     return findById(userId)
 }
 
-async function remove(userId: string){
-    const { error } = await supabase.from('users').delete().eq('user_id', userId)
-    if (error) throw error
-    return true
+async function remove(userId: string) {
+  const { error } = await supabase
+    .from('users')
+    .update({ status: 'archived' })
+    .eq('user_id', userId)
+  if (error) throw error
+  return true
 }
 
 export {findAll, findById, create, update, remove}

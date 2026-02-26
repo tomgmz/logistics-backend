@@ -20,7 +20,10 @@ export async function createDriver(dto: CreateDriverDTO) {
     password:      dto.password,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: { role: 'driver' },
+    user_metadata: {
+      role: 'driver',
+      display_name: dto.username,
+    }
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 
@@ -48,7 +51,5 @@ export async function updateDriver(userId: string, dto: UpdateDriverDTO) {
 }
 
 export async function deleteDriver(userId: string) {
-  const { error } = await supabase.auth.admin.deleteUser(userId)
-  if (error) throw new Error(`Auth deletion failed: ${error.message}`)
   return DriverModel.remove(userId)
 }

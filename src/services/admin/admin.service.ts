@@ -20,7 +20,10 @@ export async function createAdmin(input: CreateAdminInput) {
         password:      input.password,
         email_confirm: true,
         phone:         e164Phone ?? undefined,
-        user_metadata: { role: 'admin' }
+        user_metadata: {
+            role: 'admin',
+            display_name: input.username,
+        }
     })
     if(authError) throw new Error(`Auth Error: ${authError.message}`)
 
@@ -49,7 +52,5 @@ export async function updateAdmin(userId: string, input: UpdateAdminInput) {
 }
 
 export async function deleteAdmin(userId: string) {
-    const { error } = await supabase.auth.admin.deleteUser(userId)
-    if (error) throw new Error(`Auth deletion failed: ${error.message}`)
-    return AdminModel.remove(userId)
+  return AdminModel.remove(userId)
 }

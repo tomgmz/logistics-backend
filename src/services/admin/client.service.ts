@@ -20,7 +20,10 @@ export async function createClient(input: CreateClientInput){
         password:      input.password,
         email_confirm: true,
         phone:         e164Phone ?? undefined,
-        user_metadata: { role: 'client' }
+        user_metadata: {
+            role: 'client',
+            display_name: input.username,
+        }
     })
     if (authError) throw new Error(`Auth Error: ${authError.message}`)
     
@@ -47,8 +50,6 @@ export async function updateClient(userId: string, input: UpdateClientInput) {
     return ClientModel.update(userId, input)
 }
 
-export async function deleteClient(userId: string){
-    const { error } =await supabase.auth.admin.deleteUser(userId)
-    if (error) throw new Error(`Auth deletion failed: ${error.message}`)
-    return ClientModel.remove(userId)
+export async function deleteClient(userId: string) {
+  return ClientModel.remove(userId)
 }

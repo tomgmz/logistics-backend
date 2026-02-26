@@ -20,7 +20,10 @@ export async function createSubcontractor(input: CreateSubcontractorInput) {
     password:      input.password,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: { role: 'subcontractor' },
+    user_metadata: {
+      role: 'subcontractor',
+      display_name: input.username,
+    }
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 
@@ -48,7 +51,5 @@ export async function updateSubcontractor(userId: string, input: UpdateSubcontra
 }
 
 export async function deleteSubcontractor(userId: string) {
-  const { error } = await supabase.auth.admin.deleteUser(userId)
-  if (error) throw new Error(`Auth deletion failed: ${error.message}`)
   return SubcontractorModel.remove(userId)
 }

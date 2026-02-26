@@ -20,7 +20,10 @@ export async function createHelper(dto: CreateHelperDTO) {
     password:      dto.password,
     email_confirm: true,
     phone:         e164Phone,
-    user_metadata: { role: 'helper' },
+    user_metadata: {
+      role: 'helper',
+      display_name: dto.username,
+    }
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 
@@ -48,7 +51,5 @@ export async function updateHelper(userId: string, dto: UpdateHelperDTO) {
 }
 
 export async function deleteHelper(userId: string) {
-  const { error } = await supabase.auth.admin.deleteUser(userId)
-  if (error) throw new Error(`Auth deletion failed: ${error.message}`)
   return HelperModel.remove(userId)
 }
