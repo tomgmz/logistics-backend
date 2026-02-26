@@ -13,11 +13,13 @@ export async function getDriverById(userId: string) {
 }
 
 export async function createDriver(dto: CreateDriverDTO) {
+  const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
+
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         dto.email,
     password:      dto.password,
     email_confirm: true,
-    phone:         dto.phone ?? undefined,
+    phone:         e164Phone ?? undefined,
     user_metadata: { role: 'driver' },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)

@@ -13,11 +13,13 @@ export async function getAdminById(userId: string) {
 }
 
 export async function createAdmin(input: CreateAdminInput) {
+    const e164Phone = input.phone ? '+63' + input.phone.slice(1) : undefined
+    
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email:         input.email,
         password:      input.password,
         email_confirm: true,
-        phone:         input.phone ?? undefined,
+        phone:         e164Phone ?? undefined,
         user_metadata: { role: 'admin' }
     })
     if(authError) throw new Error(`Auth Error: ${authError.message}`)
