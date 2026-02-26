@@ -1,19 +1,19 @@
 import { Router } from 'express'
 import { validate } from '../../middlewares/validate.middleware.js'
-import { createSubcontractorSchema, updateSubcontractorSchema } from '../../schema/admin/subcontractor.schema.js'
-import * as SubcontractorController from '../../controllers/admin/subcontractor.controller.js'
+import { createHelperSchema, updateHelperSchema } from '../../schema/admin/helper.schema.js'
+import * as HelperController from '../../controllers/admin/helper.controller.js'
 
 const router = Router()
 
 /**
  * @swagger
- * /subcontractors:
+ * /helpers:
  *   get:
- *     tags: [Subcontractors]
- *     summary: Get all subcontractors
+ *     tags: [Helpers]
+ *     summary: Get all helpers
  *     responses:
  *       200:
- *         description: List of subcontractors
+ *         description: List of helpers
  *         content:
  *           application/json:
  *             schema:
@@ -22,17 +22,17 @@ const router = Router()
  *                 status: { type: string, example: success }
  *                 data:
  *                   type: array
- *                   items: { $ref: '#/components/schemas/Subcontractor' }
+ *                   items: { $ref: '#/components/schemas/Helper' }
  *       500: { description: Internal server error }
  */
-router.get('/', SubcontractorController.getAllSubcontractors)
+router.get('/', HelperController.getAllHelpers)
 
 /**
  * @swagger
- * /subcontractors/{id}:
+ * /helpers/{id}:
  *   get:
- *     tags: [Subcontractors]
- *     summary: Get subcontractor by ID
+ *     tags: [Helpers]
+ *     summary: Get helper by ID
  *     parameters:
  *       - in: path
  *         name: id
@@ -41,64 +41,63 @@ router.get('/', SubcontractorController.getAllSubcontractors)
  *         example: a1b2c3d4-e5f6-7890-abcd-ef0123456789
  *     responses:
  *       200:
- *         description: Subcontractor found
+ *         description: Helper found
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 status: { type: string, example: success }
- *                 data: { $ref: '#/components/schemas/Subcontractor' }
- *       404: { description: Subcontractor not found }
+ *                 data: { $ref: '#/components/schemas/Helper' }
+ *       404: { description: Helper not found }
  *       500: { description: Internal server error }
  */
-router.get('/:id', SubcontractorController.getSubcontractorById)
+router.get('/:id', HelperController.getHelperById)
 
 /**
  * @swagger
- * /subcontractors:
+ * /helpers:
  *   post:
- *     tags: [Subcontractors]
- *     summary: Create a new subcontractor
+ *     tags: [Helpers]
+ *     summary: Create a new helper
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
- *           schema: { $ref: '#/components/schemas/CreateSubcontractorRequest' }
+ *           schema: { $ref: '#/components/schemas/CreateHelperRequest' }
  *           example:
- *             first_name: Pedro
- *             last_name: Reyes
- *             middle_initial: B
+ *             first_name: Carlo
+ *             last_name: Mendoza
+ *             middle_initial: null
  *             suffix: null
- *             username: pedroreyes
- *             email: pedro@example.com
+ *             username: carlomendoza
+ *             email: carlo@example.com
  *             password: secret12345
- *             phone: "09171234567"
- *             subcontractor_type: company
- *             company_name: Reyes Trucking Co.
- *             business_permit: BP-2026-00123
+ *             phone: "09201234567"
+ *             license_number: N01-12-654321
+ *             license_expiry: "2027-12-31"
  *             created_by: null
  *     responses:
  *       201:
- *         description: Subcontractor created successfully
+ *         description: Helper created successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 status: { type: string, example: success }
- *                 data: { $ref: '#/components/schemas/Subcontractor' }
+ *                 data: { $ref: '#/components/schemas/Helper' }
  *       400: { description: Validation error }
  *       500: { description: Internal server error }
  */
-router.post('/', validate(createSubcontractorSchema), SubcontractorController.createSubcontractor)
+router.post('/', validate(createHelperSchema), HelperController.createHelper)
 
 /**
  * @swagger
- * /subcontractors/{id}:
+ * /helpers/{id}:
  *   patch:
- *     tags: [Subcontractors]
- *     summary: Update a subcontractor
+ *     tags: [Helpers]
+ *     summary: Update a helper
  *     parameters:
  *       - in: path
  *         name: id
@@ -109,37 +108,36 @@ router.post('/', validate(createSubcontractorSchema), SubcontractorController.cr
  *       required: true
  *       content:
  *         application/json:
- *           schema: { $ref: '#/components/schemas/UpdateSubcontractorRequest' }
+ *           schema: { $ref: '#/components/schemas/UpdateHelperRequest' }
  *           example:
- *             first_name: Pedro
- *             last_name: Reyes
- *             email: pedro@example.com
- *             phone: "09171234567"
- *             subcontractor_type: company
- *             company_name: Reyes Trucking Co.
- *             business_permit: BP-2026-00123
+ *             first_name: Carlo
+ *             last_name: Mendoza
+ *             phone: "09201234567"
+ *             license_number: N01-12-654321
+ *             license_expiry: "2028-12-31"
+ *             driver_status: available
  *     responses:
  *       200:
- *         description: Subcontractor updated successfully
+ *         description: Helper updated successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 status: { type: string, example: success }
- *                 data: { $ref: '#/components/schemas/Subcontractor' }
+ *                 data: { $ref: '#/components/schemas/Helper' }
  *       400: { description: Validation error }
- *       404: { description: Subcontractor not found }
+ *       404: { description: Helper not found }
  *       500: { description: Internal server error }
  */
-router.patch('/:id', validate(updateSubcontractorSchema), SubcontractorController.updateSubcontractor)
+router.patch('/:id', validate(updateHelperSchema), HelperController.updateHelper)
 
 /**
  * @swagger
- * /subcontractors/{id}:
+ * /helpers/{id}:
  *   delete:
- *     tags: [Subcontractors]
- *     summary: Delete a subcontractor
+ *     tags: [Helpers]
+ *     summary: Delete a helper
  *     parameters:
  *       - in: path
  *         name: id
@@ -148,17 +146,17 @@ router.patch('/:id', validate(updateSubcontractorSchema), SubcontractorControlle
  *         example: a1b2c3d4-e5f6-7890-abcd-ef0123456789
  *     responses:
  *       200:
- *         description: Subcontractor deleted successfully
+ *         description: Helper deleted successfully
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
  *                 status: { type: string, example: success }
- *                 message: { type: string, example: Subcontractor deleted successfully }
- *       404: { description: Subcontractor not found }
+ *                 message: { type: string, example: Helper deleted successfully }
+ *       404: { description: Helper not found }
  *       500: { description: Internal server error }
  */
-router.delete('/:id', SubcontractorController.deleteSubcontractor)
+router.delete('/:id', HelperController.deleteHelper)
 
 export default router

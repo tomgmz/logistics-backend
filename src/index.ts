@@ -10,6 +10,8 @@ import { swaggerSpec } from './swagger.js';
 import driverRoutes from './routes/admin/driver.route.js';
 import clientRoutes from './routes/admin/client.route.js'
 import adminRoutes from './routes/admin/admin.route.js'
+import subcontructorRoutes from './routes/admin/subcontractor.route.js'
+import helperRoutes from './routes/admin/helper.route.js';
 
 dotenv.config();
 
@@ -41,6 +43,8 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use('/api/drivers', driverRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/subcontractors', subcontructorRoutes);
+app.use('/api/helpers', helperRoutes);
 
 app.get("/", (req: Request, res: Response) => {
   res.json({ status: "OK", message: "Logistics Backend API is running..." });

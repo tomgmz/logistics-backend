@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const createSubcontractorSchema = z.object({
+export const createHelperSchema = z.object({
   first_name:     z.string().min(2).max(50)
                   .regex(/^[\p{L}]+(?:[ '-][\p{L}]+)*$/u, 'First name must contain only letters, spaces, hyphens, or apostrophes'),
   last_name:      z.string().min(2).max(50)
@@ -17,12 +17,17 @@ export const createSubcontractorSchema = z.object({
                   .transform(v => v === '' ? null : v),
   created_by:     z.string().uuid().optional().nullable(),
 
-  subcontractor_type: z.enum(['individual', 'company']),
-  company_name:       z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
-  business_permit:    z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
-})
+  license_number: z.string().min(1).max(50).optional().nullable().transform(v => v === '' ? null : v),
+  license_expiry: z.string().optional().nullable().transform(v => v === '' ? null : v),
+}).refine(
+  (data) => !data.license_number || !!data.license_expiry,
+  {
+    path: ['license_expiry'],
+    message: 'License expiry is required when license number is provided',
+  }
+)
 
-export const updateSubcontractorSchema = z.object({
+export const updateHelperSchema = z.object({
   first_name:     z.string().min(2).max(50)
                   .regex(/^[\p{L}]+(?:[ '-][\p{L}]+)*$/u, 'First name must contain only letters, spaces, hyphens, or apostrophes')
                   .optional(),
@@ -36,10 +41,16 @@ export const updateSubcontractorSchema = z.object({
   phone:          z.string().min(11).max(13)
                   .regex(/^\d+$/, 'Phone number must contain only digits')
                   .regex(/^09\d{9}$/, 'Invalid PH mobile format')
-                  .optional()
+                  .optional().nullable()
                   .transform(v => v === '' ? null : v),
 
-  subcontractor_type: z.enum(['individual', 'company']).optional(),
-  company_name:       z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
-  business_permit:    z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
-})
+  license_number: z.string().min(1).max(50).optional().nullable().transform(v => v === '' ? null : v),
+  license_expiry: z.string().optional().nullable().transform(v => v === '' ? null : v),
+  driver_status:  z.enum(['available', 'assigned', 'on_leave', 'inactive']).optional(),
+}).refine(
+  (data) => !data.license_number || !!data.license_expiry,
+  {
+    path: ['license_expiry'],
+    message: 'License expiry is required when license number is provided',
+  }
+)
