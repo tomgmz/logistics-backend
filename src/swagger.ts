@@ -9,10 +9,10 @@ const options: swaggerJsdoc.Options = {
       description: 'Logistics Backend REST API',
     },
     servers: [
-      // {
-      //   url: 'https://logistics-backend.up.railway.app/api',
-      //   description: 'Production',
-      // },
+      {
+        url: 'https://logistics-backend.up.railway.app/api',
+        description: 'Production',
+      },
       {
         url: 'http://localhost:4000/api',
         description: 'Development',
