@@ -6,7 +6,7 @@ async function findAll() {
     .from('users')
     .select(`*, subcontractors(*)`)
     .eq('role', 'subcontractor')
-    .neq('status', 'active')
+    .neq('status', 'archived')
     .order('last_name', { ascending: true })
 
   if (error) throw error
@@ -19,6 +19,7 @@ async function findById(userId: string) {
     .select(`*, subcontractors(*)`)
     .eq('user_id', userId)
     .eq('role', 'subcontractor')
+    .neq('status', 'archived')
     .maybeSingle()
 
   if (error) throw error
