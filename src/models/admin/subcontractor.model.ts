@@ -92,11 +92,15 @@ async function update(userId: string, input: UpdateSubcontractorInput) {
 }
 
 async function remove(userId: string) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('users')
     .update({ status: 'archived' })
     .eq('user_id', userId)
+    .select('user_id, status')
+
+
   if (error) throw error
+  if (!data || data.length === 0) throw new Error(`No user found with ID: ${userId}`)
   return true
 }
 
