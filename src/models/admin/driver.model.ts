@@ -41,27 +41,25 @@ async function create(userId: string, dto: CreateDriverDTO) {
     })
   if (userError) throw userError
 
-  const { data, error: driverError } = await supabase
+  const { error: driverError } = await supabase
     .from('drivers')
     .insert({
-      user_id:                  userId,
-      license_number:           dto.license_number,
-      license_expiry:           dto.license_expiry,
-      is_subcontractor_driver:  dto.is_subcontractor_driver ?? false,
-      subcontractor_id:         dto.subcontractor_id ?? null,
+      user_id:                 userId,
+      license_number:          dto.license_number,
+      license_expiry:          dto.license_expiry,
+      is_subcontractor_driver: dto.is_subcontractor_driver ?? false,
+      subcontractor_id:        dto.subcontractor_id ?? null,
     })
-    .select()
-    .single()
   if (driverError) throw driverError
 
   await supabase.from('system_logs').insert({
     user_id:     dto.created_by ?? null,
     log_type:    'user_activity',
-    action:      'user_creation',
+    action:      'driver_creation',
     description: `Driver ${dto.username} created.`,
   })
 
-  return data
+  return findById(userId)
 }
 
 async function update(userId: string, dto: UpdateDriverDTO) {
@@ -71,6 +69,8 @@ async function update(userId: string, dto: UpdateDriverDTO) {
   if (dto.middle_initial !== undefined) userFields.middle_initial = dto.middle_initial
   if (dto.suffix         !== undefined) userFields.suffix         = dto.suffix
   if (dto.phone          !== undefined) userFields.phone          = dto.phone
+  if (dto.email          !== undefined) userFields.email          = dto.email
+  if (dto.username       !== undefined) userFields.username       = dto.username
 
   if (Object.keys(userFields).length > 0) {
     const { error } = await supabase.from('users').update(userFields).eq('user_id', userId)
@@ -78,10 +78,10 @@ async function update(userId: string, dto: UpdateDriverDTO) {
   }
 
   const driverFields: Record<string, any> = {}
-  if (dto.license_number           !== undefined) driverFields.license_number           = dto.license_number
-  if (dto.license_expiry           !== undefined) driverFields.license_expiry           = dto.license_expiry
-  if (dto.is_subcontractor_driver  !== undefined) driverFields.is_subcontractor_driver  = dto.is_subcontractor_driver
-  if (dto.subcontractor_id         !== undefined) driverFields.subcontractor_id         = dto.subcontractor_id
+  if (dto.license_number          !== undefined) driverFields.license_number          = dto.license_number
+  if (dto.license_expiry          !== undefined) driverFields.license_expiry          = dto.license_expiry
+  if (dto.is_subcontractor_driver !== undefined) driverFields.is_subcontractor_driver = dto.is_subcontractor_driver
+  if (dto.subcontractor_id        !== undefined) driverFields.subcontractor_id        = dto.subcontractor_id
 
   if (Object.keys(driverFields).length > 0) {
     const { error } = await supabase.from('drivers').update(driverFields).eq('user_id', userId)

@@ -36,6 +36,12 @@ export async function createDriver(dto: CreateDriverDTO) {
 }
 
 export async function updateDriver(userId: string, dto: UpdateDriverDTO) {
+  if (dto.email) {
+    const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
+      email: dto.email,
+    })
+    if (authError) throw new Error(`Auth update failed: ${authError.message}`)
+  }
   return DriverModel.update(userId, dto)
 }
 

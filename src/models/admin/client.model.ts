@@ -24,8 +24,8 @@ async function findById(userId: string) {
   return data
 }
 
-async function create(userId: string, input: CreateClientInput){
-    const { error:userError } = await supabase
+async function create(userId: string, input: CreateClientInput) {
+    const { error: userError } = await supabase
     .from('users')
     .insert({
       user_id:        userId,
@@ -39,39 +39,37 @@ async function create(userId: string, input: CreateClientInput){
       role:           'client',
       created_by:     input.created_by ?? null,
     })
-
     if (userError) throw userError
 
-    const { data, error: clientError } = await supabase
+    const { error: clientError } = await supabase
     .from('clients')
     .insert({
         user_id:         userId,
-        company_name:    input.company_name,
-        billing_address: input.billing_address,
-        payment_terms:   input.payment_terms,
+        company_name:    input.company_name ?? null,
+        billing_address: input.billing_address ?? null,
+        payment_terms:   input.payment_terms ?? 30,
     })
-    .select()
-    .single()
-
     if (clientError) throw clientError
 
     await supabase.from('system_logs').insert({
         user_id:     input.created_by ?? null,
-        log_type:    'admin_activity',
-        action:      'user_creation',
+        log_type:    'user_activity',
+        action:      'client_creation',
         description: `Client ${input.username} created.`,
     })
 
-    return data
+    return findById(userId)
 }
 
 async function update(userId: string, input: UpdateClientInput){
     const userFields: Record<string, any> = {}
-    if (input.first_name     != undefined) userFields.first_name = input.first_name
-    if (input.last_name      != undefined) userFields.last_name = input.last_name
+    if (input.first_name     != undefined) userFields.first_name =     input.first_name
+    if (input.last_name      != undefined) userFields.last_name =      input.last_name
     if (input.middle_initial != undefined) userFields.middle_initial = input.middle_initial
-    if (input.suffix         != undefined) userFields.suffix = input.suffix
-    if (input.phone          != undefined) userFields.phone = input.phone
+    if (input.suffix         != undefined) userFields.suffix =         input.suffix
+    if (input.phone          != undefined) userFields.phone =          input.phone
+    if (input.email          != undefined) userFields.email =          input.email
+    if (input.username       != undefined) userFields.username =       input.username
 
     if (Object.keys(userFields).length > 0) {
         const { error } = await supabase.from('users').update(userFields).eq('user_id', userId)

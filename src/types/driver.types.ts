@@ -41,6 +41,8 @@ export interface UpdateDriverDTO {
   last_name?:               string
   middle_initial?:          string | null
   suffix?:                  string | null
+  email?:                   string
+  username?:                string
   phone?:                   string | null
   license_number?:          string
   license_expiry?:          string

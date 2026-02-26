@@ -35,7 +35,13 @@ export async function createClient(input: CreateClientInput){
     }
 }
 
-export async function updateClient(userId: string, input: UpdateClientInput){
+export async function updateClient(userId: string, input: UpdateClientInput) {
+    if (input.email) {
+        const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
+            email: input.email,
+        })
+        if (authError) throw new Error(`Auth update failed: ${authError.message}`)
+    }
     return ClientModel.update(userId, input)
 }
 

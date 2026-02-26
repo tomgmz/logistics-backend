@@ -1,6 +1,5 @@
 import { Request, Response } from 'express'
 import * as ClientService from '../../services/admin/client.service.js'
-import { stat } from 'node:fs'
 
 export async function getAllClients(req: Request, res: Response){
     try {
