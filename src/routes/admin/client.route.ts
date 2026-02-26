@@ -53,7 +53,6 @@ router.get('/:id', ClientController.getClientById)
  *             username: juandc
  *             email: juan@example.com
  *             password: secret12345
- *             all other fields goes here
  *     responses:
  *       201: { description: Client created successfully }
  *       400: { description: Validation error }
@@ -63,10 +62,10 @@ router.post('/', validate(createClientSchema), ClientController.createClient)
 
 /**
  * @swagger
- * /drivers/{id}:
+ * /clients/{id}:
  *   patch:
- *     tags: [Drivers]
- *     summary: Update a driver
+ *     tags: [Clients]
+ *     summary: Update a client
  *     parameters:
  *       - in: path
  *         name: id
