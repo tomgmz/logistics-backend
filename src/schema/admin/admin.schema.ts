@@ -9,7 +9,7 @@ export const createAdminSchema = z.object({
   email:          z.string().email(),
   password:       z.string().min(8),
   phone:          z.string().max(13).optional().transform(v => v === '' ? undefined : v),
-  created_by:     z.string().uuid().optional(),
+  created_by:     z.string().uuid().optional().nullable(), //nullable only for testing
 })
 
 export const updateAdminSchema = z.object({
