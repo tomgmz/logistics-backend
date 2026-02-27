@@ -1,80 +1,162 @@
-import { supabase } from '../../lib/supabase.js'
+// import { supabase } from '../../lib/supabase.js'
+// import { CreateTruckInput, UpdateTruckInput } from '../../types/truck.types.js'
+
+// async function findAll() {
+//   const { data, error } = await supabase
+//     .from('trucks')
+//     .select('*')
+//     .neq('status', 'archived')
+//     .order('plate_number', { ascending: true })
+
+//   if (error) throw error
+//   return data
+// }
+
+// async function findById(truckId: string) {
+//   const { data, error } = await supabase
+//     .from('trucks')
+//     .select('*')
+//     .eq('truck_id', truckId)
+//     .neq('status', 'archived')
+//     .maybeSingle()
+
+//   if (error) throw error
+//   return data
+// }
+
+// async function create(input: CreateTruckInput) {
+//   const { data, error } = await supabase
+//     .from('trucks')
+//     .insert({
+//       plate_number:     input.plate_number,
+//       truck_type:       input.truck_type,
+//       capacity_tons:    input.capacity_tons,
+//       owned_by:         input.owned_by,
+//       subcontractor_id: input.subcontractor_id ?? null,
+//     })
+//     .select()
+//     .single()
+
+//   if (error) throw error
+
+//   await supabase.from('system_logs').insert({
+//     user_id:     input.created_by ?? null,
+//     log_type:    'truck_activity',
+//     action:      'truck_creation',
+//     description: `Truck ${input.plate_number} created.`,
+//   })
+
+//   return data
+// }
+
+// async function update(truckId: string, input: UpdateTruckInput) {
+//   const truckFields: Record<string, any> = {}
+//   if (input.plate_number     !== undefined) truckFields.plate_number     = input.plate_number
+//   if (input.truck_type       !== undefined) truckFields.truck_type       = input.truck_type
+//   if (input.capacity_tons    !== undefined) truckFields.capacity_tons    = input.capacity_tons
+//   if (input.status           !== undefined) truckFields.status           = input.status
+//   if (input.owned_by         !== undefined) truckFields.owned_by         = input.owned_by
+//   if (input.subcontractor_id !== undefined) truckFields.subcontractor_id = input.subcontractor_id
+
+//   if (Object.keys(truckFields).length > 0) {
+//     const { error } = await supabase.from('trucks').update(truckFields).eq('truck_id', truckId)
+//     if (error) throw error
+//   }
+
+//   return findById(truckId)
+// }
+
+// async function remove(truckId: string) {
+//   const { data, error } = await supabase
+//     .from('trucks')
+//     .update({ status: 'archived' })
+//     .eq('truck_id', truckId)
+//     .select('truck_id, status')
+
+//   if (error) throw error
+//   if (!data || data.length === 0) throw new Error(`No truck found with ID: ${truckId}`)
+//   return true
+// }
+
+// export { findAll, findById, create, update, remove }
+
+import { pool } from '../../lib/database.js'
 import { CreateTruckInput, UpdateTruckInput } from '../../types/truck.types.js'
 
 async function findAll() {
-  const { data, error } = await supabase
-    .from('trucks')
-    .select('*')
-    .neq('status', 'archived')
-    .order('plate_number', { ascending: true })
-
-  if (error) throw error
-  return data
+  const result = await pool.query(
+    `SELECT * FROM trucks WHERE status != 'archived' ORDER BY plate_number ASC`
+  )
+  return result.rows
 }
 
 async function findById(truckId: string) {
-  const { data, error } = await supabase
-    .from('trucks')
-    .select('*')
-    .eq('truck_id', truckId)
-    .neq('status', 'archived')
-    .maybeSingle()
-
-  if (error) throw error
-  return data
+  const result = await pool.query(
+    `SELECT * FROM trucks WHERE truck_id = $1 AND status != 'archived'`,
+    [truckId]
+  )
+  return result.rows[0] ?? null
 }
 
 async function create(input: CreateTruckInput) {
-  const { data, error } = await supabase
-    .from('trucks')
-    .insert({
-      plate_number:     input.plate_number,
-      truck_type:       input.truck_type,
-      capacity_tons:    input.capacity_tons,
-      owned_by:         input.owned_by,
-      subcontractor_id: input.subcontractor_id ?? null,
-    })
-    .select()
-    .single()
+  const result = await pool.query(
+    `INSERT INTO trucks (plate_number, truck_type, capacity_tons, owned_by, subcontractor_id)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [
+      input.plate_number,
+      input.truck_type,
+      input.capacity_tons,
+      input.owned_by,
+      input.subcontractor_id ?? null,
+    ]
+  )
 
-  if (error) throw error
+  await pool.query(
+    `INSERT INTO system_logs (user_id, log_type, action, description)
+     VALUES ($1, $2, $3, $4)`,
+    [
+      input.created_by ?? null,
+      'truck_activity',
+      'truck_creation',
+      `Truck ${input.plate_number} created.`,
+    ]
+  )
 
-  await supabase.from('system_logs').insert({
-    user_id:     input.created_by ?? null,
-    log_type:    'truck_activity',
-    action:      'truck_creation',
-    description: `Truck ${input.plate_number} created.`,
-  })
-
-  return data
+  return result.rows[0]
 }
 
 async function update(truckId: string, input: UpdateTruckInput) {
-  const truckFields: Record<string, any> = {}
-  if (input.plate_number     !== undefined) truckFields.plate_number     = input.plate_number
-  if (input.truck_type       !== undefined) truckFields.truck_type       = input.truck_type
-  if (input.capacity_tons    !== undefined) truckFields.capacity_tons    = input.capacity_tons
-  if (input.status           !== undefined) truckFields.status           = input.status
-  if (input.owned_by         !== undefined) truckFields.owned_by         = input.owned_by
-  if (input.subcontractor_id !== undefined) truckFields.subcontractor_id = input.subcontractor_id
+  const fields: string[] = []
+  const values: any[] = []
+  let index = 1
 
-  if (Object.keys(truckFields).length > 0) {
-    const { error } = await supabase.from('trucks').update(truckFields).eq('truck_id', truckId)
-    if (error) throw error
-  }
+  if (input.plate_number     !== undefined) { fields.push(`plate_number = $${index++}`)     ; values.push(input.plate_number) }
+  if (input.truck_type       !== undefined) { fields.push(`truck_type = $${index++}`)        ; values.push(input.truck_type) }
+  if (input.capacity_tons    !== undefined) { fields.push(`capacity_tons = $${index++}`)     ; values.push(input.capacity_tons) }
+  if (input.status           !== undefined) { fields.push(`status = $${index++}`)            ; values.push(input.status) }
+  if (input.owned_by         !== undefined) { fields.push(`owned_by = $${index++}`)          ; values.push(input.owned_by) }
+  if (input.subcontractor_id !== undefined) { fields.push(`subcontractor_id = $${index++}`)  ; values.push(input.subcontractor_id) }
+
+  if (fields.length === 0) return findById(truckId)
+
+  fields.push(`updated_at = now()`)
+  values.push(truckId)
+
+  await pool.query(
+    `UPDATE trucks SET ${fields.join(', ')} WHERE truck_id = $${index}`,
+    values
+  )
 
   return findById(truckId)
 }
 
 async function remove(truckId: string) {
-  const { data, error } = await supabase
-    .from('trucks')
-    .update({ status: 'archived' })
-    .eq('truck_id', truckId)
-    .select('truck_id, status')
-
-  if (error) throw error
-  if (!data || data.length === 0) throw new Error(`No truck found with ID: ${truckId}`)
+  const result = await pool.query(
+    `UPDATE trucks SET status = 'archived' WHERE truck_id = $1 RETURNING truck_id, status`,
+    [truckId]
+  )
+  if (result.rowCount === 0) throw new Error(`No truck found with ID: ${truckId}`)
   return true
 }
 
