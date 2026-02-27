@@ -143,12 +143,12 @@ async function update(truckId: string, input: UpdateTruckInput) {
   fields.push(`updated_at = now()`)
   values.push(truckId)
 
-  await pool.query(
+  const result = await pool.query(
     `UPDATE trucks SET ${fields.join(', ')} WHERE truck_id = $${index}`,
     values
   )
 
-  return findById(truckId)
+  return result.rows[0] ?? null
 }
 
 async function remove(truckId: string) {
