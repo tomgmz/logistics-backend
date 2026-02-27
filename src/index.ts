@@ -7,7 +7,7 @@ import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './swagger/swagger.config.js';
-import adminRoutes from './routes/admin/admin.route.js'
+import adminRoutes from './routes/admin.route.js'
 
 dotenv.config();
 
@@ -24,7 +24,7 @@ app.use(limiter);
 app.use(helmet({contentSecurityPolicy: false}));
 app.use(
   cors({
-    origin: ["http://localhost:3000", "frontnend-url-here"],
+    origin: ["http://localhost:3000", "https://logistics-frontend-seven.vercel.app"],
     credentials: true,
     exposedHeaders: ["x-access-token"],
   })
