@@ -41,7 +41,7 @@ export const helperSchemas = {
             suffix:         { type: 'string', nullable: true, example: null },
             username:       { type: 'string', example: 'carlomendoza' },
             email:          { type: 'string', example: 'carlo@example.com' },
-            phone:          { type: 'string', nullable: true, example: '+639201234567' },
+            phone:          { type: 'string', nullable: true, example: '09201234567' },
             role:           { type: 'string', example: 'helper' },
             status:         { type: 'string', enum: ['active', 'inactive', 'archived'], example: 'active' },
             created_by:     { type: 'string', format: 'uuid', nullable: true, example: null },
