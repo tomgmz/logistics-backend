@@ -46,7 +46,7 @@ async function create(userId: string, input: CreateAdminInput) {
 
     if (userError) throw userError
 
-        await supabase.from('system_logs').insert({
+    await supabase.from('system_logs').insert({
         user_id:     input.created_by ?? null,
         log_type:    'user_activity',
         action:      'admin_creation',

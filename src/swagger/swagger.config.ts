@@ -4,11 +4,13 @@ import { clientSchemas } from './schemas/client.schemas.js'
 import { driverSchemas } from './schemas/driver.schemas.js'
 import { helperSchemas } from './schemas/helper.schemas.js'
 import { subcontractorSchemas } from './schemas/subcontractor.schemas.js'
+import { truckSchemas } from './schemas/truck.schema.js'
 import { adminPaths } from './docs/admin.docs.js'
 import { clientPaths } from './docs/client.docs.js'
 import { driverPaths } from './docs/driver.docs.js'
 import { helperPaths } from './docs/helper.docs.js'
 import { subcontractorPaths } from './docs/subcontractor.docs.js'
+import { truckPaths } from './docs/truck.docs.js'
 
 const options: swaggerJsdoc.Options = {
   definition: {
@@ -28,6 +30,7 @@ const options: swaggerJsdoc.Options = {
       { name: 'Clients',        description: 'Client management' },
       { name: 'Helpers',        description: 'Helper management' },
       { name: 'Subcontractors', description: 'Subcontractor management' },
+      { name: 'Trucks', description: 'Truck management' },
     ],
     paths: {
       ...adminPaths,
@@ -35,6 +38,7 @@ const options: swaggerJsdoc.Options = {
       ...driverPaths,
       ...helperPaths,
       ...subcontractorPaths,
+      ...truckPaths,
     },
     components: {
       schemas: {
@@ -43,6 +47,7 @@ const options: swaggerJsdoc.Options = {
         ...driverSchemas,
         ...helperSchemas,
         ...subcontractorSchemas,
+        ...truckSchemas,
       },
     },
   },

@@ -4,12 +4,15 @@ import { createAdminSchema, updateAdminSchema }               from '../../schema
 import { createClientSchema, updateClientSchema }             from '../../schema/admin/client.schema.js'
 import { createDriverSchema, updateDriverSchema }             from '../../schema/admin/driver.schema.js'
 import { createHelperSchema, updateHelperSchema }             from '../../schema/admin/helper.schema.js'
+import { createTruckSchema, updateTruckSchema }               from '../../schema/admin/truck.schema.js'
 import { createSubcontractorSchema, updateSubcontractorSchema } from '../../schema/admin/subcontractor.schema.js'
 import * as AdminController         from '../../controllers/admin/admin.controller.js'
 import * as ClientController        from '../../controllers/admin/client.controller.js'
 import * as DriverController        from '../../controllers/admin/driver.controller.js'
 import * as HelperController        from '../../controllers/admin/helper.controller.js'
 import * as SubcontractorController from '../../controllers/admin/subcontractor.controller.js'
+import * as TrucckController        from '../../controllers/admin/truck.controller.js'
+
 
 const router = Router()
 
@@ -47,5 +50,12 @@ router.get('/subcontractors/:id',    SubcontractorController.getSubcontractorByI
 router.post('/subcontractors',       validate(createSubcontractorSchema), SubcontractorController.createSubcontractor)
 router.patch('/subcontractors/:id',  validate(updateSubcontractorSchema), SubcontractorController.updateSubcontractor)
 router.delete('/subcontractors/:id', SubcontractorController.deleteSubcontractor)
+
+// Trucks
+router.get('/trucks',        TrucckController.getAllTrucks)
+router.get('/trucks/:id',    TrucckController.getTruckById)
+router.post('/trucks',       validate(createTruckSchema), TrucckController.createTruck)
+router.patch('/trucks/:id',  validate(updateTruckSchema), TrucckController.updateTruck)
+router.delete('/trucks/:id', TrucckController.deleteTruck)
 
 export default router
