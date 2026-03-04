@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { USER_SUFFIXES } from '../../types/user.types.js'
 
 export const createClientSchema = z.object({
   first_name:     z
@@ -12,7 +13,11 @@ export const createClientSchema = z.object({
                   .max(50)
                   .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes'),
   middle_initial: z.string().max(1).optional().nullable().transform(v => v === '' ? null : v),
-  suffix:         z.string().max(10).optional().nullable().transform(v => v === '' ? null : v),
+  suffix: z
+        .preprocess(
+          v => v === '' ? null : v,
+          z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable()
+        ),
   username:       z.string().min(2).max(50),
   email:          z.string().email(),
   password:       z.string().min(8),

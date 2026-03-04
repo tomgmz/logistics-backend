@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { USER_SUFFIXES } from '../../types/user.types.js'
 
 export const createDriverSchema = z.object({
   first_name:     z
@@ -12,7 +13,11 @@ export const createDriverSchema = z.object({
                   .max(50)
                   .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes'),
   middle_initial: z.string().max(1).optional().nullable().transform(v => v === '' ? null : v),
-  suffix:         z.string().max(10).optional().nullable().transform(v => v === '' ? null : v),
+  suffix: z
+        .preprocess(
+          v => v === '' ? null : v,
+          z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable()
+        ),
   username:       z.string().min(2).max(50),
   email:          z.string().email(),
   password:       z.string().min(8),
@@ -24,8 +29,19 @@ export const createDriverSchema = z.object({
                   .regex(/^09\d{9}$/, "Invalid PH mobile format"),
   created_by:     z.string().uuid().optional().nullable(),
 
-  license_number:          z.string().min(1).max(50),
-  license_expiry:          z.string().min(1),
+  license_number: z
+                .string()
+                .regex(/^[A-Z]\d{2}-\d{2}-\d{6}$/, 'Invalid LTO license number format (e.g. A01-23-456789)'),
+  license_expiry: z
+                .string()
+                .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)')
+                .refine(val => {
+                  const date = new Date(val)
+                  return !isNaN(date.getTime())
+                }, 'Invalid date')
+                .refine(val => {
+                  return new Date(val) > new Date()
+                }, 'License is already expired'),
   is_subcontractor_driver: z.boolean().optional().default(false),
   subcontractor_id:        z.string().uuid().optional().nullable(),
 }).refine(

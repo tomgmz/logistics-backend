@@ -1,5 +1,8 @@
 export type UserRole = 'admin' | 'super_admin' | 'driver' | 'helper' | 'client' | 'subcontractor'
 export type UserStatus = 'active' | 'inactive' | 'archived'
+export type UserSuffix = 'Jr.' | 'Sr.' | 'II' | 'III' | 'IV' | 'V'
+
+export const USER_SUFFIXES = ['Jr.', 'Sr.', 'II', 'III', 'IV', 'V'] as const
 
 export interface BaseUser {
   user_id:         string
@@ -8,7 +11,7 @@ export interface BaseUser {
   first_name:      string
   last_name:       string
   middle_initial?: string | null
-  suffix?:         string | null
+  suffix?:         UserSuffix | null
   phone?:          string | null
   role:            UserRole
   status:          UserStatus
@@ -24,7 +27,7 @@ export interface BaseCreateDTO {
   first_name:      string
   last_name:       string
   middle_initial?: string | null
-  suffix?:         string | null
+  suffix?:         UserSuffix | null
   phone?:          string | null
   created_by?:     string | null
 }
