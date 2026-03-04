@@ -17,9 +17,9 @@ export const createSubcontractorSchema = z.object({
   password:       z.string().min(8),
   phone: z
         .string()
-        .min(7, 'Phone number is too short')
+        .min(8, 'Phone number is too short')
         .max(16, 'Phone number is too long')
-        .regex(/^\+?[0-9]+$/, 'Invalid phone number format')
+        .regex(/^\+[0-9]+$/, 'Invalid phone number format')
         .optional()
         .nullable()
         .transform(v => v === '' ? null : v),
@@ -41,12 +41,14 @@ export const updateSubcontractorSchema = z.object({
   suffix:         z.string().max(10).optional().nullable().transform(v => v === '' ? null : v),
   username:       z.string().min(2).max(50).optional(),
   email:          z.string().email().optional(),
-  phone:          z.string().min(11).max(13)
-                  .regex(/^\d+$/, 'Phone number must contain only digits')
-                  .regex(/^09\d{9}$/, 'Invalid PH mobile format')
-                  .optional()
-                  .transform(v => v === '' ? null : v),
-
+  phone: z
+        .string()
+        .min(8, 'Phone number is too short')
+        .max(16, 'Phone number is too long')
+        .regex(/^\+[0-9]+$/, 'Invalid phone number format')
+        .optional()
+        .nullable()
+        .transform(v => v === '' ? null : v),
   subcontractor_type: z.enum(['individual', 'company']).optional(),
   company_name:       z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
   business_permit:    z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),

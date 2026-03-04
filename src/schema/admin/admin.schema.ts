@@ -23,9 +23,9 @@ export const createAdminSchema = z.object({
   password:       z.string().min(8),
   phone: z
         .string()
-        .min(7, 'Phone number is too short')
+        .min(8, 'Phone number is too short')
         .max(16, 'Phone number is too long')
-        .regex(/^\+?[0-9]+$/, 'Invalid phone number format')
+        .regex(/^\+[0-9]+$/, 'Invalid phone number format')
         .optional()
         .nullable()
         .transform(v => v === '' ? null : v),
@@ -49,9 +49,9 @@ export const updateAdminSchema = z.object({
   email:          z.string().email().optional(),
   phone: z
         .string()
-        .min(7, 'Phone number is too short')
+        .min(8, 'Phone number is too short')
         .max(16, 'Phone number is too long')
-        .regex(/^\+?[0-9]+$/, 'Invalid phone number format')
+        .regex(/^\+[0-9]+$/, 'Invalid phone number format')
         .optional()
         .nullable()
         .transform(v => v === '' ? null : v),
