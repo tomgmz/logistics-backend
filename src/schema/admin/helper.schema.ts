@@ -18,8 +18,8 @@ export const createHelperSchema = z.object({
   phone: z
         .string()
         .min(7, 'Phone number is too short')
-        .max(15, 'Phone number exceeds maximum length')
-        .regex(/^\+?[0-9\s\-().]+$/, 'Invalid phone number format')
+        .max(16, 'Phone number is too long')
+        .regex(/^\+?[0-9]+$/, 'Invalid phone number format')
         .optional()
         .nullable()
         .transform(v => v === '' ? null : v),
@@ -59,12 +59,14 @@ export const updateHelperSchema = z.object({
   suffix:         z.string().max(10).optional().nullable().transform(v => v === '' ? null : v),
   username:       z.string().min(2).max(50).optional(),
   email:          z.string().email().optional(),
-  phone:          z.string().min(11).max(13)
-                  .regex(/^\d+$/, 'Phone number must contain only digits')
-                  .regex(/^09\d{9}$/, 'Invalid PH mobile format')
-                  .optional().nullable()
-                  .transform(v => v === '' ? null : v),
-
+  phone: z
+        .string()
+        .min(7, 'Phone number is too short')
+        .max(16, 'Phone number is too long')
+        .regex(/^\+?[0-9]+$/, 'Invalid phone number format')
+        .optional()
+        .nullable()
+        .transform(v => v === '' ? null : v),
   license_number: z.string().min(1).max(50).optional().nullable().transform(v => v === '' ? null : v),
   license_expiry: z.string().optional().nullable().transform(v => v === '' ? null : v),
   driver_status:  z.enum(['available', 'assigned', 'on_leave', 'inactive']).optional(),

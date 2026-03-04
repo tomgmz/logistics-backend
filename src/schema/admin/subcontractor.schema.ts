@@ -18,8 +18,8 @@ export const createSubcontractorSchema = z.object({
   phone: z
         .string()
         .min(7, 'Phone number is too short')
-        .max(15, 'Phone number exceeds maximum length')
-        .regex(/^\+?[0-9\s\-().]+$/, 'Invalid phone number format')
+        .max(16, 'Phone number is too long')
+        .regex(/^\+?[0-9]+$/, 'Invalid phone number format')
         .optional()
         .nullable()
         .transform(v => v === '' ? null : v),
