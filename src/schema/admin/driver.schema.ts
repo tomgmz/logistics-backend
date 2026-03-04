@@ -21,12 +21,14 @@ export const createDriverSchema = z.object({
   username:       z.string().min(2).max(50),
   email:          z.string().email(),
   password:       z.string().min(8),
-  phone:          z
-                  .string()
-                  .min(11, "Phone number must be at least 11 digits")
-                  .max(13)
-                  .regex(/^\d+$/, "Phone number must contain only digits")
-                  .regex(/^09\d{9}$/, "Invalid PH mobile format"),
+  phone: z
+        .string()
+        .min(7, 'Phone number is too short')
+        .max(15, 'Phone number exceeds maximum length')
+        .regex(/^\+?[0-9\s\-().]+$/, 'Invalid phone number format')
+        .optional()
+        .nullable()
+        .transform(v => v === '' ? null : v),
   created_by:     z.string().uuid().optional().nullable(),
 
   license_number: z
