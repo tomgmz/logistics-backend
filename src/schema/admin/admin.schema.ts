@@ -37,12 +37,14 @@ export const updateAdminSchema = z.object({
                   .string()
                   .min(2)
                   .max(50)
-                  .regex(/^[\p{L}]+(?:[ '-][\p{L}]+)*$/u, 'First name must contain only letters, spaces, hyphens, or apostrophes'),
+                  .regex(/^[\p{L}]+(?:[ '-][\p{L}]+)*$/u, 'First name must contain only letters, spaces, hyphens, or apostrophes')
+                  .optional(),
   last_name:      z
                   .string()
                   .min(2)
                   .max(50)
-                  .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes'),
+                  .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes')
+                  .optional(),
   middle_initial: z.string().max(1).optional().nullable(),
   suffix:         z.string().max(10).optional().nullable(),
   username:       z.string().min(2).max(50).optional(),
