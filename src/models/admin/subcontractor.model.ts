@@ -37,7 +37,7 @@ async function create(userId: string, input: CreateSubcontractorInput) {
       last_name:      input.last_name,
       middle_initial: input.middle_initial ?? null,
       suffix:         input.suffix ?? null,
-      phone:          input.phone ? '+63' + input.phone.slice(1) : null,
+      phone:          input.phone,
       role:           'subcontractor',
       created_by:     input.created_by ?? null,
     })
@@ -69,7 +69,7 @@ async function update(userId: string, input: UpdateSubcontractorInput) {
   if (input.last_name      !== undefined) userFields.last_name      = input.last_name
   if (input.middle_initial !== undefined) userFields.middle_initial = input.middle_initial
   if (input.suffix         !== undefined) userFields.suffix         = input.suffix
-  if (input.phone !== undefined) userFields.phone = input.phone ? '+63' + input.phone.slice(1) : null
+  if (input.phone !== undefined) userFields.phone                   = input.phone
   if (input.email          !== undefined) userFields.email          = input.email
   if (input.username       !== undefined) userFields.username       = input.username
 

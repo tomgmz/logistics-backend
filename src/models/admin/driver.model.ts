@@ -37,7 +37,7 @@ async function create(userId: string, dto: CreateDriverDTO) {
       last_name:      dto.last_name,
       middle_initial: dto.middle_initial ?? null,
       suffix:         dto.suffix ?? null,
-      phone:          dto.phone ? '+63' + dto.phone.slice(1) : null,
+      phone:          dto.phone,
       role:           'driver',
       created_by:     dto.created_by ?? null,
     })
@@ -70,7 +70,7 @@ async function update(userId: string, dto: UpdateDriverDTO) {
   if (dto.last_name      !== undefined) userFields.last_name      = dto.last_name
   if (dto.middle_initial !== undefined) userFields.middle_initial = dto.middle_initial
   if (dto.suffix         !== undefined) userFields.suffix         = dto.suffix
-  if (dto.phone !== undefined) userFields.phone = dto.phone ? '+63' + dto.phone.slice(1) : null
+  if (dto.phone !== undefined) userFields.phone = dto.phone 
   if (dto.email          !== undefined) userFields.email          = dto.email
   if (dto.username       !== undefined) userFields.username       = dto.username
 
