@@ -21,7 +21,7 @@ async function findById(bookingId: string): Promise<BookingWithRelations | null>
     .rpc('get_booking_by_id', { p_booking_id: bookingId })
 
   if (error) throw error
-  return data?.[0] ?? null
+  return data ?? null
 }
 
 async function findByClientId(clientId: string): Promise<BookingWithRelations[]> {
