@@ -62,7 +62,7 @@ async function update(userId: string, input: UpdateAdminInput) {
     if (input.last_name      != undefined) userFields.last_name =      input.last_name
     if (input.middle_initial != undefined) userFields.middle_initial = input.middle_initial
     if (input.suffix         != undefined) userFields.suffix =         input.suffix
-    if (input.phone !== undefined) userFields.phone = input.phone 
+    if (input.phone !== undefined) userFields.phone =                  input.phone 
     if (input.email          != undefined) userFields.email =          input.email
     if (input.username       != undefined) userFields.username =       input.username
 

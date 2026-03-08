@@ -1,0 +1,52 @@
+import { z } from 'zod'
+
+export const createDestinationSchema = z.object({
+  address: z.string().min(1, 'Address is required'),
+  sequence_order: z.number().int().positive(),
+  notes: z.string().optional(),
+})
+
+export const updateDestinationSchema = z.object({
+  address: z.string().min(1).optional(),
+  sequence_order: z.number().int().positive().optional(),
+  status: z.enum(['pending', 'delivered', 'failed']).optional(),
+  delivered_at: z.string().datetime().optional(),
+  notes: z.string().optional(),
+})
+
+export const createBookingSchema = z.object({
+  client_id: z.string().uuid(),
+  origin: z.string().min(1, 'Origin is required'),
+  truck_type_needed: z.string().min(1, 'Truck type is required'),
+  cargo_details: z.string().optional(),
+  schedule_date: z.string().date(),
+  call_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'call_time must be in HH:MM format'),
+  destinations: z.array(createDestinationSchema)
+    .min(1, 'At least one destination is required')
+    .refine(
+      (destinations) => {
+        const orders = destinations.map((d) => d.sequence_order)
+        const uniqueOrders = new Set(orders)
+        return uniqueOrders.size === orders.length
+      },
+      { message: 'sequence_order must be unique per destination' }
+    ),
+})
+
+export const updateBookingSchema = z.object({
+  origin: z.string().min(1).optional(),
+  truck_type_needed: z.string().min(1).optional(),
+  cargo_details: z.string().optional(),
+  schedule_date: z.string().date().optional(),
+  call_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'call_time must be in HH:MM format').optional(),
+  status: z.enum(['pending', 'assigned', 'in_transit', 'completed', 'cancelled']).optional(),
+})
+
+export const updateBookingStatusSchema = z.object({
+  status: z.enum(['pending', 'assigned', 'in_transit', 'completed', 'cancelled']),
+})
+
+export const updateDestinationStatusSchema = z.object({
+  status: z.enum(['pending', 'delivered', 'failed']),
+  delivered_at: z.string().datetime().optional(),
+})

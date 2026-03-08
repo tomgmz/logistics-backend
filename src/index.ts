@@ -6,8 +6,10 @@ import rateLimit from "express-rate-limit";
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
+import basicAuth from 'express-basic-auth'
 import { swaggerSpec } from './swagger/swagger.config.js';
 import adminRoutes from './routes/admin.route.js'
+import clientRoutes from './routes/client.routes.js'
 
 dotenv.config();
 
@@ -35,11 +37,17 @@ app.use(express.json());
 app.use(morgan('dev'));
 app.use(express.urlencoded({ extended: true }));
 
-//swagger
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+//swagger with basic auth protection
+app.use('/api-docs', basicAuth({
+  users: {
+    [process.env.SWAGGER_USER!]: process.env.SWAGGER_PASSWORD!
+  },
+  challenge: true,
+}), swaggerUi.serve, swaggerUi.setup(swaggerSpec))
 
 //routes
 app.use('/api', adminRoutes)
+app.use('/api/booking', clientRoutes)
 
 app.get("/", (req: Request, res: Response) => {
   res.json({ status: "OK", message: "Logistics Backend API is running..." });
