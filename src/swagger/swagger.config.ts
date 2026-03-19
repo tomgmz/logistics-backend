@@ -1,4 +1,6 @@
 import swaggerJsdoc from 'swagger-jsdoc'
+
+//schemas
 import { adminSchemas } from './schemas/admin.schemas.js'
 import { clientSchemas } from './schemas/client.schemas.js'
 import { driverSchemas } from './schemas/driver.schemas.js'
@@ -6,6 +8,9 @@ import { helperSchemas } from './schemas/helper.schemas.js'
 import { subcontractorSchemas } from './schemas/subcontractor.schemas.js'
 import { truckSchemas } from './schemas/truck.schema.js'
 import { bookingSchemas } from './schemas/client/booking.schemas.js'
+import { routeOptimizationSchemas } from './schemas/maps/routeOptimization.schema.js'
+
+//paths
 import { adminPaths } from './docs/admin.docs.js'
 import { clientPaths } from './docs/client.docs.js'
 import { driverPaths } from './docs/driver.docs.js'
@@ -13,6 +18,7 @@ import { helperPaths } from './docs/helper.docs.js'
 import { subcontractorPaths } from './docs/subcontractor.docs.js'
 import { truckPaths } from './docs/truck.docs.js'
 import { bookingPaths } from './docs/client/booking.docs.js'
+import { routeOptimizationPaths } from './docs/maps/routeOptimization.docs.js'
 
 const options: swaggerJsdoc.Options = {
   definition: {
@@ -34,6 +40,7 @@ const options: swaggerJsdoc.Options = {
       { name: 'Subcontractors', description: 'Subcontractor management' },
       { name: 'Trucks', description: 'Truck management' },
       { name: 'Bookings', description: 'Booking management' },
+      { name: 'Route Optimization',  description: 'Google Maps route optimization and geocoding' },
     ],
     paths: {
       ...adminPaths,
@@ -43,6 +50,7 @@ const options: swaggerJsdoc.Options = {
       ...subcontractorPaths,
       ...truckPaths,
       ...bookingPaths,
+      ...routeOptimizationPaths,
     },
     components: {
       schemas: {
@@ -53,6 +61,7 @@ const options: swaggerJsdoc.Options = {
         ...subcontractorSchemas,
         ...truckSchemas,
         ...bookingSchemas,
+        ...routeOptimizationSchemas,
       },
     },
   },

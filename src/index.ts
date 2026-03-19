@@ -10,6 +10,7 @@ import basicAuth from 'express-basic-auth'
 import { swaggerSpec } from './swagger/swagger.config.js';
 import adminRoutes from './routes/admin.route.js'
 import clientRoutes from './routes/client.routes.js'
+import routeOptimizationRoutes from './routes/routeOptimization.route.js'
 
 dotenv.config();
 
@@ -48,6 +49,7 @@ app.use('/api-docs', basicAuth({
 //routes
 app.use('/api', adminRoutes)
 app.use('/api/booking', clientRoutes)
+app.use('/api/route-optimization', routeOptimizationRoutes)
 
 app.get("/", (req: Request, res: Response) => {
   res.json({ status: "OK", message: "Logistics Backend API is running..." });
