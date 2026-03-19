@@ -37,6 +37,8 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult> {
     params: {
       address: `${address}, Philippines`,
       key: GOOGLE_API_KEY,
+      region: 'PH',
+      components: 'country:PH',
     },
   })
 
