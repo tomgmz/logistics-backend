@@ -4,6 +4,7 @@ import axios from 'axios'
 import {
   geocodeAddressService,
   optimizeBookingRouteService,
+  getOptimizedRouteService,
 } from '../../services/maps/routeOptimization.service.js'
 
 const GOOGLE_PROJECT_ID = process.env.GOOGLE_PROJECT_ID!
@@ -23,15 +24,25 @@ async function getAccessToken(): Promise<string> {
   return tokenResponse.token
 }
 
+export const getOptimizedRoute = async (req: Request, res: Response) => {
+  try {
+    const { bookingId } = req.params
+    const result = await getOptimizedRouteService(bookingId as string)
+    res.status(200).json({ status: 'success', data: result })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Something went wrong'
+    const status = message.includes('not found') ? 404 : 500
+    res.status(status).json({ status: 'error', message })
+  }
+}
+
 export const optimizeBookingRoute = async (req: Request, res: Response) => {
   try {
     const { id } = req.params
 
-    // get access token
     const accessToken = await getAccessToken()
     console.log('Access token obtained:', !!accessToken)
 
-    // test direct axios call to verify permissions
     const testResponse = await axios.post(
       `https://routeoptimization.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}:optimizeTours`,
       {
@@ -65,7 +76,6 @@ export const optimizeBookingRoute = async (req: Request, res: Response) => {
 
     console.log('Test response:', testResponse.data)
 
-    // if test passes run the actual service
     const result = await optimizeBookingRouteService(id as string)
     res.status(200).json({ status: 'success', data: result })
   } catch (error: unknown) {
@@ -81,7 +91,7 @@ export const optimizeBookingRoute = async (req: Request, res: Response) => {
     res.status(httpStatus).json({
       status: 'error',
       message,
-      details: err.response?.data,  // ← shows exact Google error
+      details: err.response?.data,
     })
   }
 }

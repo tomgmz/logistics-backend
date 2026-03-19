@@ -1,4 +1,4 @@
-import { RouteOptimizationClient } from '@googlemaps/routeoptimization'
+import { GoogleAuth } from 'google-auth-library'
 import axios from 'axios'
 import { RouteOptimizationModel } from '../../models/maps/routeOptimization.model.js'
 import {
@@ -10,19 +10,25 @@ import {
 
 const GOOGLE_API_KEY = process.env.GOOGLE_MAPS_API_KEY!
 const GOOGLE_PROJECT_ID = process.env.GOOGLE_PROJECT_ID!
+const GOOGLE_LOCATION = process.env.GOOGLE_CLOUD_LOCATION ?? 'asia-southeast1'
 const GEOCODING_URL = 'https://maps.googleapis.com/maps/api/geocode/json'
 
-console.log('GOOGLE_PROJECT_ID:', GOOGLE_PROJECT_ID)
-console.log('GOOGLE_SERVICE_ACCOUNT_EMAIL:', process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL)
-console.log('GOOGLE_PRIVATE_KEY exists:', !!process.env.GOOGLE_PRIVATE_KEY)
-console.log('GOOGLE_PRIVATE_KEY starts with:', process.env.GOOGLE_PRIVATE_KEY?.substring(0, 40))
+//AUTH
 
-const routeOptimizationClient = new RouteOptimizationClient({
-  credentials: {
-    client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL!,
-    private_key: process.env.GOOGLE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
-  },
-})
+async function getAccessToken(): Promise<string> {
+  const auth = new GoogleAuth({
+    credentials: {
+      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL!,
+      private_key: process.env.GOOGLE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
+    },
+    scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+  })
+
+  const client = await auth.getClient()
+  const tokenResponse = await client.getAccessToken()
+  if (!tokenResponse.token) throw new Error('Failed to get Google access token')
+  return tokenResponse.token
+}
 
 //GEOCODING
 
@@ -49,6 +55,8 @@ async function callOptimizationAPI(
   origin: { latitude: number; longitude: number },
   destinations: OptimizationDestination[]
 ): Promise<OptimizedStop[]> {
+
+  const accessToken = await getAccessToken()
 
   const shipments = destinations.map((dest, index) => ({
     label: `shipment_${index}`,
@@ -77,17 +85,23 @@ async function callOptimizationAPI(
     },
   ]
 
-  const [response] = await routeOptimizationClient.optimizeTours({
-    parent: `projects/${GOOGLE_PROJECT_ID}`,
-    model: { shipments, vehicles },
-  })
+const response = await axios.post(
+  `https://routeoptimization.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}:optimizeTours`,
+  { model: { shipments, vehicles } },
+  {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+  }
+)
 
-  const routes = response.routes
+  const routes = response.data.routes
   if (!routes || routes.length === 0) {
     throw new Error('No optimized route returned from Google')
   }
 
-  return routes[0].visits!.map((visit: any, index: number) => {
+  return routes[0].visits.map((visit: { shipmentLabel: string }, index: number) => {
     const shipmentIndex = parseInt(visit.shipmentLabel.replace('shipment_', ''))
     const destination = destinations[shipmentIndex]
     return {
@@ -96,11 +110,13 @@ async function callOptimizationAPI(
       latitude: destination.latitude,
       longitude: destination.longitude,
       optimized_sequence_order: index + 1,
+      status: destination.status ?? 'pending',
+      notes: destination.notes ?? null,
     }
   })
 }
 
-//MAIN
+//MAIN SERVICE
 
 export async function optimizeBookingRouteService(
   bookingId: string
@@ -116,7 +132,7 @@ export async function optimizeBookingRouteService(
     throw new Error(`Cannot optimize a ${booking.status} booking`)
   }
 
-  //geocode origin if missing
+  // geocode origin if missing
   let originCoords = {
     latitude: booking.origin_latitude as number,
     longitude: booking.origin_longitude as number,
@@ -132,9 +148,16 @@ export async function optimizeBookingRouteService(
     )
   }
 
-  //geocode destinations if missing
+  // geocode destinations if missing
   const destinations: OptimizationDestination[] = await Promise.all(
-    booking.booking_destinations.map(async (dest: any) => {
+    booking.booking_destinations.map(async (dest: {
+      destination_id: string
+      address: string
+      latitude: number | null
+      longitude: number | null
+      status: 'pending' | 'delivered' | 'failed'
+      notes: string | null
+    }) => {
       let coords = { latitude: dest.latitude, longitude: dest.longitude }
 
       if (!coords.latitude || !coords.longitude) {
@@ -150,16 +173,18 @@ export async function optimizeBookingRouteService(
       return {
         destination_id: dest.destination_id,
         address: dest.address,
-        latitude: coords.latitude,
-        longitude: coords.longitude,
+        latitude: coords.latitude as number,
+        longitude: coords.longitude as number,
+        status: dest.status,
+        notes: dest.notes,
       }
     })
   )
 
-  //call Google Routes Optimization API via official client
+  // call Google Route Optimization API
   const optimizedStops = await callOptimizationAPI(originCoords, destinations)
 
-  //save optimized order to DB
+  // save optimized order to DB
   await RouteOptimizationModel.saveOptimizedOrder(optimizedStops)
 
   return {
@@ -167,6 +192,44 @@ export async function optimizeBookingRouteService(
     origin: { address: booking.origin, ...originCoords },
     optimized_stops: optimizedStops,
     total_stops: optimizedStops.length,
+  }
+}
+
+export async function getOptimizedRouteService(
+  bookingId: string
+): Promise<OptimizeRouteResponse> {
+  const booking = await RouteOptimizationModel.getBookingWithDestinations(bookingId)
+  if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
+
+  const stops: OptimizedStop[] = (booking.booking_destinations ?? [])
+    .sort((a: { sequence_order: number }, b: { sequence_order: number }) => a.sequence_order - b.sequence_order)
+    .map((dest: {
+      destination_id: string
+      address: string
+      latitude: number | null
+      longitude: number | null
+      sequence_order: number
+      status: 'pending' | 'delivered' | 'failed'
+      notes: string | null
+    }) => ({
+      destination_id: dest.destination_id,
+      address: dest.address,
+      latitude: dest.latitude ?? 0,
+      longitude: dest.longitude ?? 0,
+      optimized_sequence_order: dest.sequence_order,
+      status: dest.status,
+      notes: dest.notes ?? null,
+    }))
+
+  return {
+    booking_id: bookingId,
+    origin: {
+      address: booking.origin,
+      latitude: booking.origin_latitude ?? 0,
+      longitude: booking.origin_longitude ?? 0,
+    },
+    optimized_stops: stops,
+    total_stops: stops.length,
   }
 }
 

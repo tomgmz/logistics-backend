@@ -1,10 +1,12 @@
 import { Router } from 'express'
 import { validate } from '../middlewares/validate.middleware.js'
 import { validateGoogleCredentials } from '../middlewares/routeOptimization.middleware.js'
-import { optimizeRouteSchema, geocodeAddressSchema } from '../schema/maps/routeOptimization.schema.js'
+import { geocodeAddressSchema } from '../schema/maps/routeOptimization.schema.js'
 import * as RouteOptimizationController from '../controllers/maps/routeOptimization.controller.js'
 
 const router = Router()
+
+router.get('/:bookingId', RouteOptimizationController.getOptimizedRoute)
 
 router.use(validateGoogleCredentials)
 

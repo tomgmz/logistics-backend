@@ -8,6 +8,8 @@ export interface OptimizationDestination {
   address: string
   latitude: number
   longitude: number
+  status?: 'pending' | 'delivered' | 'failed'
+  notes?: string | null
 }
 
 export interface OptimizedStop {
@@ -16,27 +18,19 @@ export interface OptimizedStop {
   latitude: number
   longitude: number
   optimized_sequence_order: number
-}
-
-export interface OptimizeRouteInput {
-  booking_id: string
-  origin: {
-    address: string
-    latitude: number
-    longitude: number
-  }
-  destinations: OptimizationDestination[]
+  status: 'pending' | 'delivered' | 'failed'
+  notes?: string | null 
 }
 
 export interface OptimizeRouteResponse {
   booking_id: string
+  total_stops: number
   origin: {
     address: string
     latitude: number
     longitude: number
   }
   optimized_stops: OptimizedStop[]
-  total_stops: number
 }
 
 export interface GeocodeResult {
