@@ -1,0 +1,47 @@
+export const truckModelSchemas = {
+  CreateTruckModelRequest: {
+    type: 'object',
+    required: ['name', 'image_url'],
+    properties: {
+      name:               { type: 'string', minLength: 1, example: 'Wing Van 40ft' },
+      body_type:          { type: 'string', nullable: true, example: 'Wing Van' },
+      dimension_mm:       { type: 'string', nullable: true, example: '12192 x 2438 x 2591' },
+      suitable_for:       { type: 'string', nullable: true, example: 'Dry goods, electronics, garments' },
+      stackable_friendly: { type: 'boolean', default: false, example: true },
+      max_volume_cbm:     { type: 'number', minimum: 0, nullable: true, example: 67.5 },
+      max_weight_kg:      { type: 'number', minimum: 0, nullable: true, example: 15000 },
+      max_length_cm:      { type: 'number', minimum: 0, nullable: true, example: 1219.2 },
+      image_url:          { type: 'string', format: 'uri', example: 'https://example.com/images/wing-van-40ft.png' },
+    },
+  },
+  UpdateTruckModelRequest: {
+    type: 'object',
+    properties: {
+      name:               { type: 'string', minLength: 1, example: 'Wing Van 40ft' },
+      body_type:          { type: 'string', nullable: true, example: 'Wing Van' },
+      dimension_mm:       { type: 'string', nullable: true, example: '12192 x 2438 x 2591' },
+      suitable_for:       { type: 'string', nullable: true, example: 'Dry goods, electronics, garments' },
+      stackable_friendly: { type: 'boolean', example: false },
+      max_volume_cbm:     { type: 'number', minimum: 0, nullable: true, example: 67.5 },
+      max_weight_kg:      { type: 'number', minimum: 0, nullable: true, example: 18000 },
+      max_length_cm:      { type: 'number', minimum: 0, nullable: true, example: 1219.2 },
+      image_url:          { type: 'string', format: 'uri', example: 'https://example.com/images/wing-van-40ft.png' },
+    },
+  },
+  TruckModel: {
+    type: 'object',
+    properties: {
+      model_id:           { type: 'string', format: 'uuid', example: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
+      name:               { type: 'string', example: 'Wing Van 40ft' },
+      body_type:          { type: 'string', nullable: true, example: 'Wing Van' },
+      dimension_mm:       { type: 'string', nullable: true, example: '12192 x 2438 x 2591' },
+      suitable_for:       { type: 'string', nullable: true, example: 'Dry goods, electronics, garments' },
+      stackable_friendly: { type: 'boolean', example: true },
+      max_volume_cbm:     { type: 'number', nullable: true, example: 67.5 },
+      max_weight_kg:      { type: 'number', nullable: true, example: 15000 },
+      max_length_cm:      { type: 'number', nullable: true, example: 1219.2 },
+      image_url:          { type: 'string', format: 'uri', example: 'https://example.com/images/wing-van-40ft.png' },
+      created_at:         { type: 'string', format: 'date-time', example: '2026-02-27T08:00:00.000000' },
+    },
+  },
+}
