@@ -23,6 +23,7 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 // SECURITY
 
 app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
   contentSecurityPolicy: IS_PRODUCTION ? {
     directives: {
       defaultSrc: ["'self'"],
