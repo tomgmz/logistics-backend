@@ -100,7 +100,7 @@ router.delete('/admins/:id', authenticate, isSuperAdmin, AdminController.deleteA
 
 router.get('/clients',        authenticate, isAdmin, ClientController.getAllClients)
 router.get('/clients/:id',    authenticate, isAdmin, ClientController.getClientById)
-router.post('/clients',       authenticate, isAdmin, validate(createClientSchema), ClientController.createClient)
+router.post('/clients',        validate(createClientSchema), ClientController.createClient)
 router.patch('/clients/:id',  authenticate, isAdmin, validate(updateClientSchema), ClientController.updateClient)
 router.delete('/clients/:id', authenticate, isAdmin, ClientController.deleteClient)
 
