@@ -1,72 +1,165 @@
 import dotenv from 'dotenv';
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from "express-rate-limit";
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
-import basicAuth from 'express-basic-auth'
+import basicAuth from 'express-basic-auth';
+
 import { swaggerSpec } from './swagger/swagger.config.js';
-import adminRoutes from './routes/admin.route.js'
-import clientRoutes from './routes/client.routes.js'
-import routeOptimizationRoutes from './routes/routeOptimization.route.js'
-import authRoutes from './routes/auth.route.js'
+import adminRoutes from './routes/admin.route.js';
+import clientRoutes from './routes/client.routes.js';
+import routeOptimizationRoutes from './routes/routeOptimization.route.js';
+import authRoutes from './routes/auth.route.js';
 
 dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 4000;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-// Global limiter — all routes
+//SECURITY
+
+// Helmet
+app.use(helmet({
+  contentSecurityPolicy: IS_PRODUCTION ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  } : false,
+}));
+
+// CORS
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+  'http://localhost:3000',
+  'https://logistics-frontend-seven.vercel.app',
+  'http://localhost:4000',
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  exposedHeaders: ['x-access-token'],
+}));
+
+// RATE LIMITER
 const globalLimiter = rateLimit({
-  windowMs:       15 * 60 * 1000,
-  max:            100,
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   standardHeaders: true,
-  legacyHeaders:  false,
+  legacyHeaders: false,
 });
 
-// Rate limiter
 const authLimiter = rateLimit({
-  windowMs:        15 * 60 * 1000,  // 15 minutes
-  max:             10,               // 10 attempts per window
+  windowMs: 15 * 60 * 1000,
+  max: 10,
   standardHeaders: true,
-  legacyHeaders:   false,
+  legacyHeaders: false,
   message: { status: 'error', message: 'Too many requests, please try again later.' },
 });
 
 app.use(globalLimiter);
-app.use(helmet({ contentSecurityPolicy: false }));
-app.use(
-  cors({
-    origin: ['http://localhost:3000', 'https://logistics-frontend-seven.vercel.app'],
-    credentials: true,
-    exposedHeaders: ['x-access-token'],
-  })
-);
+
+//MIDDLEWARE
 
 app.use(cookieParser(process.env.COOKIE_SECRET));
-app.use(express.json());
-app.use(morgan('dev'));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Swagger with basic auth protection
-app.use('/api-docs', basicAuth({
-  users: { [process.env.SWAGGER_USER!]: process.env.SWAGGER_PASSWORD! },
-  challenge: true,
-}), swaggerUi.serve, swaggerUi.setup(swaggerSpec))
+if (!IS_PRODUCTION) {
+  app.use(morgan('dev'));
 
-// Routes
-app.use('/api', adminRoutes)
-app.use('/api/booking', clientRoutes)
-app.use('/api/route-optimization', routeOptimizationRoutes)
-app.use('/api/auth', authLimiter, authRoutes)
+  //DEBUGGER
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    console.log(`${req.method} ${req.path}`, {
+      cookies: Object.keys(req.cookies || {}),
+      body: req.method !== 'GET' ? req.body : undefined,
+    });
+    next();
+  });
+}
+
+//SWAGGER
+
+app.use('/api-docs',
+  basicAuth({
+    users: { [process.env.SWAGGER_USER!]: process.env.SWAGGER_PASSWORD! },
+    challenge: true,
+  }),
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec)
+);
+
+//ROUTES
+
+app.use('/api', adminRoutes);
+app.use('/api/booking', clientRoutes);
+app.use('/api/route-optimization', routeOptimizationRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
+
+// Health check
+app.get('/health', (req: Request, res: Response) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+  });
+});
 
 app.get('/', (req: Request, res: Response) => {
   res.json({ status: 'OK', message: 'Logistics Backend API is running...' });
 });
 
-const PORT = process.env.PORT || 4000;
+//ERROR HANDLING
+
+// 404
+app.use((req: Request, res: Response) => {
+  res.status(404).json({
+    status: 'error',
+    message: 'Route not found',
+  });
+});
+
+// Global error handler
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error('GLOBAL ERROR:', {
+    message: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+  });
+
+  const message = IS_PRODUCTION
+    ? 'Internal server error'
+    : err.message;
+
+  res.status(500).json({
+    status: 'error',
+    message,
+  });
+});
 
 app.listen(PORT, () => {
-  console.log(`Backend is running at http://localhost:${PORT}`);
+  console.log(`Backend running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Allowed origins:`, allowedOrigins);
 });
+
+// Graceful shutdown
+process.on('SIGTERM', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));
+
+export default app;
