@@ -1,7 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { OtpCode, UserSession, AuthUser } from '../../types/auth.types.js'
 
-// ─── Users ────────────────────────────────────────────────────────────────────
+//USERS
 
 export async function findUserByEmail(email: string): Promise<AuthUser | null> {
   const { data, error } = await supabase
@@ -14,7 +14,7 @@ export async function findUserByEmail(email: string): Promise<AuthUser | null> {
   return data ?? null
 }
 
-// ─── OTP ──────────────────────────────────────────────────────────────────────
+//OTP
 
 export async function createOtp(
   userId: string,
@@ -108,7 +108,7 @@ export async function getOtpAttemptsSince(
   return count ?? 0
 }
 
-// ─── Sessions ─────────────────────────────────────────────────────────────────
+// SESSIONS
 
 export async function revokeAllUserSessions(userId: string): Promise<void> {
   const { error } = await supabase
@@ -122,7 +122,7 @@ export async function revokeAllUserSessions(userId: string): Promise<void> {
 
 export async function createSession(
   userId: string,
-  tokenHash: string,   // ✅ always a SHA-256 hash
+  tokenHash: string,
   expiresAt: Date,
   ipAddress?: string,
   deviceInfo?: string

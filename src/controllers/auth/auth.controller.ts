@@ -36,7 +36,7 @@ export async function verifyOtp(req: Request, res: Response) {
 export async function logout(req: Request, res: Response) {
   try {
     const token = req.headers.authorization?.slice(7) ?? ''
-    // ✅ Hash before passing — consistent with how it was stored
+    // hash
     await AuthService.logout(hashToken(token))
     res.status(200).json({ status: 'success', message: 'Logged out successfully' })
   } catch {
