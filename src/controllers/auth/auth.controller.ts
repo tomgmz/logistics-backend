@@ -6,19 +6,18 @@ import crypto from 'crypto'
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
-  sameSite: 'none' as const,
+  sameSite: 'lax' as const,  // lax is fine — same origin via Next.js rewrite
   path: '/',
 }
 
 const ACCESS_COOKIE_OPTIONS = {
   ...COOKIE_OPTIONS,
-  maxAge: 15 * 60 * 1000, // 15 minutes
+  maxAge: 15 * 60 * 1000,
 }
 
 const REFRESH_COOKIE_OPTIONS = {
   ...COOKIE_OPTIONS,
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  // NOTE: no custom path — keep it at '/' so the refresh endpoint can read it
+  maxAge: 7 * 24 * 60 * 60 * 1000,
 }
 
 function clearAuthCookies(res: Response) {
@@ -26,14 +25,13 @@ function clearAuthCookies(res: Response) {
   res.clearCookie('refresh_token', COOKIE_OPTIONS)
 }
 
-// GET /auth/csrf — issues a CSRF token the frontend can read
 export function getCsrfToken(req: Request, res: Response) {
   const token = crypto.randomBytes(32).toString('hex')
 
   res.cookie('csrf_token', token, {
-    httpOnly: false,   // must be readable by JS
+    httpOnly: false,
     secure: true,
-    sameSite: 'none' as const,
+    sameSite: 'lax' as const,
     maxAge: 24 * 60 * 60 * 1000,
     path: '/',
   })
@@ -41,7 +39,6 @@ export function getCsrfToken(req: Request, res: Response) {
   res.status(200).json({ status: 'success' })
 }
 
-// POST /auth/request-otp
 export async function requestOtp(req: Request, res: Response) {
   try {
     const ipAddress = getIpAddress(req)
@@ -64,7 +61,6 @@ export async function requestOtp(req: Request, res: Response) {
   }
 }
 
-// POST /auth/verify-otp
 export async function verifyOtp(req: Request, res: Response) {
   try {
     const ipAddress = getIpAddress(req)
@@ -91,7 +87,6 @@ export async function verifyOtp(req: Request, res: Response) {
   }
 }
 
-// POST /auth/refresh
 export async function refreshToken(req: Request, res: Response) {
   try {
     const token = req.cookies.refresh_token
@@ -124,7 +119,6 @@ export async function refreshToken(req: Request, res: Response) {
   }
 }
 
-// POST /auth/logout
 export async function logout(req: Request, res: Response) {
   try {
     const token = req.cookies.access_token
@@ -149,7 +143,6 @@ export async function logout(req: Request, res: Response) {
   }
 }
 
-// POST /auth/logout-all
 export async function logoutAll(req: Request, res: Response) {
   try {
     if (!req.user) {
@@ -177,7 +170,6 @@ export async function logoutAll(req: Request, res: Response) {
   }
 }
 
-// GET /auth/me
 export async function me(req: Request, res: Response) {
   res.status(200).json({
     status: 'success',
