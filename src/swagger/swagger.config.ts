@@ -10,6 +10,8 @@ import { truckSchemas }             from './schemas/truck.schema.js'
 import { truckModelSchemas }        from './schemas/truck-model.schema.js'
 import { bookingSchemas }           from './schemas/client/booking.schemas.js'
 import { routeOptimizationSchemas } from './schemas/maps/routeOptimization.schema.js'
+import { authSchemas } from './schemas/auth/auth.schema.js'
+
 
 //paths
 import { adminPaths }             from './docs/admin.docs.js'
@@ -21,6 +23,7 @@ import { truckPaths }             from './docs/truck.docs.js'
 import { truckModelPaths }        from './docs/truck-model.docs.js'
 import { bookingPaths }           from './docs/client/booking.docs.js'
 import { routeOptimizationPaths } from './docs/maps/routeOptimization.docs.js'
+import { authPaths } from './docs/auth/auth.docs.js'
 
 const options: swaggerJsdoc.Options = {
   definition: {
@@ -44,6 +47,7 @@ const options: swaggerJsdoc.Options = {
       { name: 'Truck Models',        description: 'Truck model catalogue management' },
       { name: 'Bookings',            description: 'Booking management' },
       { name: 'Route Optimization',  description: 'Google Maps route optimization and geocoding' },
+      { name: 'Auth',  description: 'Authentication with OTP code' },
     ],
     paths: {
       ...adminPaths,
@@ -55,8 +59,16 @@ const options: swaggerJsdoc.Options = {
       ...truckModelPaths,
       ...bookingPaths,
       ...routeOptimizationPaths,
+      ...authPaths
     },
     components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+        },
+      },
       schemas: {
         ...adminSchemas,
         ...clientSchemas,
@@ -67,6 +79,7 @@ const options: swaggerJsdoc.Options = {
         ...truckModelSchemas,
         ...bookingSchemas,
         ...routeOptimizationSchemas,
+        ...authSchemas,
       },
     },
   },

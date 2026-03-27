@@ -1,0 +1,38 @@
+export const authSchemas = {
+  RequestOtpRequest: {
+    type: 'object',
+    required: ['email'],
+    properties: {
+      email: { type: 'string', format: 'email', example: 'admin@logistics.com' },
+    },
+  },
+  VerifyOtpRequest: {
+    type: 'object',
+    required: ['email', 'code'],
+    properties: {
+      email:       { type: 'string', format: 'email', example: 'admin@logistics.com' },
+      code:        { type: 'string', minLength: 6, maxLength: 6, example: '482910' },
+      device_info: { type: 'string', nullable: true, example: 'Chrome on Windows' },
+    },
+  },
+  AuthResponse: {
+    type: 'object',
+    properties: {
+      token:   { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
+      expires: { type: 'string', format: 'date-time', example: '2026-04-03T08:00:00.000Z' },
+      user:    { $ref: '#/components/schemas/AuthUser' },
+    },
+  },
+  AuthUser: {
+    type: 'object',
+    properties: {
+      user_id:    { type: 'string', format: 'uuid', example: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
+      email:      { type: 'string', format: 'email', example: 'admin@logistics.com' },
+      username:   { type: 'string', example: 'admin01' },
+      first_name: { type: 'string', nullable: true, example: 'Juan' },
+      last_name:  { type: 'string', nullable: true, example: 'dela Cruz' },
+      role:       { type: 'string', enum: ['admin', 'super_admin', 'client', 'driver', 'helper', 'subcontractor'], example: 'admin' },
+      status:     { type: 'string', enum: ['active', 'inactive', 'archived'], example: 'active' },
+    },
+  },
+}

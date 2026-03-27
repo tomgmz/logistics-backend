@@ -41,7 +41,6 @@ export const optimizeBookingRoute = async (req: Request, res: Response) => {
     const { id } = req.params
 
     const accessToken = await getAccessToken()
-    console.log('Access token obtained:', !!accessToken)
 
     const testResponse = await axios.post(
       `https://routeoptimization.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}:optimizeTours`,
@@ -73,8 +72,6 @@ export const optimizeBookingRoute = async (req: Request, res: Response) => {
         },
       }
     )
-
-    console.log('Test response:', testResponse.data)
 
     const result = await optimizeBookingRouteService(id as string)
     res.status(200).json({ status: 'success', data: result })
