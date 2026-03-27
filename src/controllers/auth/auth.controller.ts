@@ -1,8 +1,7 @@
 import { Request, Response } from 'express'
 import * as AuthService from '../../services/auth/auth.service.js'
 import { hashToken } from '../../services/auth/auth.service.js'
-
-const IS_PRODUCTION = process.env.NODE_ENV === 'production'
+import crypto from 'crypto'
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -13,16 +12,36 @@ const COOKIE_OPTIONS = {
 
 const ACCESS_COOKIE_OPTIONS = {
   ...COOKIE_OPTIONS,
-  maxAge: 15 * 60 * 1000,
+  maxAge: 15 * 60 * 1000, // 15 minutes
 }
 
 const REFRESH_COOKIE_OPTIONS = {
   ...COOKIE_OPTIONS,
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-  path: '/api/auth/refresh',
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  // NOTE: no custom path — keep it at '/' so the refresh endpoint can read it
 }
 
-//REQUEST OTP
+function clearAuthCookies(res: Response) {
+  res.clearCookie('access_token', COOKIE_OPTIONS)
+  res.clearCookie('refresh_token', COOKIE_OPTIONS)
+}
+
+// GET /auth/csrf — issues a CSRF token the frontend can read
+export function getCsrfToken(req: Request, res: Response) {
+  const token = crypto.randomBytes(32).toString('hex')
+
+  res.cookie('csrf_token', token, {
+    httpOnly: false,   // must be readable by JS
+    secure: true,
+    sameSite: 'none' as const,
+    maxAge: 24 * 60 * 60 * 1000,
+    path: '/',
+  })
+
+  res.status(200).json({ status: 'success' })
+}
+
+// POST /auth/request-otp
 export async function requestOtp(req: Request, res: Response) {
   try {
     const ipAddress = getIpAddress(req)
@@ -45,7 +64,7 @@ export async function requestOtp(req: Request, res: Response) {
   }
 }
 
-//VERIFY OTP AND SETS HTTPONLY COOKIES AND TOKENS
+// POST /auth/verify-otp
 export async function verifyOtp(req: Request, res: Response) {
   try {
     const ipAddress = getIpAddress(req)
@@ -72,12 +91,12 @@ export async function verifyOtp(req: Request, res: Response) {
   }
 }
 
-//REFRESH ACCESS TOKEN
+// POST /auth/refresh
 export async function refreshToken(req: Request, res: Response) {
   try {
-    const refreshToken = req.cookies.refresh_token
+    const token = req.cookies.refresh_token
 
-    if (!refreshToken) {
+    if (!token) {
       res.status(401).json({
         status: 'error',
         message: 'No refresh token provided',
@@ -85,7 +104,7 @@ export async function refreshToken(req: Request, res: Response) {
       return
     }
 
-    const data = await AuthService.refreshAccessToken(refreshToken)
+    const data = await AuthService.refreshAccessToken(token)
 
     res.cookie('access_token', data.accessToken, ACCESS_COOKIE_OPTIONS)
 
@@ -97,8 +116,7 @@ export async function refreshToken(req: Request, res: Response) {
     })
   } catch (err: any) {
     console.error('TOKEN REFRESH ERROR:', err)
-    res.clearCookie('access_token', COOKIE_OPTIONS)
-    res.clearCookie('refresh_token', { ...COOKIE_OPTIONS, path: '/api/auth/refresh' })
+    clearAuthCookies(res)
     res.status(401).json({
       status: 'error',
       message: 'Session expired. Please log in again.',
@@ -106,7 +124,7 @@ export async function refreshToken(req: Request, res: Response) {
   }
 }
 
-//CLEAR COOKIES AND REVOKE SESSIONS
+// POST /auth/logout
 export async function logout(req: Request, res: Response) {
   try {
     const token = req.cookies.access_token
@@ -116,8 +134,7 @@ export async function logout(req: Request, res: Response) {
       await AuthService.logout(tokenHash)
     }
 
-    res.clearCookie('access_token', COOKIE_OPTIONS)
-    res.clearCookie('refresh_token', { ...COOKIE_OPTIONS, path: '/api/auth/refresh' })
+    clearAuthCookies(res)
 
     res.status(200).json({
       status: 'success',
@@ -132,7 +149,7 @@ export async function logout(req: Request, res: Response) {
   }
 }
 
-//LOGOUT ON ALL DEVICES
+// POST /auth/logout-all
 export async function logoutAll(req: Request, res: Response) {
   try {
     if (!req.user) {
@@ -145,8 +162,7 @@ export async function logoutAll(req: Request, res: Response) {
 
     await AuthService.logoutAll(req.user.sub)
 
-    res.clearCookie('access_token', COOKIE_OPTIONS)
-    res.clearCookie('refresh_token', { ...COOKIE_OPTIONS, path: '/api/auth/refresh' })
+    clearAuthCookies(res)
 
     res.status(200).json({
       status: 'success',
@@ -161,7 +177,7 @@ export async function logoutAll(req: Request, res: Response) {
   }
 }
 
-//GET CURRENT USER INFO
+// GET /auth/me
 export async function me(req: Request, res: Response) {
   res.status(200).json({
     status: 'success',
@@ -169,7 +185,6 @@ export async function me(req: Request, res: Response) {
   })
 }
 
-//HELPERS
 function getIpAddress(req: Request): string | undefined {
   return (
     (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
