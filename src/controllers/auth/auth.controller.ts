@@ -6,7 +6,7 @@ import crypto from 'crypto'
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
-  sameSite: 'lax' as const,  // lax is fine — same origin via Next.js rewrite
+  sameSite: 'none' as const,
   path: '/',
 }
 
