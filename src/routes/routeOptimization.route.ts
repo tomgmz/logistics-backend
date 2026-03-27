@@ -9,7 +9,7 @@ const router = Router()
 
 // Role-based access
 const canViewRoute = authorize('client', 'driver', 'dispatcher', 'admin')
-const canOptimizeRoute = authorize('dispatcher', 'admin', 'driver')
+const canOptimizeRoute = authorize('dispatcher', 'admin', 'driver', 'client')
 
 router.get('/:bookingId', authenticate, canViewRoute, RouteOptimizationController.getOptimizedRoute)
 
