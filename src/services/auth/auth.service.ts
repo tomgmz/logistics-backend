@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import type { SignOptions } from 'jsonwebtoken'
 import * as AuthModel from '../../models/auth/auth.model.js'
-import { sendOtpEmail } from '../../lib/mailer.js'
+import { sendOtpEmail } from '../../lib/mailer-sendgrid.js'
 import { RequestOtpInput, VerifyOtpInput, AuthResponse } from '../../types/auth.types.js'
 
 const JWT_SECRET          = process.env.JWT_SECRET!
@@ -16,7 +16,7 @@ const JWT_REFRESH_EXPIRES = (process.env.JWT_REFRESH_EXPIRES ?? '7d') as SignOpt
 const OTP_RATE_LIMIT    = 5    // max OTP requests per window
 const OTP_WINDOW_MINS   = 15   // rate-limit window
 const MAX_OTP_ATTEMPTS  = 5    // max wrong guesses
-const OTP_EXPIRY_MINS   = 10   // OTP validity
+const OTP_EXPIRY_MINS   = 5    // OTP validity
 const BCRYPT_ROUNDS     = 12   // OTP hash strength
 const ACCOUNT_LOCK_MINS = 30   // lockout duration after max failed attempts
 
@@ -71,7 +71,7 @@ export async function requestOtp(
       attempt_status: 'failed_inactive',
       failure_reason: user ? 'Account not active' : 'User not found',
     })
-    return // Silent fail - don't reveal if email exists
+    return
   }
 
   // Check if account is locked
@@ -97,12 +97,15 @@ export async function requestOtp(
   const plainOtp = generateOtp()
   const hashedOtp = await hashOtp(plainOtp)
 
-  // Store HASHED OTP
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINS * 60 * 1000)
+
+  // Store HASHED OTP with expiry
   await AuthModel.createOtp(
     user.user_id,
     email,
     hashedOtp,
-    ipAddress
+    ipAddress,
+    expiresAt
   )
 
   // Send plain OTP via email (this is the only place it exists in plain text)
@@ -311,6 +314,7 @@ export async function verifyOtp(
     },
   }
 }
+
 //REFRESH TOKEN
 
 export async function refreshAccessToken(refreshToken: string): Promise<{
@@ -372,6 +376,7 @@ export async function logout(tokenHash: string): Promise<void> {
 export async function logoutAll(userId: string): Promise<void> {
   await AuthModel.revokeAllUserSessions(userId)
 }
+
 //HELPERS
 
 function parseDuration(d: string): number {

@@ -128,10 +128,10 @@ router.post('/trucks',       authenticate, isAdmin, validate(createTruckSchema),
 router.patch('/trucks/:id',  authenticate, isAdmin, validate(updateTruckSchema), TruckController.updateTruck)
 router.delete('/trucks/:id', authenticate, isAdmin, TruckController.deleteTruck)
 
-router.get('/truck-models',        authenticate, isAdmin, TruckModelController.getAllTruckModels)
-router.get('/truck-models/:id',    authenticate, isAdmin, TruckModelController.getTruckModelById)
-router.post('/truck-models',       authenticate, isAdmin, validate(createTruckModelSchema), TruckModelController.createTruckModel)
-router.patch('/truck-models/:id',  authenticate, isAdmin, validate(updateTruckModelSchema), TruckModelController.updateTruckModel)
-router.delete('/truck-models/:id', authenticate, isAdmin, TruckModelController.deleteTruckModel)
+router.get('/truck-models',        authenticate, TruckModelController.getAllTruckModels)
+router.get('/truck-models/:id',    authenticate, TruckModelController.getTruckModelById)
+router.post('/truck-models',       authenticate, validate(createTruckModelSchema), TruckModelController.createTruckModel)
+router.patch('/truck-models/:id',  authenticate, validate(updateTruckModelSchema), TruckModelController.updateTruckModel)
+router.delete('/truck-models/:id', authenticate, TruckModelController.deleteTruckModel)
 
 export default router

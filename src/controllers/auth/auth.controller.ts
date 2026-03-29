@@ -3,10 +3,12 @@ import * as AuthService from '../../services/auth/auth.service.js'
 import { hashToken } from '../../services/auth/auth.service.js'
 import crypto from 'crypto'
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
+
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: true,
-  sameSite: 'none' as const,
+  secure: IS_PRODUCTION,
+  sameSite: IS_PRODUCTION ? 'none' as const : 'lax' as const,
   path: '/',
 }
 
@@ -30,8 +32,8 @@ export function getCsrfToken(req: Request, res: Response) {
 
   res.cookie('csrf_token', token, {
     httpOnly: false,
-    secure: true,
-    sameSite: 'lax' as const,
+    secure: IS_PRODUCTION,
+    sameSite: IS_PRODUCTION ? 'none' as const : 'lax' as const,
     maxAge: 24 * 60 * 60 * 1000,
     path: '/',
   })
@@ -47,17 +49,14 @@ export async function requestOtp(req: Request, res: Response) {
       status: 'success',
       message: 'If that email is registered, a login code has been sent.',
     })
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to send code'
     console.error('OTP REQUEST ERROR:', {
-      message: err?.message,
-      stack: err?.stack,
+      message,
       body: req.body,
       timestamp: new Date().toISOString(),
     })
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to send code',
-    })
+    res.status(500).json({ status: 'error', message: 'Failed to send code' })
   }
 }
 
@@ -78,12 +77,10 @@ export async function verifyOtp(req: Request, res: Response) {
         expiresAt: data.accessExpiresAt,
       },
     })
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Invalid or expired code'
     console.error('OTP VERIFICATION ERROR:', err)
-    res.status(401).json({
-      status: 'error',
-      message: err.message || 'Invalid or expired code',
-    })
+    res.status(401).json({ status: 'error', message })
   }
 }
 
@@ -92,10 +89,7 @@ export async function refreshToken(req: Request, res: Response) {
     const token = req.cookies.refresh_token
 
     if (!token) {
-      res.status(401).json({
-        status: 'error',
-        message: 'No refresh token provided',
-      })
+      res.status(401).json({ status: 'error', message: 'No refresh token provided' })
       return
     }
 
@@ -105,17 +99,13 @@ export async function refreshToken(req: Request, res: Response) {
 
     res.status(200).json({
       status: 'success',
-      data: {
-        expiresAt: data.accessExpiresAt,
-      },
+      data: { expiresAt: data.accessExpiresAt },
     })
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Session expired. Please log in again.'
     console.error('TOKEN REFRESH ERROR:', err)
     clearAuthCookies(res)
-    res.status(401).json({
-      status: 'error',
-      message: 'Session expired. Please log in again.',
-    })
+    res.status(401).json({ status: 'error', message })
   }
 }
 
@@ -129,52 +119,31 @@ export async function logout(req: Request, res: Response) {
     }
 
     clearAuthCookies(res)
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Logged out successfully',
-    })
-  } catch (err) {
+    res.status(200).json({ status: 'success', message: 'Logged out successfully' })
+  } catch (err: unknown) {
     console.error('LOGOUT ERROR:', err)
-    res.status(500).json({
-      status: 'error',
-      message: 'Logout failed',
-    })
+    res.status(500).json({ status: 'error', message: 'Logout failed' })
   }
 }
 
 export async function logoutAll(req: Request, res: Response) {
   try {
     if (!req.user) {
-      res.status(401).json({
-        status: 'error',
-        message: 'Not authenticated',
-      })
+      res.status(401).json({ status: 'error', message: 'Not authenticated' })
       return
     }
 
     await AuthService.logoutAll(req.user.sub)
-
     clearAuthCookies(res)
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Logged out from all devices',
-    })
-  } catch (err) {
+    res.status(200).json({ status: 'success', message: 'Logged out from all devices' })
+  } catch (err: unknown) {
     console.error('LOGOUT ALL ERROR:', err)
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to logout from all devices',
-    })
+    res.status(500).json({ status: 'error', message: 'Failed to logout from all devices' })
   }
 }
 
 export async function me(req: Request, res: Response) {
-  res.status(200).json({
-    status: 'success',
-    data: req.user,
-  })
+  res.status(200).json({ status: 'success', data: req.user })
 }
 
 function getIpAddress(req: Request): string | undefined {

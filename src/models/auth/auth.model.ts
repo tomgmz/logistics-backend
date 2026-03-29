@@ -74,7 +74,8 @@ export async function createOtp(
   userId: string,
   email: string,
   codeHash: string,
-  ipAddress?: string
+  ipAddress?: string,
+  expiresAt?: Date
 ): Promise<void> {
   // Invalidate all previous unused OTPs
   await supabase
@@ -83,7 +84,7 @@ export async function createOtp(
     .eq('user_id', userId)
     .eq('used', false)
 
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+  const otpExpiry = expiresAt ?? new Date(Date.now() + 5 * 60 * 1000)
 
   const { error } = await supabase
     .from('otp_codes')
@@ -92,7 +93,7 @@ export async function createOtp(
       email,
       code: '',
       code_hash: codeHash,
-      expires_at: expiresAt.toISOString(),
+      expires_at: otpExpiry.toISOString(),
       attempts: 0,
       ip_address: ipAddress,
     })

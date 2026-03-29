@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import rateLimit from "express-rate-limit";
+import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
@@ -21,7 +21,6 @@ const PORT = process.env.PORT || 4000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 // SECURITY
-
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   contentSecurityPolicy: IS_PRODUCTION ? {
@@ -51,7 +50,7 @@ app.use(cors({
   exposedHeaders: ['x-access-token'],
 }));
 
-// RATE LIMITER
+// RATE LIMITERS
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -86,7 +85,8 @@ if (!IS_PRODUCTION) {
 }
 
 // SWAGGER
-app.use('/api-docs',
+app.use(
+  '/api-docs',
   basicAuth({
     users: { [process.env.SWAGGER_USER!]: process.env.SWAGGER_PASSWORD! },
     challenge: true,
@@ -101,7 +101,7 @@ app.use('/api/booking', clientRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
 app.use('/api/auth', authLimiter, authRoutes);
 
-// Health check
+// HEALTH CHECK
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({
     status: 'healthy',
@@ -114,15 +114,12 @@ app.get('/', (req: Request, res: Response) => {
   res.json({ status: 'OK', message: 'Logistics Backend API is running...' });
 });
 
-// ERROR HANDLING
-
+// 404
 app.use((req: Request, res: Response) => {
-  res.status(404).json({
-    status: 'error',
-    message: 'Route not found',
-  });
+  res.status(404).json({ status: 'error', message: 'Route not found' });
 });
 
+// GLOBAL ERROR HANDLER
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('GLOBAL ERROR:', {
     message: err.message,
@@ -131,30 +128,10 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     method: req.method,
   });
 
-  const message = IS_PRODUCTION
-    ? 'Internal server error'
-    : err.message;
-
   res.status(500).json({
     status: 'error',
-    message,
+    message: IS_PRODUCTION ? 'Internal server error' : err.message,
   });
-});
-
-
-app.post('/api/auth/login', async (req: Request, res: Response) => {
-  const { username, password } = req.body;
-  // validate credentials...
-  const token = 'jwt-token-here';
-
-  res.cookie('auth-token', token, {
-    httpOnly: true,
-    secure: IS_PRODUCTION,
-    sameSite: IS_PRODUCTION ? 'none' : 'lax',
-    maxAge: 1000 * 60 * 60 * 24,
-  });
-
-  res.json({ status: 'success', message: 'Logged in' });
 });
 
 app.listen(PORT, () => {
@@ -163,7 +140,6 @@ app.listen(PORT, () => {
   console.log(`Allowed origins:`, allowedOrigins);
 });
 
-// Graceful shutdown
 process.on('SIGTERM', () => process.exit(0));
 process.on('SIGINT', () => process.exit(0));
 
