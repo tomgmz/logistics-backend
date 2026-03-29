@@ -2,12 +2,11 @@ import dotenv from 'dotenv';
 import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
 import basicAuth from 'express-basic-auth';
-
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { swaggerSpec } from './swagger/swagger.config.js';
 import adminRoutes from './routes/admin.route.js';
 import clientRoutes from './routes/client.routes.js';
@@ -19,6 +18,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+// Trust proxy (required for correct IP behind Vercel/Railway)
+app.set('trust proxy', 1);
 
 // SECURITY
 app.use(helmet({
@@ -63,6 +65,11 @@ const authLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const email = req.body?.email
+    if (email && typeof email === 'string') return email.toLowerCase().trim()
+    return ipKeyGenerator(req.ip ?? '::1')
+  },
   message: { status: 'error', message: 'Too many requests, please try again later.' },
 });
 
@@ -90,16 +97,17 @@ app.use(
   basicAuth({
     users: { [process.env.SWAGGER_USER!]: process.env.SWAGGER_PASSWORD! },
     challenge: true,
+    realm: 'swagger-only',
   }),
   swaggerUi.serve,
   swaggerUi.setup(swaggerSpec)
 );
 
 // ROUTES
-app.use('/api', adminRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/booking', clientRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
-app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api', adminRoutes);
 
 // HEALTH CHECK
 app.get('/health', (req: Request, res: Response) => {
