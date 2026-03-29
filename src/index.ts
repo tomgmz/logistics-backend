@@ -19,7 +19,7 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-// Trust proxy (required for correct IP behind Vercel/Railway)
+// Trust proxy
 app.set('trust proxy', 1);
 
 // SECURITY
