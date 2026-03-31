@@ -12,7 +12,6 @@ if (!SENDGRID_API_KEY) {
   console.error('SENDGRID_FROM_EMAIL is not set. Email functionality will not work.')
 } else {
   sgMail.setApiKey(SENDGRID_API_KEY)
-  console.log('SendGrid initialized')
 }
 
 /**
