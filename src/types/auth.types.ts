@@ -38,6 +38,12 @@ export interface AuthUser {
   locked_until?: Date | null
   last_login_at?: Date | null
   last_login_ip?: string | null
+  clients?: {
+    client_id: string
+    company_name: string | null
+    billing_address: string | null
+    payment_terms: number | null
+  } | null
 }
 
 export interface LoginHistory {

@@ -391,3 +391,9 @@ function parseDuration(d: string): number {
     default:  return 15 * 60 * 1000
   }
 }
+
+export async function getMe(userId: string) {
+  const user = await AuthModel.findUserWithClient(userId)
+  if (!user) throw new Error('User not found')
+  return user
+}

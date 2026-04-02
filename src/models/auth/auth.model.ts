@@ -364,3 +364,22 @@ export async function detectSuspiciousLogin(
 
   return data as RiskAssessment
 }
+
+export async function findUserWithClient(userId: string): Promise<AuthUser | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select(`
+      user_id, email, username, first_name, last_name, role, status,
+      clients (client_id, company_name, billing_address, payment_terms)
+    `)
+    .eq('user_id', userId)
+    .single()
+
+  if (error && error.code !== 'PGRST116') throw error
+  if (!data) return null
+
+  return {
+    ...data,
+    clients: Array.isArray(data.clients) ? data.clients[0] ?? null : data.clients,
+  } as AuthUser
+}

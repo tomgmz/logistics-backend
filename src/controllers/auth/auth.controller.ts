@@ -143,7 +143,20 @@ export async function logoutAll(req: Request, res: Response) {
 }
 
 export async function me(req: Request, res: Response) {
-  res.status(200).json({ status: 'success', data: req.user })
+  try {
+    const userId = req.user?.sub
+    if (!userId) {
+      res.status(401).json({ status: 'error', message: 'Unauthorized' })
+      return
+    }
+
+    const user = await AuthService.getMe(userId)
+    res.status(200).json({ status: 'success', data: user })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal server error'
+    console.error('ME ERROR:', err)
+    res.status(500).json({ status: 'error', message })
+  }
 }
 
 function getIpAddress(req: Request): string | undefined {
@@ -154,3 +167,5 @@ function getIpAddress(req: Request): string | undefined {
     undefined
   )
 }
+
+

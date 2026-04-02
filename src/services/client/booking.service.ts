@@ -6,6 +6,7 @@ import {
   BookingWithRelations,
   BookingDestination,
 } from '../..//types/client/booking.types.js'
+import { optimizeBookingRouteService } from '../maps/routeOptimization.service.js'
 
 //Bookings
 export async function getAllBookingsService(): Promise<BookingWithRelations[]> {
@@ -31,15 +32,23 @@ export async function createBookingService(input: CreateBookingInput): Promise<B
     throw new Error('At least one destination is required')
   }
 
-  //unique sequence
   const orders = input.destinations.map((d) => d.sequence_order)
-  const uniqueOrders = new Set(orders)
-  if (uniqueOrders.size !== orders.length) {
+  if (new Set(orders).size !== orders.length) {
     throw new Error('sequence_order must be unique per destination')
   }
 
   const booking = await BookingModel.create(input)
   if (!booking) throw new Error('Failed to create booking')
+
+  //optimize na agad yung destinations here upon booking
+  try {
+    await optimizeBookingRouteService(booking.booking_id)
+  } catch (err) {
+    // Don't fail booking creation if optimization fails becausedriver can still deliver
+    // and admin can re-optimize manually via POST /optimize/:id
+    console.warn(`Route optimization failed for booking ${booking.booking_id}:`, err)
+  }
+
   return booking
 }
 
