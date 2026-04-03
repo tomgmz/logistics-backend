@@ -5,10 +5,9 @@ import {
   UpdateDestinationInput,
   BookingWithRelations,
   BookingDestination,
-} from '../..//types/client/booking.types.js'
-import { optimizeBookingRouteService } from '../maps/routeOptimization.service.js'
+} from '../../types/client/booking.types.js'
+import { optimizeDestinationsService } from '../maps/routeOptimization.service.js'
 
-//Bookings
 export async function getAllBookingsService(): Promise<BookingWithRelations[]> {
   const bookings = await BookingModel.findAll()
   if (!bookings || bookings.length === 0) throw new Error('No bookings found')
@@ -37,18 +36,30 @@ export async function createBookingService(input: CreateBookingInput): Promise<B
     throw new Error('sequence_order must be unique per destination')
   }
 
-  const booking = await BookingModel.create(input)
-  if (!booking) throw new Error('Failed to create booking')
+  // Optimize order before inserting if all coords are present
+  const allHaveCoords  = input.destinations.every((d) => d.latitude != null && d.longitude != null)
+  const originHasCoords = input.origin_latitude != null && input.origin_longitude != null
 
-  //optimize na agad yung destinations here upon booking
-  try {
-    await optimizeBookingRouteService(booking.booking_id)
-  } catch (err) {
-    // Don't fail booking creation if optimization fails becausedriver can still deliver
-    // and admin can re-optimize manually via POST /optimize/:id
-    console.warn(`Route optimization failed for booking ${booking.booking_id}:`, err)
+  if (allHaveCoords && originHasCoords) {
+    try {
+      const optimizedOrder = await optimizeDestinationsService(
+        { latitude: input.origin_latitude!, longitude: input.origin_longitude! },
+        input.destinations as Array<{ address: string; latitude: number; longitude: number; sequence_order: number }>
+      )
+
+      // rewrite the sequence in memory before insert to db
+      input.destinations = input.destinations.map((dest) => {
+        const match = optimizedOrder.find((o) => o.address === dest.address)
+        return match ? { ...dest, sequence_order: match.optimized_sequence_order } : dest
+      })
+    } catch (err) {
+      //fallback to the raw destination then admin can reoptimize later
+      console.warn('Pre-creation route optimization failed, using original order:', err)
+    }
   }
 
+  const booking = await BookingModel.create(input)
+  if (!booking) throw new Error('Failed to create booking')
   return booking
 }
 
@@ -71,9 +82,9 @@ export async function updateBookingStatusService(
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
 
-  const statusOrder = ['pending', 'assigned', 'in_transit', 'completed', 'cancelled']
+  const statusOrder  = ['pending', 'assigned', 'in_transit', 'completed', 'cancelled']
   const currentIndex = statusOrder.indexOf(existing.status)
-  const newIndex = statusOrder.indexOf(status)
+  const newIndex     = statusOrder.indexOf(status)
 
   if (newIndex < currentIndex && status !== 'cancelled') {
     throw new Error(`Cannot change status from '${existing.status}' back to '${status}'`)
@@ -95,7 +106,6 @@ export async function deleteBookingService(bookingId: string): Promise<boolean> 
   return BookingModel.remove(bookingId)
 }
 
-//Booking destination
 export async function getDestinationsByBookingService(bookingId: string): Promise<BookingDestination[]> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)

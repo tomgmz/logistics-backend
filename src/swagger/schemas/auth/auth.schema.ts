@@ -31,8 +31,18 @@ export const authSchemas = {
       username:   { type: 'string', example: 'admin01' },
       first_name: { type: 'string', nullable: true, example: 'Juan' },
       last_name:  { type: 'string', nullable: true, example: 'dela Cruz' },
-      role:       { type: 'string', enum: ['admin', 'super_admin', 'client', 'driver', 'helper', 'subcontractor'], example: 'admin' },
+      role:       { type: 'string', enum: ['admin', 'super_admin', 'client', 'driver', 'helper', 'subcontractor'], example: 'client' },
       status:     { type: 'string', enum: ['active', 'inactive', 'archived'], example: 'active' },
+      clients: {
+        type: 'object',
+        nullable: true,
+        properties: {
+          client_id:       { type: 'string', format: 'uuid', example: '550e8400-e29b-41d4-a716-446655440000' },
+          company_name:    { type: 'string', nullable: true, example: 'Santos Enterprises' },
+          billing_address: { type: 'string', nullable: true, example: '123 Rizal Ave, Manila' },
+          payment_terms:   { type: 'integer', nullable: true, example: 30 },
+        },
+      },
     },
   },
 }

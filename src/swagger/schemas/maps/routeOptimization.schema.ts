@@ -17,11 +17,13 @@ export const routeOptimizationSchemas = {
   OptimizedStop: {
     type: 'object',
     properties: {
-      destination_id:            { type: 'string', format: 'uuid',   example: '550e8400-e29b-41d4-a716-446655440000' },
-      address:                   { type: 'string',                    example: '123 Katipunan Ave, Quezon City' },
-      latitude:                  { type: 'number',                    example: 14.6333 },
-      longitude:                 { type: 'number',                    example: 121.0437 },
-      optimized_sequence_order:  { type: 'integer',                   example: 1 },
+      destination_id:           { type: 'string', format: 'uuid', example: '550e8400-e29b-41d4-a716-446655440000' },
+      address:                  { type: 'string',                  example: '123 Katipunan Ave, Quezon City' },
+      latitude:                 { type: 'number',                  example: 14.6333 },
+      longitude:                { type: 'number',                  example: 121.0437 },
+      optimized_sequence_order: { type: 'integer',                 example: 1 },
+      status:                   { type: 'string', enum: ['pending', 'delivered', 'failed'], example: 'pending' },
+      notes:                    { type: 'string', nullable: true,  example: 'Call before delivery' },
     },
   },
   OptimizeRouteResponse: {

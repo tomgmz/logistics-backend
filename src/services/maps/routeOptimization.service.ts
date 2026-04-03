@@ -52,13 +52,13 @@ async function callOptimizationAPI(
   const shipments = destinations.map((dest, index) => ({
     label: `shipment_${index}`,
     deliveries: [{
-      label: `dropoff_${index}`,
+      label:           `dropoff_${index}`,
       arrivalLocation: { latitude: dest.latitude, longitude: dest.longitude },
     }],
   }))
 
   const vehicles = [{
-    label: 'truck_1',
+    label:         'truck_1',
     startLocation: { latitude: origin.latitude, longitude: origin.longitude },
   }]
 
@@ -88,12 +88,35 @@ async function callOptimizationAPI(
       longitude:                destination.longitude,
       optimized_sequence_order: index + 1,
       status:                   destination.status ?? 'pending',
-      notes:                    destination.notes ?? null,
+      notes:                    destination.notes  ?? null,
     }
   })
 }
 
-// Called on booking creation AND when admin explicitly re-optimizes
+export async function optimizeDestinationsService(
+  origin: { latitude: number; longitude: number },
+  destinations: Array<{
+    address: string
+    latitude: number
+    longitude: number
+    sequence_order: number
+  }>
+): Promise<Array<{ address: string; optimized_sequence_order: number }>> {
+  const input: OptimizationDestination[] = destinations.map((d, i) => ({
+    destination_id: String(i),
+    address:        d.address,
+    latitude:       d.latitude,
+    longitude:      d.longitude,
+  }))
+
+  const optimizedStops = await callOptimizationAPI(origin, input)
+
+  return optimizedStops.map((stop) => ({
+    address:                  stop.address,
+    optimized_sequence_order: stop.optimized_sequence_order,
+  }))
+}
+
 export async function optimizeBookingRouteService(
   bookingId: string
 ): Promise<OptimizeRouteResponse> {
@@ -108,7 +131,6 @@ export async function optimizeBookingRouteService(
     throw new Error(`Cannot optimize a ${booking.status} booking`)
   }
 
-  // Geocode origin only if coordinates are missing (won't happen after initial creation)
   let originCoords = {
     latitude:  booking.origin_latitude  as number,
     longitude: booking.origin_longitude as number,
@@ -120,7 +142,6 @@ export async function optimizeBookingRouteService(
     await RouteOptimizationModel.saveOriginCoordinates(bookingId, geocoded.latitude, geocoded.longitude)
   }
 
-  // Geocode each destination only if coordinates are missing
   const destinations: OptimizationDestination[] = await Promise.all(
     booking.booking_destinations.map(async (dest: {
       destination_id: string
@@ -155,7 +176,6 @@ export async function optimizeBookingRouteService(
 
   const optimizedStops = await callOptimizationAPI(originCoords, destinations)
 
-  // Persist optimized sequence_order
   await RouteOptimizationModel.saveOptimizedOrder(optimizedStops)
 
   return {
@@ -204,7 +224,7 @@ export async function getOptimizedRouteService(
     })
 
   return {
-    booking_id:      bookingId,
+    booking_id:  bookingId,
     origin: {
       address:   booking.origin,
       latitude:  booking.origin_latitude,
