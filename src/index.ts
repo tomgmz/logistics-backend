@@ -12,6 +12,7 @@ import adminRoutes from './routes/admin.route.js';
 import clientRoutes from './routes/client.routes.js';
 import routeOptimizationRoutes from './routes/routeOptimization.route.js';
 import authRoutes from './routes/auth.route.js';
+import directionsRouter from './routes/directions.routes.js'
 
 dotenv.config();
 
@@ -53,12 +54,12 @@ app.use(cors({
 }));
 
 // RATE LIMITERS
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// const globalLimiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 100,
+//   standardHeaders: true,
+//   legacyHeaders: false,
+// });
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -73,7 +74,7 @@ const authLimiter = rateLimit({
   message: { status: 'error', message: 'Too many requests, please try again later.' },
 });
 
-app.use(globalLimiter);
+// app.use(globalLimiter);
 
 // MIDDLEWARE
 app.use(cookieParser(process.env.COOKIE_SECRET));
@@ -107,6 +108,7 @@ app.use(
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/booking', clientRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
+app.use('/api/directions', directionsRouter);
 app.use('/api', adminRoutes);
 
 // HEALTH CHECK
