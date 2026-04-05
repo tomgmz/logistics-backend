@@ -105,6 +105,7 @@ app.use(
 );
 
 // ROUTES
+app.use('/api/auth/csrf', authRoutes) 
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/booking', clientRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
