@@ -54,12 +54,12 @@ app.use(cors({
 }));
 
 // RATE LIMITERS
-// const globalLimiter = rateLimit({
-//   windowMs: 15 * 60 * 1000,
-//   max: 100,
-//   standardHeaders: true,
-//   legacyHeaders: false,
-// });
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -74,7 +74,7 @@ const authLimiter = rateLimit({
   message: { status: 'error', message: 'Too many requests, please try again later.' },
 });
 
-// app.use(globalLimiter);
+app.use(globalLimiter);
 
 // MIDDLEWARE
 app.use(cookieParser(process.env.COOKIE_SECRET));
