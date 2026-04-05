@@ -67,14 +67,16 @@ export async function verifyOtp(req: Request, res: Response) {
 
     const data = await AuthService.verifyOtp(req.body, ipAddress, userAgent)
 
-    res.cookie('access_token', data.accessToken, ACCESS_COOKIE_OPTIONS)
+    res.cookie('access_token',  data.accessToken,  ACCESS_COOKIE_OPTIONS)
     res.cookie('refresh_token', data.refreshToken, REFRESH_COOKIE_OPTIONS)
 
     res.status(200).json({
       status: 'success',
       data: {
-        user: data.user,
-        expiresAt: data.accessExpiresAt,
+        user:         data.user,
+        expiresAt:    data.accessExpiresAt,
+        accessToken:  data.accessToken,
+        refreshToken: data.refreshToken,
       },
     })
   } catch (err: unknown) {
@@ -99,7 +101,10 @@ export async function refreshToken(req: Request, res: Response) {
 
     res.status(200).json({
       status: 'success',
-      data: { expiresAt: data.accessExpiresAt },
+      data: {
+        expiresAt:   data.accessExpiresAt,
+        accessToken: data.accessToken,
+      },
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Session expired. Please log in again.'
