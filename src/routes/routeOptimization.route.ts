@@ -7,13 +7,9 @@ import * as RouteOptimizationController from '../controllers/maps/routeOptimizat
 
 const router = Router()
 
-// Role-based access
-const canViewRoute = authorize('client', 'driver', 'dispatcher', 'admin')
-const canOptimizeRoute = authorize('dispatcher', 'admin', 'driver', 'client')
+const canViewRoute      = authorize('client', 'driver', 'dispatcher', 'admin')
+const canOptimizeRoute  = authorize('dispatcher', 'admin', 'driver', 'client')
 
-router.get('/:bookingId', authenticate, canViewRoute, RouteOptimizationController.getOptimizedRoute)
-
-// POST optimize route - only dispatcher/admin
 router.post(
   '/optimize/:id',
   authenticate,
@@ -22,7 +18,6 @@ router.post(
   RouteOptimizationController.optimizeBookingRoute
 )
 
-// POST geocode address - only dispatcher/driver/admin
 router.post(
   '/geocode',
   authenticate,
@@ -31,5 +26,7 @@ router.post(
   validate(geocodeAddressSchema),
   RouteOptimizationController.geocodeAddress
 )
+
+router.get('/:bookingId', authenticate, canViewRoute, RouteOptimizationController.getOptimizedRoute)
 
 export default router

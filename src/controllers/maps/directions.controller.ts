@@ -11,7 +11,7 @@ export const computeDirections = async (req: Request, res: Response) => {
         headers: {
           'Content-Type':    'application/json',
           'X-Goog-Api-Key':  GOOGLE_MAPS_KEY,
-          'X-Goog-FieldMask': 'routes.polyline.encodedPolyline',
+          'X-Goog-FieldMask': 'routes.polyline.encodedPolyline,routes.duration,routes.legs.duration',
         },
         body: JSON.stringify(req.body),
       }

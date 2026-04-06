@@ -47,7 +47,10 @@ async function callOptimizationAPI(
   origin: { latitude: number; longitude: number },
   destinations: OptimizationDestination[]
 ): Promise<OptimizedStop[]> {
+
+  console.log('[optimize] getting access token...')
   const accessToken = await getAccessToken()
+  console.log('[optimize] token OK, calling optimization API...')
 
   const shipments = destinations.map((dest, index) => ({
     label: `shipment_${index}`,
@@ -72,6 +75,8 @@ async function callOptimizationAPI(
       },
     }
   )
+
+  console.log('[optimize] API response:', JSON.stringify(response.data, null, 2))
 
   const routes = response.data.routes
   if (!routes || routes.length === 0) {
@@ -120,13 +125,18 @@ export async function optimizeDestinationsService(
 export async function optimizeBookingRouteService(
   bookingId: string
 ): Promise<OptimizeRouteResponse> {
+  console.log('[optimize] 1 — fetching booking:', bookingId)
   const booking = await RouteOptimizationModel.getBookingWithDestinations(bookingId)
+
+  console.log('[optimize] 2 — booking found:', !!booking, '| status:', booking?.status)
   if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
 
+  console.log('[optimize] 3 — destinations count:', booking.booking_destinations?.length)
   if (!booking.booking_destinations || booking.booking_destinations.length === 0) {
     throw new Error('Booking has no destinations to optimize')
   }
 
+  console.log('[optimize] 4 — status check:', booking.status)
   if (booking.status === 'completed' || booking.status === 'cancelled') {
     throw new Error(`Cannot optimize a ${booking.status} booking`)
   }
@@ -136,12 +146,16 @@ export async function optimizeBookingRouteService(
     longitude: booking.origin_longitude as number,
   }
 
+  console.log('[optimize] 5 — origin coords:', originCoords)
   if (!originCoords.latitude || !originCoords.longitude) {
+    console.log('[optimize] 5a — geocoding origin:', booking.origin)
     const geocoded = await geocodeAddress(booking.origin)
     originCoords   = { latitude: geocoded.latitude, longitude: geocoded.longitude }
     await RouteOptimizationModel.saveOriginCoordinates(bookingId, geocoded.latitude, geocoded.longitude)
+    console.log('[optimize] 5b — origin geocoded:', originCoords)
   }
 
+  console.log('[optimize] 6 — resolving destination coords...')
   const destinations: OptimizationDestination[] = await Promise.all(
     booking.booking_destinations.map(async (dest: {
       destination_id: string
@@ -154,6 +168,7 @@ export async function optimizeBookingRouteService(
       let coords = { latitude: dest.latitude, longitude: dest.longitude }
 
       if (!coords.latitude || !coords.longitude) {
+        console.log('[optimize] 6a — geocoding dest:', dest.address)
         const geocoded = await geocodeAddress(dest.address)
         coords = { latitude: geocoded.latitude, longitude: geocoded.longitude }
         await RouteOptimizationModel.saveDestinationCoordinates(dest.destination_id, geocoded.latitude, geocoded.longitude)
@@ -174,10 +189,13 @@ export async function optimizeBookingRouteService(
     })
   )
 
+  console.log('[optimize] 7 — calling optimization API with', destinations.length, 'destinations')
   const optimizedStops = await callOptimizationAPI(originCoords, destinations)
 
+  console.log('[optimize] 8 — saving optimized order...')
   await RouteOptimizationModel.saveOptimizedOrder(optimizedStops)
 
+  console.log('[optimize] 9 — done')
   return {
     booking_id:      bookingId,
     origin:          { address: booking.origin, ...originCoords },

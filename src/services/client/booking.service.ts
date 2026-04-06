@@ -5,8 +5,18 @@ import {
   UpdateDestinationInput,
   BookingWithRelations,
   BookingDestination,
+  ParsedCargoDetails,
 } from '../../types/client/booking.types.js'
 import { optimizeDestinationsService } from '../maps/routeOptimization.service.js'
+
+function parseCargoDetails(raw: string | null | undefined): ParsedCargoDetails | null {
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as ParsedCargoDetails
+  } catch {
+    return null
+  }
+}
 
 export async function getAllBookingsService(): Promise<BookingWithRelations[]> {
   const bookings = await BookingModel.findAll()
@@ -17,7 +27,11 @@ export async function getAllBookingsService(): Promise<BookingWithRelations[]> {
 export async function getBookingByIdService(bookingId: string): Promise<BookingWithRelations> {
   const booking = await BookingModel.findById(bookingId)
   if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
-  return booking
+
+  return {
+    ...booking,
+    parsed_cargo: parseCargoDetails(booking.cargo_details),
+  }
 }
 
 export async function getBookingsByClientService(clientId: string): Promise<BookingWithRelations[]> {
@@ -36,8 +50,7 @@ export async function createBookingService(input: CreateBookingInput): Promise<B
     throw new Error('sequence_order must be unique per destination')
   }
 
-  // Optimize order before inserting if all coords are present
-  const allHaveCoords  = input.destinations.every((d) => d.latitude != null && d.longitude != null)
+  const allHaveCoords   = input.destinations.every((d) => d.latitude != null && d.longitude != null)
   const originHasCoords = input.origin_latitude != null && input.origin_longitude != null
 
   if (allHaveCoords && originHasCoords) {
@@ -47,13 +60,11 @@ export async function createBookingService(input: CreateBookingInput): Promise<B
         input.destinations as Array<{ address: string; latitude: number; longitude: number; sequence_order: number }>
       )
 
-      // rewrite the sequence in memory before insert to db
       input.destinations = input.destinations.map((dest) => {
         const match = optimizedOrder.find((o) => o.address === dest.address)
         return match ? { ...dest, sequence_order: match.optimized_sequence_order } : dest
       })
     } catch (err) {
-      //fallback to the raw destination then admin can reoptimize later
       console.warn('Pre-creation route optimization failed, using original order:', err)
     }
   }

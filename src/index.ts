@@ -16,9 +16,15 @@ import directionsRouter from './routes/directions.routes.js'
 
 dotenv.config();
 
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+app.use((req, res, next) => {
+  console.log(`>>> ${req.method} ${req.path}`)
+  next()
+})
 
 // Trust proxy
 app.set('trust proxy', 1);
