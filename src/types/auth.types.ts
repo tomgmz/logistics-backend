@@ -1,9 +1,15 @@
+export interface AuthStatusResponse {
+  locked: boolean
+  permanent?: boolean
+  locked_until?: string
+}
+
 export interface OtpCode {
   id: string
   user_id: string
   email: string
-  code: string 
-  code_hash?: string 
+  code: string
+  code_hash?: string
   expires_at: Date
   used: boolean
   attempts: number
@@ -15,8 +21,8 @@ export interface OtpCode {
 export interface UserSession {
   id: string
   user_id: string
-  token: string 
-  refresh_token?: string 
+  token: string
+  refresh_token?: string
   device_info?: string | null
   ip_address?: string | null
   created_at: Date
@@ -35,6 +41,7 @@ export interface AuthUser {
   role: string
   status: string
   failed_login_attempts?: number
+  lockup_count?: number
   locked_until?: Date | null
   last_login_at?: Date | null
   last_login_ip?: string | null
@@ -55,7 +62,7 @@ export interface LoginHistory {
   user_agent?: string
   location_city?: string
   location_country?: string
-  attempt_status: 'success' | 'failed_otp' | 'failed_locked' | 'failed_inactive'
+  attempt_status: 'success' | 'failed_otp' | 'failed_locked' | 'failed_inactive' | 'failed_permanently_locked'
   failure_reason?: string
   created_at: Date
 }
@@ -88,6 +95,7 @@ export interface VerifyOtpInput {
   email: string
   code: string
   device_info?: string
+  platform?: 'mobile' | 'web'
 }
 
 export interface RefreshTokenInput {

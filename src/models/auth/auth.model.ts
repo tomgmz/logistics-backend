@@ -1,24 +1,41 @@
 import { supabase } from '../../lib/supabase.js'
-import { 
-  OtpCode, 
-  UserSession, 
+import {
+  OtpCode,
+  UserSession,
   AuthUser,
   LoginHistory,
   TrustedDevice,
-  RiskAssessment 
+  RiskAssessment
 } from '../../types/auth.types.js'
-
-//USERS
 
 export async function findUserByEmail(email: string): Promise<AuthUser | null> {
   const { data, error } = await supabase
     .from('users')
-    .select('user_id, email, username, first_name, last_name, role, status, locked_until, failed_login_attempts')
+    .select('user_id, email, username, first_name, last_name, role, status, locked_until, failed_login_attempts, lockup_count')
     .eq('email', email)
     .single()
 
   if (error && error.code !== 'PGRST116') throw error
   return data ?? null
+}
+
+export async function incrementLockupCount(userId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('increment_lockup_count', { p_user_id: userId })
+  if (error) throw error
+  return data as number
+}
+
+export async function permanentlyLockUser(userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('users')
+    .update({
+      status: 'permanently_locked',
+      locked_until: null,
+      failed_login_attempts: 0,
+    })
+    .eq('user_id', userId)
+
+  if (error) throw error
 }
 
 export async function findUserById(userId: string): Promise<AuthUser | null> {
@@ -35,9 +52,9 @@ export async function findUserById(userId: string): Promise<AuthUser | null> {
 export async function lockUserAccount(userId: string, lockUntil: Date): Promise<void> {
   const { error } = await supabase
     .from('users')
-    .update({ 
+    .update({
       locked_until: lockUntil.toISOString(),
-      failed_login_attempts: 0 
+      failed_login_attempts: 0
     })
     .eq('user_id', userId)
 
@@ -47,9 +64,10 @@ export async function lockUserAccount(userId: string, lockUntil: Date): Promise<
 export async function resetFailedAttempts(userId: string): Promise<void> {
   const { error } = await supabase
     .from('users')
-    .update({ 
+    .update({
       failed_login_attempts: 0,
-      locked_until: null 
+      locked_until: null,
+      lockup_count: 0,
     })
     .eq('user_id', userId)
 
@@ -59,16 +77,16 @@ export async function resetFailedAttempts(userId: string): Promise<void> {
 export async function updateLastLogin(userId: string, ipAddress?: string): Promise<void> {
   const { error } = await supabase
     .from('users')
-    .update({ 
+    .update({
       last_login_at: new Date().toISOString(),
-      last_login_ip: ipAddress 
+      last_login_ip: ipAddress
     })
     .eq('user_id', userId)
 
   if (error) throw error
 }
 
-//OTP
+// OTP
 
 export async function createOtp(
   userId: string,
@@ -77,7 +95,6 @@ export async function createOtp(
   ipAddress?: string,
   expiresAt?: Date
 ): Promise<void> {
-  // Invalidate all previous unused OTPs
   await supabase
     .from('otp_codes')
     .update({ used: true })
@@ -103,7 +120,7 @@ export async function createOtp(
 
 export async function findValidOtp(
   userId: string,
-  code: string 
+  code: string
 ): Promise<OtpCode | null> {
   return findLatestOtp(userId)
 }
@@ -125,7 +142,6 @@ export async function findLatestOtp(userId: string): Promise<OtpCode | null> {
 
 export async function incrementOtpAttempts(otpId: string): Promise<number> {
   const { data, error } = await supabase.rpc('increment_otp_attempts', { otp_id: otpId })
-
   if (error) throw error
   return data as number
 }
@@ -153,7 +169,7 @@ export async function getOtpAttemptsSince(
   return count ?? 0
 }
 
-//SESSIONS
+// SESSIONS
 
 export async function revokeAllUserSessions(userId: string): Promise<void> {
   const { error } = await supabase
@@ -225,9 +241,9 @@ export async function updateSessionAccessToken(
 ): Promise<void> {
   const { error } = await supabase
     .from('active_sessions')
-    .update({ 
+    .update({
       token: newTokenHash,
-      expires_at: expiresAt.toISOString() 
+      expires_at: expiresAt.toISOString()
     })
     .eq('id', sessionId)
 
@@ -252,7 +268,7 @@ export async function revokeSession(tokenHash: string): Promise<void> {
   if (error) throw error
 }
 
-//LOGIN HISTORY - AUDIT TRAIL
+// LOGIN HISTORY - AUDIT TRAIL
 
 export async function createLoginHistory(params: {
   user_id?: string
@@ -262,7 +278,7 @@ export async function createLoginHistory(params: {
   user_agent?: string
   location_city?: string
   location_country?: string
-  attempt_status: 'success' | 'failed_otp' | 'failed_locked' | 'failed_inactive'
+  attempt_status: 'success' | 'failed_otp' | 'failed_locked' | 'failed_inactive' | 'failed_permanently_locked'
   failure_reason?: string
 }): Promise<void> {
   const { error } = await supabase
@@ -297,8 +313,7 @@ export async function getLoginHistory(
   return data ?? []
 }
 
-
-//TRUSTED DEVICE FINGERPRINTING
+// TRUSTED DEVICE FINGERPRINTING
 
 export async function upsertTrustedDevice(params: {
   user_id: string

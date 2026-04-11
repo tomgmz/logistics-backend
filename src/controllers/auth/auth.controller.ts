@@ -41,6 +41,17 @@ export function getCsrfToken(req: Request, res: Response) {
   res.status(200).json({ status: 'success' })
 }
 
+export async function getAuthStatus(req: Request, res: Response) {
+  try {
+    const { email } = req.body
+    const status = await AuthService.getAuthStatus(email)
+    res.status(200).json({ status: 'success', data: status })
+  } catch (err: unknown) {
+    console.error('AUTH STATUS ERROR:', err)
+    res.status(200).json({ status: 'success', data: { locked: false } })
+  }
+}
+
 export async function requestOtp(req: Request, res: Response) {
   try {
     const ipAddress = getIpAddress(req)
@@ -172,5 +183,3 @@ function getIpAddress(req: Request): string | undefined {
     undefined
   )
 }
-
-

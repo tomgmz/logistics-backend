@@ -4,31 +4,47 @@ import jwt from 'jsonwebtoken'
 import type { SignOptions } from 'jsonwebtoken'
 import * as AuthModel from '../../models/auth/auth.model.js'
 import { sendOtpEmail } from '../../lib/mailer-sendgrid.js'
-import { RequestOtpInput, VerifyOtpInput, AuthResponse } from '../../types/auth.types.js'
+import {
+  RequestOtpInput,
+  VerifyOtpInput,
+  AuthResponse,
+  AuthStatusResponse,
+} from '../../types/auth.types.js'
 
-const JWT_SECRET          = process.env.JWT_SECRET!
-const JWT_REFRESH_SECRET  = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET!
-const TOKEN_PEPPER        = process.env.TOKEN_PEPPER || 'CHANGE_ME_IN_PRODUCTION'
+const JWT_SECRET         = process.env.JWT_SECRET!
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET!
+const TOKEN_PEPPER       = process.env.TOKEN_PEPPER
 
-const JWT_EXPIRES_IN      = (process.env.JWT_EXPIRES_IN    ?? '15m') as SignOptions['expiresIn']
+const JWT_EXPIRES_IN      = (process.env.JWT_EXPIRES_IN     ?? '15m') as SignOptions['expiresIn']
 const JWT_REFRESH_EXPIRES = (process.env.JWT_REFRESH_EXPIRES ?? '7d') as SignOptions['expiresIn']
 
-const OTP_RATE_LIMIT    = 5    // max OTP requests per window
-const OTP_WINDOW_MINS   = 15   // rate-limit window
-const MAX_OTP_ATTEMPTS  = 5    // max wrong guesses
-const OTP_EXPIRY_MINS   = 5    // OTP validity
-const BCRYPT_ROUNDS     = 12   // OTP hash strength
-const ACCOUNT_LOCK_MINS = 30   // lockout duration after max failed attempts
+const OTP_RATE_LIMIT    = 5
+const OTP_WINDOW_MINS   = 15
+const MAX_OTP_ATTEMPTS  = 3
+const MAX_LOCKUPS       = 3
+const OTP_EXPIRY_MINS   = 5
+const BCRYPT_ROUNDS     = 12
+const ACCOUNT_LOCK_MINS = 3
 
+// Role-based platform restrictions
+const PLATFORM_RESTRICTIONS: Record<string, string[]> = {
+  admin: ['web', 'mobile'],
+  driver: ['mobile'],
+  assistant_driver: ['mobile'],
+  customer: ['web'],
+}
 
-//GENERATE OTP
+function isRoleAllowedOnPlatform(role: string, platform: 'web' | 'mobile'): boolean {
+  const allowedPlatforms = PLATFORM_RESTRICTIONS[role.toLowerCase()] || []
+  return allowedPlatforms.includes(platform)
+}
+
 function generateOtp(): string {
   const buf = crypto.randomBytes(4)
   const num = buf.readUInt32BE(0) % 1_000_000
   return num.toString().padStart(6, '0')
 }
 
-//HASH TOKEN WITH PEPPER
 export function hashToken(token: string): string {
   return crypto
     .createHash('sha256')
@@ -36,7 +52,6 @@ export function hashToken(token: string): string {
     .digest('hex')
 }
 
-//HASH OTP
 async function hashOtp(otp: string): Promise<string> {
   return bcrypt.hash(otp, BCRYPT_ROUNDS)
 }
@@ -45,7 +60,6 @@ async function verifyOtpHash(otp: string, hash: string): Promise<boolean> {
   return bcrypt.compare(otp, hash)
 }
 
-//GENERATE DEVICE FINGERPRINT
 function generateDeviceFingerprint(userAgent: string, ip: string): string {
   return crypto
     .createHash('sha256')
@@ -54,7 +68,28 @@ function generateDeviceFingerprint(userAgent: string, ip: string): string {
     .slice(0, 32)
 }
 
-//REQUEST OTP
+export async function getAuthStatus(email: string): Promise<AuthStatusResponse> {
+  const normalizedEmail = email.trim().toLowerCase()
+  const user = await AuthModel.findUserByEmail(normalizedEmail)
+
+  // Never reveal whether the account exists
+  if (!user) {
+    return { locked: false }
+  }
+
+  if (user.status === 'permanently_locked') {
+    return { locked: true, permanent: true }
+  }
+
+  if (user.locked_until && new Date(user.locked_until) > new Date()) {
+    return {
+      locked: true,
+      locked_until: new Date(user.locked_until).toISOString(),
+    }
+  }
+
+  return { locked: false }
+}
 
 export async function requestOtp(
   input: RequestOtpInput,
@@ -62,19 +97,19 @@ export async function requestOtp(
 ): Promise<void> {
   const email = input.email.trim().toLowerCase()
 
-  // Find user (silent fail if not found for security)
   const user = await AuthModel.findUserByEmail(email)
   if (!user || user.status !== 'active') {
     await AuthModel.createLoginHistory({
       email,
       ip_address: ipAddress,
-      attempt_status: 'failed_inactive',
-      failure_reason: user ? 'Account not active' : 'User not found',
+      attempt_status: user?.status === 'permanently_locked'
+        ? 'failed_permanently_locked'
+        : 'failed_inactive',
+      failure_reason: !user ? 'User not found' : `Account status: ${user.status}`,
     })
     return
   }
 
-  // Check if account is locked
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
     await AuthModel.createLoginHistory({
       user_id: user.user_id,
@@ -83,60 +118,70 @@ export async function requestOtp(
       attempt_status: 'failed_locked',
       failure_reason: `Account locked until ${user.locked_until}`,
     })
-    return 
+    return
   }
 
-  // Rate limiting
   const since = new Date(Date.now() - OTP_WINDOW_MINS * 60 * 1000)
   const recentCount = await AuthModel.getOtpAttemptsSince(user.user_id, since)
   if (recentCount >= OTP_RATE_LIMIT) {
     return
   }
 
-  // Generate and hash OTP
-  const plainOtp = generateOtp()
+  const plainOtp  = generateOtp()
   const hashedOtp = await hashOtp(plainOtp)
-
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINS * 60 * 1000)
 
-  // Store HASHED OTP with expiry
-  await AuthModel.createOtp(
-    user.user_id,
-    email,
-    hashedOtp,
-    ipAddress,
-    expiresAt
-  )
-
-  // Send plain OTP via email (this is the only place it exists in plain text)
+  await AuthModel.createOtp(user.user_id, email, hashedOtp, ipAddress, expiresAt)
   await sendOtpEmail(email, plainOtp, user.first_name)
 }
-
-//VERIFY OTP AND ISSUE TOKEN
 
 export async function verifyOtp(
   input: VerifyOtpInput,
   ipAddress?: string,
   userAgent?: string
 ): Promise<AuthResponse> {
-  const email = input.email.trim().toLowerCase()
+  const email     = input.email.trim().toLowerCase()
   const cleanCode = input.code.trim().slice(0, 6)
 
-  // Find user
   const user = await AuthModel.findUserByEmail(email)
-  if (!user || user.status !== 'active') {
+
+  if (!user) {
     await AuthModel.createLoginHistory({
       email,
       ip_address: ipAddress,
       device_info: input.device_info,
       user_agent: userAgent,
       attempt_status: 'failed_inactive',
-      failure_reason: 'User not found or inactive',
+      failure_reason: 'User not found',
     })
     throw new Error('Invalid credentials')
   }
 
-  // Check account lockout
+  if (user.status === 'permanently_locked') {
+    await AuthModel.createLoginHistory({
+      user_id: user.user_id,
+      email,
+      ip_address: ipAddress,
+      device_info: input.device_info,
+      user_agent: userAgent,
+      attempt_status: 'failed_permanently_locked',
+      failure_reason: 'Account permanently locked',
+    })
+    throw new Error('Account permanently locked. Please contact an administrator.')
+  }
+
+  if (user.status !== 'active') {
+    await AuthModel.createLoginHistory({
+      email,
+      ip_address: ipAddress,
+      device_info: input.device_info,
+      user_agent: userAgent,
+      attempt_status: 'failed_inactive',
+      failure_reason: `Account status: ${user.status}`,
+    })
+    throw new Error('Invalid credentials')
+  }
+
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
     const minutesLeft = Math.ceil(
       (new Date(user.locked_until).getTime() - Date.now()) / 60000
@@ -150,10 +195,11 @@ export async function verifyOtp(
       attempt_status: 'failed_locked',
       failure_reason: `Account locked for ${minutesLeft} more minutes`,
     })
-    throw new Error('Account temporarily locked. Please try again later.')
+    throw new Error(
+      `Account temporarily locked. Please try again in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''}.`
+    )
   }
 
-  // Find latest valid OTP
   const latestOtp = await AuthModel.findLatestOtp(user.user_id)
   if (!latestOtp) {
     await AuthModel.createLoginHistory({
@@ -168,13 +214,27 @@ export async function verifyOtp(
     throw new Error('Invalid or expired code')
   }
 
-  // Check if OTP is blocked (too many attempts)
   if (latestOtp.attempts >= MAX_OTP_ATTEMPTS) {
     await AuthModel.markOtpUsed(latestOtp.id)
 
+    const newLockupCount = await AuthModel.incrementLockupCount(user.user_id)
+
+    if (newLockupCount >= MAX_LOCKUPS) {
+      await AuthModel.permanentlyLockUser(user.user_id)
+      await AuthModel.createLoginHistory({
+        user_id: user.user_id,
+        email,
+        ip_address: ipAddress,
+        device_info: input.device_info,
+        user_agent: userAgent,
+        attempt_status: 'failed_permanently_locked',
+        failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
+      })
+      throw new Error('Account permanently locked. Please contact an administrator.')
+    }
+
     const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
     await AuthModel.lockUserAccount(user.user_id, lockUntil)
-
     await AuthModel.createLoginHistory({
       user_id: user.user_id,
       email,
@@ -182,10 +242,9 @@ export async function verifyOtp(
       device_info: input.device_info,
       user_agent: userAgent,
       attempt_status: 'failed_locked',
-      failure_reason: `Account locked due to ${MAX_OTP_ATTEMPTS} failed attempts`,
+      failure_reason: `Account locked (${newLockupCount}/${MAX_LOCKUPS}) after ${MAX_OTP_ATTEMPTS} failed attempts`,
     })
-
-    throw new Error('Too many failed attempts. Account locked temporarily.')
+    throw new Error('Account temporarily locked. Too many failed attempts.')
   }
 
   const isValidOtp = await verifyOtpHash(cleanCode, latestOtp.code_hash!)
@@ -206,21 +265,47 @@ export async function verifyOtp(
     })
 
     if (remainingAttempts > 0) {
-      throw new Error(`Invalid code. ${remainingAttempts} attempt${remainingAttempts > 1 ? 's' : ''} remaining.`)
-    } else {
-      const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
-      await AuthModel.lockUserAccount(user.user_id, lockUntil)
-      await AuthModel.markOtpUsed(latestOtp.id)
-      throw new Error('Account locked due to too many failed attempts.')
+      throw new Error(
+        `Invalid code. ${remainingAttempts} attempt${remainingAttempts > 1 ? 's' : ''} remaining.`
+      )
     }
-  }
 
-  //OTP VERIFIED - Proceed with login
+    const newLockupCount = await AuthModel.incrementLockupCount(user.user_id)
+    await AuthModel.markOtpUsed(latestOtp.id)
+
+    if (newLockupCount >= MAX_LOCKUPS) {
+      await AuthModel.permanentlyLockUser(user.user_id)
+      await AuthModel.createLoginHistory({
+        user_id: user.user_id,
+        email,
+        ip_address: ipAddress,
+        device_info: input.device_info,
+        user_agent: userAgent,
+        attempt_status: 'failed_permanently_locked',
+        failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
+      })
+      throw new Error('Account permanently locked. Please contact an administrator.')
+    }
+
+    const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
+    await AuthModel.lockUserAccount(user.user_id, lockUntil)
+    await AuthModel.createLoginHistory({
+      user_id: user.user_id,
+      email,
+      ip_address: ipAddress,
+      device_info: input.device_info,
+      user_agent: userAgent,
+      attempt_status: 'failed_locked',
+      failure_reason: `Account locked (${newLockupCount}/${MAX_LOCKUPS})`,
+    })
+    throw new Error(
+      `Account locked due to too many failed attempts. (${newLockupCount}/${MAX_LOCKUPS} lockouts used)`
+    )
+  }
 
   await AuthModel.markOtpUsed(latestOtp.id)
   await AuthModel.resetFailedAttempts(user.user_id)
 
-  // Check for suspicious activity
   const deviceFingerprint = userAgent
     ? generateDeviceFingerprint(userAgent, ipAddress || 'unknown')
     : undefined
@@ -245,35 +330,23 @@ export async function verifyOtp(
     })
   }
 
-  // Revoke ALL existing sessions (force re-login on all devices)
   await AuthModel.revokeAllUserSessions(user.user_id)
 
-  // Generate access and refresh tokens
   const accessExpiresAt  = new Date(Date.now() + parseDuration(JWT_EXPIRES_IN as string))
   const refreshExpiresAt = new Date(Date.now() + parseDuration(JWT_REFRESH_EXPIRES as string))
 
   const accessToken = jwt.sign(
-    {
-      sub: user.user_id,
-      role: user.role,
-      email: user.email,
-      type: 'access',
-    },
+    { sub: user.user_id, role: user.role, email: user.email, type: 'access' },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   )
 
   const refreshToken = jwt.sign(
-    {
-      sub: user.user_id,
-      role: user.role,
-      type: 'refresh',
-    },
+    { sub: user.user_id, role: user.role, type: 'refresh' },
     JWT_REFRESH_SECRET,
     { expiresIn: JWT_REFRESH_EXPIRES }
   )
 
-  // Hash tokens with PEPPER before storage
   const accessTokenHash  = hashToken(accessToken)
   const refreshTokenHash = hashToken(refreshToken)
 
@@ -304,18 +377,16 @@ export async function verifyOtp(
     accessExpiresAt: accessExpiresAt.toISOString(),
     refreshExpiresAt: refreshExpiresAt.toISOString(),
     user: {
-      user_id: user.user_id,
-      email: user.email,
-      username: user.username,
+      user_id:    user.user_id,
+      email:      user.email,
+      username:   user.username,
       first_name: user.first_name,
-      last_name: user.last_name,
-      role: user.role,
-      status: user.status,
+      last_name:  user.last_name,
+      role:       user.role,
+      status:     user.status,
     },
   }
 }
-
-//REFRESH TOKEN
 
 export async function refreshAccessToken(refreshToken: string): Promise<{
   accessToken: string
@@ -347,12 +418,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
   const accessExpiresAt = new Date(Date.now() + parseDuration(JWT_EXPIRES_IN as string))
 
   const accessToken = jwt.sign(
-    {
-      sub: user.user_id,
-      role: user.role,
-      email: user.email,
-      type: 'access',
-    },
+    { sub: user.user_id, role: user.role, email: user.email, type: 'access' },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   )
@@ -367,8 +433,6 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
   }
 }
 
-//LOGOUT
-
 export async function logout(tokenHash: string): Promise<void> {
   await AuthModel.revokeSession(tokenHash)
 }
@@ -377,7 +441,11 @@ export async function logoutAll(userId: string): Promise<void> {
   await AuthModel.revokeAllUserSessions(userId)
 }
 
-//HELPERS
+export async function getMe(userId: string) {
+  const user = await AuthModel.findUserWithClient(userId)
+  if (!user) throw new Error('User not found')
+  return user
+}
 
 function parseDuration(d: string): number {
   const match = d.match(/^(\d+)([smhd])$/)
@@ -390,10 +458,4 @@ function parseDuration(d: string): number {
     case 'd': return value * 24 * 60 * 60 * 1000
     default:  return 15 * 60 * 1000
   }
-}
-
-export async function getMe(userId: string) {
-  const user = await AuthModel.findUserWithClient(userId)
-  if (!user) throw new Error('User not found')
-  return user
 }
