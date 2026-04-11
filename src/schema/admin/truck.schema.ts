@@ -14,13 +14,13 @@ export const createTruckSchema = z.object({
   truck_type:       z.enum(TRUCK_TYPES, { message: 'Invalid truck type' }),
   capacity_tons:    z.number().positive('Capacity must be a positive number'),
   model_id:         z.string().uuid().optional().nullable(),
-  owned_by:         z.enum(['company', 'subcontractor']).default('company'),
-  subcontractor_id: z.string().uuid().optional().nullable(),
+  owned_by:   z.enum(['company', 'vendor']).default('company'),
+  vendor_id:  z.string().uuid().optional().nullable(),
 }).refine(
-  (data) => data.owned_by === 'company' || !!data.subcontractor_id,
+  (data) => data.owned_by === 'company' || !!data.vendor_id,
   {
-    path: ['subcontractor_id'],
-    message: 'Subcontractor ID is required when owned_by is subcontractor',
+    path: ['vendor_id'],
+    message: 'Vendor ID is required when owned_by is vendor',
   }
 )
 
@@ -36,7 +36,7 @@ export const updateTruckSchema = z.object({
   truck_type:       z.enum(TRUCK_TYPES, { message: 'Invalid truck type' }).optional(),
   capacity_tons:    z.number().positive('Capacity must be a positive number').optional(),
   model_id:         z.string().uuid().optional().nullable(),
-  status:           z.enum(['available', 'in_use', 'under_maintenance', 'inactive', 'archived']).optional(),
-  owned_by:         z.enum(['company', 'subcontractor']).optional(),
-  subcontractor_id: z.string().uuid().optional().nullable(),
+  status:     z.enum(['available', 'in_use', 'under_maintenance', 'inactive', 'archived']).optional(),
+  owned_by:   z.enum(['company', 'vendor']).optional(),
+  vendor_id:  z.string().uuid().optional().nullable(),
 })

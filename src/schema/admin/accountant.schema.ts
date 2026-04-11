@@ -1,10 +1,16 @@
 import { z } from 'zod'
 import { USER_SUFFIXES } from '../../types/user.types.js'
 
-export const createSubcontractorSchema = z.object({
-  first_name:     z.string().min(2).max(50)
+export const createAccountantSchema = z.object({
+  first_name:     z
+                  .string()
+                  .min(2)
+                  .max(50)
                   .regex(/^[\p{L}]+(?:[ '-][\p{L}]+)*$/u, 'First name must contain only letters, spaces, hyphens, or apostrophes'),
-  last_name:      z.string().min(2).max(50)
+  last_name:      z
+                  .string()
+                  .min(2)
+                  .max(50)
                   .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes'),
   middle_initial: z.string().max(1).optional().nullable().transform(v => v === '' ? null : v),
   suffix: z
@@ -24,17 +30,19 @@ export const createSubcontractorSchema = z.object({
         .nullable()
         .transform(v => v === '' ? null : v),
   created_by:     z.string().uuid().optional().nullable(),
-
-  subcontractor_type: z.enum(['individual', 'company']),
-  company_name:       z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
-  business_permit:    z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
 })
 
-export const updateSubcontractorSchema = z.object({
-  first_name:     z.string().min(2).max(50)
+export const updateAccountantSchema = z.object({
+  first_name:     z
+                  .string()
+                  .min(2)
+                  .max(50)
                   .regex(/^[\p{L}]+(?:[ '-][\p{L}]+)*$/u, 'First name must contain only letters, spaces, hyphens, or apostrophes')
                   .optional(),
-  last_name:      z.string().min(2).max(50)
+  last_name:      z
+                  .string()
+                  .min(2)
+                  .max(50)
                   .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes')
                   .optional(),
   middle_initial: z.string().max(1).optional().nullable().transform(v => v === '' ? null : v),
@@ -49,7 +57,4 @@ export const updateSubcontractorSchema = z.object({
         .optional()
         .nullable()
         .transform(v => v === '' ? null : v),
-  subcontractor_type: z.enum(['individual', 'company']).optional(),
-  company_name:       z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
-  business_permit:    z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
 })

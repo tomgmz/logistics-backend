@@ -1,6 +1,6 @@
 import { UserRole, UserStatus } from './user.types.js'
 
-export interface Helper {
+export interface Vendor {
   user_id:         string
   username:        string
   email:           string
@@ -15,13 +15,13 @@ export interface Helper {
   created_at:      string
   updated_at:      string
 
-  helper_id:        string
-  license_number?:  string | null
-  license_expiry?:  string | null
-  driver_status:    'available' | 'assigned' | 'on_leave' | 'inactive'
+  vendor_id:       string
+  vendor_type:     'individual' | 'company'
+  company_name?:   string | null
+  business_permit?: string | null
 }
 
-export interface CreateHelperDTO {
+export interface CreateVendorInput {
   username:        string
   email:           string
   password:        string
@@ -31,11 +31,13 @@ export interface CreateHelperDTO {
   suffix?:         string | null
   phone?:          string | null
   created_by?:     string | null
-  license_number?: string | null
-  license_expiry?: string | null
+
+  vendor_type:     'individual' | 'company'
+  company_name?:   string | null
+  business_permit?: string | null
 }
 
-export interface UpdateHelperDTO {
+export interface UpdateVendorInput {
   first_name?:     string
   last_name?:      string
   middle_initial?: string | null
@@ -43,7 +45,8 @@ export interface UpdateHelperDTO {
   username?:       string
   email?:          string
   phone?:          string | null
-  license_number?: string | null
-  license_expiry?: string | null
-  driver_status?:  'available' | 'assigned' | 'on_leave' | 'inactive'
+
+  vendor_type?:    'individual' | 'company'
+  company_name?:   string | null
+  business_permit?: string | null
 }

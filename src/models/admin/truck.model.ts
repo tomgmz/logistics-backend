@@ -26,16 +26,16 @@ async function findById(truckId: string) {
 
 async function create(input: CreateTruckInput) {
   const result = await pool.query(
-    `INSERT INTO trucks (plate_number, truck_type, capacity_tons, model_id, owned_by, subcontractor_id)
+    `INSERT INTO trucks (plate_number, truck_type, capacity_tons, model_id, owned_by, vendor_id)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
     [
       input.plate_number,
       input.truck_type,
       input.capacity_tons,
-      input.model_id         ?? null,
+      input.model_id ?? null,
       input.owned_by,
-      input.subcontractor_id ?? null,
+      input.vendor_id ?? null,
     ]
   )
 
@@ -58,13 +58,13 @@ async function update(truckId: string, input: UpdateTruckInput) {
   const values: any[] = []
   let index = 1
 
-  if (input.plate_number     !== undefined) { fields.push(`plate_number = $${index++}`)     ; values.push(input.plate_number) }
-  if (input.truck_type       !== undefined) { fields.push(`truck_type = $${index++}`)        ; values.push(input.truck_type) }
-  if (input.capacity_tons    !== undefined) { fields.push(`capacity_tons = $${index++}`)     ; values.push(input.capacity_tons) }
-  if (input.model_id         !== undefined) { fields.push(`model_id = $${index++}`)          ; values.push(input.model_id) }
-  if (input.status           !== undefined) { fields.push(`status = $${index++}`)            ; values.push(input.status) }
-  if (input.owned_by         !== undefined) { fields.push(`owned_by = $${index++}`)          ; values.push(input.owned_by) }
-  if (input.subcontractor_id !== undefined) { fields.push(`subcontractor_id = $${index++}`)  ; values.push(input.subcontractor_id) }
+  if (input.plate_number !== undefined) { fields.push(`plate_number = $${index++}`)  ; values.push(input.plate_number) }
+  if (input.truck_type   !== undefined) { fields.push(`truck_type = $${index++}`)     ; values.push(input.truck_type) }
+  if (input.capacity_tons !== undefined) { fields.push(`capacity_tons = $${index++}`) ; values.push(input.capacity_tons) }
+  if (input.model_id     !== undefined) { fields.push(`model_id = $${index++}`)       ; values.push(input.model_id) }
+  if (input.status       !== undefined) { fields.push(`status = $${index++}`)         ; values.push(input.status) }
+  if (input.owned_by     !== undefined) { fields.push(`owned_by = $${index++}`)       ; values.push(input.owned_by) }
+  if (input.vendor_id    !== undefined) { fields.push(`vendor_id = $${index++}`)      ; values.push(input.vendor_id) }
 
   if (fields.length === 0) return findById(truckId)
 

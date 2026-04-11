@@ -31,7 +31,7 @@ export const authSchemas = {
       username:   { type: 'string', example: 'admin01' },
       first_name: { type: 'string', nullable: true, example: 'Juan' },
       last_name:  { type: 'string', nullable: true, example: 'dela Cruz' },
-      role:       { type: 'string', enum: ['admin', 'super_admin', 'client', 'driver', 'helper', 'subcontractor'], example: 'client' },
+      role:       { type: 'string', enum: ['admin', 'super_admin', 'client', 'driver', 'assistant_driver', 'vendor'], example: 'client' },
       status:     { type: 'string', enum: ['active', 'inactive', 'archived'], example: 'active' },
       clients: {
         type: 'object',

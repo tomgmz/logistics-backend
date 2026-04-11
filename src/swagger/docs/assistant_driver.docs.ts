@@ -1,18 +1,18 @@
-export const driverPaths = {
-  '/drivers': {
+export const assistantDriverPaths = {
+  '/assistant_drivers': {
     get: {
-      tags: ['Drivers'],
-      summary: 'Get all drivers',
+      tags: ['Assistant Drivers'],
+      summary: 'Get all assistant drivers',
       responses: {
         200: {
-          description: 'List of drivers',
+          description: 'List of assistant drivers',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { type: 'array', items: { $ref: '#/components/schemas/Driver' } },
+                  data: { type: 'array', items: { $ref: '#/components/schemas/AssistantDriver' } },
                 },
               },
             },
@@ -22,26 +22,24 @@ export const driverPaths = {
       },
     },
     post: {
-      tags: ['Drivers'],
-      summary: 'Create a new driver',
+      tags: ['Assistant Drivers'],
+      summary: 'Create a new assistant driver',
       requestBody: {
         required: true,
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/CreateDriverRequest' },
+            schema: { $ref: '#/components/schemas/CreateAssistantDriverRequest' },
             example: {
-              first_name: 'Tom Ervin',
-              last_name: 'Gomez',
+              first_name: 'Carlo',
+              last_name: 'Mendoza',
               middle_initial: null,
               suffix: null,
-              username: 'tomgz',
-              email: 'tomervingmz@gmail.com',
+              username: 'carlomendoza',
+              email: 'carlo@example.com',
               password: 'secret12345',
-              phone: '09171234567',
-              license_number: 'N01-12-123456',
+              phone: '09201234567',
+              license_number: 'N01-12-654321',
               license_expiry: '2027-12-31',
-              is_vendor_driver: false,
-              vendor_id: null,
               created_by: null,
             },
           },
@@ -49,14 +47,14 @@ export const driverPaths = {
       },
       responses: {
         201: {
-          description: 'Driver created successfully',
+          description: 'Assistant driver created successfully',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { $ref: '#/components/schemas/Driver' },
+                  data: { $ref: '#/components/schemas/AssistantDriver' },
                 },
               },
             },
@@ -67,94 +65,96 @@ export const driverPaths = {
       },
     },
   },
-  '/drivers/{id}': {
+  '/assistant_drivers/{id}': {
     get: {
-      tags: ['Drivers'],
-      summary: 'Get driver by ID',
+      tags: ['Assistant Drivers'],
+      summary: 'Get assistant driver by ID',
       parameters: [
-        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: 'ade09b28-6f8a-48d4-8d42-5a11bdfdae56' },
+        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: '8a50d256-2811-49ec-935f-638597aba410' },
       ],
       responses: {
         200: {
-          description: 'Driver found',
+          description: 'Assistant driver found',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { $ref: '#/components/schemas/Driver' },
+                  data: { $ref: '#/components/schemas/AssistantDriver' },
                 },
               },
             },
           },
         },
-        404: { description: 'Driver not found' },
+        404: { description: 'Assistant driver not found' },
         500: { description: 'Internal server error' },
       },
     },
     patch: {
-      tags: ['Drivers'],
-      summary: 'Update a driver',
+      tags: ['Assistant Drivers'],
+      summary: 'Update an assistant driver',
       parameters: [
-        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: 'ade09b28-6f8a-48d4-8d42-5a11bdfdae56' },
+        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: '8a50d256-2811-49ec-935f-638597aba410' },
       ],
       requestBody: {
         required: true,
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/UpdateDriverRequest' },
+            schema: { $ref: '#/components/schemas/UpdateAssistantDriverRequest' },
             example: {
-              first_name: 'Tom Ervin',
-              last_name: 'Gomez',
-              license_number: 'N01-12-999999',
+              first_name: 'Carlo',
+              last_name: 'Mendoza',
+              phone: '09201234567',
+              license_number: 'N01-12-654321',
               license_expiry: '2028-12-31',
+              driver_status: 'available',
             },
           },
         },
       },
       responses: {
         200: {
-          description: 'Driver updated successfully',
+          description: 'Assistant driver updated successfully',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { $ref: '#/components/schemas/Driver' },
+                  data: { $ref: '#/components/schemas/AssistantDriver' },
                 },
               },
             },
           },
         },
         400: { description: 'Validation error' },
-        404: { description: 'Driver not found' },
+        404: { description: 'Assistant driver not found' },
         500: { description: 'Internal server error' },
       },
     },
     delete: {
-      tags: ['Drivers'],
-      summary: 'Delete a driver',
+      tags: ['Assistant Drivers'],
+      summary: 'Delete an assistant driver',
       parameters: [
-        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: 'ade09b28-6f8a-48d4-8d42-5a11bdfdae56' },
+        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: '8a50d256-2811-49ec-935f-638597aba410' },
       ],
       responses: {
         200: {
-          description: 'Driver deleted successfully',
+          description: 'Assistant driver deleted successfully',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  message: { type: 'string', example: 'Driver deleted successfully' },
+                  message: { type: 'string', example: 'Assistant driver deleted successfully' },
                 },
               },
             },
           },
         },
-        404: { description: 'Driver not found' },
+        404: { description: 'Assistant driver not found' },
         500: { description: 'Internal server error' },
       },
     },

@@ -1,11 +1,11 @@
 import { supabase } from '../../lib/supabase.js'
-import { CreateSubcontractorInput, UpdateSubcontractorInput } from '../../types/subcontractor.types.js'
+import { CreateVendorInput, UpdateVendorInput } from '../../types/vendor.types.js'
 
 async function findAll() {
   const { data, error } = await supabase
     .from('users')
-    .select(`*, subcontractors(*)`)
-    .eq('role', 'subcontractor')
+    .select(`*, vendors(*)`)
+    .eq('role', 'vendor')
     .neq('status', 'archived')
     .order('last_name', { ascending: true })
 
@@ -16,9 +16,9 @@ async function findAll() {
 async function findById(userId: string) {
   const { data, error } = await supabase
     .from('users')
-    .select(`*, subcontractors(*)`)
+    .select(`*, vendors(*)`)
     .eq('user_id', userId)
-    .eq('role', 'subcontractor')
+    .eq('role', 'vendor')
     .neq('status', 'archived')
     .maybeSingle()
 
@@ -26,7 +26,7 @@ async function findById(userId: string) {
   return data
 }
 
-async function create(userId: string, input: CreateSubcontractorInput) {
+async function create(userId: string, input: CreateVendorInput) {
   const { error: userError } = await supabase
     .from('users')
     .insert({
@@ -38,32 +38,32 @@ async function create(userId: string, input: CreateSubcontractorInput) {
       middle_initial: input.middle_initial ?? null,
       suffix:         input.suffix ?? null,
       phone:          input.phone,
-      role:           'subcontractor',
+      role:           'vendor',
       created_by:     input.created_by ?? null,
     })
   if (userError) throw userError
 
-  const { error: subError } = await supabase
-    .from('subcontractors')
+  const { error: vendorError } = await supabase
+    .from('vendors')
     .insert({
-      user_id:            userId,
-      subcontractor_type: input.subcontractor_type,
-      company_name:       input.company_name ?? null,
-      business_permit:    input.business_permit ?? null,
+      user_id:        userId,
+      vendor_type:    input.vendor_type,
+      company_name:   input.company_name ?? null,
+      business_permit: input.business_permit ?? null,
     })
-  if (subError) throw subError
+  if (vendorError) throw vendorError
 
   await supabase.from('system_logs').insert({
     user_id:     input.created_by ?? null,
     log_type:    'user_activity',
-    action:      'subcontractor_creation',
-    description: `Subcontractor ${input.username} created.`,
+    action:      'vendor_creation',
+    description: `Vendor ${input.username} created.`,
   })
 
   return findById(userId)
 }
 
-async function update(userId: string, input: UpdateSubcontractorInput) {
+async function update(userId: string, input: UpdateVendorInput) {
   const userFields: Record<string, any> = {}
   if (input.first_name     !== undefined) userFields.first_name     = input.first_name
   if (input.last_name      !== undefined) userFields.last_name      = input.last_name
@@ -78,13 +78,13 @@ async function update(userId: string, input: UpdateSubcontractorInput) {
     if (error) throw error
   }
 
-  const subFields: Record<string, any> = {}
-  if (input.subcontractor_type !== undefined) subFields.subcontractor_type = input.subcontractor_type
-  if (input.company_name       !== undefined) subFields.company_name       = input.company_name
-  if (input.business_permit    !== undefined) subFields.business_permit    = input.business_permit
+  const vendorFields: Record<string, any> = {}
+  if (input.vendor_type !== undefined) vendorFields.vendor_type = input.vendor_type
+  if (input.company_name       !== undefined) vendorFields.company_name       = input.company_name
+  if (input.business_permit    !== undefined) vendorFields.business_permit    = input.business_permit
 
-  if (Object.keys(subFields).length > 0) {
-    const { error } = await supabase.from('subcontractors').update(subFields).eq('user_id', userId)
+  if (Object.keys(vendorFields).length > 0) {
+    const { error } = await supabase.from('vendors').update(vendorFields).eq('user_id', userId)
     if (error) throw error
   }
 

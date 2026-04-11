@@ -1,5 +1,5 @@
-export const helperSchemas = {
-   CreateHelperRequest: {
+export const assistantDriverSchemas = {
+   CreateAssistantDriverRequest: {
           type: 'object',
           required: ['first_name', 'last_name', 'username', 'email', 'password'],
           properties: {
@@ -16,7 +16,7 @@ export const helperSchemas = {
             created_by:     { type: 'string', format: 'uuid', nullable: true, example: null },
           },
         },
-        UpdateHelperRequest: {
+        UpdateAssistantDriverRequest: {
           type: 'object',
           properties: {
             first_name:     { type: 'string', minLength: 2, maxLength: 50, example: 'Carlo' },
@@ -31,26 +31,26 @@ export const helperSchemas = {
             driver_status:  { type: 'string', enum: ['available', 'assigned', 'on_leave', 'inactive'], example: 'available' },
           },
         },
-        Helper: {
+        AssistantDriver: {
           type: 'object',
           properties: {
-            user_id:        { type: 'string', format: 'uuid', example: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
-            first_name:     { type: 'string', example: 'Carlo' },
-            last_name:      { type: 'string', example: 'Mendoza' },
-            middle_initial: { type: 'string', nullable: true, example: null },
-            suffix:         { type: 'string', nullable: true, example: null },
-            username:       { type: 'string', example: 'carlomendoza' },
-            email:          { type: 'string', example: 'carlo@example.com' },
-            phone:          { type: 'string', nullable: true, example: '09201234567' },
-            role:           { type: 'string', example: 'helper' },
-            status:         { type: 'string', enum: ['active', 'inactive', 'archived'], example: 'active' },
-            created_by:     { type: 'string', format: 'uuid', nullable: true, example: null },
-            created_at:     { type: 'string', format: 'date-time', example: '2026-02-27T08:00:00.000000' },
-            updated_at:     { type: 'string', format: 'date-time', example: '2026-02-27T08:00:00.000000' },
-            helper_id:      { type: 'string', format: 'uuid', example: 'b2c3d4e5-f6a7-8901-bcde-f01234567890' },
-            license_number: { type: 'string', nullable: true, example: 'N01-12-654321' },
-            license_expiry: { type: 'string', format: 'date', nullable: true, example: '2027-12-31' },
-            driver_status:  { type: 'string', enum: ['available', 'assigned', 'on_leave', 'inactive'], example: 'available' },
+            user_id:            { type: 'string', format: 'uuid', example: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
+            first_name:         { type: 'string', example: 'Carlo' },
+            last_name:          { type: 'string', example: 'Mendoza' },
+            middle_initial:     { type: 'string', nullable: true, example: null },
+            suffix:             { type: 'string', nullable: true, example: null },
+            username:           { type: 'string', example: 'carlomendoza' },
+            email:              { type: 'string', example: 'carlo@example.com' },
+            phone:              { type: 'string', nullable: true, example: '09201234567' },
+            role:               { type: 'string', example: 'assistant_driver' },
+            status:             { type: 'string', enum: ['active', 'inactive', 'archived'], example: 'active' },
+            created_by:         { type: 'string', format: 'uuid', nullable: true, example: null },
+            created_at:         { type: 'string', format: 'date-time', example: '2026-02-27T08:00:00.000000' },
+            updated_at:         { type: 'string', format: 'date-time', example: '2026-02-27T08:00:00.000000' },
+            assistant_driver_id: { type: 'string', format: 'uuid', example: 'b2c3d4e5-f6a7-8901-bcde-f01234567890' },
+            license_number:     { type: 'string', nullable: true, example: 'N01-12-654321' },
+            license_expiry:     { type: 'string', format: 'date', nullable: true, example: '2027-12-31' },
+            driver_status:      { type: 'string', enum: ['available', 'assigned', 'on_leave', 'inactive'], example: 'available' },
           },
         },
 }

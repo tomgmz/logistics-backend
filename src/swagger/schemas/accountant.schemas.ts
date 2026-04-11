@@ -1,0 +1,47 @@
+export const accountantSchemas = {
+  CreateAccountantRequest: {
+    type: 'object',
+    required: ['first_name', 'last_name', 'username', 'email', 'password'],
+    properties: {
+      first_name:     { type: 'string', minLength: 2, maxLength: 50, example: 'John' },
+      last_name:      { type: 'string', minLength: 2, maxLength: 50, example: 'Doe' },
+      middle_initial: { type: 'string', maxLength: 1, nullable: true, example: null },
+      suffix:         { type: 'string', maxLength: 10, nullable: true, example: null },
+      username:       { type: 'string', minLength: 2, maxLength: 50, example: 'johndoe' },
+      email:          { type: 'string', format: 'email', example: 'john@example.com' },
+      password:       { type: 'string', format: 'password', minLength: 8, example: 'securepass123' },
+      phone:          { type: 'string', maxLength: 16, nullable: true, example: '+639171234567' },
+      created_by:     { type: 'string', format: 'uuid', nullable: true, example: null },
+    },
+  },
+  UpdateAccountantRequest: {
+    type: 'object',
+    properties: {
+      first_name:     { type: 'string', minLength: 2, maxLength: 50, example: 'John' },
+      last_name:      { type: 'string', minLength: 2, maxLength: 50, example: 'Doe' },
+      middle_initial: { type: 'string', maxLength: 1, nullable: true, example: null },
+      suffix:         { type: 'string', maxLength: 10, nullable: true, example: null },
+      username:       { type: 'string', minLength: 2, maxLength: 50, example: 'johndoe' },
+      email:          { type: 'string', format: 'email', example: 'john@example.com' },
+      phone:          { type: 'string', maxLength: 16, nullable: true, example: '+639171234567' },
+    },
+  },
+  Accountant: {
+    type: 'object',
+    properties: {
+      user_id:        { type: 'string', format: 'uuid', example: 'ade09b28-6f8a-48d4-8d42-5a11bdfdae56' },
+      first_name:     { type: 'string', example: 'John' },
+      last_name:      { type: 'string', example: 'Doe' },
+      middle_initial: { type: 'string', nullable: true, example: null },
+      suffix:         { type: 'string', nullable: true, example: null },
+      username:       { type: 'string', example: 'johndoe' },
+      email:          { type: 'string', example: 'john@example.com' },
+      phone:          { type: 'string', nullable: true, example: null },
+      role:           { type: 'string', example: 'accountant' },
+      status:         { type: 'string', enum: ['active', 'inactive', 'archived'], example: 'active' },
+      created_at:     { type: 'string', format: 'date-time' },
+      updated_at:     { type: 'string', format: 'date-time' },
+      created_by:     { type: 'string', format: 'uuid', nullable: true },
+    },
+  },
+}

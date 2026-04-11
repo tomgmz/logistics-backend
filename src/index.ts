@@ -81,7 +81,7 @@ const authLimiter = rateLimit({
   message: { status: 'error', message: 'Too many requests, please try again later.' },
 });
 
-app.use(globalLimiter);
+// app.use(globalLimiter);
 
 // MIDDLEWARE
 app.use(cookieParser(process.env.COOKIE_SECRET));
@@ -113,7 +113,7 @@ app.use(
 
 // ROUTES
 app.use('/api/auth/csrf', authRoutes) 
-app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/booking', clientRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
 app.use('/api/directions', directionsRouter);

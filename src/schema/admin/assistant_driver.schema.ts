@@ -1,16 +1,10 @@
 import { z } from 'zod'
 import { USER_SUFFIXES } from '../../types/user.types.js'
 
-export const createDriverSchema = z.object({
-  first_name:     z
-                  .string()
-                  .min(2)
-                  .max(50)
+export const createAssistantDriverSchema = z.object({
+  first_name:     z.string().min(2).max(50)
                   .regex(/^[\p{L}]+(?:[ '-][\p{L}]+)*$/u, 'First name must contain only letters, spaces, hyphens, or apostrophes'),
-  last_name:      z
-                  .string()
-                  .min(2)
-                  .max(50)
+  last_name:      z.string().min(2).max(50)
                   .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes'),
   middle_initial: z.string().max(1).optional().nullable().transform(v => v === '' ? null : v),
   suffix: z
@@ -47,30 +41,24 @@ export const createDriverSchema = z.object({
   is_vendor_driver: z.boolean().optional().default(false),
   vendor_id:        z.string().uuid().optional().nullable(),
 }).refine(
-  (data) => !data.is_vendor_driver || !!data.vendor_id,
+  (data) => !data.license_number || !!data.license_expiry,
   {
-    path: ['vendor_id'],
-    message: 'Vendor ID is required when driver is a vendor driver',
+    path: ['license_expiry'],
+    message: 'License expiry is required when license number is provided',
   }
 )
 
-export const updateDriverSchema = z.object({
-  first_name:     z
-                  .string()
-                  .min(2)
-                  .max(50)
+export const updateAssistantDriverSchema = z.object({
+  first_name:     z.string().min(2).max(50)
                   .regex(/^[\p{L}]+(?:[ '-][\p{L}]+)*$/u, 'First name must contain only letters, spaces, hyphens, or apostrophes')
                   .optional(),
-  last_name:      z
-                  .string()
-                  .min(2)
-                  .max(50)
+  last_name:      z.string().min(2).max(50)
                   .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes')
                   .optional(),
-  middle_initial:          z.string().max(1).optional().nullable().transform(v => v === '' ? null : v),
-  suffix:                  z.string().max(10).optional().nullable().transform(v => v === '' ? null : v),
-  username:                z.string().min(2).max(50).optional(),
-  email:                   z.string().email().optional(),
+  middle_initial: z.string().max(1).optional().nullable().transform(v => v === '' ? null : v),
+  suffix:         z.string().max(10).optional().nullable().transform(v => v === '' ? null : v),
+  username:       z.string().min(2).max(50).optional(),
+  email:          z.string().email().optional(),
   phone: z
         .string()
         .min(8, 'Phone number is too short')
@@ -79,14 +67,13 @@ export const updateDriverSchema = z.object({
         .optional()
         .nullable()
         .transform(v => v === '' ? null : v),
-  license_number:   z.string().min(1).max(50).optional(),
-  license_expiry:   z.string().optional(),
-  is_vendor_driver: z.boolean().optional(),
-  vendor_id:        z.string().uuid().optional().nullable(),
+  license_number: z.string().min(1).max(50).optional().nullable().transform(v => v === '' ? null : v),
+  license_expiry: z.string().optional().nullable().transform(v => v === '' ? null : v),
+  driver_status:  z.enum(['available', 'assigned', 'on_leave', 'inactive']).optional(),
 }).refine(
-  (data) => !data.is_vendor_driver || !!data.vendor_id,
+  (data) => !data.license_number || !!data.license_expiry,
   {
-    path: ['vendor_id'],
-    message: 'Vendor ID is required when driver is a vendor driver',
+    path: ['license_expiry'],
+    message: 'License expiry is required when license number is provided',
   }
 )

@@ -1,18 +1,18 @@
-export const truckPaths = {
-  '/trucks': {
+export const accountantPaths = {
+  '/accountants': {
     get: {
-      tags: ['Trucks'],
-      summary: 'Get all trucks',
+      tags: ['Accountants'],
+      summary: 'Get all accountants',
       responses: {
         200: {
-          description: 'List of trucks',
+          description: 'List of accountants',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { type: 'array', items: { $ref: '#/components/schemas/Truck' } },
+                  data: { type: 'array', items: { $ref: '#/components/schemas/Accountant' } },
                 },
               },
             },
@@ -22,35 +22,37 @@ export const truckPaths = {
       },
     },
     post: {
-      tags: ['Trucks'],
-      summary: 'Create a new truck',
+      tags: ['Accountants'],
+      summary: 'Create a new accountant',
       requestBody: {
         required: true,
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/CreateTruckRequest' },
+            schema: { $ref: '#/components/schemas/CreateAccountantRequest' },
             example: {
-              plate_number:     'ABC-1234',
-              truck_type:       'Wing Van',
-              capacity_tons:    10,
-              model_id:         null,
-              owned_by:         'company',
-              vendor_id:   null,
-              created_by:       null,
+              first_name: 'John',
+              last_name: 'Doe',
+              middle_initial: null,
+              suffix: null,
+              username: 'johndoe',
+              email: 'john@example.com',
+              password: 'securepass123',
+              phone: '+639171234567',
+              created_by: null,
             },
           },
         },
       },
       responses: {
         201: {
-          description: 'Truck created successfully',
+          description: 'Accountant created successfully',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { $ref: '#/components/schemas/Truck' },
+                  data: { $ref: '#/components/schemas/Accountant' },
                 },
               },
             },
@@ -61,93 +63,88 @@ export const truckPaths = {
       },
     },
   },
-  '/trucks/{id}': {
+  '/accountants/{id}': {
     get: {
-      tags: ['Trucks'],
-      summary: 'Get truck by ID',
+      tags: ['Accountants'],
+      summary: 'Get accountant by ID',
       parameters: [
-        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
+        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
       responses: {
         200: {
-          description: 'Truck found',
+          description: 'Accountant found',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { $ref: '#/components/schemas/Truck' },
+                  data: { $ref: '#/components/schemas/Accountant' },
                 },
               },
             },
           },
         },
-        404: { description: 'Truck not found' },
+        404: { description: 'Accountant not found' },
         500: { description: 'Internal server error' },
       },
     },
     patch: {
-      tags: ['Trucks'],
-      summary: 'Update a truck',
+      tags: ['Accountants'],
+      summary: 'Update an accountant',
       parameters: [
-        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
+        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
       requestBody: {
         required: true,
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/UpdateTruckRequest' },
-            example: {
-              status:        'in_use',
-              capacity_tons: 12,
-              model_id:      'a1b2c3d4-e5f6-7890-abcd-ef0123456789',
-            },
+            schema: { $ref: '#/components/schemas/UpdateAccountantRequest' },
           },
         },
       },
       responses: {
         200: {
-          description: 'Truck updated successfully',
+          description: 'Accountant updated successfully',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { $ref: '#/components/schemas/Truck' },
+                  data: { $ref: '#/components/schemas/Accountant' },
                 },
               },
             },
           },
         },
         400: { description: 'Validation error' },
-        404: { description: 'Truck not found' },
+        404: { description: 'Accountant not found' },
         500: { description: 'Internal server error' },
       },
     },
     delete: {
-      tags: ['Trucks'],
-      summary: 'Delete a truck',
+      tags: ['Accountants'],
+      summary: 'Delete an accountant',
       parameters: [
-        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
+        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
       responses: {
         200: {
-          description: 'Truck deleted successfully',
+          description: 'Accountant deleted successfully',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
-                  status:  { type: 'string', example: 'success' },
-                  message: { type: 'string', example: 'Truck deleted successfully' },
+                  status: { type: 'string', example: 'success' },
+                  message: { type: 'string', example: 'Accountant deleted successfully' },
                 },
               },
             },
           },
         },
-        404: { description: 'Truck not found' },
+        404: { description: 'Accountant not found' },
         500: { description: 'Internal server error' },
       },
     },

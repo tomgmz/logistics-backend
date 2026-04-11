@@ -1,18 +1,18 @@
-export const helperPaths = {
-  '/helpers': {
+export const generalManagerPaths = {
+  '/general-managers': {
     get: {
-      tags: ['Helpers'],
-      summary: 'Get all helpers',
+      tags: ['General Managers'],
+      summary: 'Get all general managers',
       responses: {
         200: {
-          description: 'List of helpers',
+          description: 'List of general managers',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { type: 'array', items: { $ref: '#/components/schemas/Helper' } },
+                  data: { type: 'array', items: { $ref: '#/components/schemas/GeneralManager' } },
                 },
               },
             },
@@ -22,24 +22,22 @@ export const helperPaths = {
       },
     },
     post: {
-      tags: ['Helpers'],
-      summary: 'Create a new helper',
+      tags: ['General Managers'],
+      summary: 'Create a new general manager',
       requestBody: {
         required: true,
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/CreateHelperRequest' },
+            schema: { $ref: '#/components/schemas/CreateGeneralManagerRequest' },
             example: {
-              first_name: 'Carlo',
-              last_name: 'Mendoza',
+              first_name: 'Jane',
+              last_name: 'Smith',
               middle_initial: null,
               suffix: null,
-              username: 'carlomendoza',
-              email: 'carlo@example.com',
-              password: 'secret12345',
-              phone: '09201234567',
-              license_number: 'N01-12-654321',
-              license_expiry: '2027-12-31',
+              username: 'janesmith',
+              email: 'jane@example.com',
+              password: 'securepass123',
+              phone: '+639171234567',
               created_by: null,
             },
           },
@@ -47,14 +45,14 @@ export const helperPaths = {
       },
       responses: {
         201: {
-          description: 'Helper created successfully',
+          description: 'General Manager created successfully',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { $ref: '#/components/schemas/Helper' },
+                  data: { $ref: '#/components/schemas/GeneralManager' },
                 },
               },
             },
@@ -65,96 +63,88 @@ export const helperPaths = {
       },
     },
   },
-  '/helpers/{id}': {
+  '/general-managers/{id}': {
     get: {
-      tags: ['Helpers'],
-      summary: 'Get helper by ID',
+      tags: ['General Managers'],
+      summary: 'Get general manager by ID',
       parameters: [
-        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: '8a50d256-2811-49ec-935f-638597aba410' },
+        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
       responses: {
         200: {
-          description: 'Helper found',
+          description: 'General Manager found',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { $ref: '#/components/schemas/Helper' },
+                  data: { $ref: '#/components/schemas/GeneralManager' },
                 },
               },
             },
           },
         },
-        404: { description: 'Helper not found' },
+        404: { description: 'General Manager not found' },
         500: { description: 'Internal server error' },
       },
     },
     patch: {
-      tags: ['Helpers'],
-      summary: 'Update a helper',
+      tags: ['General Managers'],
+      summary: 'Update a general manager',
       parameters: [
-        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: '8a50d256-2811-49ec-935f-638597aba410' },
+        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
       requestBody: {
         required: true,
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/UpdateHelperRequest' },
-            example: {
-              first_name: 'Carlo',
-              last_name: 'Mendoza',
-              phone: '09201234567',
-              license_number: 'N01-12-654321',
-              license_expiry: '2028-12-31',
-              driver_status: 'available',
-            },
+            schema: { $ref: '#/components/schemas/UpdateGeneralManagerRequest' },
           },
         },
       },
       responses: {
         200: {
-          description: 'Helper updated successfully',
+          description: 'General Manager updated successfully',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { $ref: '#/components/schemas/Helper' },
+                  data: { $ref: '#/components/schemas/GeneralManager' },
                 },
               },
             },
           },
         },
         400: { description: 'Validation error' },
-        404: { description: 'Helper not found' },
+        404: { description: 'General Manager not found' },
         500: { description: 'Internal server error' },
       },
     },
     delete: {
-      tags: ['Helpers'],
-      summary: 'Delete a helper',
+      tags: ['General Managers'],
+      summary: 'Delete a general manager',
       parameters: [
-        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: '8a50d256-2811-49ec-935f-638597aba410' },
+        { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } },
       ],
       responses: {
         200: {
-          description: 'Helper deleted successfully',
+          description: 'General Manager deleted successfully',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  message: { type: 'string', example: 'Helper deleted successfully' },
+                  message: { type: 'string', example: 'General Manager deleted successfully' },
                 },
               },
             },
           },
         },
-        404: { description: 'Helper not found' },
+        404: { description: 'General Manager not found' },
         500: { description: 'Internal server error' },
       },
     },

@@ -3,17 +3,21 @@ import { validate } from '../middlewares/validate.middleware.js'
 import { createAdminSchema, updateAdminSchema }               from '../schema/admin/admin.schema.js'
 import { createClientSchema, updateClientSchema }             from '../schema/admin/client.schema.js'
 import { createDriverSchema, updateDriverSchema }             from '../schema/admin/driver.schema.js'
-import { createHelperSchema, updateHelperSchema }             from '../schema/admin/helper.schema.js'
+import { createAssistantDriverSchema, updateAssistantDriverSchema } from '../schema/admin/assistant_driver.schema.js'
 import { createTruckSchema, updateTruckSchema }               from '../schema/admin/truck.schema.js'
 import { createTruckModelSchema, updateTruckModelSchema }     from '../schema/admin/truck-model.schema.js'
-import { createSubcontractorSchema, updateSubcontractorSchema } from '../schema/admin/subcontractor.schema.js'
+import { createVendorSchema, updateVendorSchema }             from '../schema/admin/vendor.schema.js'
+import { createAccountantSchema, updateAccountantSchema }     from '../schema/admin/accountant.schema.js'
+import { createGeneralManagerSchema, updateGeneralManagerSchema } from '../schema/admin/general_manager.schema.js'
 import * as AdminController         from '../controllers/admin/admin.controller.js'
 import * as ClientController        from '../controllers/admin/client.controller.js'
 import * as DriverController        from '../controllers/admin/driver.controller.js'
-import * as HelperController        from '../controllers/admin/helper.controller.js'
-import * as SubcontractorController from '../controllers/admin/subcontractor.controller.js'
+import * as AssistantDriverController from '../controllers/admin/assistant_driver.controller.js'
+import * as VendorController        from '../controllers/admin/vendor.controller.js'
 import * as TruckController         from '../controllers/admin/truck.controller.js'
 import * as TruckModelController    from '../controllers/admin/truck-model.controller.js'
+import * as AccountantController    from '../controllers/admin/accountant.controller.js'
+import * as GeneralManagerController from '../controllers/admin/general_manager.controller.js'
 
 const router = Router()
 
@@ -38,19 +42,19 @@ router.post('/drivers',       validate(createDriverSchema), DriverController.cre
 router.patch('/drivers/:id',  validate(updateDriverSchema), DriverController.updateDriver)
 router.delete('/drivers/:id', DriverController.deleteDriver)
 
-// Helpers
-router.get('/helpers',        HelperController.getAllHelpers)
-router.get('/helpers/:id',    HelperController.getHelperById)
-router.post('/helpers',       validate(createHelperSchema), HelperController.createHelper)
-router.patch('/helpers/:id',  validate(updateHelperSchema), HelperController.updateHelper)
-router.delete('/helpers/:id', HelperController.deleteHelper)
+// Assistant Drivers
+router.get('/assistant_drivers',        AssistantDriverController.getAllAssistantDrivers)
+router.get('/assistant_drivers/:id',    AssistantDriverController.getAssistantDriverById)
+router.post('/assistant_drivers',       validate(createAssistantDriverSchema), AssistantDriverController.createAssistantDriver)
+router.patch('/assistant_drivers/:id',  validate(updateAssistantDriverSchema), AssistantDriverController.updateAssistantDriver)
+router.delete('/assistant_drivers/:id', AssistantDriverController.deleteAssistantDriver)
 
-// Subcontractors
-router.get('/subcontractors',        SubcontractorController.getAllSubcontractors)
-router.get('/subcontractors/:id',    SubcontractorController.getSubcontractorById)
-router.post('/subcontractors',       validate(createSubcontractorSchema), SubcontractorController.createSubcontractor)
-router.patch('/subcontractors/:id',  validate(updateSubcontractorSchema), SubcontractorController.updateSubcontractor)
-router.delete('/subcontractors/:id', SubcontractorController.deleteSubcontractor)
+// Vendors
+router.get('/vendors',        VendorController.getAllVendors)
+router.get('/vendors/:id',    VendorController.getVendorById)
+router.post('/vendors',       validate(createVendorSchema), VendorController.createVendor)
+router.patch('/vendors/:id',  validate(updateVendorSchema), VendorController.updateVendor)
+router.delete('/vendors/:id', VendorController.deleteVendor)
 
 // Trucks
 router.get('/trucks',        TruckController.getAllTrucks)
@@ -66,6 +70,20 @@ router.post('/truck-models',       validate(createTruckModelSchema), TruckModelC
 router.patch('/truck-models/:id',  validate(updateTruckModelSchema), TruckModelController.updateTruckModel)
 router.delete('/truck-models/:id', TruckModelController.deleteTruckModel)
 
+// Accountants
+router.get('/accountants',        AccountantController.getAllAccountants)
+router.get('/accountants/:id',    AccountantController.getAccountantById)
+router.post('/accountants',       validate(createAccountantSchema), AccountantController.createAccountant)
+router.patch('/accountants/:id',  validate(updateAccountantSchema), AccountantController.updateAccountant)
+router.delete('/accountants/:id', AccountantController.deleteAccountant)
+
+// General Managers
+router.get('/general-managers',        GeneralManagerController.getAllGeneralManagers)
+router.get('/general-managers/:id',    GeneralManagerController.getGeneralManagerById)
+router.post('/general-managers',       validate(createGeneralManagerSchema), GeneralManagerController.createGeneralManager)
+router.patch('/general-managers/:id',  validate(updateGeneralManagerSchema), GeneralManagerController.updateGeneralManager)
+router.delete('/general-managers/:id', GeneralManagerController.deleteGeneralManager)
+
 export default router
 
 
@@ -75,15 +93,15 @@ export default router
 // import { createAdminSchema, updateAdminSchema }                 from '../schema/admin/admin.schema.js'
 // import { createClientSchema, updateClientSchema }               from '../schema/admin/client.schema.js'
 // import { createDriverSchema, updateDriverSchema }               from '../schema/admin/driver.schema.js'
-// import { createHelperSchema, updateHelperSchema }               from '../schema/admin/helper.schema.js'
+// import { createAssistantDriverSchema, updateAssistantDriverSchema } from '../schema/admin/assistant_driver.schema.js'
 // import { createTruckSchema, updateTruckSchema }                 from '../schema/admin/truck.schema.js'
 // import { createTruckModelSchema, updateTruckModelSchema }       from '../schema/admin/truck-model.schema.js'
-// import { createSubcontractorSchema, updateSubcontractorSchema } from '../schema/admin/subcontractor.schema.js'
+// import { createVendorSchema, updateVendorSchema } from '../schema/admin/vendor.schema.js'
 // import * as AdminController         from '../controllers/admin/admin.controller.js'
 // import * as ClientController        from '../controllers/admin/client.controller.js'
 // import * as DriverController        from '../controllers/admin/driver.controller.js'
-// import * as HelperController        from '../controllers/admin/helper.controller.js'
-// import * as SubcontractorController from '../controllers/admin/subcontractor.controller.js'
+// import * as AssistantDriverController from '../controllers/admin/assistant_driver.controller.js'
+// import * as VendorController        from '../controllers/admin/vendor.controller.js'
 // import * as TruckController         from '../controllers/admin/truck.controller.js'
 // import * as TruckModelController    from '../controllers/admin/truck-model.controller.js'
 
@@ -110,17 +128,17 @@ export default router
 // router.patch('/drivers/:id',  authenticate, isAdmin, validate(updateDriverSchema), DriverController.updateDriver)
 // router.delete('/drivers/:id', authenticate, isAdmin, DriverController.deleteDriver)
 
-// router.get('/helpers',        authenticate, isAdmin, HelperController.getAllHelpers)
-// router.get('/helpers/:id',    authenticate, isAdmin, HelperController.getHelperById)
-// router.post('/helpers',       authenticate, isAdmin, validate(createHelperSchema), HelperController.createHelper)
-// router.patch('/helpers/:id',  authenticate, isAdmin, validate(updateHelperSchema), HelperController.updateHelper)
-// router.delete('/helpers/:id', authenticate, isAdmin, HelperController.deleteHelper)
+// router.get('/assistant_drivers',        authenticate, isAdmin, AssistantDriverController.getAllAssistantDrivers)
+// router.get('/assistant_drivers/:id',    authenticate, isAdmin, AssistantDriverController.getAssistantDriverById)
+// router.post('/assistant_drivers',       authenticate, isAdmin, validate(createAssistantDriverSchema), AssistantDriverController.createAssistantDriver)
+// router.patch('/assistant_drivers/:id',  authenticate, isAdmin, validate(updateAssistantDriverSchema), AssistantDriverController.updateAssistantDriver)
+// router.delete('/assistant_drivers/:id', authenticate, isAdmin, AssistantDriverController.deleteAssistantDriver)
 
-// router.get('/subcontractors',        authenticate, isAdmin, SubcontractorController.getAllSubcontractors)
-// router.get('/subcontractors/:id',    authenticate, isAdmin, SubcontractorController.getSubcontractorById)
-// router.post('/subcontractors',       authenticate, isAdmin, validate(createSubcontractorSchema), SubcontractorController.createSubcontractor)
-// router.patch('/subcontractors/:id',  authenticate, isAdmin, validate(updateSubcontractorSchema), SubcontractorController.updateSubcontractor)
-// router.delete('/subcontractors/:id', authenticate, isAdmin, SubcontractorController.deleteSubcontractor)
+// router.get('/vendors',        authenticate, isAdmin, VendorController.getAllVendors)
+// router.get('/vendors/:id',    authenticate, isAdmin, VendorController.getVendorById)
+// router.post('/vendors',       authenticate, isAdmin, validate(createVendorSchema), VendorController.createVendor)
+// router.patch('/vendors/:id',  authenticate, isAdmin, validate(updateVendorSchema), VendorController.updateVendor)
+// router.delete('/vendors/:id', authenticate, isAdmin, VendorController.deleteVendor)
 
 // router.get('/trucks',        authenticate, isAdmin, TruckController.getAllTrucks)
 // router.get('/trucks/:id',    authenticate, isAdmin, TruckController.getTruckById)

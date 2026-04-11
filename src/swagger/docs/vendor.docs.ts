@@ -1,18 +1,18 @@
-export const subcontractorPaths = {
-  '/subcontractors': {
+export const vendorPaths = {
+  '/vendors': {
     get: {
-      tags: ['Subcontractors'],
-      summary: 'Get all subcontractors',
+      tags: ['Vendors'],
+      summary: 'Get all vendors',
       responses: {
         200: {
-          description: 'List of subcontractors',
+          description: 'List of vendors',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { type: 'array', items: { $ref: '#/components/schemas/Subcontractor' } },
+                  data: { type: 'array', items: { $ref: '#/components/schemas/Vendor' } },
                 },
               },
             },
@@ -22,13 +22,13 @@ export const subcontractorPaths = {
       },
     },
     post: {
-      tags: ['Subcontractors'],
-      summary: 'Create a new subcontractor',
+      tags: ['Vendors'],
+      summary: 'Create a new vendor',
       requestBody: {
         required: true,
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/CreateSubcontractorRequest' },
+            schema: { $ref: '#/components/schemas/CreateVendorRequest' },
             example: {
               first_name: 'Pedro',
               last_name: 'Reyes',
@@ -38,7 +38,7 @@ export const subcontractorPaths = {
               email: 'pedro@example.com',
               password: 'secret12345',
               phone: '09171234567',
-              subcontractor_type: 'company',
+              vendor_type: 'company',
               company_name: 'Reyes Trucking Co.',
               business_permit: 'BP-2026-00123',
               created_by: null,
@@ -48,14 +48,14 @@ export const subcontractorPaths = {
       },
       responses: {
         201: {
-          description: 'Subcontractor created successfully',
+          description: 'Vendor created successfully',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { $ref: '#/components/schemas/Subcontractor' },
+                  data: { $ref: '#/components/schemas/Vendor' },
                 },
               },
             },
@@ -66,35 +66,35 @@ export const subcontractorPaths = {
       },
     },
   },
-  '/subcontractors/{id}': {
+  '/vendors/{id}': {
     get: {
-      tags: ['Subcontractors'],
-      summary: 'Get subcontractor by ID',
+      tags: ['Vendors'],
+      summary: 'Get vendor by ID',
       parameters: [
         { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: 'edf523d7-5b55-4c00-b84d-a09e9cb72f8b' },
       ],
       responses: {
         200: {
-          description: 'Subcontractor found',
+          description: 'Vendor found',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { $ref: '#/components/schemas/Subcontractor' },
+                  data: { $ref: '#/components/schemas/Vendor' },
                 },
               },
             },
           },
         },
-        404: { description: 'Subcontractor not found' },
+        404: { description: 'Vendor not found' },
         500: { description: 'Internal server error' },
       },
     },
     patch: {
-      tags: ['Subcontractors'],
-      summary: 'Update a subcontractor',
+      tags: ['Vendors'],
+      summary: 'Update a vendor',
       parameters: [
         { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: 'edf523d7-5b55-4c00-b84d-a09e9cb72f8b' },
       ],
@@ -102,13 +102,13 @@ export const subcontractorPaths = {
         required: true,
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/UpdateSubcontractorRequest' },
+            schema: { $ref: '#/components/schemas/UpdateVendorRequest' },
             example: {
               first_name: 'Pedro',
               last_name: 'Reyes',
               email: 'pedro@example.com',
               phone: '09171234567',
-              subcontractor_type: 'company',
+              vendor_type: 'company',
               company_name: 'Reyes Trucking Co.',
               business_permit: 'BP-2026-00123',
             },
@@ -117,46 +117,46 @@ export const subcontractorPaths = {
       },
       responses: {
         200: {
-          description: 'Subcontractor updated successfully',
+          description: 'Vendor updated successfully',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  data: { $ref: '#/components/schemas/Subcontractor' },
+                  data: { $ref: '#/components/schemas/Vendor' },
                 },
               },
             },
           },
         },
         400: { description: 'Validation error' },
-        404: { description: 'Subcontractor not found' },
+        404: { description: 'Vendor not found' },
         500: { description: 'Internal server error' },
       },
     },
     delete: {
-      tags: ['Subcontractors'],
-      summary: 'Delete a subcontractor',
+      tags: ['Vendors'],
+      summary: 'Delete a vendor',
       parameters: [
         { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: 'edf523d7-5b55-4c00-b84d-a09e9cb72f8b' },
       ],
       responses: {
         200: {
-          description: 'Subcontractor deleted successfully',
+          description: 'Vendor deleted successfully',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status: { type: 'string', example: 'success' },
-                  message: { type: 'string', example: 'Subcontractor deleted successfully' },
+                  message: { type: 'string', example: 'Vendor deleted successfully' },
                 },
               },
             },
           },
         },
-        404: { description: 'Subcontractor not found' },
+        404: { description: 'Vendor not found' },
         500: { description: 'Internal server error' },
       },
     },

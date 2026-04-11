@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { USER_SUFFIXES } from '../../types/user.types.js'
 
-export const createHelperSchema = z.object({
+export const createVendorSchema = z.object({
   first_name:     z.string().min(2).max(50)
                   .regex(/^[\p{L}]+(?:[ '-][\p{L}]+)*$/u, 'First name must contain only letters, spaces, hyphens, or apostrophes'),
   last_name:      z.string().min(2).max(50)
@@ -25,30 +25,12 @@ export const createHelperSchema = z.object({
         .transform(v => v === '' ? null : v),
   created_by:     z.string().uuid().optional().nullable(),
 
-  license_number: z
-                .string()
-                .regex(/^[A-Z]\d{2}-\d{2}-\d{6}$/, 'Invalid LTO license number format (e.g. A01-23-456789)'),
-  license_expiry: z
-                .string()
-                .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)')
-                .refine(val => {
-                  const date = new Date(val)
-                  return !isNaN(date.getTime())
-                }, 'Invalid date')
-                .refine(val => {
-                  return new Date(val) > new Date()
-                }, 'License is already expired'),
-  is_subcontractor_driver: z.boolean().optional().default(false),
-  subcontractor_id:        z.string().uuid().optional().nullable(),
-}).refine(
-  (data) => !data.license_number || !!data.license_expiry,
-  {
-    path: ['license_expiry'],
-    message: 'License expiry is required when license number is provided',
-  }
-)
+  vendor_type:    z.enum(['individual', 'company']),
+  company_name:   z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
+  business_permit: z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
+})
 
-export const updateHelperSchema = z.object({
+export const updateVendorSchema = z.object({
   first_name:     z.string().min(2).max(50)
                   .regex(/^[\p{L}]+(?:[ '-][\p{L}]+)*$/u, 'First name must contain only letters, spaces, hyphens, or apostrophes')
                   .optional(),
@@ -67,13 +49,7 @@ export const updateHelperSchema = z.object({
         .optional()
         .nullable()
         .transform(v => v === '' ? null : v),
-  license_number: z.string().min(1).max(50).optional().nullable().transform(v => v === '' ? null : v),
-  license_expiry: z.string().optional().nullable().transform(v => v === '' ? null : v),
-  driver_status:  z.enum(['available', 'assigned', 'on_leave', 'inactive']).optional(),
-}).refine(
-  (data) => !data.license_number || !!data.license_expiry,
-  {
-    path: ['license_expiry'],
-    message: 'License expiry is required when license number is provided',
-  }
-)
+  vendor_type:    z.enum(['individual', 'company']).optional(),
+  company_name:   z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
+  business_permit: z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
+})
