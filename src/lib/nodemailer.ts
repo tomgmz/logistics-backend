@@ -1,16 +1,25 @@
 import nodemailer from 'nodemailer'
 
-const APP_NAME            = process.env.APP_NAME             || 'Logistics'
-const PHYSICAL_ADDRESS    = process.env.APP_PHYSICAL_ADDRESS || 'Blk. 6 Lot 8 Lynville Enclave, Mamatid, City of Cabuyao, Laguna'
-const APP_SUPPORT_EMAIL   = process.env.APP_SUPPORT_EMAIL    || process.env.GMAIL_USER
-const FROM_ADDRESS        = process.env.GMAIL_USER!
+const APP_NAME          = process.env.APP_NAME             || 'Logistics'
+const PHYSICAL_ADDRESS  = process.env.APP_PHYSICAL_ADDRESS || 'Blk. 6 Lot 8 Lynville Enclave, Mamatid, City of Cabuyao, Laguna'
+const APP_SUPPORT_EMAIL = process.env.APP_SUPPORT_EMAIL    || process.env.GMAIL_USER
+const FROM_ADDRESS      = process.env.GMAIL_USER!
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
+  pool:    true,
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
   },
+})
+
+transporter.verify((error) => {
+  if (error) {
+    console.error('[mailer] SMTP connection failed:', error.message)
+  } else {
+    console.log('[mailer] SMTP connection ready')
+  }
 })
 
 export async function sendOtpEmail(
@@ -32,7 +41,7 @@ export async function sendOtpEmail(
     text:    generateOtpEmailText(name, code),
   })
 
-  console.log(`OTP email sent to ${to}`)
+  console.log(`[mailer] OTP sent to ${to}`)
 }
 
 function generateOtpEmailHtml(name: string, code: string): string {
