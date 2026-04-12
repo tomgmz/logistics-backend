@@ -5,9 +5,13 @@ const PHYSICAL_ADDRESS  = process.env.APP_PHYSICAL_ADDRESS || 'Blk. 6 Lot 8 Lynv
 const APP_SUPPORT_EMAIL = process.env.APP_SUPPORT_EMAIL    || process.env.GMAIL_USER
 const FROM_ADDRESS      = process.env.GMAIL_USER!
 
+// Railway cannot reach Gmail over IPv6 — force IPv4
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  pool:    true,
+  host:   'smtp.gmail.com',
+  port:   465,
+  secure: true,          // SSL on port 465
+  pool:   true,          // reuse connections
+  family: 4,             // force IPv4
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
