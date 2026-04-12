@@ -1,4 +1,4 @@
-import nodemailer, { TransportOptions } from 'nodemailer'
+import nodemailer from 'nodemailer'
 
 const APP_NAME          = process.env.APP_NAME             || 'Logistics'
 const PHYSICAL_ADDRESS  = process.env.APP_PHYSICAL_ADDRESS || 'Blk. 6 Lot 8 Lynville Enclave, Mamatid, City of Cabuyao, Laguna'
@@ -6,16 +6,13 @@ const APP_SUPPORT_EMAIL = process.env.APP_SUPPORT_EMAIL    || process.env.GMAIL_
 const FROM_ADDRESS      = process.env.GMAIL_USER!
 
 const transporter = nodemailer.createTransport({
-  host:   'smtp.gmail.com',
-  port:   465,
-  secure: true,
-  pool:   true,
-  family: 4,
+  service: 'gmail',
+  pool:    true,
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
   },
-} as TransportOptions)
+})
 
 transporter.verify((error) => {
   if (error) {
