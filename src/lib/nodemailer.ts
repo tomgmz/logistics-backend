@@ -1,84 +1,38 @@
-import sgMail from '@sendgrid/mail'
+import nodemailer from 'nodemailer'
 
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY
-const FROM_ADDRESS = process.env.SENDGRID_FROM_EMAIL || process.env.MAIL_FROM
-const APP_NAME = process.env.APP_NAME || 'Logistics'
-const PHYSICAL_ADDRESS = process.env.APP_PHYSICAL_ADDRESS || 'Blk. 6 Lot 8 Lynville Enclave, Mamatid, City of Cabuyao, Laguna'
-const APP_SUPPORT_EMAIL = process.env.APP_SUPPORT_EMAIL || FROM_ADDRESS
+const APP_NAME            = process.env.APP_NAME             || 'Logistics'
+const PHYSICAL_ADDRESS    = process.env.APP_PHYSICAL_ADDRESS || 'Blk. 6 Lot 8 Lynville Enclave, Mamatid, City of Cabuyao, Laguna'
+const APP_SUPPORT_EMAIL   = process.env.APP_SUPPORT_EMAIL    || process.env.GMAIL_USER
+const FROM_ADDRESS        = process.env.GMAIL_USER!
 
-if (!SENDGRID_API_KEY) {
-  console.error('SENDGRID_API_KEY is not set. Email functionality will not work.')
-} else if (!FROM_ADDRESS) {
-  console.error('SENDGRID_FROM_EMAIL is not set. Email functionality will not work.')
-} else {
-  sgMail.setApiKey(SENDGRID_API_KEY)
-}
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+})
 
-/**
- * Send OTP verification code via email
- * @param to - Recipient email address
- * @param code - 6-digit OTP code
- * @param firstName - Recipient's first name (optional)
- */
 export async function sendOtpEmail(
   to: string,
   code: string,
   firstName?: string | null
 ): Promise<void> {
-  if (!SENDGRID_API_KEY) {
-    throw new Error('SendGrid is not configured. Please set SENDGRID_API_KEY environment variable.')
-  }
-
-  if (!FROM_ADDRESS) {
-    throw new Error('Sender email is not configured. Please set SENDGRID_FROM_EMAIL environment variable.')
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    throw new Error('Gmail is not configured. Please set GMAIL_USER and GMAIL_APP_PASSWORD.')
   }
 
   const name = firstName ?? 'there'
 
-  try {
-    const message = {
-      to,
-      from: {
-        email: FROM_ADDRESS,
-        name: APP_NAME,
-      },
-      subject: `${code} is your ${APP_NAME} verification code`,
-      html: generateOtpEmailHtml(name, code),
-      text: generateOtpEmailText(name, code),
-      headers: {
-        'X-Priority': '1',
-        'X-Mailer': APP_NAME,
-      },
-      trackingSettings: {
-        clickTracking: { enable: false },
-        openTracking: { enable: false },
-      },
-      mailSettings: {
-        bypassListManagement: {
-          enable: true,
-        },
-      },
-    }
+  await transporter.sendMail({
+    from:    `"${APP_NAME}" <${FROM_ADDRESS}>`,
+    to,
+    subject: `${code} is your ${APP_NAME} verification code`,
+    html:    generateOtpEmailHtml(name, code),
+    text:    generateOtpEmailText(name, code),
+  })
 
-    await sgMail.send(message)
-    console.log(`OTP email sent to ${to}`)
-  } catch (error: any) {
-    console.error('SendGrid error:', {
-      message: error.message,
-      code: error.code,
-      response: error.response?.body,
-    })
-
-    if (error.code === 403) {
-      throw new Error('Email service authentication failed. Please check SENDGRID_API_KEY.')
-    }
-    if (error.response?.body?.errors) {
-      const errorMsg = error.response.body.errors[0]?.message || 'Unknown error'
-      throw new Error(`Failed to send verification code: ${errorMsg}`)
-    }
-
-    throw new Error('Failed to send verification code. Please try again later.')
-  }
+  console.log(`OTP email sent to ${to}`)
 }
 
 function generateOtpEmailHtml(name: string, code: string): string {
@@ -90,13 +44,10 @@ function generateOtpEmailHtml(name: string, code: string): string {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <meta name="x-apple-disable-message-reformatting">
-      <meta http-equiv="X-UA-Compatible" content="IE=edge">
       <title>Your ${APP_NAME} login code</title>
     </head>
-    <body style="margin:0;padding:0;background-color:#f6f6f6;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+    <body style="margin:0;padding:0;background-color:#f6f6f6;">
 
-      <!-- Preheader text (hidden, shows in inbox preview) -->
       <div style="display:none;font-size:1px;color:#f6f6f6;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
         Your one-time login code for ${APP_NAME} — expires in 5 minutes.
       </div>
@@ -107,7 +58,6 @@ function generateOtpEmailHtml(name: string, code: string): string {
             <table width="600" cellpadding="0" cellspacing="0" border="0"
               style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
 
-              <!-- Header -->
               <tr>
                 <td style="padding:40px 40px 20px 40px;">
                   <h1 style="margin:0;font-family:Arial,sans-serif;font-size:22px;color:#1a1a1a;font-weight:700;">
@@ -116,14 +66,12 @@ function generateOtpEmailHtml(name: string, code: string): string {
                 </td>
               </tr>
 
-              <!-- Divider -->
               <tr>
                 <td style="padding:0 40px;">
                   <hr style="border:none;border-top:1px solid #eeeeee;margin:0;">
                 </td>
               </tr>
 
-              <!-- Body -->
               <tr>
                 <td style="padding:30px 40px 0 40px;">
                   <p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
@@ -136,7 +84,6 @@ function generateOtpEmailHtml(name: string, code: string): string {
                 </td>
               </tr>
 
-              <!-- OTP Code Box -->
               <tr>
                 <td style="padding:0 40px 30px 40px;">
                   <table width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -157,7 +104,6 @@ function generateOtpEmailHtml(name: string, code: string): string {
                 </td>
               </tr>
 
-              <!-- Warning -->
               <tr>
                 <td style="padding:0 40px 30px 40px;">
                   <table width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -172,12 +118,10 @@ function generateOtpEmailHtml(name: string, code: string): string {
                 </td>
               </tr>
 
-              <!-- Didn't request note -->
               <tr>
                 <td style="padding:0 40px 30px 40px;">
                   <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#666666;line-height:1.5;">
                     If you did not request this code, you can safely ignore this email.
-                    Someone may have entered your email address by mistake.
                     Contact us at
                     <a href="mailto:${APP_SUPPORT_EMAIL}" style="color:#4f46e5;text-decoration:none;">${APP_SUPPORT_EMAIL}</a>
                     if you have concerns.
@@ -185,18 +129,16 @@ function generateOtpEmailHtml(name: string, code: string): string {
                 </td>
               </tr>
 
-              <!-- Footer -->
               <tr>
                 <td style="background-color:#f9f9f9;padding:20px 40px;border-top:1px solid #eeeeee;">
-                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;line-height:1.5;">
+                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
                     © ${year} ${APP_NAME}. All rights reserved.
                   </p>
-                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;line-height:1.5;">
+                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
                     ${PHYSICAL_ADDRESS}
                   </p>
-                  <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;line-height:1.5;">
+                  <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
                     This is a transactional email sent because a login was requested for your account.
-                    You cannot unsubscribe from security emails.
                   </p>
                 </td>
               </tr>
@@ -231,7 +173,5 @@ For concerns, contact us at ${APP_SUPPORT_EMAIL}.
 ---
 © ${year} ${APP_NAME}. All rights reserved.
 ${PHYSICAL_ADDRESS}
-
-This is a transactional security email. You cannot unsubscribe from login verification emails.
   `.trim()
 }

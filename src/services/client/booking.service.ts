@@ -19,9 +19,7 @@ function parseCargoDetails(raw: string | null | undefined): ParsedCargoDetails |
 }
 
 export async function getAllBookingsService(): Promise<BookingWithRelations[]> {
-  const bookings = await BookingModel.findAll()
-  if (!bookings || bookings.length === 0) throw new Error('No bookings found')
-  return bookings
+  return await BookingModel.findAll() ?? []
 }
 
 export async function getBookingByIdService(bookingId: string): Promise<BookingWithRelations> {
@@ -35,9 +33,7 @@ export async function getBookingByIdService(bookingId: string): Promise<BookingW
 }
 
 export async function getBookingsByClientService(clientId: string): Promise<BookingWithRelations[]> {
-  const bookings = await BookingModel.findByClientId(clientId)
-  if (!bookings || bookings.length === 0) throw new Error('No bookings found for this client')
-  return bookings
+  return await BookingModel.findByClientId(clientId) ?? []
 }
 
 export async function createBookingService(input: CreateBookingInput): Promise<BookingWithRelations> {
@@ -121,9 +117,7 @@ export async function getDestinationsByBookingService(bookingId: string): Promis
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
 
-  const destinations = await BookingModel.findDestinationsByBookingId(bookingId)
-  if (!destinations || destinations.length === 0) throw new Error('No destinations found for this booking')
-  return destinations
+  return await BookingModel.findDestinationsByBookingId(bookingId) ?? []
 }
 
 export async function updateDestinationService(
