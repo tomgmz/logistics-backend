@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import type { SignOptions } from 'jsonwebtoken'
 import * as AuthModel from '../../models/auth/auth.model.js'
-import { sendOtpEmail } from '../../lib/nodemailer.js'
+import { sendOtpEmail } from '../../lib/brevo-mailer.js'
 import {
   RequestOtpInput,
   VerifyOtpInput,
