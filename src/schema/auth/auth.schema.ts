@@ -8,6 +8,7 @@ export const verifyOtpSchema = z.object({
   email:       z.string().email('Invalid email address'),
   code:        z.string().length(6, 'OTP must be exactly 6 digits').regex(/^\d{6}$/, 'OTP must be numeric'),
   device_info: z.string().optional(),
+  platform:    z.enum(['web', 'mobile']).default('web'),
 })
 
 export const authStatusSchema = z.object({

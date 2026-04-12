@@ -27,15 +27,20 @@ const BCRYPT_ROUNDS     = 12
 const ACCOUNT_LOCK_MINS = 3
 
 // Role-based platform restrictions
-const PLATFORM_RESTRICTIONS: Record<string, string[]> = {
-  admin: ['web', 'mobile'],
-  driver: ['mobile'],
-  assistant_driver: ['mobile'],
-  customer: ['web'],
+const PLATFORM_RESTRICTIONS: Record<string, Array<'web' | 'mobile'>> = {
+  admin:            ['web', 'mobile'],
+  driver:           ['web', 'mobile'],
+  assistant_driver: ['web', 'mobile'],
+  super_admin:      ['web'],
+  general_manager:  ['web'],
+  accountant:       ['web'],
+  customer:         ['web'],
+  client:           ['web'],
+  vendor:           ['web'],
 }
 
 function isRoleAllowedOnPlatform(role: string, platform: 'web' | 'mobile'): boolean {
-  const allowedPlatforms = PLATFORM_RESTRICTIONS[role.toLowerCase()] || []
+  const allowedPlatforms = PLATFORM_RESTRICTIONS[role.toLowerCase()] ?? []
   return allowedPlatforms.includes(platform)
 }
 
@@ -303,8 +308,27 @@ export async function verifyOtp(
     )
   }
 
+  // OTP is validmark it used and clear failed attempts
   await AuthModel.markOtpUsed(latestOtp.id)
   await AuthModel.resetFailedAttempts(user.user_id)
+
+  const requestedPlatform = (input.platform ?? 'web') as 'web' | 'mobile'
+  if (!isRoleAllowedOnPlatform(user.role, requestedPlatform)) {
+    await AuthModel.createLoginHistory({
+      user_id: user.user_id,
+      email,
+      ip_address: ipAddress,
+      device_info: input.device_info,
+      user_agent: userAgent,
+      attempt_status: 'failed_inactive',
+      failure_reason: `Role '${user.role}' is not permitted on platform '${requestedPlatform}'`,
+    })
+    throw new Error(
+      requestedPlatform === 'mobile'
+        ? 'Mobile access is not available for your account type.'
+        : 'Web access is not available for your account type.'
+    )
+  }
 
   const deviceFingerprint = userAgent
     ? generateDeviceFingerprint(userAgent, ipAddress || 'unknown')

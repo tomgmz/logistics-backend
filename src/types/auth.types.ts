@@ -95,7 +95,7 @@ export interface VerifyOtpInput {
   email: string
   code: string
   device_info?: string
-  platform?: 'mobile' | 'web'
+  platform?: 'web' | 'mobile'
 }
 
 export interface RefreshTokenInput {
