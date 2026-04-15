@@ -33,8 +33,6 @@ export async function sendOtpEmail(
     sender:      { name: FROM_NAME, email: FROM_EMAIL },
     to:          [{ email: to, name: firstName ?? undefined }],
   })
-
-  console.log(`[mailer] OTP sent to ${to}`)
 }
 
 function generateOtpEmailHtml(name: string, code: string): string {

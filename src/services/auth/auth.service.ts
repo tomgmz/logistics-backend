@@ -466,9 +466,40 @@ export async function logoutAll(userId: string): Promise<void> {
 }
 
 export async function getMe(userId: string) {
-  const user = await AuthModel.findUserWithClient(userId)
+  const user = await AuthModel.findUserById(userId)
   if (!user) throw new Error('User not found')
-  return user
+
+  switch (user.role) {
+    case 'driver': {
+      const data = await AuthModel.findUserWithDriver(userId)
+
+      if (!data) throw new Error('User not found')
+
+      const driverId = data.drivers?.driver_id ?? null
+
+      return {
+        ...data,
+        driver_id: data.drivers?.driver_id ?? null,
+      }
+    }
+
+    case 'assistant_driver': {
+      const data = await AuthModel.findUserWithAssistantDriver(userId)
+
+      if (!data) throw new Error('User not found')
+
+      return {
+        ...data,
+        assistant_driver_id: data.assistant_drivers?.assistant_driver_id ?? null,
+      }
+    }
+
+    case 'client':
+      return AuthModel.findUserWithClient(userId)
+
+    default:
+      return user
+  }
 }
 
 function parseDuration(d: string): number {

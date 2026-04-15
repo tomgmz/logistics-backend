@@ -11,6 +11,7 @@ import {
   updateDestinationService,
   updateDestinationStatusService,
   deleteDestinationService,
+  getBookingsByDriverService,
 } from '../../services/client/booking.service.js'
 
 //Bookings
@@ -130,3 +131,14 @@ export const deleteDestination = async (req: Request, res: Response) => {
     res.status(status).json({ status: 'error', message: error.message })
   }
 }
+
+export const getBookingsByDriver = async (req: Request, res: Response) => {
+  try {
+    const bookings = await getBookingsByDriverService(req.params.driverId as string)
+    res.status(200).json({ status: 'success', data: bookings })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404 : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+ 

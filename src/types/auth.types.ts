@@ -33,23 +33,37 @@ export interface UserSession {
 }
 
 export interface AuthUser {
-  user_id: string
-  email: string
-  username: string
+  user_id:    string
+  email:      string
+  username:   string
   first_name: string | null
-  last_name: string | null
-  role: string
-  status: string
+  last_name:  string | null
+  role:       string
+  status:     string
   failed_login_attempts?: number
-  lockup_count?: number
-  locked_until?: Date | null
-  last_login_at?: Date | null
-  last_login_ip?: string | null
+  lockup_count?:          number
+  locked_until?:          Date | null
+
   clients?: {
-    client_id: string
-    company_name: string | null
+    client_id:       string
+    company_name:    string | null
     billing_address: string | null
-    payment_terms: number | null
+    payment_terms:   number | null
+  } | null
+
+  drivers?: {
+    driver_id:        string
+    license_number:   string
+    license_expiry:   string
+    status:           string
+    is_vendor_driver: boolean
+  } | null
+
+  assistant_drivers?: {
+    assistant_driver_id: string
+    license_number:      string | null
+    license_expiry:      string | null
+    status:              string
   } | null
 }
 

@@ -61,7 +61,6 @@ export async function sendOtpEmail(
     }
 
     await sgMail.send(message)
-    console.log(`OTP email sent to ${to}`)
   } catch (error: any) {
     console.error('SendGrid error:', {
       message: error.message,

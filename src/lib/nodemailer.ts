@@ -22,7 +22,7 @@ transporter.verify((error) => {
   if (error) {
     console.error('[mailer] SMTP connection failed:', error.message)
   } else {
-    console.log('[mailer] SMTP connection ready')
+    
   }
 })
 
@@ -45,7 +45,6 @@ export async function sendOtpEmail(
     text:    generateOtpEmailText(name, code),
   })
 
-  console.log(`[mailer] OTP sent to ${to}`)
 }
 
 function generateOtpEmailHtml(name: string, code: string): string {

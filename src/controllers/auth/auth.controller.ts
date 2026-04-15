@@ -78,8 +78,12 @@ export async function verifyOtp(req: Request, res: Response) {
 
     const data = await AuthService.verifyOtp(req.body, ipAddress, userAgent)
 
-    res.cookie('access_token',  data.accessToken,  ACCESS_COOKIE_OPTIONS)
-    res.cookie('refresh_token', data.refreshToken, REFRESH_COOKIE_OPTIONS)
+    // Only set cookies for web clients — mobile uses Bearer tokens from the response body
+    const isMobile = req.body.platform === 'mobile'
+    if (!isMobile) {
+      res.cookie('access_token',  data.accessToken,  ACCESS_COOKIE_OPTIONS)
+      res.cookie('refresh_token', data.refreshToken, REFRESH_COOKIE_OPTIONS)
+    }
 
     res.status(200).json({
       status: 'success',
@@ -99,7 +103,8 @@ export async function verifyOtp(req: Request, res: Response) {
 
 export async function refreshToken(req: Request, res: Response) {
   try {
-    const token = req.cookies.refresh_token
+    // Cookie-based (web) OR body-based (mobile Bearer token flow)
+    const token = req.cookies.refresh_token ?? req.body.refreshToken
 
     if (!token) {
       res.status(401).json({ status: 'error', message: 'No refresh token provided' })
@@ -108,7 +113,11 @@ export async function refreshToken(req: Request, res: Response) {
 
     const data = await AuthService.refreshAccessToken(token)
 
-    res.cookie('access_token', data.accessToken, ACCESS_COOKIE_OPTIONS)
+    // Only set cookie for web — mobile reads the token from the response body
+    const isMobile = !!req.body.refreshToken && !req.cookies.refresh_token
+    if (!isMobile) {
+      res.cookie('access_token', data.accessToken, ACCESS_COOKIE_OPTIONS)
+    }
 
     res.status(200).json({
       status: 'success',
@@ -127,7 +136,13 @@ export async function refreshToken(req: Request, res: Response) {
 
 export async function logout(req: Request, res: Response) {
   try {
-    const token = req.cookies.access_token
+    // Cookie-based (web) OR Bearer header (mobile)
+    const cookieToken = req.cookies.access_token
+    const bearerToken = req.headers.authorization?.startsWith('Bearer ')
+      ? req.headers.authorization.slice(7)
+      : null
+
+    const token = cookieToken ?? bearerToken
 
     if (token) {
       const tokenHash = hashToken(token)
@@ -161,12 +176,14 @@ export async function logoutAll(req: Request, res: Response) {
 export async function me(req: Request, res: Response) {
   try {
     const userId = req.user?.sub
+
     if (!userId) {
       res.status(401).json({ status: 'error', message: 'Unauthorized' })
       return
     }
 
     const user = await AuthService.getMe(userId)
+    
     res.status(200).json({ status: 'success', data: user })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error'

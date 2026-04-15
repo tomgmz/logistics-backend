@@ -3,10 +3,33 @@ import {
   computeDirectionsService,
   DirectionsUpstreamError,
 } from '../../services/maps/directions.service.js'
+import { ComputeDirectionsInput } from '../../schema/maps/directions.schema.js'
 
-export const computeDirections = async (req: Request, res: Response) => {
+export const computeDirections = async (
+  req: Request<{}, {}, ComputeDirectionsInput>,
+  res: Response
+) => {
   try {
     const result = await computeDirectionsService(req.body)
+
+    const route = result.routes?.[0] as any
+    
+    if (route) {
+      console.log('\n--- [MAPS DEBUG] TRAFFIC ANALYSIS ---')
+      console.log(`Route Duration: ${route.duration} (Static: ${route.staticDuration})`)
+      
+      const intervals = route.travelAdvisory?.speedReadingIntervals ?? []
+      console.log(`Found ${intervals.length} traffic intervals`)
+      
+      if (intervals.length > 0) {
+        console.table(intervals.map((iv: any) => ({
+          start: iv.startPolylinePointIndex ?? 0,
+          end: iv.endPolylinePointIndex ?? 'END',
+          speed: iv.speed ?? 'UNSPECIFIED'
+        })))
+      }
+    }
+
     res.status(200).json({ status: 'success', data: result })
   } catch (error: unknown) {
     if (error instanceof DirectionsUpstreamError) {

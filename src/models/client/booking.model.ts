@@ -7,7 +7,6 @@ import {
   BookingDestination,
 } from '../../types/client/booking.types.js'
 
-//Bookings
 async function findAll(): Promise<BookingWithRelations[]> {
   const { data, error } = await supabase
     .rpc('get_all_bookings')
@@ -87,7 +86,6 @@ async function remove(bookingId: string): Promise<boolean> {
   return true
 }
 
-//Booking Destination
 async function findDestinationsByBookingId(bookingId: string): Promise<BookingDestination[]> {
   const { data, error } = await supabase
     .from('booking_destinations')
@@ -140,10 +138,82 @@ async function removeDestination(destinationId: string): Promise<boolean> {
   return true
 }
 
+async function findByDriverId(driverId: string): Promise<BookingWithRelations[]> {
+  const { data, error } = await supabase
+    .from('driver_assignments')
+    .select(`
+      assignment_id,
+      assigned_at,
+      bookings (
+        booking_id,
+        client_id,
+        origin,
+        origin_latitude,
+        origin_longitude,
+        truck_type_needed,
+        cargo_details,
+        schedule_date,
+        call_time,
+        status,
+        total_cost,
+        estimated_delivery,
+        required_volume_cbm,
+        required_weight_kg,
+        required_length_cm,
+        stackable_required,
+        created_at,
+        updated_at,
+        clients (
+          client_id,
+          company_name,
+          billing_address,
+          payment_terms,
+          users (
+            first_name,
+            last_name,
+            email,
+            phone
+          )
+        ),
+        booking_destinations (
+          destination_id,
+          booking_id,
+          address,
+          sequence_order,
+          status,
+          delivered_at,
+          notes,
+          latitude,
+          longitude,
+          created_at
+        ),
+        truck_assignments (
+          assignment_id,
+          truck_id,
+          assigned_at,
+          trucks (
+            plate_number,
+            truck_type,
+            capacity_tons
+          )
+        )
+      )
+    `)
+    .eq('driver_id', driverId)
+    .order('assigned_at', { ascending: false })
+ 
+  if (error) throw error
+ 
+  return (data ?? [])
+    .map((row: any) => row.bookings)
+    .filter(Boolean) as BookingWithRelations[]
+}
+ 
 export const BookingModel = {
   findAll,
   findById,
   findByClientId,
+  findByDriverId,
   create,
   update,
   updateStatus,
@@ -153,4 +223,3 @@ export const BookingModel = {
   updateDestinationStatus,
   removeDestination,
 }
-

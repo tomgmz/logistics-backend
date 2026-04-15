@@ -1,6 +1,5 @@
 import { z } from 'zod'
 
-
 const latLngSchema = z.object({
   latitude:  z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
@@ -20,7 +19,7 @@ export const computeDirectionsSchema = z.object({
   intermediates: z.array(waypointSchema).optional(),
 
   travelMode: z
-    .enum(['DRIVE', 'WALK', 'BICYCLE', 'TRANSIT', 'TWO_WHEELER'])
+    .enum(['DRIVE'])
     .optional()
     .default('DRIVE'),
 
@@ -43,7 +42,7 @@ export const computeDirectionsSchema = z.object({
 
   departureTime: z
     .string()
-    .datetime({ message: 'departureTime must be ISO 8601 (e.g. 2024-10-15T09:00:00Z)' })
+    .datetime({ message: 'departureTime must be ISO 8601' })
     .optional(),
 
   computeAlternativeRoutes: z.boolean().optional().default(false),

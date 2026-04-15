@@ -13,12 +13,13 @@ import clientRoutes from './routes/client.routes.js';
 import routeOptimizationRoutes from './routes/routeOptimization.route.js';
 import authRoutes from './routes/auth.route.js';
 import directionsRouter from './routes/directions.routes.js'
+import driverRoutes from './routes/driver.route.js'
 
 dotenv.config();
 
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT: number = Number(process.env.PORT) || 4000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 app.use((req, res, next) => {
@@ -47,7 +48,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
   'http://localhost:3000',
   'https://logistics-frontend-seven.vercel.app',
   'http://localhost:4000',
-  'https://logistics-frontend-seven.vercel.app'
+  'http://localhost:8081',
 ];
 
 app.use(cors({
@@ -81,7 +82,7 @@ const authLimiter = rateLimit({
   message: { status: 'error', message: 'Too many requests, please try again later.' },
 });
 
-// app.use(globalLimiter);
+app.use(globalLimiter);
 
 // MIDDLEWARE
 app.use(cookieParser(process.env.COOKIE_SECRET));
@@ -113,11 +114,12 @@ app.use(
 
 // ROUTES
 app.use('/api/auth/csrf', authRoutes) 
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter,authRoutes);
 app.use('/api/booking', clientRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
 app.use('/api/directions', directionsRouter);
 app.use('/api', adminRoutes);
+app.use('/api/driver', driverRoutes)
 
 // HEALTH CHECK
 app.get('/health', (req: Request, res: Response) => {
@@ -152,7 +154,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Backend running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Allowed origins:`, allowedOrigins);

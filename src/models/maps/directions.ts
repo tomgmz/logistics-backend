@@ -19,7 +19,7 @@ export const computeDirectionsSchema = z.object({
   intermediates: z.array(waypointSchema).optional(),
 
   travelMode: z
-    .enum(['DRIVE', 'WALK', 'BICYCLE', 'TRANSIT', 'TWO_WHEELER'])
+    .enum(['DRIVE'])
     .optional()
     .default('DRIVE'),
 

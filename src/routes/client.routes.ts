@@ -18,6 +18,7 @@ const isAny    = authorize('admin', 'super_admin', 'client', 'driver')
 
 router.get('/',                 authenticate, isAdmin,  BookingController.getAllBookings)
 router.get('/client/:clientId', authenticate, isAny,    BookingController.getBookingsByClient)
+router.get('/driver/:driverId',    authenticate, BookingController.getBookingsByDriver)
 router.get('/:id',              authenticate, isAny,    BookingController.getBookingById)
 router.get('/:id/destinations', authenticate, isAny,    BookingController.getDestinationsByBooking)
 router.post('/',                authenticate, isClient, validate(createBookingSchema),       BookingController.createBooking)

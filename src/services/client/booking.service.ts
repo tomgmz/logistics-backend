@@ -142,3 +142,7 @@ export async function updateDestinationStatusService(
 export async function deleteDestinationService(destinationId: string): Promise<boolean> {
   return BookingModel.removeDestination(destinationId)
 }
+
+export async function getBookingsByDriverService(driverId: string): Promise<BookingWithRelations[]> {
+  return await BookingModel.findByDriverId(driverId) ?? []
+}
