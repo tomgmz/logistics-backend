@@ -37,7 +37,7 @@ export const driverPaths = {
               username: 'tomgz',
               email: 'tomervingmz@gmail.com',
               password: 'secret12345',
-              phone: '09171234567',
+              phone: '+639171234567',
               license_number: 'N01-12-123456',
               license_expiry: '2027-12-31',
               is_vendor_driver: false,

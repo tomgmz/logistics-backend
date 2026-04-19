@@ -37,7 +37,7 @@ export const assistantDriverPaths = {
               username: 'carlomendoza',
               email: 'carlo@example.com',
               password: 'secret12345',
-              phone: '09201234567',
+              phone: '+639201234567',
               license_number: 'N01-12-654321',
               license_expiry: '2027-12-31',
               created_by: null,

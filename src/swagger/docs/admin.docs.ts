@@ -37,7 +37,7 @@ export const adminPaths = {
               username: 'johndoe',
               email: 'john@example.com',
               password: 'secret12345',
-              phone: '09171234567',
+              phone: '+639171234567',
               role: 'admin',
               created_by: null,
             },

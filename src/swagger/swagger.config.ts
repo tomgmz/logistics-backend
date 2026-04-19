@@ -53,7 +53,7 @@ const options: swaggerJsdoc.Options = {
       { name: 'General Managers',    description: 'General Manager management' },
       { name: 'Bookings',            description: 'Booking management' },
       { name: 'Route Optimization',  description: 'Google Maps route optimization and geocoding' },
-      { name: 'Auth',  description: 'Authentication with OTP code' },
+      { name: 'Auth',                description: 'Authentication with OTP code' },
     ],
     paths: {
       ...adminPaths,
