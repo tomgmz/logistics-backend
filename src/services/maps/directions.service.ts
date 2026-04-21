@@ -22,7 +22,12 @@ export async function computeDirectionsService(
 ): Promise<DirectionsResult> {
   const body = {
     ...payload,
-    extraComputations: ['TRAFFIC_ON_POLYLINE'],
+    extraComputations: [
+      ...new Set([
+        ...((payload as any).extraComputations ?? []),
+        'TRAFFIC_ON_POLYLINE',
+      ]),
+    ],
   }
 
   const response = await fetch(ROUTES_API_URL, {

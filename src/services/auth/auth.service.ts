@@ -9,6 +9,8 @@ import {
   VerifyOtpInput,
   AuthResponse,
   AuthStatusResponse,
+  UserRole,
+  Platform,
 } from '../../types/auth.types.js'
 
 const JWT_SECRET         = process.env.JWT_SECRET!
@@ -26,22 +28,35 @@ const OTP_EXPIRY_MINS   = 5
 const BCRYPT_ROUNDS     = 12
 const ACCOUNT_LOCK_MINS = 3
 
-// Role-based platform restrictions
-const PLATFORM_RESTRICTIONS: Record<string, Array<'web' | 'mobile'>> = {
-  admin:            ['web', 'mobile'],
-  driver:           ['web', 'mobile'],
-  assistant_driver: ['web', 'mobile'],
-  super_admin:      ['web'],
+const PLATFORM_RESTRICTIONS: Record<UserRole, Platform[]> = {
+  super_admin:      ['web', 'mobile'],
+  driver:           ['mobile'],
   general_manager:  ['web'],
   accountant:       ['web'],
-  customer:         ['web'],
+  human_resources:  ['web'],
+  fleet_admin:      ['web'],
+  operations_admin: ['web'],
+  it_admin:         ['web'],
   client:           ['web'],
   vendor:           ['web'],
 }
 
-function isRoleAllowedOnPlatform(role: string, platform: 'web' | 'mobile'): boolean {
-  const allowedPlatforms = PLATFORM_RESTRICTIONS[role.toLowerCase()] ?? []
+function isRoleAllowedOnPlatform(role: string, platform: Platform): boolean {
+  const allowedPlatforms = PLATFORM_RESTRICTIONS[role as UserRole] ?? []
   return allowedPlatforms.includes(platform)
+}
+
+const ROLE_PORTAL: Record<UserRole, string> = {
+  super_admin:      '/portal/admin',
+  general_manager:  '/portal/operations',
+  accountant:       '/portal/finance',
+  human_resources:  '/portal/hr',
+  fleet_admin:      '/portal/fleet',
+  operations_admin: '/portal/operations',
+  it_admin:         '/portal/admin',
+  driver:           'mobile://navigation',
+  client:           '/portal/client',
+  vendor:           '/portal/vendor',
 }
 
 function generateOtp(): string {
@@ -77,7 +92,6 @@ export async function getAuthStatus(email: string): Promise<AuthStatusResponse> 
   const normalizedEmail = email.trim().toLowerCase()
   const user = await AuthModel.findUserByEmail(normalizedEmail)
 
-  // Never reveal whether the account exists
   if (!user) {
     return { locked: false }
   }
@@ -308,11 +322,12 @@ export async function verifyOtp(
     )
   }
 
-  // OTP is validmark it used and clear failed attempts
+  // OTP is valid — mark used, clear failed attempts
   await AuthModel.markOtpUsed(latestOtp.id)
   await AuthModel.resetFailedAttempts(user.user_id)
 
-  const requestedPlatform = (input.platform ?? 'web') as 'web' | 'mobile'
+  // Platform access check
+  const requestedPlatform = (input.platform ?? 'web') as Platform
   if (!isRoleAllowedOnPlatform(user.role, requestedPlatform)) {
     await AuthModel.createLoginHistory({
       user_id: user.user_id,
@@ -409,6 +424,7 @@ export async function verifyOtp(
       role:       user.role,
       status:     user.status,
     },
+    portalUrl: ROLE_PORTAL[user.role as UserRole] ?? '/portal',
   }
 }
 
@@ -472,25 +488,10 @@ export async function getMe(userId: string) {
   switch (user.role) {
     case 'driver': {
       const data = await AuthModel.findUserWithDriver(userId)
-
       if (!data) throw new Error('User not found')
-
-      const driverId = data.drivers?.driver_id ?? null
-
       return {
         ...data,
         driver_id: data.drivers?.driver_id ?? null,
-      }
-    }
-
-    case 'assistant_driver': {
-      const data = await AuthModel.findUserWithAssistantDriver(userId)
-
-      if (!data) throw new Error('User not found')
-
-      return {
-        ...data,
-        assistant_driver_id: data.assistant_drivers?.assistant_driver_id ?? null,
       }
     }
 

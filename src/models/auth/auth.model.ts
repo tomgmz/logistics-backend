@@ -399,7 +399,7 @@ export async function findUserWithClient(userId: string): Promise<AuthUser | nul
   } as AuthUser
 }
 
-export async function findUserWithDriver(userId: string) {
+export async function findUserWithDriver(userId: string): Promise<AuthUser | null> {
   const { data, error } = await supabase
     .from('users')
     .select(`
@@ -415,26 +415,5 @@ export async function findUserWithDriver(userId: string) {
   return {
     ...data,
     drivers: Array.isArray(data.drivers) ? data.drivers[0] ?? null : data.drivers,
-  }
-}
-
-export async function findUserWithAssistantDriver(userId: string) {
-  const { data, error } = await supabase
-    .from('users')
-    .select(`
-      user_id, email, username, first_name, last_name, role, status,
-      assistant_drivers (assistant_driver_id, license_number, license_expiry, status)
-    `)
-    .eq('user_id', userId)
-    .single()
-
-  if (error && error.code !== 'PGRST116') throw error
-  if (!data) return null
-
-  return {
-    ...data,
-    assistant_drivers: Array.isArray(data.assistant_drivers)
-      ? data.assistant_drivers[0] ?? null
-      : data.assistant_drivers,
-  }
+  } as AuthUser
 }

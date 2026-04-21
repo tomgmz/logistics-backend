@@ -78,7 +78,6 @@ export async function verifyOtp(req: Request, res: Response) {
 
     const data = await AuthService.verifyOtp(req.body, ipAddress, userAgent)
 
-    // Only set cookies for web clients — mobile uses Bearer tokens from the response body
     const isMobile = req.body.platform === 'mobile'
     if (!isMobile) {
       res.cookie('access_token',  data.accessToken,  ACCESS_COOKIE_OPTIONS)
@@ -103,7 +102,6 @@ export async function verifyOtp(req: Request, res: Response) {
 
 export async function refreshToken(req: Request, res: Response) {
   try {
-    // Cookie-based (web) OR body-based (mobile Bearer token flow)
     const token = req.cookies.refresh_token ?? req.body.refreshToken
 
     if (!token) {
@@ -113,7 +111,6 @@ export async function refreshToken(req: Request, res: Response) {
 
     const data = await AuthService.refreshAccessToken(token)
 
-    // Only set cookie for web — mobile reads the token from the response body
     const isMobile = !!req.body.refreshToken && !req.cookies.refresh_token
     if (!isMobile) {
       res.cookie('access_token', data.accessToken, ACCESS_COOKIE_OPTIONS)
@@ -136,7 +133,6 @@ export async function refreshToken(req: Request, res: Response) {
 
 export async function logout(req: Request, res: Response) {
   try {
-    // Cookie-based (web) OR Bearer header (mobile)
     const cookieToken = req.cookies.access_token
     const bearerToken = req.headers.authorization?.startsWith('Bearer ')
       ? req.headers.authorization.slice(7)

@@ -15,6 +15,9 @@ const waypointSchema = z.object({
 export const computeDirectionsSchema = z.object({
   origin:      waypointSchema,
   destination: waypointSchema,
+  extraComputations: z
+  .array(z.string())
+  .optional(),
 
   intermediates: z.array(waypointSchema).optional(),
 

@@ -1,3 +1,17 @@
+export type UserRole =
+  | 'super_admin'
+  | 'general_manager'
+  | 'accountant'
+  | 'human_resources'
+  | 'fleet_admin'
+  | 'operations_admin'
+  | 'it_admin'
+  | 'driver'
+  | 'client'
+  | 'vendor'
+
+export type Platform = 'web' | 'mobile'
+
 export interface AuthStatusResponse {
   locked: boolean
   permanent?: boolean
@@ -38,7 +52,7 @@ export interface AuthUser {
   username:   string
   first_name: string | null
   last_name:  string | null
-  role:       string
+  role:       UserRole
   status:     string
   failed_login_attempts?: number
   lockup_count?:          number
@@ -57,13 +71,6 @@ export interface AuthUser {
     license_expiry:   string
     status:           string
     is_vendor_driver: boolean
-  } | null
-
-  assistant_drivers?: {
-    assistant_driver_id: string
-    license_number:      string | null
-    license_expiry:      string | null
-    status:              string
   } | null
 }
 
@@ -109,7 +116,7 @@ export interface VerifyOtpInput {
   email: string
   code: string
   device_info?: string
-  platform?: 'web' | 'mobile'
+  platform?: Platform
 }
 
 export interface RefreshTokenInput {
@@ -122,6 +129,7 @@ export interface AuthResponse {
   accessExpiresAt: string
   refreshExpiresAt: string
   user: AuthUser
+  portalUrl: string
 }
 
 export interface RefreshTokenResponse {
