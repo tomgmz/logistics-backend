@@ -219,22 +219,9 @@ export async function verifyOtp(
     )
   }
 
-  const latestOtp = await AuthModel.findLatestOtp(user.user_id)
-  if (!latestOtp) {
-    await AuthModel.createLoginHistory({
-      user_id: user.user_id,
-      email,
-      ip_address: ipAddress,
-      device_info: input.device_info,
-      user_agent: userAgent,
-      attempt_status: 'failed_otp',
-      failure_reason: 'No valid OTP found',
-    })
-    throw new Error('Invalid or expired code')
-  }
-
-  if (latestOtp.attempts >= MAX_OTP_ATTEMPTS) {
-    await AuthModel.markOtpUsed(latestOtp.id)
+  const currentFailedAttempts = user.failed_login_attempts ?? 0
+  if (currentFailedAttempts >= MAX_OTP_ATTEMPTS) {
+    await AuthModel.markOtpUsed((await AuthModel.findLatestOtp(user.user_id))?.id ?? '')
 
     const newLockupCount = await AuthModel.incrementLockupCount(user.user_id)
 
@@ -266,12 +253,26 @@ export async function verifyOtp(
     throw new Error('Account temporarily locked. Too many failed attempts.')
   }
 
+  const latestOtp = await AuthModel.findLatestOtp(user.user_id)
+  if (!latestOtp) {
+    await AuthModel.createLoginHistory({
+      user_id: user.user_id,
+      email,
+      ip_address: ipAddress,
+      device_info: input.device_info,
+      user_agent: userAgent,
+      attempt_status: 'failed_otp',
+      failure_reason: 'No valid OTP found',
+    })
+    throw new Error('Invalid or expired code')
+  }
+
   const isValidOtp = await verifyOtpHash(cleanCode, latestOtp.code_hash!)
 
   if (!isValidOtp) {
     await AuthModel.incrementOtpAttempts(latestOtp.id)
-
-    const remainingAttempts = MAX_OTP_ATTEMPTS - (latestOtp.attempts + 1)
+    const newFailedCount = await AuthModel.incrementFailedLoginAttempts(user.user_id)
+    const remainingAttempts = MAX_OTP_ATTEMPTS - newFailedCount
 
     await AuthModel.createLoginHistory({
       user_id: user.user_id,
@@ -322,11 +323,9 @@ export async function verifyOtp(
     )
   }
 
-  // OTP is valid — mark used, clear failed attempts
   await AuthModel.markOtpUsed(latestOtp.id)
   await AuthModel.resetFailedAttempts(user.user_id)
 
-  // Platform access check
   const requestedPlatform = (input.platform ?? 'web') as Platform
   if (!isRoleAllowedOnPlatform(user.role, requestedPlatform)) {
     await AuthModel.createLoginHistory({

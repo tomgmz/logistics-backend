@@ -25,6 +25,12 @@ export async function incrementLockupCount(userId: string): Promise<number> {
   return data as number
 }
 
+export async function incrementFailedLoginAttempts(userId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('increment_failed_login_attempts', { p_user_id: userId })
+  if (error) throw error
+  return data as number
+}
+
 export async function permanentlyLockUser(userId: string): Promise<void> {
   const { error } = await supabase
     .from('users')
