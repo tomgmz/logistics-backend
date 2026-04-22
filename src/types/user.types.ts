@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'super_admin' | 'driver' | 'assistant_driver' | 'client' | 'vendor' | 'accountant' | 'general_manager'
+export type UserRole = 'admin' | 'super_admin' | 'driver' | 'client' | 'vendor' | 'accountant' | 'general_manager'
 export type UserStatus = 'active' | 'inactive' | 'archived'
 export type UserSuffix = 'Jr.' | 'Sr.' | 'II' | 'III' | 'IV' | 'V'
 
@@ -23,7 +23,6 @@ export interface BaseUser {
 export interface BaseCreateDTO {
   username:        string
   email:           string
-  password:        string
   first_name:      string
   last_name:       string
   middle_initial?: string | null

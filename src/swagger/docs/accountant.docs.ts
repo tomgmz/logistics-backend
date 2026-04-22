@@ -36,7 +36,6 @@ export const accountantPaths = {
               suffix: null,
               username: 'johndoe',
               email: 'john@example.com',
-              password: 'securepass123',
               phone: '+639171234567',
               created_by: null,
             },

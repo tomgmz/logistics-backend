@@ -26,7 +26,6 @@ export interface CreateClientInput {
   suffix?:         string | null
   username:        string
   email:           string
-  password:        string
   phone?:          string
   created_by?:     string
 

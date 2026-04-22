@@ -1,11 +1,21 @@
 import { supabase } from '../../lib/supabase.js'
-import { CreateAssistantDriverDTO, UpdateAssistantDriverDTO } from '../../types/assistant_driver.types.js'
+import { BaseCreateDTO } from '../../types/user.types.js'
+
+interface UpdateHumanResourcesDTO {
+  first_name?: string
+  last_name?: string
+  middle_initial?: string | null
+  suffix?: string | null
+  username?: string
+  email?: string
+  phone?: string | null
+}
 
 async function findAll() {
   const { data, error } = await supabase
     .from('users')
-    .select(`*, assistant_drivers(*)`)
-    .eq('role', 'assistant_driver')
+    .select('*')
+    .eq('role', 'human_resources')
     .neq('status', 'archived')
     .order('last_name', { ascending: true })
 
@@ -16,9 +26,9 @@ async function findAll() {
 async function findById(userId: string) {
   const { data, error } = await supabase
     .from('users')
-    .select(`*, assistant_drivers(*)`)
+    .select('*')
     .eq('user_id', userId)
-    .eq('role', 'assistant_driver')
+    .eq('role', 'human_resources')
     .neq('status', 'archived')
     .maybeSingle()
 
@@ -26,7 +36,7 @@ async function findById(userId: string) {
   return data
 }
 
-async function create(userId: string, dto: CreateAssistantDriverDTO) {
+async function create(userId: string, dto: BaseCreateDTO) {
   const { error: userError } = await supabase
     .from('users')
     .insert({
@@ -38,31 +48,22 @@ async function create(userId: string, dto: CreateAssistantDriverDTO) {
       middle_initial: dto.middle_initial ?? null,
       suffix:         dto.suffix ?? null,
       phone:          dto.phone,
-      role:           'assistant_driver',
+      role:           'human_resources',
       created_by:     dto.created_by ?? null,
     })
   if (userError) throw userError
 
-  const { error: assistantDriverError } = await supabase
-    .from('assistant_drivers')
-    .insert({
-      user_id:        userId,
-      license_number: dto.license_number ?? null,
-      license_expiry: dto.license_expiry ?? null,
-    })
-  if (assistantDriverError) throw assistantDriverError
-
   await supabase.from('system_logs').insert({
     user_id:     dto.created_by ?? null,
     log_type:    'user_activity',
-    action:      'assistant_driver_creation',
-    description: `Assistant Driver ${dto.username} created.`,
+    action:      'human_resources_creation',
+    description: `Human Resources staff ${dto.username} created.`,
   })
 
   return findById(userId)
 }
 
-async function update(userId: string, dto: UpdateAssistantDriverDTO) {
+async function update(userId: string, dto: UpdateHumanResourcesDTO) {
   const userFields: Record<string, any> = {}
   if (dto.first_name     !== undefined) userFields.first_name     = dto.first_name
   if (dto.last_name      !== undefined) userFields.last_name      = dto.last_name
@@ -74,16 +75,6 @@ async function update(userId: string, dto: UpdateAssistantDriverDTO) {
 
   if (Object.keys(userFields).length > 0) {
     const { error } = await supabase.from('users').update(userFields).eq('user_id', userId)
-    if (error) throw error
-  }
-
-  const assistantDriverFields: Record<string, any> = {}
-  if (dto.license_number !== undefined) assistantDriverFields.license_number = dto.license_number
-  if (dto.license_expiry !== undefined) assistantDriverFields.license_expiry = dto.license_expiry
-  if (dto.driver_status  !== undefined) assistantDriverFields.status         = dto.driver_status
-
-  if (Object.keys(assistantDriverFields).length > 0) {
-    const { error } = await supabase.from('assistant_drivers').update(assistantDriverFields).eq('user_id', userId)
     if (error) throw error
   }
 

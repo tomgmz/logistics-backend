@@ -1,7 +1,7 @@
 export const accountantSchemas = {
   CreateAccountantRequest: {
     type: 'object',
-    required: ['first_name', 'last_name', 'username', 'email', 'password'],
+    required: ['first_name', 'last_name', 'username', 'email'],
     properties: {
       first_name:     { type: 'string', minLength: 2, maxLength: 50, example: 'John' },
       last_name:      { type: 'string', minLength: 2, maxLength: 50, example: 'Doe' },
@@ -9,7 +9,6 @@ export const accountantSchemas = {
       suffix:         { type: 'string', maxLength: 10, nullable: true, example: null },
       username:       { type: 'string', minLength: 2, maxLength: 50, example: 'johndoe' },
       email:          { type: 'string', format: 'email', example: 'john@example.com' },
-      password:       { type: 'string', format: 'password', minLength: 8, example: 'securepass123' },
       phone:          { type: 'string', maxLength: 16, nullable: true, example: '+639171234567' },
       created_by:     { type: 'string', format: 'uuid', nullable: true, example: null },
     },

@@ -27,7 +27,6 @@ export async function createGeneralManager(dto: BaseCreateDTO) {
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         dto.email,
-    password:      dto.password,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
     user_metadata: {

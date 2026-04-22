@@ -36,7 +36,6 @@ export const vendorPaths = {
               suffix: null,
               username: 'pedroreyes',
               email: 'pedro@example.com',
-              password: 'secret12345',
               phone: '+639171234567',
               vendor_type: 'company',
               company_name: 'Reyes Trucking Co.',

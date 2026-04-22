@@ -17,7 +17,6 @@ export async function createVendor(input: CreateVendorInput) {
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         input.email,
-    password:      input.password,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
     user_metadata: {

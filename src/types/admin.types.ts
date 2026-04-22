@@ -21,7 +21,6 @@ export interface CreateAdminInput {
   suffix?:         string | null
   username:        string
   email:           string
-  password:        string
   phone?:          string
   role:            'admin' | 'super_admin'
   created_by?:     string

@@ -1,7 +1,7 @@
 export const clientSchemas = {
 CreateClientRequest: {
           type: 'object',
-          required: ['first_name', 'last_name', 'username', 'email', 'password'],
+          required: ['first_name', 'last_name', 'username', 'email'],
           properties: {
             first_name:       { type: 'string', minLength: 2, maxLength: 50, example: 'Maria' },
             last_name:        { type: 'string', minLength: 2, maxLength: 50, example: 'Santos' },
@@ -9,7 +9,6 @@ CreateClientRequest: {
             suffix:           { type: 'string', maxLength: 10, nullable: true, example: null },
             username:         { type: 'string', minLength: 2, maxLength: 50, example: 'mariasantos' },
             email:            { type: 'string', format: 'email', example: 'maria@example.com' },
-            password:         { type: 'string', format: 'password', minLength: 8, example: 'secret12345' },
             phone:            { type: 'string', maxLength: 13, nullable: true, example: '09181234567' },
             company_name:     { type: 'string', nullable: true, example: 'Santos Enterprises' },
             billing_address:  { type: 'string', nullable: true, example: '123 Rizal Ave, Manila' },

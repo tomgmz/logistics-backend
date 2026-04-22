@@ -24,7 +24,6 @@ export interface Vendor {
 export interface CreateVendorInput {
   username:        string
   email:           string
-  password:        string
   first_name:      string
   last_name:       string
   middle_initial?: string | null

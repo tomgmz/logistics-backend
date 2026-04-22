@@ -36,7 +36,6 @@ export const clientPaths = {
               suffix: null,
               username: 'mariasantos',
               email: 'maria@example.com',
-              password: 'secret12345',
               phone: '+639181234567',
               company_name: 'Santos Enterprises',
               billing_address: '123 Rizal Ave, Manila',

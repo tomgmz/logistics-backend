@@ -4,7 +4,6 @@ import swaggerJsdoc from 'swagger-jsdoc'
 import { adminSchemas }             from './schemas/admin.schemas.js'
 import { clientSchemas }            from './schemas/client.schemas.js'
 import { driverSchemas }            from './schemas/driver.schemas.js'
-import { assistantDriverSchemas }   from './schemas/assistant_driver.schemas.js'
 import { vendorSchemas }            from './schemas/vendor.schemas.js'
 import { truckSchemas }             from './schemas/truck.schema.js'
 import { truckModelSchemas }        from './schemas/truck-model.schema.js'
@@ -19,7 +18,6 @@ import { generalManagerSchemas }    from './schemas/general_manager.schemas.js'
 import { adminPaths }             from './docs/admin.docs.js'
 import { clientPaths }            from './docs/client.docs.js'
 import { driverPaths }            from './docs/driver.docs.js'
-import { assistantDriverPaths }   from './docs/assistant_driver.docs.js'
 import { vendorPaths }            from './docs/vendor.docs.js'
 import { truckPaths }             from './docs/truck.docs.js'
 import { truckModelPaths }        from './docs/truck-model.docs.js'
@@ -45,7 +43,6 @@ const options: swaggerJsdoc.Options = {
       { name: 'Admins',              description: 'Admin management' },
       { name: 'Drivers',             description: 'Driver management' },
       { name: 'Clients',             description: 'Client management' },
-      { name: 'Assistant Drivers',   description: 'Assistant Driver management' },
       { name: 'Vendors',             description: 'Vendor management' },
       { name: 'Trucks',              description: 'Truck management' },
       { name: 'Truck Models',        description: 'Truck model catalogue management' },
@@ -59,7 +56,6 @@ const options: swaggerJsdoc.Options = {
       ...adminPaths,
       ...clientPaths,
       ...driverPaths,
-      ...assistantDriverPaths,
       ...vendorPaths,
       ...truckPaths,
       ...truckModelPaths,
@@ -81,7 +77,6 @@ const options: swaggerJsdoc.Options = {
         ...adminSchemas,
         ...clientSchemas,
         ...driverSchemas,
-        ...assistantDriverSchemas,
         ...vendorSchemas,
         ...truckSchemas,
         ...truckModelSchemas,

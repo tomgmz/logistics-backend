@@ -1,7 +1,7 @@
 export const vendorSchemas = {
   CreateVendorRequest: {
           type: 'object',
-          required: ['first_name', 'last_name', 'username', 'email', 'password', 'vendor_type'],
+          required: ['first_name', 'last_name', 'username', 'email', 'vendor_type'],
           properties: {
             first_name:     { type: 'string', minLength: 2, maxLength: 50, example: 'Pedro' },
             last_name:      { type: 'string', minLength: 2, maxLength: 50, example: 'Reyes' },
@@ -9,7 +9,6 @@ export const vendorSchemas = {
             suffix:         { type: 'string', maxLength: 10, nullable: true, example: null },
             username:       { type: 'string', minLength: 2, maxLength: 50, example: 'pedroreyes' },
             email:          { type: 'string', format: 'email', example: 'pedro@example.com' },
-            password:       { type: 'string', format: 'password', minLength: 8, example: 'secret12345' },
             phone:          { type: 'string', maxLength: 13, nullable: true, example: '09191234567' },
             vendor_type:    { type: 'string', enum: ['individual', 'company'], example: 'company' },
             company_name:   { type: 'string', nullable: true, example: 'Reyes Trucking Co.' },

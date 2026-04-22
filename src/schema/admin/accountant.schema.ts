@@ -20,7 +20,6 @@ export const createAccountantSchema = z.object({
         ),
   username:       z.string().min(2).max(50),
   email:          z.string().email(),
-  password:       z.string().min(8),
   phone: z
         .string()
         .min(8, 'Phone number is too short')

@@ -36,7 +36,6 @@ export const generalManagerPaths = {
               suffix: null,
               username: 'janesmith',
               email: 'jane@example.com',
-              password: 'securepass123',
               phone: '+639171234567',
               created_by: null,
             },
