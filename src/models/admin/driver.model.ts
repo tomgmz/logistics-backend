@@ -85,6 +85,10 @@ async function update(userId: string, dto: UpdateDriverDTO) {
   if (dto.is_vendor_driver    !== undefined) driverFields.is_vendor_driver    = dto.is_vendor_driver
   if (dto.vendor_id           !== undefined) driverFields.vendor_id           = dto.vendor_id
 
+  if (dto.is_vendor_driver === false) {
+    driverFields.vendor_id = null
+  }
+
   if (Object.keys(driverFields).length > 0) {
     const { error } = await supabase.from('drivers').update(driverFields).eq('user_id', userId)
     if (error) throw error

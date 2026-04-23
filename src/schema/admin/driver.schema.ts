@@ -83,7 +83,10 @@ export const updateDriverSchema = z.object({
   is_vendor_driver: z.boolean().optional(),
   vendor_id:        z.string().uuid().optional().nullable(),
 }).refine(
-  (data) => !data.is_vendor_driver || !!data.vendor_id,
+  (data) => {
+    if (data.is_vendor_driver === true) return !!data.vendor_id
+    return true
+  },
   {
     path: ['vendor_id'],
     message: 'Vendor ID is required when driver is a vendor driver',
