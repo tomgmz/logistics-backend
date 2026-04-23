@@ -184,6 +184,7 @@ import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../s
 import { createHumanResourcesSchema, updateHumanResourcesSchema }    from '../schema/admin/admin_roles.schema.js'
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
+import { createITAdminSchema, updateITAdminSchema }   from '../schema/admin/it_admin.schema.js'
 import * as AdminController           from '../controllers/admin/admin.controller.js'
 import * as ClientController          from '../controllers/admin/client.controller.js'
 import * as DriverController          from '../controllers/admin/driver.controller.js'
@@ -195,6 +196,7 @@ import * as GeneralManagerController  from '../controllers/admin/general_manager
 import * as HumanResourcesController  from '../controllers/admin/human_resources.controller.js'
 import * as FleetAdminController      from '../controllers/admin/fleet_admin.controller.js'
 import * as OperationsAdminController from '../controllers/admin/operations_admin.controller.js'
+import * as ITAdminController from '../controllers/admin/it_admin.controller.js'
 
 const router = Router()
 
@@ -281,5 +283,12 @@ router.get('/operations-admins/:id',    authenticate, authenticatedLimiter, isOp
 router.post('/operations-admins',       authenticate, authenticatedLimiter, isSuperAdmin,  validate(createOperationsAdminSchema), OperationsAdminController.createOperationsAdmin)
 router.patch('/operations-admins/:id',  authenticate, authenticatedLimiter, isSuperAdmin,  validate(updateOperationsAdminSchema), OperationsAdminController.updateOperationsAdmin)
 router.delete('/operations-admins/:id', authenticate, authenticatedLimiter, isSuperAdmin,  OperationsAdminController.deleteOperationsAdmin)
+
+//IT Admins
+router.get('/it-admins',        authenticate, authenticatedLimiter, isSuperAdmin, ITAdminController.getAllITAdmins)
+router.get('/it-admins/:id',    authenticate, authenticatedLimiter, isSuperAdmin, ITAdminController.getITAdminById)
+router.post('/it-admins',       authenticate, authenticatedLimiter, isSuperAdmin, validate(createITAdminSchema), ITAdminController.createITAdmin)
+router.patch('/it-admins/:id',  authenticate, authenticatedLimiter, isSuperAdmin, validate(updateITAdminSchema), ITAdminController.updateITAdmin)
+router.delete('/it-admins/:id', authenticate, authenticatedLimiter, isSuperAdmin, ITAdminController.deleteITAdmin)
 
 export default router
