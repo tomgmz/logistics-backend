@@ -22,10 +22,10 @@ export const createAccountantSchema = z.object({
   email:          z.string().email(),
   phone: z
         .string()
-        .min(8, 'Phone number is too short')
-        .max(16, 'Phone number is too long')
-        .regex(/^\+[0-9]+$/, 'Invalid phone number format')
-        .nullable()
+        .regex(
+          /^\+63(9[0-9]{9}|[2-8][0-9]{8})$/,
+          'Phone must be a valid PH mobile (+639XXXXXXXXX) or landline (+63XXXXXXXXX)'
+        )
         .transform(v => v === '' ? null : v),
   created_by:     z.string().uuid().optional().nullable(),
 })
@@ -49,10 +49,10 @@ export const updateAccountantSchema = z.object({
   email:          z.string().email().optional(),
   phone: z
         .string()
-        .min(8, 'Phone number is too short')
-        .max(16, 'Phone number is too long')
-        .regex(/^\+[0-9]+$/, 'Invalid phone number format')
+        .regex(
+          /^\+63(9[0-9]{9}|[2-8][0-9]{8})$/,
+          'Phone must be a valid PH mobile (+639XXXXXXXXX) or landline (+63XXXXXXXXX)'
+        )
         .optional()
-        .nullable()
         .transform(v => v === '' ? null : v),
 })

@@ -21,10 +21,10 @@ const nameFields = {
   email:      z.string().email(),
   phone: z
     .string()
-    .min(8, 'Phone number is too short')
-    .max(16, 'Phone number is too long')
-    .regex(/^\+[0-9]+$/, 'Invalid phone number format')
-    .nullable()
+    .regex(
+      /^\+63(9[0-9]{9}|[2-8][0-9]{8})$/,
+      'Phone must be a valid PH mobile (+639XXXXXXXXX) or landline (+63XXXXXXXXX)'
+    )
     .transform(v => v === '' ? null : v),
   created_by: z.string().uuid().optional().nullable(),
 }
@@ -48,19 +48,19 @@ const updateNameFields = {
   email:          z.string().email().optional(),
   phone: z
     .string()
-    .min(8, 'Phone number is too short')
-    .max(16, 'Phone number is too long')
-    .regex(/^\+[0-9]+$/, 'Invalid phone number format')
+    .regex(
+      /^\+63(9[0-9]{9}|[2-8][0-9]{8})$/,
+      'Phone must be a valid PH mobile (+639XXXXXXXXX) or landline (+63XXXXXXXXX)'
+    )
     .optional()
-    .nullable()
     .transform(v => v === '' ? null : v),
 }
 
-export const createHumanResourcesSchema = z.object(nameFields)
-export const updateHumanResourcesSchema = z.object(updateNameFields)
+export const createHumanResourcesSchema  = z.object(nameFields)
+export const updateHumanResourcesSchema  = z.object(updateNameFields)
 
-export const createFleetAdminSchema = z.object(nameFields)
-export const updateFleetAdminSchema = z.object(updateNameFields)
+export const createFleetAdminSchema      = z.object(nameFields)
+export const updateFleetAdminSchema      = z.object(updateNameFields)
 
 export const createOperationsAdminSchema = z.object(nameFields)
 export const updateOperationsAdminSchema = z.object(updateNameFields)

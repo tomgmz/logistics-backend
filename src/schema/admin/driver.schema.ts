@@ -23,10 +23,10 @@ export const createDriverSchema = z.object({
   password:       z.string().min(8),
   phone: z
         .string()
-        .min(8, 'Phone number is too short')
-        .max(16, 'Phone number is too long')
-        .regex(/^\+[0-9]+$/, 'Invalid phone number format')
-        .nullable()
+        .regex(
+          /^\+63(9[0-9]{9}|[2-8][0-9]{8})$/,
+          'Phone must be a valid PH mobile (+639XXXXXXXXX) or landline (+63XXXXXXXXX)'
+        )
         .transform(v => v === '' ? null : v),
   created_by:     z.string().uuid().optional().nullable(),
 
@@ -66,17 +66,17 @@ export const updateDriverSchema = z.object({
                   .max(50)
                   .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes')
                   .optional(),
-  middle_initial:          z.string().max(1).optional().nullable().transform(v => v === '' ? null : v),
-  suffix:                  z.string().max(10).optional().nullable().transform(v => v === '' ? null : v),
-  username:                z.string().min(2).max(50).optional(),
-  email:                   z.string().email().optional(),
+  middle_initial:   z.string().max(1).optional().nullable().transform(v => v === '' ? null : v),
+  suffix:           z.string().max(10).optional().nullable().transform(v => v === '' ? null : v),
+  username:         z.string().min(2).max(50).optional(),
+  email:            z.string().email().optional(),
   phone: z
         .string()
-        .min(8, 'Phone number is too short')
-        .max(16, 'Phone number is too long')
-        .regex(/^\+[0-9]+$/, 'Invalid phone number format')
+        .regex(
+          /^\+63(9[0-9]{9}|[2-8][0-9]{8})$/,
+          'Phone must be a valid PH mobile (+639XXXXXXXXX) or landline (+63XXXXXXXXX)'
+        )
         .optional()
-        .nullable()
         .transform(v => v === '' ? null : v),
   license_number:   z.string().min(1).max(50).optional(),
   license_expiry:   z.string().optional(),

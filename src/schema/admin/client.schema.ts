@@ -37,13 +37,14 @@ export const createClientSchema = z.object({
 
   phone: z
     .string({ error: 'Phone is required' })
-    .min(8, 'Phone number is too short')
-    .max(16, 'Phone number is too long')
-    .regex(/^\+?[0-9]+$/, 'Invalid phone number format'),
+    .regex(
+      /^\+63(9[0-9]{9}|[2-8][0-9]{8})$/,
+      'Phone must be a valid PH mobile (+639XXXXXXXXX) or landline (+63XXXXXXXXX)'
+    ),
 
   created_by: z.string().uuid().optional().nullable(),
 
-  company_name:    z
+  company_name: z
     .string({ error: 'Company name is required' })
     .min(1, 'Company name is required')
     .max(100, 'Company name is too long'),
@@ -52,7 +53,7 @@ export const createClientSchema = z.object({
     .string({ error: 'Billing address is required' })
     .min(1, 'Billing address is required'),
 
-  payment_terms:   z.number().int().positive().default(30).optional(),
+  payment_terms: z.number().int().positive().default(30).optional(),
 })
 
 export const updateClientSchema = z.object({
@@ -97,11 +98,11 @@ export const updateClientSchema = z.object({
 
   phone: z
     .string()
-    .min(8, 'Phone number is too short')
-    .max(16, 'Phone number is too long')
-    .regex(/^\+[0-9]+$/, 'Invalid phone number format')
+    .regex(
+      /^\+63(9[0-9]{9}|[2-8][0-9]{8})$/,
+      'Phone must be a valid PH mobile (+639XXXXXXXXX) or landline (+63XXXXXXXXX)'
+    )
     .optional()
-    .nullable()
     .transform(v => v === '' ? null : v),
 
   company_name:    z.string().max(100, 'Company name is too long').optional(),
