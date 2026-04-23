@@ -141,4 +141,3 @@ export const getBookingsByDriver = async (req: Request, res: Response) => {
     res.status(status).json({ status: 'error', message: error.message })
   }
 }
- 

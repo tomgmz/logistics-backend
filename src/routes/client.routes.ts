@@ -13,7 +13,7 @@ import * as BookingController from '../controllers/client/booking.controller.js'
 
 const router = Router()
 
-const isAdmin  = authorize('admin', 'super_admin')
+const isAdmin  = authorize('admin', 'super_admin', 'client')
 const isClient = authorize('client')
 const isAny    = authorize('admin', 'super_admin', 'client', 'driver')
 

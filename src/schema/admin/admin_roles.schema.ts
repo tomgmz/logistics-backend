@@ -24,7 +24,6 @@ const nameFields = {
     .min(8, 'Phone number is too short')
     .max(16, 'Phone number is too long')
     .regex(/^\+[0-9]+$/, 'Invalid phone number format')
-    .optional()
     .nullable()
     .transform(v => v === '' ? null : v),
   created_by: z.string().uuid().optional().nullable(),
@@ -57,14 +56,11 @@ const updateNameFields = {
     .transform(v => v === '' ? null : v),
 }
 
-// ── Human Resources ──────────────────────────────────────────────────────────
 export const createHumanResourcesSchema = z.object(nameFields)
 export const updateHumanResourcesSchema = z.object(updateNameFields)
 
-// ── Fleet Admin ───────────────────────────────────────────────────────────────
 export const createFleetAdminSchema = z.object(nameFields)
 export const updateFleetAdminSchema = z.object(updateNameFields)
 
-// ── Operations Admin ──────────────────────────────────────────────────────────
 export const createOperationsAdminSchema = z.object(nameFields)
 export const updateOperationsAdminSchema = z.object(updateNameFields)

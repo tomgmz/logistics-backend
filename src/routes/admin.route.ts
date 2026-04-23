@@ -201,7 +201,7 @@ const router = Router()
 // Role groups
 const isSuperAdmin = authorize('super_admin', 'it_admin')
 const isHR         = authorize('super_admin', 'it_admin', 'human_resources', 'general_manager')
-const isFleet      = authorize('super_admin', 'it_admin', 'fleet_admin', 'general_manager')
+const isFleet      = authorize('super_admin', 'it_admin', 'fleet_admin', 'general_manager', 'client')
 const isOperations = authorize('super_admin', 'it_admin', 'operations_admin', 'general_manager')
 const isFinance    = authorize('super_admin', 'it_admin', 'accountant', 'general_manager')
 

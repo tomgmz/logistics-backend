@@ -26,7 +26,6 @@ export const createDriverSchema = z.object({
         .min(8, 'Phone number is too short')
         .max(16, 'Phone number is too long')
         .regex(/^\+[0-9]+$/, 'Invalid phone number format')
-        .optional()
         .nullable()
         .transform(v => v === '' ? null : v),
   created_by:     z.string().uuid().optional().nullable(),

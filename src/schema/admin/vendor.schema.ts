@@ -19,14 +19,13 @@ export const createVendorSchema = z.object({
         .min(8, 'Phone number is too short')
         .max(16, 'Phone number is too long')
         .regex(/^\+[0-9]+$/, 'Invalid phone number format')
-        .optional()
         .nullable()
         .transform(v => v === '' ? null : v),
   created_by:     z.string().uuid().optional().nullable(),
 
   vendor_type:    z.enum(['individual', 'company']),
-  company_name:   z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
-  business_permit: z.string().max(100).optional().nullable().transform(v => v === '' ? null : v),
+  company_name:   z.string().max(100).nullable().transform(v => v === '' ? null : v),
+  business_permit: z.string().max(100).nullable().transform(v => v === '' ? null : v),
 })
 
 export const updateVendorSchema = z.object({

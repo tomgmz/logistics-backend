@@ -8,8 +8,8 @@ import * as RouteOptimizationController from '../controllers/maps/routeOptimizat
 
 const router = Router()
 
-const canViewRoute     = authorize('client', 'driver', 'dispatcher', 'admin')
-const canOptimizeRoute = authorize('dispatcher', 'admin', 'driver', 'client')
+const canViewRoute     = authorize('client', 'driver', 'dispatcher', 'super_admin')
+const canOptimizeRoute = authorize('dispatcher', 'super_admin', 'driver', 'client')
 
 router.post(
   '/optimize/:id',
