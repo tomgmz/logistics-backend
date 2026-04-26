@@ -42,6 +42,16 @@ export const createClientSchema = z.object({
       'Phone must be a valid PH mobile (+639XXXXXXXXX) or landline (+63XXXXXXXXX)'
     ),
 
+  landline: z
+    .string()
+    .regex(
+      /^\+63[0-9]{9}$/,
+      'Landline must be a valid PH landline'
+    )
+    .optional()
+    .nullable()
+    .transform(v => v === '' ? null : v),
+
   created_by: z.string().uuid().optional().nullable(),
 
   company_name: z
@@ -100,9 +110,19 @@ export const updateClientSchema = z.object({
     .string()
     .regex(
       /^\+63(9[0-9]{9}|[2-8][0-9]{8})$/,
-      'Phone must be a valid PH mobile (+639XXXXXXXXX) or landline (+63XXXXXXXXX)'
+      'Phone must be a valid PH mobile (+639XXXXXXXXX)'
     )
     .optional()
+    .transform(v => v === '' ? null : v),
+
+  landline: z
+    .string()
+    .regex(
+      /^\+63[0-9]{9}$/,
+      'Landline must be a valid PH landline'
+    )
+    .optional()
+    .nullable()
     .transform(v => v === '' ? null : v),
 
   company_name:    z.string().max(100, 'Company name is too long').optional(),

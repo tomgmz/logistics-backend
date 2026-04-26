@@ -197,6 +197,7 @@ import * as HumanResourcesController  from '../controllers/admin/human_resources
 import * as FleetAdminController      from '../controllers/admin/fleet_admin.controller.js'
 import * as OperationsAdminController from '../controllers/admin/operations_admin.controller.js'
 import * as ITAdminController from '../controllers/admin/it_admin.controller.js'
+import * as UserController from '../controllers/admin/fetch-users.controller.js'
 
 const router = Router()
 
@@ -290,5 +291,9 @@ router.get('/it-admins/:id',    authenticate, authenticatedLimiter, isSuperAdmin
 router.post('/it-admins',       authenticate, authenticatedLimiter, isSuperAdmin, validate(createITAdminSchema), ITAdminController.createITAdmin)
 router.patch('/it-admins/:id',  authenticate, authenticatedLimiter, isSuperAdmin, validate(updateITAdminSchema), ITAdminController.updateITAdmin)
 router.delete('/it-admins/:id', authenticate, authenticatedLimiter, isSuperAdmin, ITAdminController.deleteITAdmin)
+
+//Fetch all users
+router.get('/users',       authenticate, authenticatedLimiter, isSuperAdmin, UserController.getUsers)
+router.get('/users/stats', authenticate, authenticatedLimiter, isSuperAdmin, UserController.getUserStats)
 
 export default router
