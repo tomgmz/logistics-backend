@@ -16,6 +16,7 @@ export interface AuthStatusResponse {
   locked: boolean
   permanent?: boolean
   locked_until?: string
+  role?:         UserRole
 }
 
 export interface OtpCode {

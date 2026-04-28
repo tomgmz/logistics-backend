@@ -29,7 +29,6 @@ function clearAuthCookies(res: Response) {
 
 export function getCsrfToken(req: Request, res: Response) {
   const token = crypto.randomBytes(32).toString('hex')
-
   res.cookie('csrf_token', token, {
     httpOnly: false,
     secure: IS_PRODUCTION,
@@ -37,7 +36,6 @@ export function getCsrfToken(req: Request, res: Response) {
     maxAge: 24 * 60 * 60 * 1000,
     path: '/',
   })
-
   res.status(200).json({ status: 'success' })
 }
 
@@ -62,11 +60,7 @@ export async function requestOtp(req: Request, res: Response) {
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to send code'
-    console.error('OTP REQUEST ERROR:', {
-      message,
-      body: req.body,
-      timestamp: new Date().toISOString(),
-    })
+    console.error('OTP REQUEST ERROR:', { message, body: req.body, timestamp: new Date().toISOString() })
     res.status(500).json({ status: 'error', message: 'Failed to send code' })
   }
 }
@@ -75,7 +69,6 @@ export async function verifyOtp(req: Request, res: Response) {
   try {
     const ipAddress = getIpAddress(req)
     const userAgent = req.headers['user-agent']
-
     const data = await AuthService.verifyOtp(req.body, ipAddress, userAgent)
 
     const isMobile = req.body.platform === 'mobile'
@@ -100,10 +93,37 @@ export async function verifyOtp(req: Request, res: Response) {
   }
 }
 
+export async function loginWithPassword(req: Request, res: Response) {
+  try {
+    const ipAddress = getIpAddress(req)
+    const userAgent = req.headers['user-agent']
+    const data = await AuthService.loginWithPassword(req.body, ipAddress, userAgent)
+
+    const isMobile = req.body.platform === 'mobile'
+    if (!isMobile) {
+      res.cookie('access_token',  data.accessToken,  ACCESS_COOKIE_OPTIONS)
+      res.cookie('refresh_token', data.refreshToken, REFRESH_COOKIE_OPTIONS)
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        user:         data.user,
+        expiresAt:    data.accessExpiresAt,
+        accessToken:  data.accessToken,
+        refreshToken: data.refreshToken,
+      },
+    })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Invalid credentials'
+    console.error('PASSWORD LOGIN ERROR FULL:', err)
+    res.status(401).json({ status: 'error', message })
+  }
+}
+
 export async function refreshToken(req: Request, res: Response) {
   try {
     const token = req.cookies.refresh_token ?? req.body.refreshToken
-
     if (!token) {
       res.status(401).json({ status: 'error', message: 'No refresh token provided' })
       return
@@ -137,7 +157,6 @@ export async function logout(req: Request, res: Response) {
     const bearerToken = req.headers.authorization?.startsWith('Bearer ')
       ? req.headers.authorization.slice(7)
       : null
-
     const token = cookieToken ?? bearerToken
 
     if (token) {
@@ -159,7 +178,6 @@ export async function logoutAll(req: Request, res: Response) {
       res.status(401).json({ status: 'error', message: 'Not authenticated' })
       return
     }
-
     await AuthService.logoutAll(req.user.sub)
     clearAuthCookies(res)
     res.status(200).json({ status: 'success', message: 'Logged out from all devices' })
@@ -172,14 +190,11 @@ export async function logoutAll(req: Request, res: Response) {
 export async function me(req: Request, res: Response) {
   try {
     const userId = req.user?.sub
-
     if (!userId) {
       res.status(401).json({ status: 'error', message: 'Unauthorized' })
       return
     }
-
     const user = await AuthService.getMe(userId)
-    
     res.status(200).json({ status: 'success', data: user })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error'

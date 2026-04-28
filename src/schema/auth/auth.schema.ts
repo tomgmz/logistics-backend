@@ -14,3 +14,10 @@ export const verifyOtpSchema = z.object({
 export const authStatusSchema = z.object({
   email: z.string().email('Invalid email address'),
 })
+
+export const loginSchema = z.object({
+  email:       z.string().email('Invalid email address'),
+  password:    z.string().min(1, 'Password is required'),
+  device_info: z.string().optional(),
+  platform:    z.enum(['web', 'mobile']).default('web'),
+})
