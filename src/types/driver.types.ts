@@ -44,6 +44,7 @@ export interface UpdateDriverDTO {
   email?:            string
   username?:         string
   phone?:            string | null
+  password?:         string
   license_number?:   string
   license_expiry?:   string
   is_vendor_driver?: boolean

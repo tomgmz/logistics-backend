@@ -21,11 +21,11 @@ export async function createDriver(dto: CreateDriverDTO) {
     email_confirm: true,
     phone:         e164Phone ?? undefined,
     user_metadata: {
-      role: 'driver',
+      role:         'driver',
       display_name: dto.username,
-    }
+    },
   })
-  if (authError) throw new Error(`Auth Error: ${authError.message}`)
+  if (authError) throw new Error(`Auth error: ${authError.message}`)
 
   const userId = authData.user.id
 
@@ -36,18 +36,26 @@ export async function createDriver(dto: CreateDriverDTO) {
     const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
     if (rollbackError) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
     else console.log('Rollback successful.')
-    throw new Error(`Driver Creation Failed: ${err.message}`)
+    throw new Error(`Driver creation failed: ${err.message}`)
   }
 }
 
 export async function updateDriver(userId: string, dto: UpdateDriverDTO) {
-  if (dto.email) {
-    const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
-      email: dto.email,
-    })
+  const authUpdates: { email?: string; password?: string } = {}
+  if (dto.email)    authUpdates.email    = dto.email
+  if (dto.password) authUpdates.password = dto.password
+
+  if (Object.keys(authUpdates).length > 0) {
+    const { error: authError } = await supabase.auth.admin.updateUserById(
+      userId,
+      authUpdates
+    )
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)
   }
-  return DriverModel.update(userId, dto)
+
+  const { password: _, ...dbDto } = dto
+
+  return DriverModel.update(userId, dbDto)
 }
 
 export async function deleteDriver(userId: string) {

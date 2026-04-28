@@ -83,7 +83,7 @@ async function update(userId: string, input: UpdateClientInput){
     if (input.company_name    != undefined) clientFields.company_name    = input.company_name
     if (input.billing_address != undefined) clientFields.billing_address = input.billing_address
     if (input.payment_terms   != undefined) clientFields.payment_terms   = input.payment_terms
-    if (input.landline        != undefined) clientFields.landline        = input.landline  // ✅ correct
+    if (input.landline        != undefined) clientFields.landline        = input.landline
 
     if (Object.keys(clientFields).length > 0) {
         const { error } = await supabase.from('clients').update(clientFields).eq('user_id', userId)
@@ -99,7 +99,6 @@ async function remove(userId: string) {
     .update({ status: 'archived' })
     .eq('user_id', userId)
     .select('user_id, status')
-
 
   if (error) throw error
   if (!data || data.length === 0) throw new Error(`No user found with ID: ${userId}`)
