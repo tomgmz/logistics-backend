@@ -30,7 +30,7 @@ const BCRYPT_ROUNDS     = 12
 const ACCOUNT_LOCK_MINS = 3
 
 const PLATFORM_RESTRICTIONS: Record<UserRole, Platform[]> = {
-  super_admin:      ['web', 'mobile'],
+  super_admin:      ['web'],
   driver:           ['mobile'],
   general_manager:  ['web'],
   accountant:       ['web'],
