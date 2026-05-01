@@ -44,9 +44,9 @@ async function create(input: CreateTruckInput) {
      VALUES ($1, $2, $3, $4)`,
     [
       input.created_by ?? null,
-      'truck_activity',
-      'truck_creation',
-      `Truck ${input.plate_number} created.`,
+      'vehicle_activity',
+      'vehicle_creation',
+      `Vehicle ${input.plate_number} created.`,
     ]
   )
 

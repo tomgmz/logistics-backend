@@ -1,4 +1,4 @@
-export type LogType = 'user_activity' | 'truck_activity' | 'booking' | 'payment' | 'system_error'
+export type LogType = 'user_activity' | 'vehicle_activity' | 'booking' | 'payment' | 'system_error'
 
 export interface SystemLog {
   log_id:      string

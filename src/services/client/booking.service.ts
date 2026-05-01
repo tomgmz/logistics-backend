@@ -8,6 +8,7 @@ import {
   ParsedCargoDetails,
 } from '../../types/client/booking.types.js'
 import { optimizeDestinationsService } from '../maps/routeOptimization.service.js'
+import { logEvent } from '../../lib/log-event.js'
 
 function parseCargoDetails(raw: string | null | undefined): ParsedCargoDetails | null {
   if (!raw) return null
@@ -49,7 +50,11 @@ export async function getBookingsByClientService(clientId: string): Promise<Book
   return await BookingModel.findByClientId(clientId) ?? []
 }
 
-export async function createBookingService(input: CreateBookingInput): Promise<BookingWithRelations> {
+export async function createBookingService(
+  input: CreateBookingInput,
+  userId?: string | null,
+  ip?: string | null
+): Promise<BookingWithRelations> {
   if (!input.destinations || input.destinations.length === 0) {
     throw new Error('At least one destination is required')
   }
@@ -82,12 +87,23 @@ export async function createBookingService(input: CreateBookingInput): Promise<B
 
   const booking = await BookingModel.create(input)
   if (!booking) throw new Error('Failed to create booking')
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      'booking_created',
+    description: `Booking ${booking.booking_id} created for client ${booking.client_id}`,
+    ip_address:  ip,
+  })
+
   return booking
 }
 
 export async function updateBookingService(
   bookingId: string,
-  input: UpdateBookingInput
+  input: UpdateBookingInput,
+  userId?: string | null,
+  ip?: string | null
 ): Promise<BookingWithRelations> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
@@ -98,12 +114,23 @@ export async function updateBookingService(
 
   const booking = await BookingModel.update(bookingId, input)
   if (!booking) throw new Error('Failed to update booking')
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      'booking_updated',
+    description: `Booking ${bookingId} updated`,
+    ip_address:  ip,
+  })
+
   return booking
 }
 
 export async function updateBookingStatusService(
   bookingId: string,
-  status: string
+  status: string,
+  userId?: string | null,
+  ip?: string | null
 ): Promise<BookingWithRelations> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
@@ -118,10 +145,23 @@ export async function updateBookingStatusService(
 
   const booking = await BookingModel.updateStatus(bookingId, status)
   if (!booking) throw new Error('Failed to update booking status')
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      `booking_${status}`,
+    description: `Booking ${bookingId} marked as ${status}`,
+    ip_address:  ip,
+  })
+
   return booking
 }
 
-export async function deleteBookingService(bookingId: string): Promise<boolean> {
+export async function deleteBookingService(
+  bookingId: string,
+  userId?: string | null,
+  ip?: string | null
+): Promise<boolean> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
 
@@ -129,7 +169,17 @@ export async function deleteBookingService(bookingId: string): Promise<boolean> 
     throw new Error('Cannot delete a booking that is currently in transit')
   }
 
-  return BookingModel.remove(bookingId)
+  const result = await BookingModel.remove(bookingId)
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      'booking_deleted',
+    description: `Booking ${bookingId} deleted`,
+    ip_address:  ip,
+  })
+
+  return result
 }
 
 export async function getDestinationsByBookingService(bookingId: string): Promise<BookingDestination[]> {
@@ -141,25 +191,61 @@ export async function getDestinationsByBookingService(bookingId: string): Promis
 
 export async function updateDestinationService(
   destinationId: string,
-  input: UpdateDestinationInput
+  input: UpdateDestinationInput,
+  userId?: string | null,
+  ip?: string | null
 ): Promise<BookingDestination> {
   const destination = await BookingModel.updateDestination(destinationId, input)
   if (!destination) throw new Error(`Destination with ID ${destinationId} not found`)
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      'destination_updated',
+    description: `Destination ${destinationId} updated`,
+    ip_address:  ip,
+  })
+
   return destination
 }
 
 export async function updateDestinationStatusService(
   destinationId: string,
   status: string,
-  deliveredAt?: string
+  deliveredAt?: string,
+  userId?: string | null,
+  ip?: string | null
 ): Promise<BookingDestination> {
   const destination = await BookingModel.updateDestinationStatus(destinationId, status, deliveredAt)
   if (!destination) throw new Error(`Destination with ID ${destinationId} not found`)
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      `destination_${status}`,
+    description: `Destination ${destinationId} marked as ${status}`,
+    ip_address:  ip,
+  })
+
   return destination
 }
 
-export async function deleteDestinationService(destinationId: string): Promise<boolean> {
-  return BookingModel.removeDestination(destinationId)
+export async function deleteDestinationService(
+  destinationId: string,
+  userId?: string | null,
+  ip?: string | null
+): Promise<boolean> {
+  const result = await BookingModel.removeDestination(destinationId)
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      'destination_deleted',
+    description: `Destination ${destinationId} deleted`,
+    ip_address:  ip,
+  })
+
+  return result
 }
 
 export async function getBookingsByDriverService(driverId: string): Promise<BookingWithRelations[]> {

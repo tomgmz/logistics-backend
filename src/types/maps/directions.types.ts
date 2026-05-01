@@ -25,8 +25,8 @@ export interface RouteModifiers {
 }
 
 export interface ComputeDirectionsRequest {
-  origin:      DirectionsWaypoint
-  destination: DirectionsWaypoint
+  origin:                    DirectionsWaypoint
+  destination:               DirectionsWaypoint
   intermediates?:            DirectionsWaypoint[]
   travelMode?:               TravelMode
   routingPreference?:        RoutingPreference
@@ -44,9 +44,19 @@ export interface DirectionsLeg {
 export interface DirectionsRoute {
   polyline: {
     encodedPolyline: string
+    _snappedCoords?: Array<{ latitude: number; longitude: number }>
   }
-  duration: string
-  legs:     DirectionsLeg[]
+  duration:       string
+  staticDuration: string
+  distanceMeters: number
+  legs:           DirectionsLeg[]
+  travelAdvisory?: {
+    speedReadingIntervals?: Array<{
+      startPolylinePointIndex?: number
+      endPolylinePointIndex?:   number
+      speed?:                   string
+    }>
+  }
 }
 
 export interface ComputeDirectionsResponse {
