@@ -39,17 +39,6 @@ async function create(input: CreateTruckInput) {
     ]
   )
 
-  await pool.query(
-    `INSERT INTO system_logs (user_id, log_type, action, description)
-     VALUES ($1, $2, $3, $4)`,
-    [
-      input.created_by ?? null,
-      'vehicle_activity',
-      'vehicle_creation',
-      `Vehicle ${input.plate_number} created.`,
-    ]
-  )
-
   return findById(result.rows[0].truck_id)
 }
 
