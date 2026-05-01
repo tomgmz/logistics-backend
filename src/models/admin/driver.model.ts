@@ -53,14 +53,7 @@ async function create(userId: string, dto: CreateDriverDTO) {
       vendor_id:         dto.vendor_id ?? null,
     })
   if (driverError) throw driverError
-
-  await supabase.from('system_logs').insert({
-    user_id:     dto.created_by ?? null,
-    log_type:    'user_activity',
-    action:      'driver_creation',
-    description: `Driver ${dto.username} created.`,
-  })
-
+  
   return findById(userId)
 }
 

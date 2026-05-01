@@ -53,13 +53,6 @@ async function create(userId: string, input: CreateVendorInput) {
     })
   if (vendorError) throw vendorError
 
-  await supabase.from('system_logs').insert({
-    user_id:     input.created_by ?? null,
-    log_type:    'user_activity',
-    action:      'vendor_creation',
-    description: `Vendor ${input.username} created.`,
-  })
-
   return findById(userId)
 }
 

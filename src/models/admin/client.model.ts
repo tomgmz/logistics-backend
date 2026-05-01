@@ -53,14 +53,6 @@ async function create(userId: string, input: CreateClientInput) {
         landline:        input.landline        ?? null,  
     })
     if (clientError) throw clientError
-
-    await supabase.from('system_logs').insert({
-        user_id:     input.created_by ?? null,
-        log_type:    'user_activity',
-        action:      'client_creation',
-        description: `Client ${input.username} created.`,
-    })
-
     return findById(userId)
 }
 

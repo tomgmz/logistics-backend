@@ -53,13 +53,6 @@ async function create(userId: string, dto: BaseCreateDTO) {
     })
   if (userError) throw userError
 
-  await supabase.from('system_logs').insert({
-    user_id:     dto.created_by ?? null,
-    log_type:    'user_activity',
-    action:      'operations_admin_creation',
-    description: `Operations Admin ${dto.username} created.`,
-  })
-
   return findById(userId)
 }
 
