@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import * as OperationsAdminModel from '../../models/admin/operations_admin.model.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
+import { logEvent } from '../../lib/log-event.js'
 
 interface UpdateOperationsAdminDTO {
   first_name?: string
@@ -22,24 +23,31 @@ export async function getOperationsAdminById(userId: string) {
   return opsAdmin
 }
 
-export async function createOperationsAdmin(dto: BaseCreateDTO) {
+export async function createOperationsAdmin(dto: BaseCreateDTO, actorId?: string | null, ip?: string | null) {
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         dto.email,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: {
-      role: 'operations_admin',
-      display_name: dto.username,
-    },
+    user_metadata: { role: 'operations_admin', display_name: dto.username },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 
   const userId = authData.user.id
 
   try {
-    return await OperationsAdminModel.create(userId, dto)
+    const result = await OperationsAdminModel.create(userId, dto)
+
+    logEvent({
+      user_id:     actorId,
+      log_type:    'user_activity',
+      action:      'operations_admin_created',
+      description: `Operations Admin ${dto.email} created (user: ${userId})`,
+      ip_address:  ip,
+    })
+
+    return result
   } catch (err: any) {
     console.error('Operations Admin creation failed, rolling back auth user...', err.message)
     const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
@@ -49,16 +57,35 @@ export async function createOperationsAdmin(dto: BaseCreateDTO) {
   }
 }
 
-export async function updateOperationsAdmin(userId: string, dto: UpdateOperationsAdminDTO) {
+export async function updateOperationsAdmin(userId: string, dto: UpdateOperationsAdminDTO, actorId?: string | null, ip?: string | null) {
   if (dto.email) {
-    const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
-      email: dto.email,
-    })
+    const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: dto.email })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)
   }
-  return OperationsAdminModel.update(userId, dto)
+
+  const result = await OperationsAdminModel.update(userId, dto)
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_activity',
+    action:      'operations_admin_updated',
+    description: `Operations Admin ${userId} updated`,
+    ip_address:  ip,
+  })
+
+  return result
 }
 
-export async function deleteOperationsAdmin(userId: string) {
-  return OperationsAdminModel.remove(userId)
+export async function deleteOperationsAdmin(userId: string, actorId?: string | null, ip?: string | null) {
+  const result = await OperationsAdminModel.remove(userId)
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_activity',
+    action:      'operations_admin_deleted',
+    description: `Operations Admin ${userId} deleted`,
+    ip_address:  ip,
+  })
+
+  return result
 }

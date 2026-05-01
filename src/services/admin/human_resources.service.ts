@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import * as HumanResourcesModel from '../../models/admin/human_resources.model.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
+import { logEvent } from '../../lib/log-event.js'
 
 interface UpdateHumanResourcesDTO {
   first_name?: string
@@ -22,24 +23,31 @@ export async function getHumanResourcesById(userId: string) {
   return hr
 }
 
-export async function createHumanResources(dto: BaseCreateDTO) {
+export async function createHumanResources(dto: BaseCreateDTO, actorId?: string | null, ip?: string | null) {
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         dto.email,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: {
-      role: 'human_resources',
-      display_name: dto.username,
-    },
+    user_metadata: { role: 'human_resources', display_name: dto.username },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 
   const userId = authData.user.id
 
   try {
-    return await HumanResourcesModel.create(userId, dto)
+    const result = await HumanResourcesModel.create(userId, dto)
+
+    logEvent({
+      user_id:     actorId,
+      log_type:    'user_activity',
+      action:      'human_resources_created',
+      description: `HR staff ${dto.email} created (user: ${userId})`,
+      ip_address:  ip,
+    })
+
+    return result
   } catch (err: any) {
     console.error('Human Resources creation failed, rolling back auth user...', err.message)
     const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
@@ -49,16 +57,35 @@ export async function createHumanResources(dto: BaseCreateDTO) {
   }
 }
 
-export async function updateHumanResources(userId: string, dto: UpdateHumanResourcesDTO) {
+export async function updateHumanResources(userId: string, dto: UpdateHumanResourcesDTO, actorId?: string | null, ip?: string | null) {
   if (dto.email) {
-    const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
-      email: dto.email,
-    })
+    const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: dto.email })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)
   }
-  return HumanResourcesModel.update(userId, dto)
+
+  const result = await HumanResourcesModel.update(userId, dto)
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_activity',
+    action:      'human_resources_updated',
+    description: `HR staff ${userId} updated`,
+    ip_address:  ip,
+  })
+
+  return result
 }
 
-export async function deleteHumanResources(userId: string) {
-  return HumanResourcesModel.remove(userId)
+export async function deleteHumanResources(userId: string, actorId?: string | null, ip?: string | null) {
+  const result = await HumanResourcesModel.remove(userId)
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_activity',
+    action:      'human_resources_deleted',
+    description: `HR staff ${userId} deleted`,
+    ip_address:  ip,
+  })
+
+  return result
 }

@@ -1,4 +1,5 @@
 import { Request, Response } from 'express'
+import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import {
   getAllBookingsService,
   getBookingByIdService,
@@ -13,17 +14,6 @@ import {
   deleteDestinationService,
   getBookingsByDriverService,
 } from '../../services/client/booking.service.js'
-
-function getRequestMeta(req: Request): { userId: string | null; ip: string | null } {
-  return {
-    userId: req.user?.sub ?? null,
-    ip:     Array.isArray(req.ip) ? req.ip[0] : (req.ip ?? null),
-  }
-}
-
-function param(value: string | string[]): string {
-  return Array.isArray(value) ? value[0] : value
-}
 
 export const getAllBookings = async (req: Request, res: Response) => {
   try {

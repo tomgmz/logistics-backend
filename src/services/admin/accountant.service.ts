@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import * as AccountantModel from '../../models/admin/accountant.model.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
+import { logEvent } from '../../lib/log-event.js'
 
 interface UpdateAccountantDTO {
   first_name?: string
@@ -22,7 +23,7 @@ export async function getAccountantById(userId: string) {
   return accountant
 }
 
-export async function createAccountant(dto: BaseCreateDTO) {
+export async function createAccountant(dto: BaseCreateDTO, actorId?: string | null, ip?: string | null) {
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -39,7 +40,17 @@ export async function createAccountant(dto: BaseCreateDTO) {
   const userId = authData.user.id
 
   try {
-    return await AccountantModel.create(userId, dto)
+    const result = await AccountantModel.create(userId, dto)
+
+    logEvent({
+      user_id:     actorId,
+      log_type:    'user_activity',
+      action:      'accountant_created',
+      description: `Accountant ${dto.email} created (user: ${userId})`,
+      ip_address:  ip,
+    })
+
+    return result
   } catch (err: any) {
     console.error('Accountant creation failed, rolling back auth user...', err.message)
     const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
@@ -49,16 +60,37 @@ export async function createAccountant(dto: BaseCreateDTO) {
   }
 }
 
-export async function updateAccountant(userId: string, dto: UpdateAccountantDTO) {
+export async function updateAccountant(userId: string, dto: UpdateAccountantDTO, actorId?: string | null, ip?: string | null) {
   if (dto.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
       email: dto.email,
     })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)
   }
-  return AccountantModel.update(userId, dto)
+
+  const result = await AccountantModel.update(userId, dto)
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_activity',
+    action:      'accountant_updated',
+    description: `Accountant ${userId} updated`,
+    ip_address:  ip,
+  })
+
+  return result
 }
 
-export async function deleteAccountant(userId: string) {
-  return AccountantModel.remove(userId)
+export async function deleteAccountant(userId: string, actorId?: string | null, ip?: string | null) {
+  const result = await AccountantModel.remove(userId)
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_activity',
+    action:      'accountant_deleted',
+    description: `Accountant ${userId} deleted`,
+    ip_address:  ip,
+  })
+
+  return result
 }

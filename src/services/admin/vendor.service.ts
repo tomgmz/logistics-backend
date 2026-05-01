@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import * as VendorModel from '../../models/admin/vendor.model.js'
 import { CreateVendorInput, UpdateVendorInput } from '../../types/vendor.types.js'
+import { logEvent } from '../../lib/log-event.js'
 
 export async function getAllVendors() {
   return VendorModel.findAll()
@@ -12,24 +13,31 @@ export async function getVendorById(userId: string) {
   return vendor
 }
 
-export async function createVendor(input: CreateVendorInput) {
+export async function createVendor(input: CreateVendorInput, actorId?: string | null, ip?: string | null) {
   const e164Phone = input.phone ? '+63' + input.phone.slice(1) : undefined
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         input.email,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: {
-      role: 'vendor',
-      display_name: input.username,
-    }
+    user_metadata: { role: 'vendor', display_name: input.username },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 
   const userId = authData.user.id
 
   try {
-    return await VendorModel.create(userId, input)
+    const result = await VendorModel.create(userId, input)
+
+    logEvent({
+      user_id:     actorId,
+      log_type:    'user_activity',
+      action:      'vendor_created',
+      description: `Vendor ${input.email} created (user: ${userId})`,
+      ip_address:  ip,
+    })
+
+    return result
   } catch (err: any) {
     console.error('Vendor creation failed, rolling back auth user...', err.message)
     const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
@@ -39,16 +47,35 @@ export async function createVendor(input: CreateVendorInput) {
   }
 }
 
-export async function updateVendor(userId: string, input: UpdateVendorInput) {
+export async function updateVendor(userId: string, input: UpdateVendorInput, actorId?: string | null, ip?: string | null) {
   if (input.email) {
-    const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
-      email: input.email,
-    })
+    const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: input.email })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)
   }
-  return VendorModel.update(userId, input)
+
+  const result = await VendorModel.update(userId, input)
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_activity',
+    action:      'vendor_updated',
+    description: `Vendor ${userId} updated`,
+    ip_address:  ip,
+  })
+
+  return result
 }
 
-export async function deleteVendor(userId: string) {
-  return VendorModel.remove(userId)
+export async function deleteVendor(userId: string, actorId?: string | null, ip?: string | null) {
+  const result = await VendorModel.remove(userId)
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_activity',
+    action:      'vendor_deleted',
+    description: `Vendor ${userId} deleted`,
+    ip_address:  ip,
+  })
+
+  return result
 }
