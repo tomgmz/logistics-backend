@@ -27,6 +27,8 @@ import * as OperationsAdminController from '../controllers/admin/operations_admi
 import * as ITAdminController from '../controllers/admin/it_admin.controller.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as SystemLogController from '../controllers/admin/system-logs.controller.js'
+import { uploadSingle }    from '../middlewares/upload.middleware.js'
+import * as UploadController from '../controllers/admin/upload.controller.js'
 
 const router = Router()
 
@@ -129,5 +131,8 @@ router.get('/users/stats', authenticate, isSuperAdmin, UserController.getUserSta
 router.get('/system-logs',        authenticate, isSuperAdmin, SystemLogController.getAllLogs)
 router.get('/system-logs/stats',  authenticate, isSuperAdmin, SystemLogController.getLogStats)
 router.get('/system-logs/:id',    authenticate, isSuperAdmin, SystemLogController.getLogById)
+
+//upload
+router.post('/upload/image', authenticate, isFleet, uploadSingle, UploadController.uploadImage)
 
 export default router
