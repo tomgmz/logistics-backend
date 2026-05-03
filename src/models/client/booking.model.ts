@@ -365,7 +365,7 @@ async function findByDriverId(driverId: string): Promise<BookingWithRelations[]>
           assigned_at,
           trucks (
             plate_number,
-            truck_type,
+            truck_type
           )
         )
       )
