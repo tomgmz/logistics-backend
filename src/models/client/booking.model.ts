@@ -81,7 +81,6 @@ const BOOKING_WITH_RELATIONS_SELECT = `
   )
 `
 
-/** Tab badges: counts across entire bookings table (not filtered by search). */
 async function countByStatus(): Promise<Record<string, number>> {
   const result = await pool.query<{ status: string; n: string }>(
     `SELECT status::text AS status, COUNT(*)::int AS n FROM bookings GROUP BY status`

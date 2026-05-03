@@ -101,11 +101,10 @@ export async function deleteAccountant(userId: string, actorId?: string | null, 
 export async function deactivateAccountant(userId: string, actorId?: string | null, ip?: string | null) {
   const accountant = await AccountantModel.findById(userId)
   if (!accountant) throw new Error('Accountant not found')
-  if (accountant.status === 'inactive') throw new Error('Accountant is already inactive')
+  if (accountant.status === 'deactivated') throw new Error('Accountant is already deactivated')
 
-  const result = await AccountantModel.setStatus(userId, 'inactive')
+  const result = await AccountantModel.setStatus(userId, 'deactivated')
 
-  // Ban in Supabase Auth — blocks all new sign-ins and invalidates existing sessions
   const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
     ban_duration: BAN_DURATION,
   })

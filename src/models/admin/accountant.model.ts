@@ -86,7 +86,7 @@ async function remove(userId: string) {
   return true
 }
 
-async function setStatus(userId: string, status: 'active' | 'inactive') {
+async function setStatus(userId: string, status: 'active' | 'inactive' | 'deactivated') {
   const { data, error } = await supabase
     .from('users')
     .update({ status })
