@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { pool } from '../../lib/database.js'
 import {
   CreateBookingInput,
   UpdateBookingInput,
@@ -7,28 +8,200 @@ import {
   BookingDestination,
 } from '../../types/client/booking.types.js'
 
-async function findAll(): Promise<BookingWithRelations[]> {
+export interface BookingListQuery {
+  page:    number
+  limit:   number
+  status?: string | null
+  search?: string | null
+}
+
+const BOOKING_WITH_RELATIONS_SELECT = `
+  booking_id,
+  client_id,
+  origin,
+  origin_longitude,
+  origin_latitude,
+  truck_type_needed,
+  cargo_details,
+  schedule_date,
+  call_time,
+  status,
+  total_cost,
+  estimated_delivery,
+  required_volume_cbm,
+  required_weight_kg,
+  required_length_cm,
+  stackable_required,
+  created_at,
+  updated_at,
+  clients (
+    client_id,
+    company_name,
+    billing_address,
+    payment_terms,
+    users (
+      first_name,
+      last_name,
+      email,
+      phone
+    )
+  ),
+  booking_destinations (
+    destination_id,
+    booking_id,
+    address,
+    sequence_order,
+    status,
+    delivered_at,
+    notes,
+    latitude,
+    longitude,
+    created_at
+  ),
+  truck_assignments (
+    assignment_id,
+    truck_id,
+    assigned_at,
+    trucks (
+      plate_number,
+      truck_type
+    )
+  ),
+  driver_assignments (
+    assignment_id,
+    driver_id,
+    assigned_at,
+    drivers (
+      license_number,
+      users (
+        first_name,
+        last_name
+      )
+    )
+  )
+`
+
+/** Tab badges: counts across entire bookings table (not filtered by search). */
+async function countByStatus(): Promise<Record<string, number>> {
+  const result = await pool.query<{ status: string; n: string }>(
+    `SELECT status::text AS status, COUNT(*)::int AS n FROM bookings GROUP BY status`
+  )
+  let all = 0
+  const out: Record<string, number> = {}
+  for (const row of result.rows) {
+    const n = parseInt(row.n, 10) || 0
+    out[row.status] = n
+    all += n
+  }
+  out.all = all
+  return out
+}
+
+async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWithRelations[]; total: number }> {
+  const page  = Math.max(1, q.page)
+  const limit = Math.min(Math.max(1, q.limit), 100)
+  const offset = (page - 1) * limit
+
+  const status = (q.status ?? 'all').trim().toLowerCase()
+  const search = (q.search ?? '').trim()
+
+  const params: unknown[] = []
+  const where: string[] = []
+
+  if (status !== 'all') {
+    params.push(status)
+    where.push(`b.status = $${params.length}`)
+  }
+
+  if (search) {
+    const esc = `%${search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
+    params.push(esc)
+    const i = params.length
+    where.push(`(
+      b.origin ILIKE $${i} ESCAPE '\\' OR
+      b.truck_type_needed ILIKE $${i} ESCAPE '\\' OR
+      b.booking_id::text ILIKE $${i} ESCAPE '\\' OR
+      COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\'
+    )`)
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+
+  const countResult = await pool.query<{ n: string }>(
+    `
+    SELECT COUNT(*)::int AS n
+    FROM bookings b
+    LEFT JOIN clients c ON c.client_id = b.client_id
+    ${whereSql}
+    `,
+    params,
+  )
+  const total = parseInt(countResult.rows[0]?.n ?? '0', 10) || 0
+
+  const limitIdx  = params.length + 1
+  const offsetIdx = params.length + 2
+  const idsResult = await pool.query<{ booking_id: string }>(
+    `
+    SELECT b.booking_id
+    FROM bookings b
+    LEFT JOIN clients c ON c.client_id = b.client_id
+    ${whereSql}
+    ORDER BY b.created_at DESC
+    LIMIT $${limitIdx} OFFSET $${offsetIdx}
+    `,
+    [...params, limit, offset],
+  )
+
+  const ids = idsResult.rows.map((r) => r.booking_id)
+  if (ids.length === 0) {
+    return { rows: [], total }
+  }
+
   const { data, error } = await supabase
-    .rpc('get_all_bookings')
+    .from('bookings')
+    .select(BOOKING_WITH_RELATIONS_SELECT)
+    .in('booking_id', ids)
 
   if (error) throw error
-  return data ?? []
+
+  const byId = new Map((data ?? []).map((row: any) => [row.booking_id as string, row]))
+  const rows = ids
+    .map((id) => byId.get(id))
+    .filter(Boolean) as BookingWithRelations[]
+
+  return { rows, total }
+}
+
+async function findAll(): Promise<BookingWithRelations[]> {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select(BOOKING_WITH_RELATIONS_SELECT)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return (data ?? []) as unknown as BookingWithRelations[]
 }
 
 async function findById(bookingId: string): Promise<BookingWithRelations | null> {
   const { data, error } = await supabase
-    .rpc('get_booking_by_id', { p_booking_id: bookingId })
+    .from('bookings')
+    .select(BOOKING_WITH_RELATIONS_SELECT)
+    .eq('booking_id', bookingId)
+    .maybeSingle()
 
   if (error) throw error
-  return data ?? null
+  return (data ?? null) as unknown as BookingWithRelations | null
 }
 
 async function findByClientId(clientId: string): Promise<BookingWithRelations[]> {
   const { data, error } = await supabase
-    .rpc('get_bookings_by_client', { p_client_id: clientId })
+    .from('bookings')
+    .select(BOOKING_WITH_RELATIONS_SELECT)
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false })
 
   if (error) throw error
-  return data ?? []
+  return (data ?? []) as unknown as BookingWithRelations[]
 }
 
 async function create(input: CreateBookingInput): Promise<BookingWithRelations | null> {
@@ -194,7 +367,6 @@ async function findByDriverId(driverId: string): Promise<BookingWithRelations[]>
           trucks (
             plate_number,
             truck_type,
-            capacity_tons
           )
         )
       )
@@ -211,6 +383,8 @@ async function findByDriverId(driverId: string): Promise<BookingWithRelations[]>
 
 export const BookingModel = {
   findAll,
+  findAllPaginated,
+  countByStatus,
   findById,
   findByClientId,
   findByDriverId,

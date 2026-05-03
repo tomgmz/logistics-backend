@@ -2,6 +2,39 @@ import * as TruckModel from '../../models/admin/truck.model.js'
 import { CreateTruckInput, UpdateTruckInput } from '../../types/truck.types.js'
 import { logEvent } from '../../lib/log-event.js'
 
+export interface PaginatedTrucksMeta {
+  total:      number
+  page:       number
+  limit:      number
+  totalPages: number
+}
+
+export async function getAllTrucksPaginated(params: {
+  page:     number
+  limit:    number
+  status?:  string | null
+  owned_by?: string | null
+  search?:  string | null
+}): Promise<{ data: Awaited<ReturnType<typeof TruckModel.findAllPaginated>>['rows']; meta: PaginatedTrucksMeta }> {
+  const page  = Math.max(1, params.page)
+  const limit = Math.min(Math.max(1, params.limit), 100)
+
+  const { rows, total } = await TruckModel.findAllPaginated({
+    page,
+    limit,
+    status:   params.status,
+    owned_by: params.owned_by,
+    search:   params.search,
+  })
+
+  const totalPages = Math.max(1, Math.ceil(total / limit))
+
+  return {
+    data: rows,
+    meta: { total, page, limit, totalPages },
+  }
+}
+
 export async function getAllTrucks() {
   return TruckModel.findAll()
 }

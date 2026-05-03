@@ -87,6 +87,8 @@ router.get('/accountants/:id',    authenticate, isFinance,    AccountantControll
 router.post('/accountants',       authenticate, isSuperAdmin, validate(createAccountantSchema), AccountantController.createAccountant)
 router.patch('/accountants/:id',  authenticate, isSuperAdmin, validate(updateAccountantSchema), AccountantController.updateAccountant)
 router.delete('/accountants/:id', authenticate, isSuperAdmin, AccountantController.deleteAccountant)
+router.patch('/accountants/:id/deactivate', authenticate, isSuperAdmin, AccountantController.deactivateAccountant)
+router.patch('/accountants/:id/activate',   authenticate, isSuperAdmin, AccountantController.activateAccountant)
 
 //General Managers
 router.get('/general-managers',        authenticate, isSuperAdmin, GeneralManagerController.getAllGeneralManagers)

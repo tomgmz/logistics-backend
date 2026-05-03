@@ -12,7 +12,6 @@ export const createTruckSchema = z.object({
                       'Invalid PH plate format (e.g. ABC 1234 or AB 1234)'
                     ),
   truck_type:       z.enum(TRUCK_TYPES, { message: 'Invalid truck type' }),
-  capacity_tons:    z.number().positive('Capacity must be a positive number'),
   model_id:         z.string().uuid().optional().nullable(),
   owned_by:   z.enum(['company', 'vendor']).default('company'),
   vendor_id:  z.string().uuid().optional().nullable(),
@@ -34,7 +33,6 @@ export const updateTruckSchema = z.object({
                     )
                     .optional(),
   truck_type:       z.enum(TRUCK_TYPES, { message: 'Invalid truck type' }).optional(),
-  capacity_tons:    z.number().positive('Capacity must be a positive number').optional(),
   model_id:         z.string().uuid().optional().nullable(),
   status:     z.enum(['available', 'in_use', 'under_maintenance', 'inactive', 'archived']).optional(),
   owned_by:   z.enum(['company', 'vendor']).optional(),

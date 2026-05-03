@@ -62,7 +62,7 @@ async function update(userId: string, dto: UpdateAccountantDTO) {
   if (dto.last_name      !== undefined) userFields.last_name      = dto.last_name
   if (dto.middle_initial !== undefined) userFields.middle_initial = dto.middle_initial
   if (dto.suffix         !== undefined) userFields.suffix         = dto.suffix
-  if (dto.phone !== undefined) userFields.phone = dto.phone
+  if (dto.phone          !== undefined) userFields.phone          = dto.phone
   if (dto.email          !== undefined) userFields.email          = dto.email
   if (dto.username       !== undefined) userFields.username       = dto.username
 
@@ -86,4 +86,18 @@ async function remove(userId: string) {
   return true
 }
 
-export { findAll, findById, create, update, remove }
+async function setStatus(userId: string, status: 'active' | 'inactive') {
+  const { data, error } = await supabase
+    .from('users')
+    .update({ status })
+    .eq('user_id', userId)
+    .eq('role', 'accountant')
+    .neq('status', 'archived')
+    .select('user_id, status')
+
+  if (error) throw error
+  if (!data || data.length === 0) throw new Error(`Accountant not found or already archived`)
+  return data[0]
+}
+
+export { findAll, findById, create, update, remove, setStatus }

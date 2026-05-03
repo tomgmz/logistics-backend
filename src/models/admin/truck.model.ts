@@ -9,6 +9,71 @@ const SELECT_TRUCK = `
   LEFT JOIN truck_models tm ON tm.model_id = t.model_id
 `
 
+export interface TruckListQuery {
+  page:     number
+  limit:    number
+  status?:  string | null
+  owned_by?: string | null
+  search?:  string | null
+}
+
+async function findAllPaginated(q: TruckListQuery) {
+  const page   = Math.max(1, q.page)
+  const limit  = Math.min(Math.max(1, q.limit), 100)
+  const offset = (page - 1) * limit
+
+  const status  = (q.status ?? 'all').trim().toLowerCase()
+  const ownedBy = (q.owned_by ?? 'all').trim().toLowerCase()
+  const search  = (q.search ?? '').trim()
+
+  const params: unknown[] = []
+  const where: string[] = []
+
+  if (status === 'archived') {
+    where.push(`t.status = 'archived'`)
+  } else {
+    where.push(`t.status != 'archived'`)
+    if (status !== 'all') {
+      params.push(status)
+      where.push(`t.status = $${params.length}`)
+    }
+  }
+
+  if (ownedBy === 'company' || ownedBy === 'vendor') {
+    params.push(ownedBy)
+    where.push(`t.owned_by = $${params.length}`)
+  }
+
+  if (search) {
+    const esc = `%${search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
+    params.push(esc)
+    const i = params.length
+    where.push(`(
+      t.plate_number ILIKE $${i} ESCAPE '\\' OR
+      t.truck_type ILIKE $${i} ESCAPE '\\' OR
+      t.truck_id::text ILIKE $${i} ESCAPE '\\' OR
+      COALESCE(tm.name, '') ILIKE $${i} ESCAPE '\\'
+    )`)
+  }
+
+  const whereSql = `WHERE ${where.join(' AND ')}`
+
+  const countResult = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::int AS n FROM trucks t LEFT JOIN truck_models tm ON tm.model_id = t.model_id ${whereSql}`,
+    params,
+  )
+  const total = parseInt(countResult.rows[0]?.n ?? '0', 10) || 0
+
+  const limitIdx  = params.length + 1
+  const offsetIdx = params.length + 2
+  const listResult = await pool.query(
+    `${SELECT_TRUCK} ${whereSql} ORDER BY t.plate_number ASC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+    [...params, limit, offset],
+  )
+
+  return { rows: listResult.rows, total }
+}
+
 async function findAll() {
   const result = await pool.query(
     `${SELECT_TRUCK} WHERE t.status != 'archived' ORDER BY t.plate_number ASC`
@@ -26,13 +91,12 @@ async function findById(truckId: string) {
 
 async function create(input: CreateTruckInput) {
   const result = await pool.query(
-    `INSERT INTO trucks (plate_number, truck_type, capacity_tons, model_id, owned_by, vendor_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO trucks (plate_number, truck_type, model_id, owned_by, vendor_id)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
     [
       input.plate_number,
       input.truck_type,
-      input.capacity_tons,
       input.model_id ?? null,
       input.owned_by,
       input.vendor_id ?? null,
@@ -49,7 +113,6 @@ async function update(truckId: string, input: UpdateTruckInput) {
 
   if (input.plate_number !== undefined) { fields.push(`plate_number = $${index++}`)  ; values.push(input.plate_number) }
   if (input.truck_type   !== undefined) { fields.push(`truck_type = $${index++}`)     ; values.push(input.truck_type) }
-  if (input.capacity_tons !== undefined) { fields.push(`capacity_tons = $${index++}`) ; values.push(input.capacity_tons) }
   if (input.model_id     !== undefined) { fields.push(`model_id = $${index++}`)       ; values.push(input.model_id) }
   if (input.status       !== undefined) { fields.push(`status = $${index++}`)         ; values.push(input.status) }
   if (input.owned_by     !== undefined) { fields.push(`owned_by = $${index++}`)       ; values.push(input.owned_by) }
@@ -77,4 +140,4 @@ async function remove(truckId: string) {
   return true
 }
 
-export { findAll, findById, create, update, remove }
+export { findAll, findAllPaginated, findById, create, update, remove }

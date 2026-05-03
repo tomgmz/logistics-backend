@@ -99,9 +99,8 @@ export interface BookingWithRelations extends Booking {
     truck_id:      string
     assigned_at?:  Date
     trucks?: {
-      plate_number:  string
-      truck_type:    string
-      capacity_tons: number
+      plate_number: string
+      truck_type:   string
     }
   }[]
 }

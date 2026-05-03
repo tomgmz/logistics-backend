@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import {
   getAllBookingsService,
+  getAllBookingsPaginatedService,
   getBookingByIdService,
   getBookingsByClientService,
   createBookingService,
@@ -17,6 +18,22 @@ import {
 
 export const getAllBookings = async (req: Request, res: Response) => {
   try {
+    const pageRaw  = req.query.page
+    const limitRaw = req.query.limit
+    const page     = pageRaw != null && pageRaw !== '' ? parseInt(String(pageRaw), 10) : NaN
+    const limit    = limitRaw != null && limitRaw !== '' ? parseInt(String(limitRaw), 10) : NaN
+
+    if (Number.isFinite(page) && Number.isFinite(limit) && limit > 0 && page > 0) {
+      const status = typeof req.query.status === 'string' ? req.query.status : 'all'
+      const search = typeof req.query.search === 'string' ? req.query.search : ''
+      const result   = await getAllBookingsPaginatedService({ page, limit, status, search })
+      return res.status(200).json({
+        status: 'success',
+        data:   result.data,
+        meta:   result.meta,
+      })
+    }
+
     const bookings = await getAllBookingsService()
     res.status(200).json({ status: 'success', data: bookings })
   } catch (error: any) {

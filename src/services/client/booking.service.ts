@@ -32,6 +32,47 @@ function validateScheduleDate(scheduleDate: string): void {
   }
 }
 
+export interface PaginatedBookingsMeta {
+  total:        number
+  page:         number
+  limit:        number
+  totalPages:   number
+  statusCounts: Record<string, number>
+}
+
+export async function getAllBookingsPaginatedService(params: {
+  page:    number
+  limit:   number
+  status?: string | null
+  search?: string | null
+}): Promise<{ data: BookingWithRelations[]; meta: PaginatedBookingsMeta }> {
+  const page  = Math.max(1, params.page)
+  const limit = Math.min(Math.max(1, params.limit), 100)
+
+  const [{ rows, total }, statusCounts] = await Promise.all([
+    BookingModel.findAllPaginated({
+      page,
+      limit,
+      status: params.status,
+      search: params.search,
+    }),
+    BookingModel.countByStatus(),
+  ])
+
+  const totalPages = Math.max(1, Math.ceil(total / limit))
+
+  return {
+    data: rows,
+    meta: {
+      total,
+      page,
+      limit,
+      totalPages,
+      statusCounts,
+    },
+  }
+}
+
 export async function getAllBookingsService(): Promise<BookingWithRelations[]> {
   return await BookingModel.findAll() ?? []
 }

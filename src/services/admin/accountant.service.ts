@@ -13,6 +13,9 @@ interface UpdateAccountantDTO {
   phone?: string | null
 }
 
+// Effectively permanent ban (~100 years). Supabase requires a duration string.
+const BAN_DURATION = '876000h'
+
 export async function getAllAccountants() {
   return AccountantModel.findAll()
 }
@@ -88,7 +91,54 @@ export async function deleteAccountant(userId: string, actorId?: string | null, 
     user_id:     actorId,
     log_type:    'user_activity',
     action:      'accountant_deleted',
-    description: `Accountant ${userId} deleted`,
+    description: `Accountant ${userId} archived`,
+    ip_address:  ip,
+  })
+
+  return result
+}
+
+export async function deactivateAccountant(userId: string, actorId?: string | null, ip?: string | null) {
+  const accountant = await AccountantModel.findById(userId)
+  if (!accountant) throw new Error('Accountant not found')
+  if (accountant.status === 'inactive') throw new Error('Accountant is already inactive')
+
+  const result = await AccountantModel.setStatus(userId, 'inactive')
+
+  // Ban in Supabase Auth — blocks all new sign-ins and invalidates existing sessions
+  const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
+    ban_duration: BAN_DURATION,
+  })
+  if (authError) console.error(`Auth ban failed for ${userId}: ${authError.message}`)
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_activity',
+    action:      'accountant_deactivated',
+    description: `Accountant ${userId} deactivated`,
+    ip_address:  ip,
+  })
+
+  return result
+}
+
+export async function activateAccountant(userId: string, actorId?: string | null, ip?: string | null) {
+  const accountant = await AccountantModel.findById(userId)
+  if (!accountant) throw new Error('Accountant not found')
+  if (accountant.status === 'active') throw new Error('Accountant is already active')
+
+  const result = await AccountantModel.setStatus(userId, 'active')
+
+  const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
+    ban_duration: 'none',
+  })
+  if (authError) console.error(`Auth unban failed for ${userId}: ${authError.message}`)
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_activity',
+    action:      'accountant_activated',
+    description: `Accountant ${userId} reactivated`,
     ip_address:  ip,
   })
 
