@@ -69,15 +69,21 @@ export const coreCreateFields = () => ({
     ),
   middle_name: z
     .string()
-    .min(2, 'Middle name must be at least 2 characters')
-    .max(50, 'Middle name is too long')
-    .regex(
-      /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u,
-      'Middle name must contain only letters, spaces, hyphens, or apostrophes'
-    )
     .optional()
     .nullable()
-    .transform(v => v === '' ? null : v),
+    .transform(v => (v === '' ? null : v))
+    .refine(
+      v => v == null || v.length >= 2,
+      'Middle name must be at least 2 characters'
+    )
+    .refine(
+      v => v == null || v.length <= 50,
+      'Middle name is too long'
+    )
+    .refine(
+      v => v == null || /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u.test(v),
+      'Middle name must contain only letters, spaces, hyphens, or apostrophes'
+    ),
   suffix: z.preprocess(
     v => v === '' ? null : v,
     z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable()
@@ -116,15 +122,21 @@ export const coreUpdateFields = () => ({
     .optional(),
   middle_name: z
     .string()
-    .min(2, 'Middle name must be at least 2 characters')
-    .max(50, 'Middle name is too long')
-    .regex(
-      /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u,
-      'Middle name must contain only letters, spaces, hyphens, or apostrophes'
-    )
     .optional()
     .nullable()
-    .transform(v => v === '' ? null : v),
+    .transform(v => (v === '' ? null : v))
+    .refine(
+      v => v == null || v.length >= 2,
+      'Middle name must be at least 2 characters'
+    )
+    .refine(
+      v => v == null || v.length <= 50,
+      'Middle name is too long'
+    )
+    .refine(
+      v => v == null || /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u.test(v),
+      'Middle name must contain only letters, spaces, hyphens, or apostrophes'
+    ),
   suffix: z.preprocess(
     v => v === '' ? null : v,
     z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable()
