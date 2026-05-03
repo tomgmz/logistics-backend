@@ -142,9 +142,10 @@ export const updateDestination = async (req: Request, res: Response) => {
 
 export const updateDestinationStatus = async (req: Request, res: Response) => {
   try {
-    const { userId, ip }       = getRequestMeta(req)
-    const { status, delivered_at } = req.body
-    const destination = await updateDestinationStatusService(param(req.params.destinationId), status, delivered_at, userId, ip)
+    const { userId, ip } = getRequestMeta(req)
+    const { status }     = req.body
+    const deliveredAt    = status === 'delivered' ? new Date().toISOString() : undefined
+    const destination    = await updateDestinationStatusService(param(req.params.destinationId), status, deliveredAt, userId, ip)
     res.status(200).json({ status: 'success', data: destination })
   } catch (error: any) {
     const httpStatus = error.message.includes('not found') ? 404 : 500
