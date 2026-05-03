@@ -35,7 +35,7 @@ async function create(userId: string, dto: CreateITAdminInput) {
       email:          dto.email,
       first_name:     dto.first_name,
       last_name:      dto.last_name,
-      middle_initial: dto.middle_initial ?? null,
+      middle_name: dto.middle_name ?? null,
       suffix:         dto.suffix         ?? null,
       phone:          dto.phone          ?? null,
       role:           'it_admin',
@@ -50,7 +50,7 @@ async function update(userId: string, dto: UpdateITAdminInput) {
   const userFields: Record<string, any> = {}
   if (dto.first_name     !== undefined) userFields.first_name     = dto.first_name
   if (dto.last_name      !== undefined) userFields.last_name      = dto.last_name
-  if (dto.middle_initial !== undefined) userFields.middle_initial = dto.middle_initial
+  if (dto.middle_name !== undefined) userFields.middle_name = dto.middle_name
   if (dto.suffix         !== undefined) userFields.suffix         = dto.suffix
   if (dto.phone          !== undefined) userFields.phone          = dto.phone
   if (dto.email          !== undefined) userFields.email          = dto.email

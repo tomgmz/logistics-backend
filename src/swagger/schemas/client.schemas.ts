@@ -5,7 +5,7 @@ CreateClientRequest: {
           properties: {
             first_name:       { type: 'string', minLength: 2, maxLength: 50, example: 'Maria' },
             last_name:        { type: 'string', minLength: 2, maxLength: 50, example: 'Santos' },
-            middle_initial:   { type: 'string', maxLength: 1, nullable: true, example: 'L' },
+            middle_name:   { type: 'string', maxLength: 1, nullable: true, example: 'L' },
             suffix:           { type: 'string', maxLength: 10, nullable: true, example: null },
             username:         { type: 'string', minLength: 2, maxLength: 50, example: 'mariasantos' },
             email:            { type: 'string', format: 'email', example: 'maria@example.com' },
@@ -21,7 +21,7 @@ CreateClientRequest: {
           properties: {
             first_name:       { type: 'string', minLength: 2, maxLength: 50, example: 'Maria' },
             last_name:        { type: 'string', minLength: 2, maxLength: 50, example: 'Santos' },
-            middle_initial:   { type: 'string', maxLength: 1, nullable: true, example: 'L' },
+            middle_name:   { type: 'string', maxLength: 1, nullable: true, example: 'L' },
             suffix:           { type: 'string', maxLength: 10, nullable: true, example: null },
             username:         { type: 'string', minLength: 2, maxLength: 50, example: 'mariasantos' },
             email:            { type: 'string', format: 'email', example: 'maria@example.com' },
@@ -38,7 +38,7 @@ CreateClientRequest: {
             user_id:          { type: 'string', format: 'uuid', example: '6752bf65-4148-446f-ab13-c5b91db53b38' },
             first_name:       { type: 'string', example: 'Maria' },
             last_name:        { type: 'string', example: 'Santos' },
-            middle_initial:   { type: 'string', nullable: true, example: null },
+            middle_name:   { type: 'string', nullable: true, example: null },
             suffix:           { type: 'string', nullable: true, example: null },
             username:         { type: 'string', example: 'mariasantos' },
             email:            { type: 'string', example: 'maria@example.com' },

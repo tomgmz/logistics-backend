@@ -67,10 +67,14 @@ export const coreCreateFields = () => ({
       /^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u,
       'Last name must contain only letters, spaces, hyphens, or apostrophes'
     ),
-  middle_initial: z
+  middle_name: z
     .string()
-    .max(1)
-    .regex(/^[\p{L}]$/u, 'Middle initial must be a letter')
+    .min(2, 'Middle name must be at least 2 characters')
+    .max(50, 'Middle name is too long')
+    .regex(
+      /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u,
+      'Middle name must contain only letters, spaces, hyphens, or apostrophes'
+    )
     .optional()
     .nullable()
     .transform(v => v === '' ? null : v),
@@ -110,10 +114,14 @@ export const coreUpdateFields = () => ({
       'Last name must contain only letters, spaces, hyphens, or apostrophes'
     )
     .optional(),
-  middle_initial: z
+  middle_name: z
     .string()
-    .max(1)
-    .regex(/^[\p{L}]$/u, 'Middle initial must be a letter')
+    .min(2, 'Middle name must be at least 2 characters')
+    .max(50, 'Middle name is too long')
+    .regex(
+      /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u,
+      'Middle name must contain only letters, spaces, hyphens, or apostrophes'
+    )
     .optional()
     .nullable()
     .transform(v => v === '' ? null : v),

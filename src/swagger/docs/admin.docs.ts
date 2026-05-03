@@ -32,7 +32,7 @@ export const adminPaths = {
             example: {
               first_name: 'John',
               last_name: 'Doe',
-              middle_initial: 'A',
+              middle_name: 'A',
               suffix: null,
               username: 'johndoe',
               email: 'john@example.com',

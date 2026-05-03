@@ -35,7 +35,7 @@ async function create(userId: string, input: CreateAdminInput) {
         email:       input.email,
         first_name:  input.first_name,
         last_name:   input.last_name,
-        middle_initial: input.middle_initial ?? null,
+        middle_name: input.middle_name ?? null,
         suffix:      input.suffix,
         phone:       input.phone,
         role:        'admin',
@@ -53,7 +53,7 @@ async function update(userId: string, input: UpdateAdminInput) {
     const userFields: Record<string, any> = {}
     if (input.first_name     != undefined) userFields.first_name =     input.first_name
     if (input.last_name      != undefined) userFields.last_name =      input.last_name
-    if (input.middle_initial != undefined) userFields.middle_initial = input.middle_initial
+    if (input.middle_name != undefined) userFields.middle_name = input.middle_name
     if (input.suffix         != undefined) userFields.suffix =         input.suffix
     if (input.phone !== undefined) userFields.phone =                  input.phone 
     if (input.email          != undefined) userFields.email =          input.email

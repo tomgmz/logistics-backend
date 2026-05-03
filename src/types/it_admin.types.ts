@@ -2,7 +2,7 @@ export interface ITAdmin {
   user_id:         string
   first_name:      string
   last_name:       string
-  middle_initial?: string | null
+  middle_name?: string | null
   suffix?:         string | null
   username:        string
   email:           string
@@ -17,7 +17,7 @@ export interface ITAdmin {
 export interface CreateITAdminInput {
   first_name:      string
   last_name:       string
-  middle_initial?: string | null
+  middle_name?: string | null
   suffix?:         string | null
   username:        string
   email:           string
@@ -28,7 +28,7 @@ export interface CreateITAdminInput {
 export interface UpdateITAdminInput {
   first_name?:     string
   last_name?:      string
-  middle_initial?: string | null
+  middle_name?: string | null
   suffix?:         string | null
   username?:       string
   email?:          string

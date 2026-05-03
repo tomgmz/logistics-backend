@@ -5,7 +5,7 @@ export const driverSchemas = {
           properties: {
             first_name:              { type: 'string', minLength: 2, maxLength: 50, example: 'Tom Ervin' },
             last_name:               { type: 'string', minLength: 2, maxLength: 50, example: 'Gomez' },
-            middle_initial:          { type: 'string', maxLength: 1, nullable: true, example: null },
+            middle_name:          { type: 'string', maxLength: 1, nullable: true, example: null },
             suffix:                  { type: 'string', maxLength: 10, nullable: true, example: null },
             username:                { type: 'string', minLength: 2, maxLength: 50, example: 'tomgz' },
             email:                   { type: 'string', format: 'email', example: 'tomervingmz@gmail.com' },
@@ -23,7 +23,7 @@ export const driverSchemas = {
           properties: {
             first_name:              { type: 'string', minLength: 2, maxLength: 50, example: 'Tom Ervin' },
             last_name:               { type: 'string', minLength: 2, maxLength: 50, example: 'Gomez' },
-            middle_initial:          { type: 'string', maxLength: 1, nullable: true, example: null },
+            middle_name:          { type: 'string', maxLength: 1, nullable: true, example: null },
             suffix:                  { type: 'string', maxLength: 10, nullable: true, example: null },
             username:                { type: 'string', minLength: 2, maxLength: 50, example: 'tomgz' },
             email:                   { type: 'string', format: 'email', example: 'tomervingmz@gmail.com' },
@@ -40,7 +40,7 @@ export const driverSchemas = {
             user_id:                 { type: 'string', format: 'uuid', example: 'ade09b28-6f8a-48d4-8d42-5a11bdfdae56' },
             first_name:              { type: 'string', example: 'Tom Ervin' },
             last_name:               { type: 'string', example: 'Gomez' },
-            middle_initial:          { type: 'string', nullable: true, example: null },
+            middle_name:          { type: 'string', nullable: true, example: null },
             suffix:                  { type: 'string', nullable: true, example: null },
             username:                { type: 'string', example: 'tomgz' },
             email:                   { type: 'string', example: 'tomervingmz@gmail.com' },

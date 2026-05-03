@@ -12,7 +12,7 @@ export const createAdminSchema = z.object({
                   .min(2)
                   .max(50)
                   .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes'),
-  middle_initial: z.string().regex(/^[A-Za-z]{1,2}$/, 'Middle initial must be 1–2 letters only').max(2).optional().nullable().transform(v => v === '' ? null : v),
+  middle_name: z.string().regex(/^[A-Za-z]{1,2}$/, 'Middle initial must be 1–2 letters only').max(2).optional().nullable().transform(v => v === '' ? null : v),
   suffix: z
         .preprocess(
           v => v === '' ? null : v,
@@ -44,7 +44,7 @@ export const updateAdminSchema = z.object({
                   .max(50)
                   .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes')
                   .optional(),
-  middle_initial: z.string().max(1).optional().nullable(),
+  middle_name: z.string().max(1).optional().nullable(),
   suffix:         z.string().max(10).optional().nullable(),
   username:       z.string().min(2).max(50).optional(),
   email:          z.string().email().optional(),

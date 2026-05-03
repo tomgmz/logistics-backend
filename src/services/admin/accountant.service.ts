@@ -6,7 +6,7 @@ import { logEvent } from '../../lib/log-event.js'
 interface UpdateAccountantDTO {
   first_name?: string
   last_name?: string
-  middle_initial?: string | null
+  middle_name?: string | null
   suffix?: string | null
   username?: string
   email?: string

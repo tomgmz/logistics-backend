@@ -6,7 +6,7 @@ export interface Driver {
   email:            string
   first_name:       string
   last_name:        string
-  middle_initial?:  string | null
+  middle_name?:  string | null
   suffix?:          string | null
   phone?:           string | null
   role:             UserRole
@@ -26,7 +26,7 @@ export interface CreateDriverDTO {
   password:          string
   first_name:        string
   last_name:         string
-  middle_initial?:   string | null
+  middle_name?:   string | null
   suffix?:           string | null
   phone?:            string | null
   created_by?:       string | null
@@ -39,7 +39,7 @@ export interface CreateDriverDTO {
 export interface UpdateDriverDTO {
   first_name?:       string
   last_name?:        string
-  middle_initial?:   string | null
+  middle_name?:   string | null
   suffix?:           string | null
   email?:            string
   username?:         string

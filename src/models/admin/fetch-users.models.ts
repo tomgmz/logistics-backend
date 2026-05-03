@@ -36,7 +36,7 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
       user_id,
       first_name,
       last_name,
-      middle_initial,
+      middle_name,
       suffix,
       username,
       email,

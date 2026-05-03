@@ -32,7 +32,7 @@ export const accountantPaths = {
             example: {
               first_name: 'John',
               last_name: 'Doe',
-              middle_initial: null,
+              middle_name: null,
               suffix: null,
               username: 'johndoe',
               email: 'john@example.com',

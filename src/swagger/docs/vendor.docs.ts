@@ -32,7 +32,7 @@ export const vendorPaths = {
             example: {
               first_name: 'Pedro',
               last_name: 'Reyes',
-              middle_initial: 'B',
+              middle_name: 'B',
               suffix: null,
               username: 'pedroreyes',
               email: 'pedro@example.com',

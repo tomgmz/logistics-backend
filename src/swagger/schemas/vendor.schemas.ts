@@ -5,7 +5,7 @@ export const vendorSchemas = {
           properties: {
             first_name:     { type: 'string', minLength: 2, maxLength: 50, example: 'Pedro' },
             last_name:      { type: 'string', minLength: 2, maxLength: 50, example: 'Reyes' },
-            middle_initial: { type: 'string', maxLength: 1, nullable: true, example: 'B' },
+            middle_name: { type: 'string', maxLength: 1, nullable: true, example: 'B' },
             suffix:         { type: 'string', maxLength: 10, nullable: true, example: null },
             username:       { type: 'string', minLength: 2, maxLength: 50, example: 'pedroreyes' },
             email:          { type: 'string', format: 'email', example: 'pedro@example.com' },
@@ -21,7 +21,7 @@ export const vendorSchemas = {
           properties: {
             first_name:     { type: 'string', minLength: 2, maxLength: 50, example: 'Pedro' },
             last_name:      { type: 'string', minLength: 2, maxLength: 50, example: 'Reyes' },
-            middle_initial: { type: 'string', maxLength: 1, nullable: true, example: 'B' },
+            middle_name: { type: 'string', maxLength: 1, nullable: true, example: 'B' },
             suffix:         { type: 'string', maxLength: 10, nullable: true, example: null },
             username:       { type: 'string', minLength: 2, maxLength: 50, example: 'pedroreyes' },
             email:          { type: 'string', format: 'email', example: 'pedro@example.com' },
@@ -38,7 +38,7 @@ export const vendorSchemas = {
             user_id:        { type: 'string', format: 'uuid', example: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
             first_name:     { type: 'string', example: 'Pedro' },
             last_name:      { type: 'string', example: 'Reyes' },
-            middle_initial: { type: 'string', nullable: true, example: 'B' },
+            middle_name: { type: 'string', nullable: true, example: 'B' },
             suffix:         { type: 'string', nullable: true, example: null },
             username:       { type: 'string', example: 'pedroreyes' },
             email:          { type: 'string', example: 'pedro@example.com' },

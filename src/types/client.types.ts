@@ -2,7 +2,7 @@ export interface Client {
   user_id:         string
   first_name:      string
   last_name:       string
-  middle_initial?: string | null
+  middle_name?: string | null
   suffix?:         string | null
   username:        string
   email:           string
@@ -23,7 +23,7 @@ export interface Client {
 export interface CreateClientInput {
   first_name:      string
   last_name:       string
-  middle_initial?: string | null
+  middle_name?: string | null
   suffix?:         string | null
   username:        string
   email:           string
@@ -39,7 +39,7 @@ export interface CreateClientInput {
 export interface UpdateClientInput {
   first_name?:     string
   last_name?:      string
-  middle_initial?: string | null
+  middle_name?:    string | null
   suffix?:         string | null
   username?:       string
   email?:          string

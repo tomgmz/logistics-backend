@@ -32,7 +32,7 @@ export const clientPaths = {
             example: {
               first_name: 'Maria',
               last_name: 'Santos',
-              middle_initial: 'L',
+              middle_name: 'L',
               suffix: null,
               username: 'mariasantos',
               email: 'maria@example.com',

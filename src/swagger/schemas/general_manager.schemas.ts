@@ -5,7 +5,7 @@ export const generalManagerSchemas = {
     properties: {
       first_name:     { type: 'string', minLength: 2, maxLength: 50, example: 'Jane' },
       last_name:      { type: 'string', minLength: 2, maxLength: 50, example: 'Smith' },
-      middle_initial: { type: 'string', maxLength: 1, nullable: true, example: null },
+      middle_name: { type: 'string', maxLength: 1, nullable: true, example: null },
       suffix:         { type: 'string', maxLength: 10, nullable: true, example: null },
       username:       { type: 'string', minLength: 2, maxLength: 50, example: 'janesmith' },
       email:          { type: 'string', format: 'email', example: 'jane@example.com' },
@@ -18,7 +18,7 @@ export const generalManagerSchemas = {
     properties: {
       first_name:     { type: 'string', minLength: 2, maxLength: 50, example: 'Jane' },
       last_name:      { type: 'string', minLength: 2, maxLength: 50, example: 'Smith' },
-      middle_initial: { type: 'string', maxLength: 1, nullable: true, example: null },
+      middle_name: { type: 'string', maxLength: 1, nullable: true, example: null },
       suffix:         { type: 'string', maxLength: 10, nullable: true, example: null },
       username:       { type: 'string', minLength: 2, maxLength: 50, example: 'janesmith' },
       email:          { type: 'string', format: 'email', example: 'jane@example.com' },
@@ -31,7 +31,7 @@ export const generalManagerSchemas = {
       user_id:        { type: 'string', format: 'uuid', example: 'ade09b28-6f8a-48d4-8d42-5a11bdfdae56' },
       first_name:     { type: 'string', example: 'Jane' },
       last_name:      { type: 'string', example: 'Smith' },
-      middle_initial: { type: 'string', nullable: true, example: null },
+      middle_name: { type: 'string', nullable: true, example: null },
       suffix:         { type: 'string', nullable: true, example: null },
       username:       { type: 'string', example: 'janesmith' },
       email:          { type: 'string', example: 'jane@example.com' },

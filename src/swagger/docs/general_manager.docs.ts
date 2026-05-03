@@ -32,7 +32,7 @@ export const generalManagerPaths = {
             example: {
               first_name: 'Jane',
               last_name: 'Smith',
-              middle_initial: null,
+              middle_name: null,
               suffix: null,
               username: 'janesmith',
               email: 'jane@example.com',

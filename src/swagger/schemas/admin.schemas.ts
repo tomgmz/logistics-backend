@@ -5,7 +5,7 @@ export const adminSchemas = {
     properties: {
       first_name:     { type: 'string', minLength: 2, maxLength: 50,  example: 'John' },
       last_name:      { type: 'string', minLength: 2, maxLength: 50,  example: 'Doe' },
-      middle_initial: { type: 'string', maxLength: 1,  nullable: true, example: 'A' },
+      middle_name: { type: 'string', maxLength: 1,  nullable: true, example: 'A' },
       suffix:         { type: 'string', maxLength: 10, nullable: true, example: 'Jr.' },
       username:       { type: 'string', minLength: 2, maxLength: 50,  example: 'johndoe' },
       email:          { type: 'string', format: 'email',              example: 'john@example.com' },
@@ -19,7 +19,7 @@ export const adminSchemas = {
     properties: {
       first_name:     { type: 'string', minLength: 2, maxLength: 50,  example: 'John' },
       last_name:      { type: 'string', minLength: 2, maxLength: 50,  example: 'Doe' },
-      middle_initial: { type: 'string', maxLength: 1,  nullable: true, example: 'A' },
+      middle_name: { type: 'string', maxLength: 1,  nullable: true, example: 'A' },
       suffix:         { type: 'string', maxLength: 10, nullable: true, example: 'Jr.' },
       username:       { type: 'string', minLength: 2, maxLength: 50,  example: 'johndoe' },
       email:          { type: 'string', format: 'email',              example: 'john@example.com' },
@@ -33,7 +33,7 @@ export const adminSchemas = {
       user_id:        { type: 'string', format: 'uuid',    example: '26429db4-6f20-4c60-b7dd-0063b6566c33' },
       first_name:     { type: 'string',                    example: 'John' },
       last_name:      { type: 'string',                    example: 'Doe' },
-      middle_initial: { type: 'string', nullable: true,    example: null },
+      middle_name: { type: 'string', nullable: true,    example: null },
       suffix:         { type: 'string', nullable: true,    example: null },
       username:       { type: 'string',                    example: 'johndoe' },
       email:          { type: 'string',                    example: 'john@example.com' },

@@ -2,7 +2,7 @@ export interface Admin {
   user_id:         string
   first_name:      string
   last_name:       string
-  middle_initial?: string | null
+  middle_name?: string | null
   suffix?:         string | null
   username:        string
   email:           string
@@ -17,7 +17,7 @@ export interface Admin {
 export interface CreateAdminInput {
   first_name:      string
   last_name:       string
-  middle_initial?: string | null
+  middle_name?: string | null
   suffix?:         string | null
   username:        string
   email:           string
@@ -29,7 +29,7 @@ export interface CreateAdminInput {
 export interface UpdateAdminInput {
   first_name?:     string
   last_name?:      string
-  middle_initial?: string | null
+  middle_name?: string | null
   suffix?:         string | null
   username?:       string
   email?:          string

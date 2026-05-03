@@ -32,7 +32,7 @@ export const driverPaths = {
             example: {
               first_name: 'Tom Ervin',
               last_name: 'Gomez',
-              middle_initial: null,
+              middle_name: null,
               suffix: null,
               username: 'tomgz',
               email: 'tomervingmz@gmail.com',
