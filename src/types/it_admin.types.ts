@@ -4,7 +4,6 @@ export interface ITAdmin {
   last_name:       string
   middle_name?: string | null
   suffix?:         string | null
-  username:        string
   email:           string
   phone?:          string | null
   role:            'it_admin'
@@ -19,7 +18,6 @@ export interface CreateITAdminInput {
   last_name:       string
   middle_name?: string | null
   suffix?:         string | null
-  username:        string
   email:           string
   phone?:          string
   created_by?:     string | null
@@ -30,7 +28,6 @@ export interface UpdateITAdminInput {
   last_name?:      string
   middle_name?: string | null
   suffix?:         string | null
-  username?:       string
   email?:          string
   phone?:          string | null
   status?:         'active' | 'inactive' | 'archived' | 'permanently_locked'

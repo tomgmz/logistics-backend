@@ -4,7 +4,6 @@ export interface Admin {
   last_name:       string
   middle_name?: string | null
   suffix?:         string | null
-  username:        string
   email:           string
   phone?:          string | null
   role:            'admin' | 'super_admin'
@@ -19,7 +18,6 @@ export interface CreateAdminInput {
   last_name:       string
   middle_name?: string | null
   suffix?:         string | null
-  username:        string
   email:           string
   phone?:          string
   role:            'admin' | 'super_admin'
@@ -31,7 +29,6 @@ export interface UpdateAdminInput {
   last_name?:      string
   middle_name?: string | null
   suffix?:         string | null
-  username?:       string
   email?:          string
   phone?:          string
   role?:           'admin' | 'super_admin'

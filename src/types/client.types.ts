@@ -4,7 +4,6 @@ export interface Client {
   last_name:       string
   middle_name?: string | null
   suffix?:         string | null
-  username:        string
   email:           string
   phone?:          string | null
   role:            'client'
@@ -25,7 +24,6 @@ export interface CreateClientInput {
   last_name:       string
   middle_name?: string | null
   suffix?:         string | null
-  username:        string
   email:           string
   phone?:          string
   created_by?:     string
@@ -41,7 +39,6 @@ export interface UpdateClientInput {
   last_name?:      string
   middle_name?:    string | null
   suffix?:         string | null
-  username?:       string
   email?:          string
   phone?:          string
 

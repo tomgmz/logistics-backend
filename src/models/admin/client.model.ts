@@ -31,7 +31,6 @@ async function create(userId: string, input: CreateClientInput) {
     .from('users')
     .insert({
       user_id:        userId,
-      username:       input.username,
       email:          input.email,
       first_name:     input.first_name,
       last_name:      input.last_name,
@@ -64,7 +63,6 @@ async function update(userId: string, input: UpdateClientInput){
     if (input.suffix         != undefined) userFields.suffix         = input.suffix
     if (input.phone          != undefined) userFields.phone          = input.phone
     if (input.email          != undefined) userFields.email          = input.email
-    if (input.username       != undefined) userFields.username       = input.username
 
     if (Object.keys(userFields).length > 0) {
         const { error } = await supabase.from('users').update(userFields).eq('user_id', userId)

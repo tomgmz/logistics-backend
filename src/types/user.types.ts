@@ -6,7 +6,6 @@ export const USER_SUFFIXES = ['Jr.', 'Sr.', 'II', 'III', 'IV', 'V'] as const
 
 export interface BaseUser {
   user_id:         string
-  username:        string
   email:           string
   first_name:      string
   last_name:       string
@@ -21,7 +20,6 @@ export interface BaseUser {
 }
 
 export interface BaseCreateDTO {
-  username:        string
   email:           string
   first_name:      string
   last_name:       string

@@ -1,13 +1,12 @@
 export const vendorSchemas = {
   CreateVendorRequest: {
           type: 'object',
-          required: ['first_name', 'last_name', 'username', 'email', 'vendor_type'],
+          required: ['first_name', 'last_name', 'email', 'vendor_type'],
           properties: {
             first_name:     { type: 'string', minLength: 2, maxLength: 50, example: 'Pedro' },
             last_name:      { type: 'string', minLength: 2, maxLength: 50, example: 'Reyes' },
             middle_name: { type: 'string', maxLength: 1, nullable: true, example: 'B' },
             suffix:         { type: 'string', maxLength: 10, nullable: true, example: null },
-            username:       { type: 'string', minLength: 2, maxLength: 50, example: 'pedroreyes' },
             email:          { type: 'string', format: 'email', example: 'pedro@example.com' },
             phone:          { type: 'string', maxLength: 13, nullable: true, example: '09191234567' },
             vendor_type:    { type: 'string', enum: ['individual', 'company'], example: 'company' },
@@ -23,7 +22,6 @@ export const vendorSchemas = {
             last_name:      { type: 'string', minLength: 2, maxLength: 50, example: 'Reyes' },
             middle_name: { type: 'string', maxLength: 1, nullable: true, example: 'B' },
             suffix:         { type: 'string', maxLength: 10, nullable: true, example: null },
-            username:       { type: 'string', minLength: 2, maxLength: 50, example: 'pedroreyes' },
             email:          { type: 'string', format: 'email', example: 'pedro@example.com' },
             phone:          { type: 'string', maxLength: 13, nullable: true, example: '09191234567' },
             vendor_type:    { type: 'string', enum: ['individual', 'company'], example: 'company' },
@@ -40,7 +38,6 @@ export const vendorSchemas = {
             last_name:      { type: 'string', example: 'Reyes' },
             middle_name: { type: 'string', nullable: true, example: 'B' },
             suffix:         { type: 'string', nullable: true, example: null },
-            username:       { type: 'string', example: 'pedroreyes' },
             email:          { type: 'string', example: 'pedro@example.com' },
             phone:          { type: 'string', nullable: true, example: '09191234567' },
             role:           { type: 'string', example: 'vendor' },

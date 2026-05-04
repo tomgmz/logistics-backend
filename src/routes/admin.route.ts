@@ -13,6 +13,7 @@ import { createHumanResourcesSchema, updateHumanResourcesSchema }    from '../sc
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
 import { createITAdminSchema, updateITAdminSchema }   from '../schema/admin/it_admin.schema.js'
+import { assignBookingSchema, updateDeliveryStatusSchema } from '../schema/admin/assignment.schema.js'
 import * as AdminController           from '../controllers/admin/admin.controller.js'
 import * as ClientController          from '../controllers/admin/client.controller.js'
 import * as DriverController          from '../controllers/admin/driver.controller.js'
@@ -25,6 +26,7 @@ import * as HumanResourcesController  from '../controllers/admin/human_resources
 import * as FleetAdminController      from '../controllers/admin/fleet_admin.controller.js'
 import * as OperationsAdminController from '../controllers/admin/operations_admin.controller.js'
 import * as ITAdminController from '../controllers/admin/it_admin.controller.js'
+import * as AssignmentController from '../controllers/admin/assignment.controller.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as SystemLogController from '../controllers/admin/system-logs.controller.js'
 import { uploadSingle }    from '../middlewares/upload.middleware.js'
@@ -59,6 +61,13 @@ router.get('/drivers/:id',    authenticate, isFleet, DriverController.getDriverB
 router.post('/drivers',       authenticate, isFleet, validate(createDriverSchema), DriverController.createDriver)
 router.patch('/drivers/:id',  authenticate, isFleet, validate(updateDriverSchema), DriverController.updateDriver)
 router.delete('/drivers/:id', authenticate, isFleet, DriverController.deleteDriver)
+
+//Assignments
+router.get('/assignments',                    authenticate, isOperations, AssignmentController.getAllAssignments)
+router.get('/assignments/:bookingId',         authenticate, isOperations, AssignmentController.getAssignmentByBooking)
+router.get('/assignments/:bookingId/history', authenticate, isOperations, AssignmentController.getAssignmentHistory)
+router.post('/assignments/:bookingId',        authenticate, isOperations, validate(assignBookingSchema), AssignmentController.assignBooking)
+router.patch('/assignments/:bookingId/status', authenticate, isOperations, validate(updateDeliveryStatusSchema), AssignmentController.updateDeliveryStatus)
 
 //Vendors
 router.get('/vendors',        authenticate, isFleet,    VendorController.getAllVendors)

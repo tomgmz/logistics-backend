@@ -20,7 +20,7 @@ export async function createITAdmin(dto: CreateITAdminInput, actorId?: string | 
     email:         dto.email,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: { role: 'it_admin', display_name: dto.username },
+    user_metadata: { role: 'it_admin' },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 

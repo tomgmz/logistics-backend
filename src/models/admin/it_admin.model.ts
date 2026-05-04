@@ -31,7 +31,6 @@ async function create(userId: string, dto: CreateITAdminInput) {
     .from('users')
     .insert({
       user_id:        userId,
-      username:       dto.username,
       email:          dto.email,
       first_name:     dto.first_name,
       last_name:      dto.last_name,
@@ -54,7 +53,6 @@ async function update(userId: string, dto: UpdateITAdminInput) {
   if (dto.suffix         !== undefined) userFields.suffix         = dto.suffix
   if (dto.phone          !== undefined) userFields.phone          = dto.phone
   if (dto.email          !== undefined) userFields.email          = dto.email
-  if (dto.username       !== undefined) userFields.username       = dto.username
   if (dto.status         !== undefined) userFields.status         = dto.status
 
   if (Object.keys(userFields).length > 0) {

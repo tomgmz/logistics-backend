@@ -88,14 +88,6 @@ export const coreCreateFields = () => ({
     v => v === '' ? null : v,
     z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable()
   ),
-  username: z
-    .string()
-    .min(2)
-    .max(50)
-    .regex(
-      /^[a-zA-Z0-9._-]+$/,
-      'Username may only contain letters, numbers, dots, underscores, or hyphens'
-    ),
   email:      emailField(),
   phone:      mobileField(),
   created_by: z.string().uuid().optional().nullable(),
@@ -141,15 +133,6 @@ export const coreUpdateFields = () => ({
     v => v === '' ? null : v,
     z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable()
   ),
-  username: z
-    .string()
-    .min(2)
-    .max(50)
-    .regex(
-      /^[a-zA-Z0-9._-]+$/,
-      'Username may only contain letters, numbers, dots, underscores, or hyphens'
-    )
-    .optional(),
   email: emailField().optional(),
   phone: mobileField().optional(),
 })

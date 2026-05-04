@@ -11,7 +11,7 @@ import {
 export async function findUserByEmail(email: string): Promise<AuthUser | null> {
   const { data, error } = await supabase
     .from('users')
-    .select('user_id, email, username, first_name, last_name, role, status, locked_until, failed_login_attempts, lockup_count')
+    .select('user_id, email, first_name, last_name, role, status, locked_until, failed_login_attempts, lockup_count')
     .eq('email', email)
     .single()
 
@@ -47,7 +47,7 @@ export async function permanentlyLockUser(userId: string): Promise<void> {
 export async function findUserById(userId: string): Promise<AuthUser | null> {
   const { data, error } = await supabase
     .from('users')
-    .select('user_id, email, username, first_name, last_name, role, status')
+    .select('user_id, email, first_name, last_name, role, status')
     .eq('user_id', userId)
     .single()
 
@@ -390,7 +390,7 @@ export async function findUserWithClient(userId: string): Promise<AuthUser | nul
   const { data, error } = await supabase
     .from('users')
     .select(`
-      user_id, email, username, first_name, last_name, role, status,
+      user_id, email, first_name, last_name, role, status,
       clients (client_id, company_name, billing_address, payment_terms)
     `)
     .eq('user_id', userId)
@@ -409,7 +409,7 @@ export async function findUserWithDriver(userId: string): Promise<AuthUser | nul
   const { data, error } = await supabase
     .from('users')
     .select(`
-      user_id, email, username, first_name, last_name, role, status,
+      user_id, email, first_name, last_name, role, status,
       drivers (driver_id, license_number, license_expiry, status, is_vendor_driver)
     `)
     .eq('user_id', userId)

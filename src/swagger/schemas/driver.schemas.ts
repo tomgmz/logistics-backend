@@ -1,13 +1,12 @@
 export const driverSchemas = {
           CreateDriverRequest: {
           type: 'object',
-          required: ['first_name', 'last_name', 'username', 'email', 'password', 'license_number', 'license_expiry'],
+          required: ['first_name', 'last_name', 'email', 'password', 'license_number', 'license_expiry'],
           properties: {
             first_name:              { type: 'string', minLength: 2, maxLength: 50, example: 'Tom Ervin' },
             last_name:               { type: 'string', minLength: 2, maxLength: 50, example: 'Gomez' },
             middle_name:          { type: 'string', maxLength: 1, nullable: true, example: null },
             suffix:                  { type: 'string', maxLength: 10, nullable: true, example: null },
-            username:                { type: 'string', minLength: 2, maxLength: 50, example: 'tomgz' },
             email:                   { type: 'string', format: 'email', example: 'tomervingmz@gmail.com' },
             password:                { type: 'string', format: 'password', minLength: 8, example: 'secret12345' },
             phone:                   { type: 'string', maxLength: 13, nullable: true, example: '09171234567' },
@@ -25,7 +24,6 @@ export const driverSchemas = {
             last_name:               { type: 'string', minLength: 2, maxLength: 50, example: 'Gomez' },
             middle_name:          { type: 'string', maxLength: 1, nullable: true, example: null },
             suffix:                  { type: 'string', maxLength: 10, nullable: true, example: null },
-            username:                { type: 'string', minLength: 2, maxLength: 50, example: 'tomgz' },
             email:                   { type: 'string', format: 'email', example: 'tomervingmz@gmail.com' },
             phone:                   { type: 'string', maxLength: 13, nullable: true, example: '09171234567' },
             license_number:          { type: 'string', maxLength: 50, example: 'N01-12-123456' },
@@ -42,7 +40,6 @@ export const driverSchemas = {
             last_name:               { type: 'string', example: 'Gomez' },
             middle_name:          { type: 'string', nullable: true, example: null },
             suffix:                  { type: 'string', nullable: true, example: null },
-            username:                { type: 'string', example: 'tomgz' },
             email:                   { type: 'string', example: 'tomervingmz@gmail.com' },
             phone:                   { type: 'string', nullable: true, example: null },
             role:                    { type: 'string', example: 'driver' },

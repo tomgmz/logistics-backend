@@ -6,7 +6,6 @@ interface UpdateFleetAdminDTO {
   last_name?: string
   middle_name?: string | null
   suffix?: string | null
-  username?: string
   email?: string
   phone?: string | null
 }
@@ -41,7 +40,6 @@ async function create(userId: string, dto: BaseCreateDTO) {
     .from('users')
     .insert({
       user_id:        userId,
-      username:       dto.username,
       email:          dto.email,
       first_name:     dto.first_name,
       last_name:      dto.last_name,
@@ -64,7 +62,6 @@ async function update(userId: string, dto: UpdateFleetAdminDTO) {
   if (dto.suffix         !== undefined) userFields.suffix         = dto.suffix
   if (dto.phone          !== undefined) userFields.phone          = dto.phone
   if (dto.email          !== undefined) userFields.email          = dto.email
-  if (dto.username       !== undefined) userFields.username       = dto.username
 
   if (Object.keys(userFields).length > 0) {
     const { error } = await supabase.from('users').update(userFields).eq('user_id', userId)

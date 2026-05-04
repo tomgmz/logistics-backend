@@ -18,7 +18,6 @@ export const createAdminSchema = z.object({
           v => v === '' ? null : v,
           z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable()
         ),
-  username:       z.string().min(2).max(50),
   email:          z.string().email(),
   phone: z
         .string()
@@ -46,7 +45,6 @@ export const updateAdminSchema = z.object({
                   .optional(),
   middle_name: z.string().max(1).optional().nullable(),
   suffix:         z.string().max(10).optional().nullable(),
-  username:       z.string().min(2).max(50).optional(),
   email:          z.string().email().optional(),
   phone: z
         .string()

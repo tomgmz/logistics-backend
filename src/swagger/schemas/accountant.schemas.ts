@@ -1,13 +1,12 @@
 export const accountantSchemas = {
   CreateAccountantRequest: {
     type: 'object',
-    required: ['first_name', 'last_name', 'username', 'email'],
+    required: ['first_name', 'last_name', 'email'],
     properties: {
       first_name:     { type: 'string', minLength: 2, maxLength: 50, example: 'John' },
       last_name:      { type: 'string', minLength: 2, maxLength: 50, example: 'Doe' },
       middle_name: { type: 'string', maxLength: 1, nullable: true, example: null },
       suffix:         { type: 'string', maxLength: 10, nullable: true, example: null },
-      username:       { type: 'string', minLength: 2, maxLength: 50, example: 'johndoe' },
       email:          { type: 'string', format: 'email', example: 'john@example.com' },
       phone:          { type: 'string', maxLength: 16, nullable: true, example: '+639171234567' },
       created_by:     { type: 'string', format: 'uuid', nullable: true, example: null },
@@ -20,7 +19,6 @@ export const accountantSchemas = {
       last_name:      { type: 'string', minLength: 2, maxLength: 50, example: 'Doe' },
       middle_name: { type: 'string', maxLength: 1, nullable: true, example: null },
       suffix:         { type: 'string', maxLength: 10, nullable: true, example: null },
-      username:       { type: 'string', minLength: 2, maxLength: 50, example: 'johndoe' },
       email:          { type: 'string', format: 'email', example: 'john@example.com' },
       phone:          { type: 'string', maxLength: 16, nullable: true, example: '+639171234567' },
     },
@@ -33,7 +31,6 @@ export const accountantSchemas = {
       last_name:      { type: 'string', example: 'Doe' },
       middle_name: { type: 'string', nullable: true, example: null },
       suffix:         { type: 'string', nullable: true, example: null },
-      username:       { type: 'string', example: 'johndoe' },
       email:          { type: 'string', example: 'john@example.com' },
       phone:          { type: 'string', nullable: true, example: null },
       role:           { type: 'string', example: 'accountant' },

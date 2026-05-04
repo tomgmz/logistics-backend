@@ -28,7 +28,6 @@ export const authSchemas = {
     properties: {
       user_id:    { type: 'string', format: 'uuid', example: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
       email:      { type: 'string', format: 'email', example: 'admin@logistics.com' },
-      username:   { type: 'string', example: 'admin01' },
       first_name: { type: 'string', nullable: true, example: 'Juan' },
       last_name:  { type: 'string', nullable: true, example: 'dela Cruz' },
       role:       { type: 'string', enum: ['admin', 'super_admin', 'client', 'driver', 'vendor'], example: 'client' },

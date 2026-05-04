@@ -34,7 +34,6 @@ export const vendorPaths = {
               last_name: 'Reyes',
               middle_name: 'B',
               suffix: null,
-              username: 'pedroreyes',
               email: 'pedro@example.com',
               phone: '+639171234567',
               vendor_type: 'company',

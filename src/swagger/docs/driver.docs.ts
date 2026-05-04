@@ -34,7 +34,6 @@ export const driverPaths = {
               last_name: 'Gomez',
               middle_name: null,
               suffix: null,
-              username: 'tomgz',
               email: 'tomervingmz@gmail.com',
               password: 'secret12345',
               phone: '+639171234567',

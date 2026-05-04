@@ -8,7 +8,6 @@ interface UpdateGeneralManagerDTO {
   last_name?: string
   middle_name?: string | null
   suffix?: string | null
-  username?: string
   email?: string
   phone?: string | null
 }
@@ -30,7 +29,7 @@ export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string 
     email:         dto.email,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: { role: 'general_manager', display_name: dto.username },
+    user_metadata: { role: 'general_manager' },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 

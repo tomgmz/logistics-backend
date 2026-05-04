@@ -90,7 +90,7 @@ function generateDeviceFingerprint(userAgent: string, ip: string): string {
 }
 
 function buildAuthResponse(
-  user: { user_id: string; email: string; username: string; first_name: string | null; last_name: string | null; role: UserRole; status: string },
+  user: { user_id: string; email: string; first_name: string | null; last_name: string | null; role: UserRole; status: string },
   accessToken: string,
   refreshToken: string,
   accessExpiresAt: Date,
@@ -104,7 +104,6 @@ function buildAuthResponse(
     user: {
       user_id:    user.user_id,
       email:      user.email,
-      username:   user.username,
       first_name: user.first_name,
       last_name:  user.last_name,
       role:       user.role,

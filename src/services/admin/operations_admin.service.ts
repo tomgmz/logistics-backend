@@ -8,7 +8,6 @@ interface UpdateOperationsAdminDTO {
   last_name?: string
   middle_name?: string | null
   suffix?: string | null
-  username?: string
   email?: string
   phone?: string | null
 }
@@ -30,7 +29,7 @@ export async function createOperationsAdmin(dto: BaseCreateDTO, actorId?: string
     email:         dto.email,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: { role: 'operations_admin', display_name: dto.username },
+    user_metadata: { role: 'operations_admin' },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 

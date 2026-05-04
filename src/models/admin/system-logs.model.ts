@@ -15,7 +15,7 @@ export async function findAll(query: GetLogsQuery = {}) {
       description,
       ip_address,
       timestamp,
-      users ( username, role, first_name, last_name )
+      users ( role, first_name, last_name )
     `, { count: 'exact' })
 
   if (log_type) q = q.eq('log_type', log_type)
@@ -45,7 +45,7 @@ export async function findById(logId: string) {
       description,
       ip_address,
       timestamp,
-      users ( username, role, first_name, last_name )
+      users ( role, first_name, last_name )
     `)
     .eq('log_id', logId)
     .maybeSingle()

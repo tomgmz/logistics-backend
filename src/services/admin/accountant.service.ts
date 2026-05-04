@@ -8,7 +8,6 @@ interface UpdateAccountantDTO {
   last_name?: string
   middle_name?: string | null
   suffix?: string | null
-  username?: string
   email?: string
   phone?: string | null
 }
@@ -35,7 +34,6 @@ export async function createAccountant(dto: BaseCreateDTO, actorId?: string | nu
     phone:         e164Phone ?? undefined,
     user_metadata: {
       role:         'accountant',
-      display_name: dto.username,
     },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)

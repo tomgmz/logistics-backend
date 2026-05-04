@@ -2,7 +2,6 @@ import { UserRole, UserStatus } from './user.types.js'
 
 export interface Vendor {
   user_id:         string
-  username:        string
   email:           string
   first_name:      string
   last_name:       string
@@ -22,7 +21,6 @@ export interface Vendor {
 }
 
 export interface CreateVendorInput {
-  username:        string
   email:           string
   first_name:      string
   last_name:       string
@@ -41,7 +39,6 @@ export interface UpdateVendorInput {
   last_name?:      string
   middle_name?: string | null
   suffix?:         string | null
-  username?:       string
   email?:          string
   phone?:          string | null
 

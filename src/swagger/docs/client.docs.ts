@@ -34,7 +34,6 @@ export const clientPaths = {
               last_name: 'Santos',
               middle_name: 'L',
               suffix: null,
-              username: 'mariasantos',
               email: 'maria@example.com',
               phone: '+639181234567',
               company_name: 'Santos Enterprises',

@@ -9,7 +9,6 @@ export interface SystemLog {
   ip_address?: string | null
   timestamp:   Date
 
-  username?:   string | null
   role?:       string | null
   first_name?: string | null
   last_name?:  string | null

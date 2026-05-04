@@ -32,7 +32,6 @@ export interface UserListItemRaw {
   last_name:      string | null
   middle_name: string | null
   suffix:         string | null
-  username:       string
   email:          string
   phone:          string | null
   role:           UserRole

@@ -20,7 +20,7 @@ export async function createVendor(input: CreateVendorInput, actorId?: string | 
     email:         input.email,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: { role: 'vendor', display_name: input.username },
+    user_metadata: { role: 'vendor' },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 

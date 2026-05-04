@@ -20,7 +20,7 @@ export async function createAdmin(input: CreateAdminInput, actorId?: string | nu
     email:         input.email,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: { role: 'admin', display_name: input.username },
+    user_metadata: { role: 'admin' },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 

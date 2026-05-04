@@ -34,7 +34,6 @@ export const generalManagerPaths = {
               last_name: 'Smith',
               middle_name: null,
               suffix: null,
-              username: 'janesmith',
               email: 'jane@example.com',
               phone: '+639171234567',
               created_by: null,

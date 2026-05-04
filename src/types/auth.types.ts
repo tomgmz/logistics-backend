@@ -50,7 +50,6 @@ export interface UserSession {
 export interface AuthUser {
   user_id:    string
   email:      string
-  username:   string
   first_name: string | null
   last_name:  string | null
   role:       UserRole

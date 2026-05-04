@@ -8,7 +8,6 @@ interface UpdateFleetAdminDTO {
   last_name?: string
   middle_name?: string | null
   suffix?: string | null
-  username?: string
   email?: string
   phone?: string | null
 }
@@ -30,7 +29,7 @@ export async function createFleetAdmin(dto: BaseCreateDTO, actorId?: string | nu
     email:         dto.email,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: { role: 'fleet_admin', display_name: dto.username },
+    user_metadata: { role: 'fleet_admin' },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 

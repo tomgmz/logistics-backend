@@ -38,7 +38,6 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
       last_name,
       middle_name,
       suffix,
-      username,
       email,
       phone,
       role,
@@ -78,7 +77,7 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
   if (query.search) {
     const s = query.search.trim()
     q = q.or(
-      `first_name.ilike.%${s}%,last_name.ilike.%${s}%,username.ilike.%${s}%,email.ilike.%${s}%`
+      `first_name.ilike.%${s}%,last_name.ilike.%${s}%,email.ilike.%${s}%`
     )
   }
 

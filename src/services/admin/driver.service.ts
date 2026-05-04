@@ -21,7 +21,7 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
     password:      dto.password,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: { role: 'driver', display_name: dto.username },
+    user_metadata: { role: 'driver' },
   })
   if (authError) throw new Error(`Auth error: ${authError.message}`)
 

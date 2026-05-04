@@ -34,7 +34,6 @@ export const adminPaths = {
               last_name: 'Doe',
               middle_name: 'A',
               suffix: null,
-              username: 'johndoe',
               email: 'john@example.com',
               phone: '+639171234567',
               role: 'admin',
@@ -115,7 +114,6 @@ export const adminPaths = {
             example: {
               first_name: 'John',
               last_name: 'Doe',
-              username: 'johndoe',
               email: 'john@example.com',
               phone: '09171234567',
             },

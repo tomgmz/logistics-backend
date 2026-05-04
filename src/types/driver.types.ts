@@ -2,7 +2,6 @@ import { UserRole, UserStatus } from './user.types.js'
 
 export interface Driver {
   user_id:          string
-  username:         string
   email:            string
   first_name:       string
   last_name:        string
@@ -21,7 +20,6 @@ export interface Driver {
 }
 
 export interface CreateDriverDTO {
-  username:          string
   email:             string
   password:          string
   first_name:        string
@@ -42,7 +40,6 @@ export interface UpdateDriverDTO {
   middle_name?:   string | null
   suffix?:           string | null
   email?:            string
-  username?:         string
   phone?:            string | null
   password?:         string
   license_number?:   string
