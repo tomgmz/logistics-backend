@@ -32,6 +32,8 @@ const BOOKING_WITH_RELATIONS_SELECT = `
   required_weight_kg,
   required_length_cm,
   stackable_required,
+  payment_terms,
+  transaction_documents,
   created_at,
   updated_at,
   clients (

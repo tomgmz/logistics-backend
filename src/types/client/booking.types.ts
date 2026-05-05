@@ -1,4 +1,4 @@
-export type BookingStatus = 'pending' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
+export type BookingStatus     = 'pending' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
 export type DestinationStatus = 'pending' | 'delivered' | 'failed'
 
 export interface BookingDestination {
@@ -15,22 +15,27 @@ export interface BookingDestination {
 }
 
 export interface Booking {
-  booking_id:            string
-  client_id:             string
-  origin:                string
-  origin_longitude?:     number | null
-  origin_latitude?:      number | null
-  truck_type_needed:     string
-  cargo_details?:        string | null
-  schedule_date:         string
-  call_time:             string
-  status:                BookingStatus
-  required_volume_cbm?:  number | null
-  required_weight_kg?:   number | null
-  required_length_cm?:   number | null
-  stackable_required?:   boolean | null
-  created_at?:           Date
-  updated_at?:           Date
+  booking_id:              string
+  client_id:               string
+  origin:                  string
+  origin_longitude?:       number | null
+  origin_latitude?:        number | null
+  truck_type_needed:       string
+  cargo_details?:          string | null
+  schedule_date:           string
+  call_time:               string
+  status:                  BookingStatus
+  required_volume_cbm?:    number | null
+  required_weight_kg?:     number | null
+  required_length_cm?:     number | null
+  stackable_required?:     boolean | null
+  total_cost?:             number | null
+  estimated_delivery?:     string | null
+  payment_terms?:          string | null
+  /** Up to 3 Cloudinary URLs for transaction summary documents */
+  transaction_documents?:  string[] | null
+  created_at?:             Date
+  updated_at?:             Date
 }
 
 export interface CargoGroup {
@@ -106,19 +111,22 @@ export interface BookingWithRelations extends Booking {
 }
 
 export interface CreateBookingInput {
-  client_id:             string
-  origin:                string
-  origin_longitude?:     number
-  origin_latitude?:      number
-  truck_type_needed:     string
-  cargo_details?:        string
-  schedule_date:         string
-  call_time:             string
-  required_volume_cbm?:  number
-  required_weight_kg?:   number
-  required_length_cm?:   number
-  stackable_required?:   boolean
-  destinations:          CreateDestinationInput[]
+  client_id:               string
+  origin:                  string
+  origin_longitude?:       number
+  origin_latitude?:        number
+  truck_type_needed:       string
+  cargo_details?:          string
+  schedule_date:           string
+  call_time:               string
+  required_volume_cbm?:    number
+  required_weight_kg?:     number
+  required_length_cm?:     number
+  stackable_required?:     boolean
+  payment_terms?:          string
+  /** Cloudinary URLs — populated after documents are uploaded pre-submission */
+  transaction_documents?:  string[]
+  destinations:            CreateDestinationInput[]
 }
 
 export interface CreateDestinationInput {
@@ -130,18 +138,20 @@ export interface CreateDestinationInput {
 }
 
 export interface UpdateBookingInput {
-  origin?:               string
-  origin_longitude?:     number | null
-  origin_latitude?:      number | null
-  truck_type_needed?:    string
-  cargo_details?:        string
-  schedule_date?:        string
-  call_time?:            string
-  status?:               BookingStatus
-  required_volume_cbm?:  number | null
-  required_weight_kg?:   number | null
-  required_length_cm?:   number | null
-  stackable_required?:   boolean | null
+  origin?:                 string
+  origin_longitude?:       number | null
+  origin_latitude?:        number | null
+  truck_type_needed?:      string
+  cargo_details?:          string
+  schedule_date?:          string
+  call_time?:              string
+  status?:                 BookingStatus
+  required_volume_cbm?:    number | null
+  required_weight_kg?:     number | null
+  required_length_cm?:     number | null
+  stackable_required?:     boolean | null
+  payment_terms?:          string | null
+  transaction_documents?:  string[] | null
 }
 
 export interface UpdateDestinationInput {

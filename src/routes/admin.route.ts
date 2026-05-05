@@ -30,7 +30,7 @@ import * as AssignmentController from '../controllers/admin/assignment.controlle
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as SystemLogController from '../controllers/admin/system-logs.controller.js'
 import { uploadSingle }    from '../middlewares/upload.middleware.js'
-import * as UploadController from '../controllers/admin/upload.controller.js'
+import * as UploadController from '../controllers/admin/uploadImage.controller.js'
 
 const router = Router()
 
