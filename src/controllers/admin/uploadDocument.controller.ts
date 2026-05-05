@@ -11,10 +11,11 @@ async function uploadToCloudinary(file: Express.Multer.File, bookingRef?: string
   const ext      = file.originalname.split('.').pop()?.toLowerCase() ?? ''
   const baseName = file.originalname
     .replace(/\.[^/.]+$/, '')
-    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-zA-Z0-9_\-]/g, '_')
     .slice(0, 55)
 
-  const safeName = ext ? `${baseName}.${ext}` : baseName
+  const safeName = baseName
 
   return new Promise<{
     url:           string
@@ -27,11 +28,10 @@ async function uploadToCloudinary(file: Express.Multer.File, bookingRef?: string
       {
         folder,
         resource_type:   'auto',
-        public_id:       safeName,
+        public_id:       `${safeName}.${ext}`,
         unique_filename: true,
         overwrite:       false,
         access_mode:     'public',
-        format:          ext || undefined,
       },
       (error, result) => {
         if (error || !result) return reject(error ?? new Error('Cloudinary upload failed'))
