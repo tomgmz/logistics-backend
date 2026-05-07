@@ -6,10 +6,15 @@ const APP_SUPPORT_EMAIL = process.env.APP_SUPPORT_EMAIL    || process.env.BREVO_
 const FROM_EMAIL        = process.env.BREVO_SENDER_EMAIL!
 const FROM_NAME         = process.env.APP_NAME             || 'Logistics'
 
-const brevo = new BrevoClient({
-  apiKey:      process.env.BREVO_API_KEY!,
-  environment: BrevoEnvironment.Default,
-})
+function getBrevoClient(): BrevoClient {
+  if (!process.env.BREVO_API_KEY) {
+    throw new Error('BREVO_API_KEY is not set')
+  }
+  return new BrevoClient({
+    apiKey:      process.env.BREVO_API_KEY,
+    environment: BrevoEnvironment.Default,
+  })
+}
 
 export async function sendOtpEmail(
   to: string,
@@ -26,13 +31,24 @@ export async function sendOtpEmail(
 
   const name = firstName ?? 'there'
 
-  await brevo.transactionalEmails.sendTransacEmail({
-    subject:     `${code} is your ${APP_NAME} verification code`,
-    htmlContent: generateOtpEmailHtml(name, code),
-    textContent: generateOtpEmailText(name, code),
-    sender:      { name: FROM_NAME, email: FROM_EMAIL },
-    to:          [{ email: to, name: firstName ?? undefined }],
-  })
+  try {
+    const brevo = getBrevoClient()
+    await brevo.transactionalEmails.sendTransacEmail({
+      subject:     `${code} is your ${APP_NAME} verification code`,
+      htmlContent: generateOtpEmailHtml(name, code),
+      textContent: generateOtpEmailText(name, code),
+      sender:      { name: FROM_NAME, email: FROM_EMAIL },
+      to:          [{ email: to, name: firstName ?? undefined }],
+    })
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('BREVO EMAIL SEND ERROR:', {
+      error,
+      recipient: to,
+      timestamp: new Date().toISOString(),
+    })
+    throw new Error(`Failed to send OTP email: ${error}`)
+  }
 }
 
 function generateOtpEmailHtml(name: string, code: string): string {

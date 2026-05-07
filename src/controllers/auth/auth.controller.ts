@@ -60,8 +60,16 @@ export async function requestOtp(req: Request, res: Response) {
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to send code'
-    console.error('OTP REQUEST ERROR:', { message, body: req.body, timestamp: new Date().toISOString() })
-    res.status(500).json({ status: 'error', message: 'Failed to send code' })
+    console.error('OTP REQUEST ERROR:', {
+      message,
+      body: { email: req.body?.email }, // don't log full body
+      timestamp: new Date().toISOString(),
+      error: err,
+    })
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to send code. Please check your email address and try again.',
+    })
   }
 }
 

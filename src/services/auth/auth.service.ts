@@ -205,14 +205,25 @@ export async function requestOtp(
 
   const since = new Date(Date.now() - OTP_WINDOW_MINS * 60 * 1000)
   const recentCount = await AuthModel.getOtpAttemptsSince(user.user_id, since)
-  if (recentCount >= OTP_RATE_LIMIT) return
+  if (recentCount >= OTP_RATE_LIMIT) {
+    console.warn(`OTP_RATE_LIMIT exceeded for user ${user.user_id}`)
+    return
+  }
 
   const plainOtp  = generateOtp()
   const hashedOtp = await hashOtp(plainOtp)
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINS * 60 * 1000)
 
   await AuthModel.createOtp(user.user_id, email, hashedOtp, ipAddress, expiresAt)
-  await sendOtpEmail(email, plainOtp, user.first_name)
+
+  try {
+    await sendOtpEmail(email, plainOtp, user.first_name)
+    console.log(`OTP sent successfully to ${email} for user ${user.user_id}`)
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err)
+    console.error(`OTP_EMAIL_SEND_FAILED for user ${user.user_id}:`, errorMsg)
+    throw err
+  }
 }
 
 export async function verifyOtp(
