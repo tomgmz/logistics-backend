@@ -95,7 +95,6 @@ async function findById(truckId: string) {
 }
 
 async function create(input: CreateTruckInput) {
-  // truck_type column removed — vehicle_type now lives on truck_models
   const result = await pool.query(
     `INSERT INTO trucks (plate_number, model_id, owned_by, vendor_id)
      VALUES ($1, $2, $3, $4)

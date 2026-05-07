@@ -203,7 +203,13 @@ async function getAssignmentHistory(bookingId: string): Promise<{
       .from('truck_assignments')
       .select(`
         assignment_id, assigned_at, assigned_by,
-        trucks ( truck_id, plate_number, truck_type )
+        trucks (
+          truck_id,
+          plate_number,
+          status,
+          owned_by,
+          truck_models ( vehicle_type, name )
+        )
       `)
       .eq('booking_id', bookingId)
       .order('assigned_at', { ascending: false }),
