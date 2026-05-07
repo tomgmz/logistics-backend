@@ -20,11 +20,6 @@ const ROLE_MAP: Record<string, string> = {
 }
 
 export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult> {
-  const page  = query.page  ?? 1
-  const limit = query.limit ?? 10
-  const from  = (page - 1) * limit
-  const to    = from + limit - 1
-
   const roleFilter = query.role
     ? (ROLE_MAP[query.role] ?? query.role)
     : null
@@ -64,8 +59,7 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
         company_name,
         business_permit
       )
-    `,
-      { count: 'exact' }
+    `
     )
     .neq('role', 'super_admin')
     .order('last_name', { ascending: true })
@@ -81,9 +75,7 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
     )
   }
 
-  q = q.range(from, to)
-
-  const { data, error, count } = await q
+  const { data, error } = await q
   if (error) throw error
 
   const normalized: UserListItem[] = ((data ?? []) as UserListItemRaw[]).map((u) => ({
@@ -95,10 +87,10 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
 
   return {
     data:       normalized,
-    total:      count ?? 0,
-    page,
-    limit,
-    totalPages: Math.ceil((count ?? 0) / limit),
+    total:      normalized.length,
+    page:       1,
+    limit:      normalized.length,
+    totalPages: 1,
   }
 }
 

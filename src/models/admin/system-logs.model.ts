@@ -2,8 +2,7 @@ import { supabase } from '../../lib/supabase.js'
 import { GetLogsQuery } from '../../types/system-logs.types.js'
 
 export async function findAll(query: GetLogsQuery = {}) {
-  const { log_type, search, sort = 'desc', page = 1, limit = 20 } = query
-  const offset = (page - 1) * limit
+  const { log_type, search, sort = 'desc' } = query
 
   let q = supabase
     .from('system_logs')
@@ -16,7 +15,7 @@ export async function findAll(query: GetLogsQuery = {}) {
       ip_address,
       timestamp,
       users ( role, first_name, last_name )
-    `, { count: 'exact' })
+    `)
 
   if (log_type) q = q.eq('log_type', log_type)
 
@@ -24,14 +23,12 @@ export async function findAll(query: GetLogsQuery = {}) {
     q = q.or(`action.ilike.%${search}%,description.ilike.%${search}%`)
   }
 
-  q = q
-    .order('timestamp', { ascending: sort === 'asc' })
-    .range(offset, offset + limit - 1)
+  q = q.order('timestamp', { ascending: sort === 'asc' })
 
-  const { data, error, count } = await q
+  const { data, error } = await q
   if (error) throw error
 
-  return { data, total: count ?? 0, page, limit }
+  return { data, total: data?.length ?? 0, page: 1, limit: data?.length ?? 0 }
 }
 
 export async function findById(logId: string) {
