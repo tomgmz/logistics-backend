@@ -66,7 +66,7 @@ const BOOKING_WITH_RELATIONS_SELECT = `
     assigned_at,
     trucks (
       plate_number,
-      truck_type
+      truck_models ( vehicle_type, name )
     )
   ),
   driver_assignments (

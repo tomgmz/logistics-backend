@@ -1,8 +1,5 @@
 import { z } from 'zod'
 
-export const TRUCK_TYPES = ['truck', 'wing_van'] as const
-export type TruckType = typeof TRUCK_TYPES[number]
-
 export const createTruckSchema = z.object({
   plate_number:     z
                     .string()
@@ -11,7 +8,6 @@ export const createTruckSchema = z.object({
                       /^(?:[A-Z]{3}[ -]?\d{4}|[A-Z]{2,3}[ -]?\d{2,3})$/,
                       'Invalid PH plate format (e.g. ABC 1234 or AB 1234)'
                     ),
-  truck_type:       z.enum(TRUCK_TYPES, { message: 'Invalid truck type' }),
   model_id:         z.string().uuid().optional().nullable(),
   owned_by:   z.enum(['company', 'vendor']).default('company'),
   vendor_id:  z.string().uuid().optional().nullable(),
@@ -32,7 +28,6 @@ export const updateTruckSchema = z.object({
                       'Invalid PH plate format (e.g. ABC 1234 or AB 1234)'
                     )
                     .optional(),
-  truck_type:       z.enum(TRUCK_TYPES, { message: 'Invalid truck type' }).optional(),
   model_id:         z.string().uuid().optional().nullable(),
   status:     z.enum(['available', 'in_use', 'under_maintenance', 'inactive', 'archived']).optional(),
   owned_by:   z.enum(['company', 'vendor']).optional(),

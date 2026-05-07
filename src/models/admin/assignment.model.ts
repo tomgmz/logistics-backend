@@ -32,9 +32,9 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
   trucks (
     truck_id,
     plate_number,
-    truck_type,
     status,
-    owned_by
+    owned_by,
+    truck_models ( vehicle_type, name )
   ),
   bookings (
     booking_id,

@@ -54,10 +54,13 @@ export interface AssignmentWithRelations {
   trucks?: {
     truck_id:     string
     plate_number: string
-    truck_type:   string
     status:       string
     owned_by:     string | null
-  } | null
+    truck_models?: {
+      vehicle_type: string
+      name:         string
+    } | null
+  }
   bookings?: {
     booking_id:        string
     origin:            string
