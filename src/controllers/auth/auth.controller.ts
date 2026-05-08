@@ -8,7 +8,7 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: IS_PRODUCTION,
-  sameSite: IS_PRODUCTION ? 'none' as const : 'lax' as const,
+  sameSite: 'strict' as const,
   path: '/',
 }
 
@@ -32,7 +32,7 @@ export function getCsrfToken(req: Request, res: Response) {
   res.cookie('csrf_token', token, {
     httpOnly: false,
     secure: IS_PRODUCTION,
-    sameSite: IS_PRODUCTION ? 'none' as const : 'lax' as const,
+    sameSite: 'strict' as const,
     maxAge: 24 * 60 * 60 * 1000,
     path: '/',
   })
