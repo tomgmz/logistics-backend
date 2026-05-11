@@ -101,7 +101,7 @@ app.use('/api/driver', driverRoutes)
 app.use('/api/admin', adminRoutes);
 
 // HEALTH CHECK
-app.get('/health', (req: Request, res: Response) => {
+app.get('/api/health', (req: Request, res: Response) => {
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),

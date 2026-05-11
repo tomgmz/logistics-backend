@@ -1,5 +1,5 @@
 export const driverPaths = {
-  '/drivers': {
+  '/admin/drivers': {
     get: {
       tags: ['Drivers'],
       summary: 'Get all drivers',
@@ -67,7 +67,7 @@ export const driverPaths = {
       },
     },
   },
-  '/drivers/{id}': {
+  '/admin/drivers/{id}': {
     get: {
       tags: ['Drivers'],
       summary: 'Get driver by ID',
