@@ -18,6 +18,19 @@ function parseCargoDetails(raw: string | null | undefined): ParsedCargoDetails |
   }
 }
 
+function validateScheduleDate(scheduleDate: string): void {
+  const scheduled      = new Date(scheduleDate)
+  const oneWeekFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  const oneYearFromNow = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+
+  if (scheduled < oneWeekFromNow) {
+    throw new Error('Booking must be scheduled at least 1 week in advance')
+  }
+  if (scheduled > oneYearFromNow) {
+    throw new Error('Booking cannot be scheduled more than 1 year in advance')
+  }
+}
+
 export async function getAllBookingsService(): Promise<BookingWithRelations[]> {
   return await BookingModel.findAll() ?? []
 }
@@ -40,6 +53,8 @@ export async function createBookingService(input: CreateBookingInput): Promise<B
   if (!input.destinations || input.destinations.length === 0) {
     throw new Error('At least one destination is required')
   }
+
+  validateScheduleDate(input.schedule_date)
 
   const orders = input.destinations.map((d) => d.sequence_order)
   if (new Set(orders).size !== orders.length) {
@@ -76,6 +91,10 @@ export async function updateBookingService(
 ): Promise<BookingWithRelations> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
+
+  if (input.schedule_date) {
+    validateScheduleDate(input.schedule_date)
+  }
 
   const booking = await BookingModel.update(bookingId, input)
   if (!booking) throw new Error('Failed to update booking')

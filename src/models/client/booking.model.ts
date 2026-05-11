@@ -112,13 +112,13 @@ async function updateDestination(destinationId: string, input: UpdateDestination
 async function updateDestinationStatus(
   destinationId: string,
   status: string,
-  deliveredAt?: string
+  _deliveredAt?: string
 ): Promise<BookingDestination> {
   const { data, error } = await supabase
     .from('booking_destinations')
     .update({
       status,
-      delivered_at: deliveredAt ?? (status === 'delivered' ? new Date().toISOString() : null),
+      delivered_at: status === 'delivered' ? new Date().toISOString() : null,
     })
     .eq('destination_id', destinationId)
     .select()
@@ -201,14 +201,14 @@ async function findByDriverId(driverId: string): Promise<BookingWithRelations[]>
     `)
     .eq('driver_id', driverId)
     .order('assigned_at', { ascending: false })
- 
+
   if (error) throw error
- 
+
   return (data ?? [])
     .map((row: any) => row.bookings)
     .filter(Boolean) as BookingWithRelations[]
 }
- 
+
 export const BookingModel = {
   findAll,
   findById,

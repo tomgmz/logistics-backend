@@ -105,6 +105,7 @@ app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
+    serverTime: Date.now(),
     environment: process.env.NODE_ENV,
   });
 });
