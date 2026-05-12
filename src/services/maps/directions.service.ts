@@ -63,15 +63,10 @@ function angleDiff(a: number, b: number): number {
   return Math.abs(((a - b + 540) % 360) - 180)
 }
 
-/**
- * Keeps points where the road curves (angle threshold) OR where the
- * gap since the last kept point exceeds maxGapMeters (straight roads).
- * This prevents Map Matching from guessing wrong on long straights.
- */
 function sampleByAngleAndDistance(
   points: Point[],
-  maxPoints  = 98,
-  angleDeg   = 8,
+  maxPoints    = 98,
+  angleDeg     = 8,
   maxGapMeters = 50,
 ): Point[] {
   if (points.length <= maxPoints) return points
@@ -93,7 +88,6 @@ function sampleByAngleAndDistance(
 
   result.push(points[points.length - 1])
 
-  // If still over limit, thin evenly while preserving first + last
   if (result.length > maxPoints) {
     const step = Math.ceil(result.length / maxPoints)
     return [
@@ -106,15 +100,10 @@ function sampleByAngleAndDistance(
   return result
 }
 
-async function snapPolylineToMapbox(
-  points: Point[],
-): Promise<Point[] | null> {
+async function snapPolylineToMapbox(points: Point[]): Promise<Point[] | null> {
   try {
     const sampled = sampleByAngleAndDistance(points, 98, 8, 50)
-
     const coords  = sampled.map((p) => `${p.longitude},${p.latitude}`).join(';')
-    // 25m radius gives Map Matching enough room to find the correct
-    // road centerline without snapping to a parallel service road
     const radii   = sampled.map(() => 25).join(';')
     const url     = `${MAP_MATCH_URL}/${coords}?access_token=${MAPBOX_TOKEN}&geometries=geojson&tidy=true&overview=full&radiuses=${radii}`
 
@@ -132,6 +121,78 @@ async function snapPolylineToMapbox(
   } catch (err) {
     console.warn('[map-match] Snap error, falling back to Google polyline:', err)
     return null
+  }
+}
+
+/**
+ * Encodes a list of lat/lng points into a Google-compatible encoded polyline string.
+ * Used as a straight-line fallback when Google Routes API returns no routes.
+ */
+function encodePolyline(points: Point[]): string {
+  let prevLat = 0, prevLng = 0
+  let result  = ''
+
+  const encodeValue = (value: number) => {
+    let v = Math.round(value * 1e5)
+    v = v < 0 ? ~(v << 1) : v << 1
+    while (v >= 0x20) {
+      result += String.fromCharCode((0x20 | (v & 0x1f)) + 63)
+      v >>= 5
+    }
+    result += String.fromCharCode(v + 63)
+  }
+
+  for (const point of points) {
+    encodeValue(point.latitude  - prevLat)
+    encodeValue(point.longitude - prevLng)
+    prevLat = point.latitude
+    prevLng = point.longitude
+  }
+
+  return result
+}
+
+/**
+ * Builds a minimal straight-line DirectionsResult from origin → intermediates → destination.
+ * Returned when Google Routes API has no routable path (e.g. remote/off-road coordinates).
+ */
+function buildStraightLineFallback(payload: ComputeDirectionsInput): DirectionsResult {
+  const toPoint = (wp: ComputeDirectionsInput['origin']): Point => ({
+    latitude:  wp.location.latLng.latitude,
+    longitude: wp.location.latLng.longitude,
+  })
+
+  const allPoints: Point[] = [
+    toPoint(payload.origin),
+    ...((payload.intermediates ?? []).map(toPoint)),
+    toPoint(payload.destination),
+  ]
+
+  const encodedPolyline = encodePolyline(allPoints)
+
+  // Estimate straight-line distance and a rough duration (50 km/h average)
+  let totalMeters = 0
+  for (let i = 0; i < allPoints.length - 1; i++) {
+    totalMeters += haversine(allPoints[i], allPoints[i + 1])
+  }
+  const estimatedSeconds = Math.round(totalMeters / (50_000 / 3_600))
+  const durationStr      = `${estimatedSeconds}s`
+
+  const legs = allPoints.slice(0, -1).map((a, i) => {
+    const legMeters  = haversine(a, allPoints[i + 1])
+    const legSeconds = Math.round(legMeters / (50_000 / 3_600))
+    return { duration: `${legSeconds}s`, staticDuration: `${legSeconds}s` }
+  })
+
+  return {
+    routes: [{
+      polyline:       { encodedPolyline },
+      duration:       durationStr,
+      staticDuration: durationStr,
+      distanceMeters: Math.round(totalMeters),
+      legs,
+      travelAdvisory: { speedReadingIntervals: [] },
+    }],
   }
 }
 
@@ -166,7 +227,8 @@ export async function computeDirectionsService(
   }
 
   if (!data.routes?.length) {
-    throw new Error('No routes returned from Google Routes API')
+    console.warn('[computeDirectionsService] No routes from Google, returning straight-line fallback')
+    return buildStraightLineFallback(payload)
   }
 
   const route  = data.routes[0]
@@ -177,7 +239,6 @@ export async function computeDirectionsService(
   if (snapped) {
     route.polyline._snappedCoords = snapped
 
-    // Remap speed interval indices proportionally to the snapped point count
     const ratio     = snapped.length / points.length
     const intervals = route.travelAdvisory?.speedReadingIntervals
     if (intervals?.length) {

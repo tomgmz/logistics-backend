@@ -46,7 +46,7 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult> {
 async function callOptimizationAPI(
   origin: { latitude: number; longitude: number },
   destinations: OptimizationDestination[]
-): Promise<OptimizedStop[]> {
+): Promise<{ stops: OptimizedStop[]; wasOptimized: boolean }> {
 
   const accessToken = await getAccessToken()
 
@@ -63,35 +63,59 @@ async function callOptimizationAPI(
     startLocation: { latitude: origin.latitude, longitude: origin.longitude },
   }]
 
-  const response = await axios.post(
-    `https://routeoptimization.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}:optimizeTours`,
-    { model: { shipments, vehicles } },
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization:  `Bearer ${accessToken}`,
-      },
-    }
-  )
+  let routes: unknown[] = []
 
-  const routes = response.data.routes
-  if (!routes || routes.length === 0) {
-    throw new Error('No optimized route returned from Google')
+  try {
+    const response = await axios.post(
+      `https://routeoptimization.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}:optimizeTours`,
+      { model: { shipments, vehicles } },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization:  `Bearer ${accessToken}`,
+        },
+      }
+    )
+    routes = response.data.routes ?? []
+  } catch (err) {
+    console.warn('[callOptimizationAPI] Google API call failed, using original order:', err)
   }
 
-  return routes[0].visits.map((visit: { shipmentLabel: string }, index: number) => {
-    const shipmentIndex = parseInt(visit.shipmentLabel.replace('shipment_', ''))
-    const destination   = destinations[shipmentIndex]
+  const visits: { shipmentLabel: string }[] =
+    (routes[0] as { visits?: { shipmentLabel: string }[] })?.visits ?? []
+
+  if (visits.length === 0) {
+    console.warn('[callOptimizationAPI] No visits returned, using original destination order')
     return {
-      destination_id:           destination.destination_id,
-      address:                  destination.address,
-      latitude:                 destination.latitude,
-      longitude:                destination.longitude,
-      optimized_sequence_order: index + 1,
-      status:                   destination.status ?? 'pending',
-      notes:                    destination.notes  ?? null,
+      wasOptimized: false,
+      stops: destinations.map((dest, index) => ({
+        destination_id:           dest.destination_id,
+        address:                  dest.address,
+        latitude:                 dest.latitude,
+        longitude:                dest.longitude,
+        optimized_sequence_order: index + 1,
+        status:                   dest.status ?? 'pending',
+        notes:                    dest.notes  ?? null,
+      })),
     }
-  })
+  }
+
+  return {
+    wasOptimized: true,
+    stops: visits.map((visit, index) => {
+      const shipmentIndex = parseInt(visit.shipmentLabel.replace('shipment_', ''))
+      const destination   = destinations[shipmentIndex]
+      return {
+        destination_id:           destination.destination_id,
+        address:                  destination.address,
+        latitude:                 destination.latitude,
+        longitude:                destination.longitude,
+        optimized_sequence_order: index + 1,
+        status:                   destination.status ?? 'pending',
+        notes:                    destination.notes  ?? null,
+      }
+    }),
+  }
 }
 
 export async function optimizeDestinationsService(
@@ -110,7 +134,7 @@ export async function optimizeDestinationsService(
     longitude:      d.longitude,
   }))
 
-  const optimizedStops = await callOptimizationAPI(origin, input)
+  const { stops: optimizedStops } = await callOptimizationAPI(origin, input)
 
   return optimizedStops.map((stop) => ({
     address:                  stop.address,
@@ -176,7 +200,11 @@ export async function optimizeBookingRouteService(
     })
   )
 
-  const optimizedStops = await callOptimizationAPI(originCoords, destinations)
+  const { stops: optimizedStops, wasOptimized } = await callOptimizationAPI(originCoords, destinations)
+
+  if (!wasOptimized) {
+    console.warn(`[optimizeBookingRouteService] Fell back to original order for booking ${bookingId}`)
+  }
 
   await RouteOptimizationModel.saveOptimizedOrder(optimizedStops)
 
@@ -194,8 +222,14 @@ export async function getOptimizedRouteService(
   const booking = await RouteOptimizationModel.getBookingWithDestinations(bookingId)
   if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
 
-  if (!booking.origin_latitude || !booking.origin_longitude) {
-    throw new Error('Origin coordinates not found — booking may not have been optimized yet')
+  let originLat  = booking.origin_latitude  as number | null
+  let originLng  = booking.origin_longitude as number | null
+
+  if (!originLat || !originLng) {
+    const geocoded = await geocodeAddress(booking.origin)
+    originLat = geocoded.latitude
+    originLng = geocoded.longitude
+    await RouteOptimizationModel.saveOriginCoordinates(bookingId, originLat, originLng)
   }
 
   const stops: OptimizedStop[] = (booking.booking_destinations ?? [])
@@ -212,7 +246,7 @@ export async function getOptimizedRouteService(
       notes: string | null
     }) => {
       if (dest.latitude == null || dest.longitude == null) {
-        throw new Error(`Destination ${dest.destination_id} is missing coordinates`)
+        throw new Error(`Destination ${dest.destination_id} is missing coordinates — re-run optimization`)
       }
       return {
         destination_id:           dest.destination_id,
@@ -229,8 +263,8 @@ export async function getOptimizedRouteService(
     booking_id:  bookingId,
     origin: {
       address:   booking.origin,
-      latitude:  booking.origin_latitude,
-      longitude: booking.origin_longitude,
+      latitude:  originLat,
+      longitude: originLng,
     },
     optimized_stops: stops,
     total_stops:     stops.length,
