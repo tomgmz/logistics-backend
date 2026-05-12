@@ -20,14 +20,22 @@ function parseCargoDetails(raw: string | null | undefined): ParsedCargoDetails |
 }
 
 function validateScheduleDate(scheduleDate: string): void {
-  const scheduled      = new Date(scheduleDate)
-  const oneWeekFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-  const oneYearFromNow = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+  const [year, month, day] = scheduleDate.split('-').map(Number)
+  const scheduled = new Date(year, month - 1, day)
 
-  if (scheduled < oneWeekFromNow) {
+  const now = new Date()
+  const earliest = new Date(now)
+  earliest.setDate(earliest.getDate() + 7)
+  const earliestDateOnly = new Date(earliest.getFullYear(), earliest.getMonth(), earliest.getDate())
+
+  const maxDate = new Date(now)
+  maxDate.setFullYear(maxDate.getFullYear() + 1)
+  const maxDateOnly = new Date(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate())
+
+  if (scheduled < earliestDateOnly) {
     throw new Error('Booking must be scheduled at least 1 week in advance')
   }
-  if (scheduled > oneYearFromNow) {
+  if (scheduled > maxDateOnly) {
     throw new Error('Booking cannot be scheduled more than 1 year in advance')
   }
 }
