@@ -131,6 +131,8 @@ export async function findValidOtp(
   return findLatestOtp(userId)
 }
 
+// Returns the latest OTP that is still valid (unused + not expired).
+// Used for verification and resend invalidation.
 export async function findLatestOtp(userId: string): Promise<OtpCode | null> {
   const { data, error } = await supabase
     .from('otp_codes')
@@ -138,6 +140,22 @@ export async function findLatestOtp(userId: string): Promise<OtpCode | null> {
     .eq('user_id', userId)
     .eq('used', false)
     .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (error && error.code !== 'PGRST116') throw error
+  return data ?? null
+}
+
+// Returns the most recently created OTP regardless of used/expired status.
+// Used exclusively for cooldown enforcement so that a used or expired OTP
+// still proves an email was sent recently and the cooldown window applies.
+export async function findMostRecentOtp(userId: string): Promise<OtpCode | null> {
+  const { data, error } = await supabase
+    .from('otp_codes')
+    .select('*')
+    .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()

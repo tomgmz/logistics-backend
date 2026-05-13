@@ -10,14 +10,16 @@ async function getBookingWithDestinations(bookingId: string) {
       origin_latitude,
       origin_longitude,
       status,
+      schedule_date,
+      call_time,
       booking_destinations (
         destination_id,
         address,
         latitude,
         longitude,
         sequence_order,
-        status,      
-        notes        
+        status,
+        notes
       )
     `)
     .eq('booking_id', bookingId)
@@ -35,9 +37,9 @@ async function saveOriginCoordinates(
   const { error } = await supabase
     .from('bookings')
     .update({
-      origin_latitude: latitude,
+      origin_latitude:  latitude,
       origin_longitude: longitude,
-      updated_at: new Date().toISOString(),
+      updated_at:       new Date().toISOString(),
     })
     .eq('booking_id', bookingId)
 

@@ -21,8 +21,9 @@ const TOKEN_PEPPER       = process.env.TOKEN_PEPPER
 const JWT_EXPIRES_IN      = (process.env.JWT_EXPIRES_IN     ?? '15m') as SignOptions['expiresIn']
 const JWT_REFRESH_EXPIRES = (process.env.JWT_REFRESH_EXPIRES ?? '7d') as SignOptions['expiresIn']
 
-const OTP_RATE_LIMIT    = 5
+const OTP_RATE_LIMIT    = 10
 const OTP_WINDOW_MINS   = 15
+const OTP_COOLDOWN_SECS = 60   // minimum seconds between OTP requests
 const MAX_OTP_ATTEMPTS  = 3
 const MAX_LOCKUPS       = 3
 const OTP_EXPIRY_MINS   = 5
@@ -201,6 +202,20 @@ export async function requestOtp(
       failure_reason: `Account locked until ${user.locked_until}`,
     })
     return
+  }
+
+  // Cooldown check: enforce minimum gap between OTP requests regardless of
+  // how the request was initiated (resend button, modal reopen, etc.)
+  const latestOtp = await AuthModel.findLatestOtp(user.user_id)
+  if (latestOtp) {
+    const secondsSinceLast = (Date.now() - new Date(latestOtp.created_at).getTime()) / 1000
+    if (secondsSinceLast < OTP_COOLDOWN_SECS) {
+      const retryAfter = Math.ceil(OTP_COOLDOWN_SECS - secondsSinceLast)
+      const err = new Error(`Please wait ${retryAfter} second${retryAfter !== 1 ? 's' : ''} before requesting another code.`)
+      ;(err as any).code       = 'OTP_COOLDOWN'
+      ;(err as any).retryAfter = retryAfter
+      throw err
+    }
   }
 
   const since = new Date(Date.now() - OTP_WINDOW_MINS * 60 * 1000)

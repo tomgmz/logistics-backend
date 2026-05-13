@@ -45,22 +45,35 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult> {
 
 async function callOptimizationAPI(
   origin: { latitude: number; longitude: number },
-  destinations: OptimizationDestination[]
+  destinations: OptimizationDestination[],
+  scheduleDate: string,
+  callTime: string,
 ): Promise<{ stops: OptimizedStop[]; wasOptimized: boolean }> {
 
   const accessToken = await getAccessToken()
+
+  // Build time window using RFC 3339 strings in PHT (UTC+8)
+  const startTime = new Date(`${scheduleDate}T${callTime}:00+08:00`).toISOString()
+  const endTime   = new Date(`${scheduleDate}T23:59:59+08:00`).toISOString()
 
   const shipments = destinations.map((dest, index) => ({
     label: `shipment_${index}`,
     deliveries: [{
       label:           `dropoff_${index}`,
       arrivalLocation: { latitude: dest.latitude, longitude: dest.longitude },
+      duration:        '300s', // 5 min service time per stop
     }],
   }))
 
   const vehicles = [{
     label:         'truck_1',
     startLocation: { latitude: origin.latitude, longitude: origin.longitude },
+    endLocation:   { latitude: origin.latitude, longitude: origin.longitude },
+    startTimeWindows: [{
+      startTime,
+      endTime,
+    }],
+    routeDurationLimit: { maxDuration: '86400s' },
   }]
 
   let routes: unknown[] = []
@@ -76,9 +89,13 @@ async function callOptimizationAPI(
         },
       }
     )
+
+    console.log('[callOptimizationAPI] routes:', JSON.stringify(response.data.routes ?? []))
+    console.log('[callOptimizationAPI] skippedShipments:', JSON.stringify(response.data.skippedShipments ?? []))
+
     routes = response.data.routes ?? []
   } catch (err) {
-    console.warn('[callOptimizationAPI] Google API call failed, using original order:', err)
+    console.warn('[callOptimizationAPI] Google API call failed, using original order:', (err as any).response?.data ?? err)
   }
 
   const visits: { shipmentLabel: string }[] =
@@ -134,7 +151,8 @@ export async function optimizeDestinationsService(
     longitude:      d.longitude,
   }))
 
-  const { stops: optimizedStops } = await callOptimizationAPI(origin, input)
+  const today = new Date().toISOString().split('T')[0]
+  const { stops: optimizedStops } = await callOptimizationAPI(origin, input, today, '00:00')
 
   return optimizedStops.map((stop) => ({
     address:                  stop.address,
@@ -200,7 +218,12 @@ export async function optimizeBookingRouteService(
     })
   )
 
-  const { stops: optimizedStops, wasOptimized } = await callOptimizationAPI(originCoords, destinations)
+  const { stops: optimizedStops, wasOptimized } = await callOptimizationAPI(
+    originCoords,
+    destinations,
+    booking.schedule_date as string,
+    booking.call_time     as string,
+  )
 
   if (!wasOptimized) {
     console.warn(`[optimizeBookingRouteService] Fell back to original order for booking ${bookingId}`)
