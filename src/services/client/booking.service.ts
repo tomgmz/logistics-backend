@@ -122,7 +122,9 @@ export async function createBookingService(
     try {
       const optimizedOrder = await optimizeDestinationsService(
         { latitude: input.origin_latitude!, longitude: input.origin_longitude! },
-        input.destinations as Array<{ address: string; latitude: number; longitude: number; sequence_order: number }>
+        input.destinations as Array<{ address: string; latitude: number; longitude: number; sequence_order: number }>,
+        input.schedule_date,
+        input.call_time,
       )
 
       input.destinations = input.destinations.map((dest) => {

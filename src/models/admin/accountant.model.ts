@@ -83,18 +83,4 @@ async function remove(userId: string) {
   return true
 }
 
-async function setStatus(userId: string, status: 'active' | 'inactive' | 'deactivated') {
-  const { data, error } = await supabase
-    .from('users')
-    .update({ status })
-    .eq('user_id', userId)
-    .eq('role', 'accountant')
-    .neq('status', 'archived')
-    .select('user_id, status')
-
-  if (error) throw error
-  if (!data || data.length === 0) throw new Error(`Accountant not found or already archived`)
-  return data[0]
-}
-
-export { findAll, findById, create, update, remove, setStatus }
+export { findAll, findById, create, update, remove }

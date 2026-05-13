@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import * as ClientModel from '../../models/admin/client.model.js'
+import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
 import { CreateClientInput, UpdateClientInput } from '../../types/client.types.js'
 import { logEvent } from '../../lib/log-event.js'
 
@@ -78,4 +79,12 @@ export async function deleteClient(userId: string, actorId?: string | null, ip?:
   })
 
   return result
+}
+
+export async function deactivateClient(userId: string, actorId?: string | null, ip?: string | null) {
+  return deactivateUserWithBan(userId, 'client', 'client_deactivated', 'Client', actorId, ip)
+}
+
+export async function activateClient(userId: string, actorId?: string | null, ip?: string | null) {
+  return activateUserWithUnban(userId, 'client', 'client_activated', 'Client', actorId, ip)
 }

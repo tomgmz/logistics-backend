@@ -50,3 +50,29 @@ export async function deleteDriver(req: Request, res: Response) {
     res.status(500).json({ status: 'error', message: error.message })
   }
 }
+
+export async function deactivateDriver(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await DriverService.deactivateDriver(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Driver deactivated', data })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404
+      : error.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+export async function activateDriver(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await DriverService.activateDriver(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Driver activated', data })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404
+      : error.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}

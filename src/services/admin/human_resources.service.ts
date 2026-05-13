@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
 import * as HumanResourcesModel from '../../models/admin/human_resources.model.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -87,4 +88,12 @@ export async function deleteHumanResources(userId: string, actorId?: string | nu
   })
 
   return result
+}
+
+export async function deactivateHumanResources(userId: string, actorId?: string | null, ip?: string | null) {
+  return deactivateUserWithBan(userId, 'human_resources', 'human_resources_deactivated', 'Human Resources', actorId, ip)
+}
+
+export async function activateHumanResources(userId: string, actorId?: string | null, ip?: string | null) {
+  return activateUserWithUnban(userId, 'human_resources', 'human_resources_activated', 'Human Resources', actorId, ip)
 }

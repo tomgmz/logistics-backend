@@ -53,6 +53,8 @@ router.get('/clients',        authenticate, isOperations, ClientController.getAl
 router.get('/clients/:id',    authenticate, isOperations, ClientController.getClientById)
 router.post('/clients',       authenticate, isSuperAdmin,  validate(createClientSchema), ClientController.createClient)
 router.patch('/clients/:id',  authenticate, isSuperAdmin,  validate(updateClientSchema), ClientController.updateClient)
+router.patch('/clients/:id/deactivate', authenticate, isSuperAdmin, ClientController.deactivateClient)
+router.patch('/clients/:id/activate',   authenticate, isSuperAdmin, ClientController.activateClient)
 router.delete('/clients/:id', authenticate, isSuperAdmin,  ClientController.deleteClient)
 
 //Drivers
@@ -60,6 +62,8 @@ router.get('/drivers',        authenticate, isFleet, DriverController.getAllDriv
 router.get('/drivers/:id',    authenticate, isFleet, DriverController.getDriverById)
 router.post('/drivers',       authenticate, isFleet, validate(createDriverSchema), DriverController.createDriver)
 router.patch('/drivers/:id',  authenticate, isFleet, validate(updateDriverSchema), DriverController.updateDriver)
+router.patch('/drivers/:id/deactivate', authenticate, isFleet, DriverController.deactivateDriver)
+router.patch('/drivers/:id/activate',   authenticate, isFleet, DriverController.activateDriver)
 router.delete('/drivers/:id', authenticate, isFleet, DriverController.deleteDriver)
 
 //Assignments
@@ -74,6 +78,8 @@ router.get('/vendors',        authenticate, isFleet,    VendorController.getAllV
 router.get('/vendors/:id',    authenticate, isFleet,    VendorController.getVendorById)
 router.post('/vendors',       authenticate, isSuperAdmin, validate(createVendorSchema), VendorController.createVendor)
 router.patch('/vendors/:id',  authenticate, isSuperAdmin, validate(updateVendorSchema), VendorController.updateVendor)
+router.patch('/vendors/:id/deactivate', authenticate, isSuperAdmin, VendorController.deactivateVendor)
+router.patch('/vendors/:id/activate',   authenticate, isSuperAdmin, VendorController.activateVendor)
 router.delete('/vendors/:id', authenticate, isSuperAdmin, VendorController.deleteVendor)
 
 // ── Trucks
@@ -104,6 +110,8 @@ router.get('/general-managers',        authenticate, isSuperAdmin, GeneralManage
 router.get('/general-managers/:id',    authenticate, isSuperAdmin, GeneralManagerController.getGeneralManagerById)
 router.post('/general-managers',       authenticate, isSuperAdmin, validate(createGeneralManagerSchema), GeneralManagerController.createGeneralManager)
 router.patch('/general-managers/:id',  authenticate, isSuperAdmin, validate(updateGeneralManagerSchema), GeneralManagerController.updateGeneralManager)
+router.patch('/general-managers/:id/deactivate', authenticate, isSuperAdmin, GeneralManagerController.deactivateGeneralManager)
+router.patch('/general-managers/:id/activate',   authenticate, isSuperAdmin, GeneralManagerController.activateGeneralManager)
 router.delete('/general-managers/:id', authenticate, isSuperAdmin, GeneralManagerController.deleteGeneralManager)
 
 //Human Resources — isSuperAdmin manages, isHR can view
@@ -111,6 +119,8 @@ router.get('/human-resources',        authenticate, isHR,        HumanResourcesC
 router.get('/human-resources/:id',    authenticate, isHR,        HumanResourcesController.getHumanResourcesById)
 router.post('/human-resources',       authenticate, isSuperAdmin, validate(createHumanResourcesSchema), HumanResourcesController.createHumanResources)
 router.patch('/human-resources/:id',  authenticate, isSuperAdmin, validate(updateHumanResourcesSchema), HumanResourcesController.updateHumanResources)
+router.patch('/human-resources/:id/deactivate', authenticate, isSuperAdmin, HumanResourcesController.deactivateHumanResources)
+router.patch('/human-resources/:id/activate',   authenticate, isSuperAdmin, HumanResourcesController.activateHumanResources)
 router.delete('/human-resources/:id', authenticate, isSuperAdmin, HumanResourcesController.deleteHumanResources)
 
 //Fleet Admins — isSuperAdmin manages, isFleet can view
@@ -118,6 +128,8 @@ router.get('/fleet-admins',        authenticate, isFleet,      FleetAdminControl
 router.get('/fleet-admins/:id',    authenticate, isFleet,      FleetAdminController.getFleetAdminById)
 router.post('/fleet-admins',       authenticate, isSuperAdmin, validate(createFleetAdminSchema), FleetAdminController.createFleetAdmin)
 router.patch('/fleet-admins/:id',  authenticate, isSuperAdmin, validate(updateFleetAdminSchema), FleetAdminController.updateFleetAdmin)
+router.patch('/fleet-admins/:id/deactivate', authenticate, isSuperAdmin, FleetAdminController.deactivateFleetAdmin)
+router.patch('/fleet-admins/:id/activate',   authenticate, isSuperAdmin, FleetAdminController.activateFleetAdmin)
 router.delete('/fleet-admins/:id', authenticate, isSuperAdmin, FleetAdminController.deleteFleetAdmin)
 
 //Operations Admins — isSuperAdmin manages, isOperations can view
@@ -125,6 +137,8 @@ router.get('/operations-admins',        authenticate, isOperations, OperationsAd
 router.get('/operations-admins/:id',    authenticate, isOperations, OperationsAdminController.getOperationsAdminById)
 router.post('/operations-admins',       authenticate, isSuperAdmin,  validate(createOperationsAdminSchema), OperationsAdminController.createOperationsAdmin)
 router.patch('/operations-admins/:id',  authenticate, isSuperAdmin,  validate(updateOperationsAdminSchema), OperationsAdminController.updateOperationsAdmin)
+router.patch('/operations-admins/:id/deactivate', authenticate, isSuperAdmin, OperationsAdminController.deactivateOperationsAdmin)
+router.patch('/operations-admins/:id/activate',   authenticate, isSuperAdmin, OperationsAdminController.activateOperationsAdmin)
 router.delete('/operations-admins/:id', authenticate, isSuperAdmin,  OperationsAdminController.deleteOperationsAdmin)
 
 //IT Admins
@@ -132,6 +146,8 @@ router.get('/it-admins',        authenticate, isSuperAdmin, ITAdminController.ge
 router.get('/it-admins/:id',    authenticate, isSuperAdmin, ITAdminController.getITAdminById)
 router.post('/it-admins',       authenticate, isSuperAdmin, validate(createITAdminSchema), ITAdminController.createITAdmin)
 router.patch('/it-admins/:id',  authenticate, isSuperAdmin, validate(updateITAdminSchema), ITAdminController.updateITAdmin)
+router.patch('/it-admins/:id/deactivate', authenticate, isSuperAdmin, ITAdminController.deactivateITAdmin)
+router.patch('/it-admins/:id/activate',   authenticate, isSuperAdmin, ITAdminController.activateITAdmin)
 router.delete('/it-admins/:id', authenticate, isSuperAdmin, ITAdminController.deleteITAdmin)
 
 //Fetch all users

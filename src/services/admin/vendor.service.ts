@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
 import * as VendorModel from '../../models/admin/vendor.model.js'
 import { CreateVendorInput, UpdateVendorInput } from '../../types/vendor.types.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -78,4 +79,12 @@ export async function deleteVendor(userId: string, actorId?: string | null, ip?:
   })
 
   return result
+}
+
+export async function deactivateVendor(userId: string, actorId?: string | null, ip?: string | null) {
+  return deactivateUserWithBan(userId, 'vendor', 'vendor_deactivated', 'Vendor', actorId, ip)
+}
+
+export async function activateVendor(userId: string, actorId?: string | null, ip?: string | null) {
+  return activateUserWithUnban(userId, 'vendor', 'vendor_activated', 'Vendor', actorId, ip)
 }

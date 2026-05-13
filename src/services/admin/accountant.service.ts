@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import * as AccountantModel from '../../models/admin/accountant.model.js'
+import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
 
@@ -11,9 +12,6 @@ interface UpdateAccountantDTO {
   email?: string
   phone?: string | null
 }
-
-// Effectively permanent ban (~100 years). Supabase requires a duration string.
-const BAN_DURATION = '876000h'
 
 export async function getAllAccountants() {
   return AccountantModel.findAll()
@@ -97,47 +95,9 @@ export async function deleteAccountant(userId: string, actorId?: string | null, 
 }
 
 export async function deactivateAccountant(userId: string, actorId?: string | null, ip?: string | null) {
-  const accountant = await AccountantModel.findById(userId)
-  if (!accountant) throw new Error('Accountant not found')
-  if (accountant.status === 'deactivated') throw new Error('Accountant is already deactivated')
-
-  const result = await AccountantModel.setStatus(userId, 'deactivated')
-
-  const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
-    ban_duration: BAN_DURATION,
-  })
-  if (authError) console.error(`Auth ban failed for ${userId}: ${authError.message}`)
-
-  logEvent({
-    user_id:     actorId,
-    log_type:    'user_activity',
-    action:      'accountant_deactivated',
-    description: `Accountant ${userId} deactivated`,
-    ip_address:  ip,
-  })
-
-  return result
+  return deactivateUserWithBan(userId, 'accountant', 'accountant_deactivated', 'Accountant', actorId, ip)
 }
 
 export async function activateAccountant(userId: string, actorId?: string | null, ip?: string | null) {
-  const accountant = await AccountantModel.findById(userId)
-  if (!accountant) throw new Error('Accountant not found')
-  if (accountant.status === 'active') throw new Error('Accountant is already active')
-
-  const result = await AccountantModel.setStatus(userId, 'active')
-
-  const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
-    ban_duration: 'none',
-  })
-  if (authError) console.error(`Auth unban failed for ${userId}: ${authError.message}`)
-
-  logEvent({
-    user_id:     actorId,
-    log_type:    'user_activity',
-    action:      'accountant_activated',
-    description: `Accountant ${userId} reactivated`,
-    ip_address:  ip,
-  })
-
-  return result
+  return activateUserWithUnban(userId, 'accountant', 'accountant_activated', 'Accountant', actorId, ip)
 }

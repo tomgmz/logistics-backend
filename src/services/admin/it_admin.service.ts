@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
 import * as ITAdminModel from '../../models/admin/it_admin.model.js'
 import { CreateITAdminInput, UpdateITAdminInput } from '../../types/it_admin.types.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -78,4 +79,12 @@ export async function deleteITAdmin(userId: string, actorId?: string | null, ip?
   })
 
   return result
+}
+
+export async function deactivateITAdmin(userId: string, actorId?: string | null, ip?: string | null) {
+  return deactivateUserWithBan(userId, 'it_admin', 'it_admin_deactivated', 'IT Admin', actorId, ip)
+}
+
+export async function activateITAdmin(userId: string, actorId?: string | null, ip?: string | null) {
+  return activateUserWithUnban(userId, 'it_admin', 'it_admin_activated', 'IT Admin', actorId, ip)
 }

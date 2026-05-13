@@ -50,3 +50,29 @@ export async function deleteVendor(req: Request, res: Response) {
     res.status(500).json({ status: 'error', message: err.message })
   }
 }
+
+export async function deactivateVendor(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await VendorService.deactivateVendor(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Vendor deactivated', data })
+  } catch (err: any) {
+    const status = err.message.includes('not found') ? 404
+      : err.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: err.message })
+  }
+}
+
+export async function activateVendor(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await VendorService.activateVendor(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Vendor activated', data })
+  } catch (err: any) {
+    const status = err.message.includes('not found') ? 404
+      : err.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: err.message })
+  }
+}

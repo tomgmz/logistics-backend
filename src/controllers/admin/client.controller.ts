@@ -50,3 +50,29 @@ export async function deleteClient(req: Request, res: Response) {
     res.status(500).json({ status: 'error', message: err.message })
   }
 }
+
+export async function deactivateClient(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await ClientService.deactivateClient(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Client deactivated', data })
+  } catch (err: any) {
+    const status = err.message.includes('not found') ? 404
+      : err.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: err.message })
+  }
+}
+
+export async function activateClient(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await ClientService.activateClient(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Client activated', data })
+  } catch (err: any) {
+    const status = err.message.includes('not found') ? 404
+      : err.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: err.message })
+  }
+}

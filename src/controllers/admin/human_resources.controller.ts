@@ -50,3 +50,29 @@ export async function deleteHumanResources(req: Request, res: Response) {
     res.status(500).json({ status: 'error', message: error.message })
   }
 }
+
+export async function deactivateHumanResources(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await HumanResourcesService.deactivateHumanResources(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Human Resources staff deactivated', data })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404
+      : error.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+export async function activateHumanResources(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await HumanResourcesService.activateHumanResources(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Human Resources staff activated', data })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404
+      : error.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}

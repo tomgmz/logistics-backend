@@ -8,6 +8,13 @@ import {
   GeocodeResult,
 } from '../../types/maps/routeOptimization.types.js'
 
+/**
+ * Route Optimization (`optimizeTours`) is used only to choose stop order using
+ * Google’s road-network travel estimates. We do not request polylines or map
+ * geometry here; the app should draw routes with the Directions API (or Routes
+ * API) using origin + the optimized waypoint order returned from this service.
+ */
+
 const GOOGLE_API_KEY    = process.env.GOOGLE_MAPS_API_KEY!
 const GOOGLE_PROJECT_ID = process.env.GOOGLE_PROJECT_ID!
 const GEOCODING_URL     = 'https://maps.googleapis.com/maps/api/geocode/json'
@@ -47,14 +54,22 @@ async function callOptimizationAPI(
   origin: { latitude: number; longitude: number },
   destinations: OptimizationDestination[],
   scheduleDate: string,
-  callTime: string,
+  _callTime: string,
 ): Promise<{ stops: OptimizedStop[]; wasOptimized: boolean }> {
 
   const accessToken = await getAccessToken()
 
-  // Build time window using RFC 3339 strings in PHT (UTC+8)
-  const startTime = new Date(`${scheduleDate}T${callTime}:00+08:00`).toISOString()
-  const endTime   = new Date(`${scheduleDate}T23:59:59+08:00`).toISOString()
+  // Time horizon in PHT (UTC+8). Google requires an explicit global window that
+  // contains all vehicle/shipment time windows; the API default is anchored to
+  // request time and rejects windows that fall outside it.
+  const dayStartPht = new Date(`${scheduleDate}T00:00:00+08:00`)
+  const windowEndInclusive = new Date(`${scheduleDate}T23:59:59+08:00`)
+
+  const globalStartTime = dayStartPht.toISOString()
+  const planningHorizonDays = 7
+  const globalEndTime = new Date(
+    windowEndInclusive.getTime() + planningHorizonDays * 86400 * 1000,
+  ).toISOString()
 
   const shipments = destinations.map((dest, index) => ({
     label: `shipment_${index}`,
@@ -65,35 +80,67 @@ async function callOptimizationAPI(
     }],
   }))
 
+  // DRIVING costs for reordering only; map lines belong to Directions API on the client.
+  // No startTimeWindows: avoids infeasible single-day departure squeezes for long PH legs.
   const vehicles = [{
-    label:         'truck_1',
-    startLocation: { latitude: origin.latitude, longitude: origin.longitude },
-    endLocation:   { latitude: origin.latitude, longitude: origin.longitude },
-    startTimeWindows: [{
-      startTime,
-      endTime,
-    }],
-    routeDurationLimit: { maxDuration: '86400s' },
+    label:          'truck_1',
+    travelMode:     'DRIVING' as const,
+    routeModifiers: { avoidFerries: false },
+    startLocation:  { latitude: origin.latitude, longitude: origin.longitude },
+    endLocation:    { latitude: origin.latitude, longitude: origin.longitude },
+    // Prefer minimizing road distance (full tour incl. return to depot). Without
+    // explicit costs, the API still optimizes, but this matches “shortest route” intuition.
+    costPerKilometer: 1,
   }]
+
+  const model = {
+    globalStartTime,
+    globalEndTime,
+    shipments,
+    vehicles,
+  }
+
+  const url = `https://routeoptimization.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}:optimizeTours`
 
   let routes: unknown[] = []
 
   try {
-    const response = await axios.post(
-      `https://routeoptimization.googleapis.com/v1/projects/${GOOGLE_PROJECT_ID}:optimizeTours`,
-      { model: { shipments, vehicles } },
-      {
+    const run = async (body: Record<string, unknown>) =>
+      axios.post(url, body, {
         headers: {
           'Content-Type': 'application/json',
-          Authorization:  `Bearer ${accessToken}`,
+          Authorization: `Bearer ${accessToken}`,
         },
-      }
-    )
+      })
+
+    const drivingBody = {
+      model,
+      useGeodesicDistances: false,
+      // Future schedule_date: traffic is not meaningful; avoids extra routing constraints.
+      considerRoadTraffic: false,
+    }
+
+    let response = await run(drivingBody)
+    routes = response.data.routes ?? []
+
+    const visitsDriving =
+      (routes[0] as { visits?: { shipmentLabel: string }[] })?.visits ?? []
+
+    if (visitsDriving.length === 0 && destinations.length > 0) {
+      console.warn(
+        '[callOptimizationAPI] Driving optimization returned no visits (e.g. disconnected matrix); retrying with geodesic fallback for stop order only.',
+      )
+      response = await run({
+        model,
+        useGeodesicDistances:    true,
+        geodesicMetersPerSecond: 11.11,
+        considerRoadTraffic:     false,
+      })
+      routes = response.data.routes ?? []
+    }
 
     console.log('[callOptimizationAPI] routes:', JSON.stringify(response.data.routes ?? []))
     console.log('[callOptimizationAPI] skippedShipments:', JSON.stringify(response.data.skippedShipments ?? []))
-
-    routes = response.data.routes ?? []
   } catch (err) {
     console.warn('[callOptimizationAPI] Google API call failed, using original order:', (err as any).response?.data ?? err)
   }
@@ -142,7 +189,9 @@ export async function optimizeDestinationsService(
     latitude: number
     longitude: number
     sequence_order: number
-  }>
+  }>,
+  scheduleDate: string,
+  callTime: string,
 ): Promise<Array<{ address: string; optimized_sequence_order: number }>> {
   const input: OptimizationDestination[] = destinations.map((d, i) => ({
     destination_id: String(i),
@@ -151,8 +200,7 @@ export async function optimizeDestinationsService(
     longitude:      d.longitude,
   }))
 
-  const today = new Date().toISOString().split('T')[0]
-  const { stops: optimizedStops } = await callOptimizationAPI(origin, input, today, '00:00')
+  const { stops: optimizedStops } = await callOptimizationAPI(origin, input, scheduleDate, callTime)
 
   return optimizedStops.map((stop) => ({
     address:                  stop.address,

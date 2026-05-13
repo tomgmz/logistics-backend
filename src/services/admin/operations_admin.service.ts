@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
 import * as OperationsAdminModel from '../../models/admin/operations_admin.model.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -87,4 +88,12 @@ export async function deleteOperationsAdmin(userId: string, actorId?: string | n
   })
 
   return result
+}
+
+export async function deactivateOperationsAdmin(userId: string, actorId?: string | null, ip?: string | null) {
+  return deactivateUserWithBan(userId, 'operations_admin', 'operations_admin_deactivated', 'Operations Admin', actorId, ip)
+}
+
+export async function activateOperationsAdmin(userId: string, actorId?: string | null, ip?: string | null) {
+  return activateUserWithUnban(userId, 'operations_admin', 'operations_admin_activated', 'Operations Admin', actorId, ip)
 }

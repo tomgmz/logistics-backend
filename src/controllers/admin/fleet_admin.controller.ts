@@ -50,3 +50,29 @@ export async function deleteFleetAdmin(req: Request, res: Response) {
     res.status(500).json({ status: 'error', message: error.message })
   }
 }
+
+export async function deactivateFleetAdmin(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await FleetAdminService.deactivateFleetAdmin(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Fleet Admin deactivated', data })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404
+      : error.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+export async function activateFleetAdmin(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await FleetAdminService.activateFleetAdmin(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Fleet Admin activated', data })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404
+      : error.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}

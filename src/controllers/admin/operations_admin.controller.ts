@@ -50,3 +50,29 @@ export async function deleteOperationsAdmin(req: Request, res: Response) {
     res.status(500).json({ status: 'error', message: error.message })
   }
 }
+
+export async function deactivateOperationsAdmin(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await OperationsAdminService.deactivateOperationsAdmin(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Operations Admin deactivated', data })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404
+      : error.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+export async function activateOperationsAdmin(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await OperationsAdminService.activateOperationsAdmin(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Operations Admin activated', data })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404
+      : error.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}
