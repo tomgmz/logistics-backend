@@ -15,7 +15,7 @@ async function uploadToCloudinary(file: Express.Multer.File, bookingRef?: string
     .replace(/[^a-zA-Z0-9_\-]/g, '_')
     .slice(0, 55)
 
-  const safeName = baseName
+  const safeName = ext === 'pdf' ? baseName : `${baseName}.${ext}`
 
   return new Promise<{
     url:           string
@@ -28,7 +28,7 @@ async function uploadToCloudinary(file: Express.Multer.File, bookingRef?: string
       {
         folder,
         resource_type:   'auto',
-        public_id:       `${safeName}.${ext}`,
+        public_id:       safeName,
         unique_filename: true,
         overwrite:       false,
         access_mode:     'public',

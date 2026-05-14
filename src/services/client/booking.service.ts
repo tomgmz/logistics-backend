@@ -186,9 +186,12 @@ export async function updateBookingStatusService(
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
 
-  const statusOrder  = ['pending', 'assigned', 'in_transit', 'completed', 'cancelled']
+  const statusOrder  = ['pending', 'approved', 'assigned', 'in_transit', 'completed', 'cancelled']
   const currentIndex = statusOrder.indexOf(existing.status)
   const newIndex     = statusOrder.indexOf(status)
+
+  // Idempotent — same status, nothing to do
+  if (newIndex === currentIndex) return existing
 
   if (newIndex < currentIndex && status !== 'cancelled') {
     throw new Error(`Cannot change status from '${existing.status}' back to '${status}'`)

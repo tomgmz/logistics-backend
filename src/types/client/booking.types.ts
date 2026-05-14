@@ -1,4 +1,4 @@
-export type BookingStatus     = 'pending' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
+export type BookingStatus = 'pending' | 'approved' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
 export type DestinationStatus = 'pending' | 'delivered' | 'failed'
 
 export interface BookingDestination {

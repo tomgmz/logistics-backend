@@ -52,7 +52,7 @@ export const updateBookingSchema = z.object({
   cargo_details:       z.string().optional(),
   schedule_date:       z.string().date().optional(),
   call_time:           z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'call_time must be in HH:MM format').optional(),
-  status:              z.enum(['pending', 'assigned', 'in_transit', 'completed', 'cancelled']).optional(),
+  status: z.enum(['pending', 'approved', 'assigned', 'in_transit', 'completed', 'cancelled']).optional(),
   required_volume_cbm: z.number().min(0).optional().nullable(),
   required_weight_kg:  z.number().min(0).optional().nullable(),
   required_length_cm:  z.number().min(0).optional().nullable(),
@@ -62,7 +62,7 @@ export const updateBookingSchema = z.object({
 })
 
 export const updateBookingStatusSchema = z.object({
-  status: z.enum(['pending', 'assigned', 'in_transit', 'completed', 'cancelled']),
+  status: z.enum(['pending', 'approved', 'assigned', 'in_transit', 'completed', 'cancelled']),
 })
 
 export const updateDestinationStatusSchema = z.object({
