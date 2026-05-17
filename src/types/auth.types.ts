@@ -2,7 +2,6 @@ export type UserRole =
   | 'super_admin'
   | 'general_manager'
   | 'accountant'
-  | 'human_resources'
   | 'fleet_admin'
   | 'operations_admin'
   | 'it_admin'

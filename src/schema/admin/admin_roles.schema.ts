@@ -3,9 +3,6 @@ import { coreCreateFields, coreUpdateFields } from './shared.schema.js'
 
 export { emailField, mobileField } from './shared.schema.js'
 
-export const createHumanResourcesSchema  = z.object(coreCreateFields())
-export const updateHumanResourcesSchema  = z.object(coreUpdateFields())
-
 export const createFleetAdminSchema      = z.object(coreCreateFields())
 export const updateFleetAdminSchema      = z.object(coreUpdateFields())
 

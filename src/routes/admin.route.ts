@@ -9,7 +9,6 @@ import { createTruckModelSchema, updateTruckModelSchema }             from '../s
 import { createVendorSchema, updateVendorSchema }                     from '../schema/admin/vendor.schema.js'
 import { createAccountantSchema, updateAccountantSchema }             from '../schema/admin/accountant.schema.js'
 import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../schema/admin/general_manager.schema.js'
-import { createHumanResourcesSchema, updateHumanResourcesSchema }    from '../schema/admin/admin_roles.schema.js'
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
 import { createITAdminSchema, updateITAdminSchema }   from '../schema/admin/it_admin.schema.js'
@@ -22,7 +21,6 @@ import * as TruckController           from '../controllers/admin/truck.controlle
 import * as TruckModelController      from '../controllers/admin/truck-model.controller.js'
 import * as AccountantController      from '../controllers/admin/accountant.controller.js'
 import * as GeneralManagerController  from '../controllers/admin/general_manager.controller.js'
-import * as HumanResourcesController  from '../controllers/admin/human_resources.controller.js'
 import * as FleetAdminController      from '../controllers/admin/fleet_admin.controller.js'
 import * as OperationsAdminController from '../controllers/admin/operations_admin.controller.js'
 import * as ITAdminController from '../controllers/admin/it_admin.controller.js'
@@ -36,7 +34,6 @@ const router = Router()
 
 // Role groups
 const isSuperAdmin = authorize('super_admin', 'it_admin')
-const isHR         = authorize('super_admin', 'it_admin', 'human_resources', 'general_manager')
 const isFleet      = authorize('super_admin', 'it_admin', 'fleet_admin', 'general_manager', 'client')
 const isOperations = authorize('super_admin', 'it_admin', 'operations_admin', 'general_manager')
 const isFinance    = authorize('super_admin', 'it_admin', 'accountant', 'general_manager')
@@ -113,15 +110,6 @@ router.patch('/general-managers/:id',  authenticate, isSuperAdmin, validate(upda
 router.patch('/general-managers/:id/deactivate', authenticate, isSuperAdmin, GeneralManagerController.deactivateGeneralManager)
 router.patch('/general-managers/:id/activate',   authenticate, isSuperAdmin, GeneralManagerController.activateGeneralManager)
 router.delete('/general-managers/:id', authenticate, isSuperAdmin, GeneralManagerController.deleteGeneralManager)
-
-//Human Resources — isSuperAdmin manages, isHR can view
-router.get('/human-resources',        authenticate, isHR,        HumanResourcesController.getAllHumanResources)
-router.get('/human-resources/:id',    authenticate, isHR,        HumanResourcesController.getHumanResourcesById)
-router.post('/human-resources',       authenticate, isSuperAdmin, validate(createHumanResourcesSchema), HumanResourcesController.createHumanResources)
-router.patch('/human-resources/:id',  authenticate, isSuperAdmin, validate(updateHumanResourcesSchema), HumanResourcesController.updateHumanResources)
-router.patch('/human-resources/:id/deactivate', authenticate, isSuperAdmin, HumanResourcesController.deactivateHumanResources)
-router.patch('/human-resources/:id/activate',   authenticate, isSuperAdmin, HumanResourcesController.activateHumanResources)
-router.delete('/human-resources/:id', authenticate, isSuperAdmin, HumanResourcesController.deleteHumanResources)
 
 //Fleet Admins — isSuperAdmin manages, isFleet can view
 router.get('/fleet-admins',        authenticate, isFleet,      FleetAdminController.getAllFleetAdmins)
