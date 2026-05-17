@@ -31,6 +31,7 @@ import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as SystemLogController from '../controllers/admin/system-logs.controller.js'
 import { uploadSingle }    from '../middlewares/upload.middleware.js'
 import * as UploadController from '../controllers/admin/uploadImage.controller.js'
+import * as DriverOCRController from '../controllers/admin/driver-ocr.controller.js'
 
 const router = Router()
 
@@ -60,6 +61,7 @@ router.delete('/clients/:id', authenticate, isSuperAdmin,  ClientController.dele
 //Drivers
 router.get('/drivers',        authenticate, isFleet, DriverController.getAllDrivers)
 router.get('/drivers/:id',    authenticate, isFleet, DriverController.getDriverById)
+router.post('/drivers/scan-license', authenticate, isFleet, uploadSingle, DriverOCRController.scanDriverLicense)
 router.post('/drivers',       authenticate, isFleet, validate(createDriverSchema), DriverController.createDriver)
 router.patch('/drivers/:id',  authenticate, isFleet, validate(updateDriverSchema), DriverController.updateDriver)
 router.patch('/drivers/:id/deactivate', authenticate, isFleet, DriverController.deactivateDriver)
