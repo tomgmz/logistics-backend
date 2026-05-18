@@ -230,3 +230,22 @@ function getIpAddress(req: Request): string | undefined {
     undefined
   )
 }
+
+export async function changePassword(req: Request, res: Response) {
+  try {
+    const userId   = req.user!.sub
+    const { password } = req.body
+
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      res.status(400).json({ status: 'error', message: 'Password must be at least 8 characters.' })
+      return
+    }
+
+    await AuthService.changePassword(userId, password)
+    res.status(200).json({ status: 'success', message: 'Password updated successfully.' })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to update password'
+    console.error('CHANGE PASSWORD ERROR:', err)
+    res.status(500).json({ status: 'error', message })
+  }
+}

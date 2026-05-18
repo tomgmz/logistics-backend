@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { coreCreateFields, coreUpdateFields, landlineField } from './shared.schema.js'
+import { coreCreateFields, coreUpdateFields, landlineField, passwordField } from './shared.schema.js'
 
 export const createClientSchema = z.object({
   ...coreCreateFields(),
@@ -21,3 +21,9 @@ export const updateClientSchema = z.object({
   billing_address: z.string().optional(),
   payment_terms:   z.number().int().positive().optional(),
 })
+
+export const changePasswordSchema = z.object({
+  password:         passwordField(),
+})
+
+

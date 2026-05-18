@@ -7,6 +7,7 @@ import {
   verifyOtpSchema,
   authStatusSchema,
   loginSchema,
+  changePasswordSchema,
 } from '../schema/auth/auth.schema.js'
 import * as AuthController from '../controllers/auth/auth.controller.js'
 
@@ -19,6 +20,7 @@ router.post('/login',       authLimiter, validate(loginSchema),       AuthContro
 router.post('/status',      validate(authStatusSchema),               AuthController.getAuthStatus)
 router.post('/refresh',     AuthController.refreshToken)
 router.get('/csrf',         AuthController.getCsrfToken)
+router.post('/change-password', authenticate, authenticatedLimiter, validate(changePasswordSchema), AuthController.changePassword)
 
 // Protected
 router.post('/logout',     authenticate, authenticatedLimiter, AuthController.logout)

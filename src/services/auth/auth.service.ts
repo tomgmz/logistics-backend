@@ -91,7 +91,7 @@ function generateDeviceFingerprint(userAgent: string, ip: string): string {
 }
 
 function buildAuthResponse(
-  user: { user_id: string; email: string; first_name: string | null; last_name: string | null; role: UserRole; status: string },
+  user: { user_id: string; email: string; first_name: string | null; last_name: string | null; role: UserRole; status: string; must_change_password?: boolean },
   accessToken: string,
   refreshToken: string,
   accessExpiresAt: Date,
@@ -103,15 +103,27 @@ function buildAuthResponse(
     accessExpiresAt:  accessExpiresAt.toISOString(),
     refreshExpiresAt: refreshExpiresAt.toISOString(),
     user: {
-      user_id:    user.user_id,
-      email:      user.email,
-      first_name: user.first_name,
-      last_name:  user.last_name,
-      role:       user.role,
-      status:     user.status,
+      user_id:               user.user_id,
+      email:                 user.email,
+      first_name:            user.first_name,
+      last_name:             user.last_name,
+      role:                  user.role,
+      status:                user.status,
+      must_change_password:  user.must_change_password ?? false,
     },
     portalUrl: ROLE_PORTAL[user.role as UserRole] ?? '/portal',
   }
+}
+
+export async function changePassword(
+  userId:      string,
+  newPassword: string,
+): Promise<void> {
+  const { error } = await supabase.auth.admin.updateUserById(userId, {
+    password: newPassword,
+  })
+  if (error) throw new Error(`Failed to update password: ${error.message}`)
+  await AuthModel.clearMustChangePassword(userId)
 }
 
 async function createTokensAndSession(

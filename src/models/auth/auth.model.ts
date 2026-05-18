@@ -11,12 +11,21 @@ import {
 export async function findUserByEmail(email: string): Promise<AuthUser | null> {
   const { data, error } = await supabase
     .from('users')
-    .select('user_id, email, first_name, last_name, role, status, locked_until, failed_login_attempts, lockup_count')
+    .select('user_id, email, first_name, last_name, role, status, locked_until, failed_login_attempts, lockup_count, must_change_password')
     .eq('email', email)
     .single()
 
   if (error && error.code !== 'PGRST116') throw error
   return data ?? null
+}
+
+// Also add a helper to clear the flag:
+export async function clearMustChangePassword(userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('users')
+    .update({ must_change_password: false })
+    .eq('user_id', userId)
+  if (error) throw error
 }
 
 export async function incrementLockupCount(userId: string): Promise<number> {
@@ -47,7 +56,7 @@ export async function permanentlyLockUser(userId: string): Promise<void> {
 export async function findUserById(userId: string): Promise<AuthUser | null> {
   const { data, error } = await supabase
     .from('users')
-    .select('user_id, email, first_name, last_name, role, status')
+    .select('user_id, email, first_name, last_name, role, status, must_change_password')
     .eq('user_id', userId)
     .single()
 

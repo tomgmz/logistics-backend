@@ -57,6 +57,7 @@ export interface AuthUser {
   failed_login_attempts?: number
   lockup_count?:          number
   locked_until?:          Date | null
+  must_change_password?:  boolean
 
   clients?: {
     client_id:       string

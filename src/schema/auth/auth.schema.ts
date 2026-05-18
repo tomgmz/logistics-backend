@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { passwordField } from '../admin/shared.schema.js'
 
 export const requestOtpSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -20,4 +21,8 @@ export const loginSchema = z.object({
   password:    z.string().min(1, 'Password is required'),
   device_info: z.string().optional(),
   platform:    z.enum(['web', 'mobile']).default('web'),
+})
+
+export const changePasswordSchema = z.object({
+  password:         passwordField(),
 })
