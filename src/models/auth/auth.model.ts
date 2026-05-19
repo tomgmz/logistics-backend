@@ -19,7 +19,6 @@ export async function findUserByEmail(email: string): Promise<AuthUser | null> {
   return data ?? null
 }
 
-// Also add a helper to clear the flag:
 export async function clearMustChangePassword(userId: string): Promise<void> {
   const { error } = await supabase
     .from('users')
@@ -123,7 +122,6 @@ export async function createOtp(
     .insert({
       user_id: userId,
       email,
-      code: '',
       code_hash: codeHash,
       expires_at: otpExpiry.toISOString(),
       attempts: 0,

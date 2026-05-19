@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
-import { GetLogsQuery } from '../../types/system-logs.types.js'
+import { GetLogsQuery } from '../../types/audit-logs.types.js'
 
 export async function findAll(query: GetLogsQuery = {}) {
   const { log_type, search, sort = 'desc' } = query

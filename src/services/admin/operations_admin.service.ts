@@ -3,6 +3,7 @@ import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status
 import * as OperationsAdminModel from '../../models/admin/operations_admin.model.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
+import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
 
 interface UpdateOperationsAdminDTO {
   first_name?: string
@@ -24,10 +25,12 @@ export async function getOperationsAdminById(userId: string) {
 }
 
 export async function createOperationsAdmin(dto: BaseCreateDTO, actorId?: string | null, ip?: string | null) {
+  const password = generateSecurePassword()
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         dto.email,
+    password,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
     user_metadata: { role: 'operations_admin' },
@@ -39,6 +42,17 @@ export async function createOperationsAdmin(dto: BaseCreateDTO, actorId?: string
   try {
     const result = await OperationsAdminModel.create(userId, dto)
 
+    sendWelcomeEmail({
+      to:        dto.email,
+      firstName: dto.first_name ?? null,
+      role:      'operations_admin',
+      password,
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
+      console.error(`WELCOME_EMAIL_FAILED for operations_admin ${userId}:`, msg)
+    })
+
     logEvent({
       user_id:     actorId,
       log_type:    'user_activity',
@@ -48,12 +62,14 @@ export async function createOperationsAdmin(dto: BaseCreateDTO, actorId?: string
     })
 
     return result
-  } catch (err: any) {
-    console.error('Operations Admin creation failed, rolling back auth user...', err.message)
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
+    console.error('Operations Admin creation failed, rolling back auth user...', msg)
     const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
     if (rollbackError) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
     else console.log('Rollback successful.')
-    throw new Error(`Operations Admin Creation Failed: ${err.message}`)
+    throw new Error(`Operations Admin creation failed: ${msg}`)
   }
 }
 

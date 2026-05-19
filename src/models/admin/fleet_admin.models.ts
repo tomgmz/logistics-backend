@@ -48,6 +48,7 @@ async function create(userId: string, dto: BaseCreateDTO) {
       phone:          dto.phone,
       role:           'fleet_admin',
       created_by:     dto.created_by ?? null,
+      must_change_password: true,
     })
   if (userError) throw userError
 

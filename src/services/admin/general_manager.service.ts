@@ -3,6 +3,7 @@ import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status
 import * as GeneralManagerModel from '../../models/admin/general_manager.model.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
+import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
 
 interface UpdateGeneralManagerDTO {
   first_name?: string
@@ -24,10 +25,12 @@ export async function getGeneralManagerById(userId: string) {
 }
 
 export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string | null, ip?: string | null) {
+  const password = generateSecurePassword()
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         dto.email,
+    password,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
     user_metadata: { role: 'general_manager' },
@@ -39,6 +42,17 @@ export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string 
   try {
     const result = await GeneralManagerModel.create(userId, dto)
 
+    sendWelcomeEmail({
+      to:        dto.email,
+      firstName: dto.first_name ?? null,
+      role:      'general_manager',
+      password,
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
+      console.error(`WELCOME_EMAIL_FAILED for general_manager ${userId}:`, msg)
+    })
+
     logEvent({
       user_id:     actorId,
       log_type:    'user_activity',
@@ -48,12 +62,14 @@ export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string 
     })
 
     return result
-  } catch (err: any) {
-    console.error('General Manager creation failed, rolling back auth user...', err.message)
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
+    console.error('General Manager creation failed, rolling back auth user...', msg)
     const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
     if (rollbackError) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
     else console.log('Rollback successful.')
-    throw new Error(`General Manager Creation Failed: ${err.message}`)
+    throw new Error(`General Manager creation failed: ${msg}`)
   }
 }
 

@@ -3,6 +3,7 @@ import * as AccountantModel from '../../models/admin/accountant.model.js'
 import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
+import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
 
 interface UpdateAccountantDTO {
   first_name?: string
@@ -24,15 +25,15 @@ export async function getAccountantById(userId: string) {
 }
 
 export async function createAccountant(dto: BaseCreateDTO, actorId?: string | null, ip?: string | null) {
+  const password = generateSecurePassword()
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         dto.email,
+    password,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: {
-      role:         'accountant',
-    },
+    user_metadata: { role: 'accountant' },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 
@@ -40,6 +41,17 @@ export async function createAccountant(dto: BaseCreateDTO, actorId?: string | nu
 
   try {
     const result = await AccountantModel.create(userId, dto)
+
+    sendWelcomeEmail({
+      to:        dto.email,
+      firstName: dto.first_name ?? null,
+      role:      'accountant',
+      password,
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
+      console.error(`WELCOME_EMAIL_FAILED for accountant ${userId}:`, msg)
+    })
 
     logEvent({
       user_id:     actorId,
@@ -50,12 +62,14 @@ export async function createAccountant(dto: BaseCreateDTO, actorId?: string | nu
     })
 
     return result
-  } catch (err: any) {
-    console.error('Accountant creation failed, rolling back auth user...', err.message)
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
+    console.error('Accountant creation failed, rolling back auth user...', msg)
     const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
     if (rollbackError) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
     else console.log('Rollback successful.')
-    throw new Error(`Accountant Creation Failed: ${err.message}`)
+    throw new Error(`Accountant creation failed: ${msg}`)
   }
 }
 

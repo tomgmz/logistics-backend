@@ -23,7 +23,6 @@ export interface OtpCode {
   id: string
   user_id: string
   email: string
-  code: string
   code_hash?: string
   expires_at: Date
   used: boolean

@@ -39,6 +39,7 @@ async function create(userId: string, input: CreateVendorInput) {
       phone:          input.phone,
       role:           'vendor',
       created_by:     input.created_by ?? null,
+      must_change_password: true,
     })
   if (userError) throw userError
 

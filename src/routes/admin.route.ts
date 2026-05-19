@@ -28,10 +28,16 @@ import * as OperationsAdminController from '../controllers/admin/operations_admi
 import * as ITAdminController from '../controllers/admin/it_admin.controller.js'
 import * as AssignmentController from '../controllers/admin/assignment.controller.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
-import * as SystemLogController from '../controllers/admin/system-logs.controller.js'
+import * as AuditLogController from '../controllers/admin/audit-logs.controller.js'
 import { uploadSingle }    from '../middlewares/upload.middleware.js'
 import * as UploadController from '../controllers/admin/uploadImage.controller.js'
 import * as DriverOCRController from '../controllers/admin/driver-ocr.controller.js'
+import {
+  createHandlingCodeSchema, updateHandlingCodeSchema,
+  createCommoditySchema,    updateCommoditySchema,
+  createProductSchema,      updateProductSchema,
+} from '../schema/admin/cargo-catalog.schema.js'
+import * as CargoCatalogController from '../controllers/admin/cargo-catalog.controller.js'
 
 const router = Router()
 
@@ -39,7 +45,7 @@ const router = Router()
 const isSuperAdmin = authorize('super_admin', 'it_admin')
 const isHR         = authorize('super_admin', 'it_admin', 'human_resources', 'general_manager')
 const isFleet      = authorize('super_admin', 'it_admin', 'fleet_admin', 'general_manager', 'client')
-const isOperations = authorize('super_admin', 'it_admin', 'operations_admin', 'general_manager')
+const isOperations = authorize('super_admin', 'it_admin', 'operations_admin', 'general_manager', 'client')
 const isFinance    = authorize('super_admin', 'it_admin', 'accountant', 'general_manager')
 
 //Admins — super_admin / it_admin only
@@ -156,12 +162,33 @@ router.delete('/it-admins/:id', authenticate, isSuperAdmin, ITAdminController.de
 router.get('/users',       authenticate, isSuperAdmin, UserController.getUsers)
 router.get('/users/stats', authenticate, isSuperAdmin, UserController.getUserStats)
 
-//Systemlogs
-router.get('/system-logs',        authenticate, isSuperAdmin, SystemLogController.getAllLogs)
-router.get('/system-logs/stats',  authenticate, isSuperAdmin, SystemLogController.getLogStats)
-router.get('/system-logs/:id',    authenticate, isSuperAdmin, SystemLogController.getLogById)
+// Audit logs
+router.get('/audit-logs',        authenticate, isSuperAdmin, AuditLogController.getAllLogs)
+router.get('/audit-logs/stats',  authenticate, isSuperAdmin, AuditLogController.getLogStats)
+router.get('/audit-logs/:id',    authenticate, isSuperAdmin, AuditLogController.getLogById)
 
 //upload
 router.post('/upload/image', authenticate, isFleet, uploadSingle, UploadController.uploadImage)
+
+// Handling Codes
+router.get('/handling-codes',        authenticate, isOperations, CargoCatalogController.getAllHandlingCodes)
+router.get('/handling-codes/:id',    authenticate, isOperations, CargoCatalogController.getHandlingCodeById)
+router.post('/handling-codes',       authenticate, isOperations, validate(createHandlingCodeSchema), CargoCatalogController.createHandlingCode)
+router.patch('/handling-codes/:id',  authenticate, isOperations, validate(updateHandlingCodeSchema), CargoCatalogController.updateHandlingCode)
+router.delete('/handling-codes/:id', authenticate, isOperations, CargoCatalogController.deleteHandlingCode)
+
+// Commodities
+router.get('/commodities',        authenticate, isOperations, CargoCatalogController.getAllCommodities)
+router.get('/commodities/:id',    authenticate, isOperations, CargoCatalogController.getCommodityById)
+router.post('/commodities',       authenticate, isOperations, validate(createCommoditySchema), CargoCatalogController.createCommodity)
+router.patch('/commodities/:id',  authenticate, isOperations, validate(updateCommoditySchema), CargoCatalogController.updateCommodity)
+router.delete('/commodities/:id', authenticate, isOperations, CargoCatalogController.deleteCommodity)
+
+// Products — supports ?commodity_id= filter on GET /products
+router.get('/products',        authenticate, isOperations, CargoCatalogController.getAllProducts)
+router.get('/products/:id',    authenticate, isOperations, CargoCatalogController.getProductById)
+router.post('/products',       authenticate, isOperations, validate(createProductSchema), CargoCatalogController.createProduct)
+router.patch('/products/:id',  authenticate, isOperations, validate(updateProductSchema), CargoCatalogController.updateProduct)
+router.delete('/products/:id', authenticate, isOperations, CargoCatalogController.deleteProduct)
 
 export default router

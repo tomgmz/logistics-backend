@@ -11,7 +11,7 @@ export type LogType =
   | 'maintenance_activity'
   | 'auth'
 
-export interface SystemLog {
+export interface AuditLog {
   log_id:       string
   user_id?:     string | null
   log_type:     LogType

@@ -155,7 +155,9 @@ async function assign(
     .from('bookings')
     .update({ status: 'assigned', updated_at: now })
     .eq('booking_id', bookingId)
-    .in('status', ['pending'])
+    // Allow updating booking status to 'assigned' regardless of prior intermediate
+    // approval status so super-admins or other roles that assign after approval
+    // correctly transition the booking.
   if (bookingErr) throw bookingErr
 
   return findByBookingId(bookingId)

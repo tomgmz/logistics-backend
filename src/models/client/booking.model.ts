@@ -6,6 +6,11 @@ import {
   UpdateDestinationInput,
   BookingWithRelations,
   BookingDestination,
+  BookingCargoItem,
+  AccountingReviewInput,
+  GmReviewInput,
+  OpsAssignInput,
+  FleetApproveInput,
 } from '../../types/client/booking.types.js'
 
 export interface BookingListQuery {
@@ -15,6 +20,10 @@ export interface BookingListQuery {
   search?: string | null
 }
 
+// ---------------------------------------------------------------------------
+// Shared select strings
+// ---------------------------------------------------------------------------
+
 const BOOKING_WITH_RELATIONS_SELECT = `
   booking_id,
   client_id,
@@ -22,10 +31,17 @@ const BOOKING_WITH_RELATIONS_SELECT = `
   origin_longitude,
   origin_latitude,
   truck_type_needed,
-  cargo_details,
   schedule_date,
   call_time,
   status,
+  accounting_status,
+  gm_status,
+  ops_status,
+  fleet_status,
+  rejection_reason,
+  cancelled_by,
+  cancelled_at,
+  reference_number,
   total_cost,
   estimated_delivery,
   required_volume_cbm,
@@ -51,6 +67,7 @@ const BOOKING_WITH_RELATIONS_SELECT = `
   booking_destinations (
     destination_id,
     booking_id,
+    delivery_id,
     address,
     sequence_order,
     status,
@@ -59,6 +76,31 @@ const BOOKING_WITH_RELATIONS_SELECT = `
     latitude,
     longitude,
     created_at
+  ),
+  booking_cargo_items (
+    item_id,
+    booking_id,
+    product_id,
+    commodity_id,
+    shc_id,
+    ashc_id,
+    commodity_text,
+    product_text,
+    shc_text,
+    ashc_text,
+    quantity,
+    weight_kg,
+    volume_cbm,
+    length_cm,
+    width_cm,
+    height_cm,
+    notes,
+    created_at,
+    updated_at,
+    products ( name, unit ),
+    commodities ( name, category ),
+    shc:handling_codes!booking_cargo_items_shc_id_fkey ( code, name, type ),
+    ashc:handling_codes!booking_cargo_items_ashc_id_fkey ( code, name, type )
   ),
   truck_assignments (
     assignment_id,
@@ -83,6 +125,10 @@ const BOOKING_WITH_RELATIONS_SELECT = `
   )
 `
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 async function countByStatus(): Promise<Record<string, number>> {
   const result = await pool.query<{ status: string; n: string }>(
     `SELECT status::text AS status, COUNT(*)::int AS n FROM bookings GROUP BY status`
@@ -98,16 +144,20 @@ async function countByStatus(): Promise<Record<string, number>> {
   return out
 }
 
+// ---------------------------------------------------------------------------
+// Queries
+// ---------------------------------------------------------------------------
+
 async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWithRelations[]; total: number }> {
-  const page  = Math.max(1, q.page)
-  const limit = Math.min(Math.max(1, q.limit), 100)
+  const page   = Math.max(1, q.page)
+  const limit  = Math.min(Math.max(1, q.limit), 100)
   const offset = (page - 1) * limit
 
   const status = (q.status ?? 'all').trim().toLowerCase()
   const search = (q.search ?? '').trim()
 
   const params: unknown[] = []
-  const where: string[] = []
+  const where: string[]   = []
 
   if (status !== 'all') {
     params.push(status)
@@ -122,6 +172,7 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
       b.origin ILIKE $${i} ESCAPE '\\' OR
       b.truck_type_needed ILIKE $${i} ESCAPE '\\' OR
       b.booking_id::text ILIKE $${i} ESCAPE '\\' OR
+      b.reference_number ILIKE $${i} ESCAPE '\\' OR
       COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\'
     )`)
   }
@@ -129,12 +180,10 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
   const countResult = await pool.query<{ n: string }>(
-    `
-    SELECT COUNT(*)::int AS n
-    FROM bookings b
-    LEFT JOIN clients c ON c.client_id = b.client_id
-    ${whereSql}
-    `,
+    `SELECT COUNT(*)::int AS n
+     FROM bookings b
+     LEFT JOIN clients c ON c.client_id = b.client_id
+     ${whereSql}`,
     params,
   )
   const total = parseInt(countResult.rows[0]?.n ?? '0', 10) || 0
@@ -142,21 +191,17 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
   const limitIdx  = params.length + 1
   const offsetIdx = params.length + 2
   const idsResult = await pool.query<{ booking_id: string }>(
-    `
-    SELECT b.booking_id
-    FROM bookings b
-    LEFT JOIN clients c ON c.client_id = b.client_id
-    ${whereSql}
-    ORDER BY b.created_at DESC
-    LIMIT $${limitIdx} OFFSET $${offsetIdx}
-    `,
+    `SELECT b.booking_id
+     FROM bookings b
+     LEFT JOIN clients c ON c.client_id = b.client_id
+     ${whereSql}
+     ORDER BY b.created_at DESC
+     LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
     [...params, limit, offset],
   )
 
   const ids = idsResult.rows.map((r) => r.booking_id)
-  if (ids.length === 0) {
-    return { rows: [], total }
-  }
+  if (ids.length === 0) return { rows: [], total }
 
   const { data, error } = await supabase
     .from('bookings')
@@ -166,9 +211,7 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
   if (error) throw error
 
   const byId = new Map((data ?? []).map((row: any) => [row.booking_id as string, row]))
-  const rows = ids
-    .map((id) => byId.get(id))
-    .filter(Boolean) as BookingWithRelations[]
+  const rows = ids.map((id) => byId.get(id)).filter(Boolean) as BookingWithRelations[]
 
   return { rows, total }
 }
@@ -205,8 +248,32 @@ async function findByClientId(clientId: string): Promise<BookingWithRelations[]>
   return (data ?? []) as unknown as BookingWithRelations[]
 }
 
+async function findByDriverId(driverId: string): Promise<BookingWithRelations[]> {
+  const { data, error } = await supabase
+    .from('driver_assignments')
+    .select(`
+      assignment_id,
+      assigned_at,
+      bookings (
+        ${BOOKING_WITH_RELATIONS_SELECT}
+      )
+    `)
+    .eq('driver_id', driverId)
+    .order('assigned_at', { ascending: false })
+
+  if (error) throw error
+
+  return (data ?? [])
+    .map((row: any) => row.bookings)
+    .filter(Boolean) as BookingWithRelations[]
+}
+
+// ---------------------------------------------------------------------------
+// Mutations
+// ---------------------------------------------------------------------------
+
 async function create(input: CreateBookingInput): Promise<BookingWithRelations | null> {
-  const { destinations, ...bookingData } = input
+  const { destinations, cargo_items, ...bookingData } = input
 
   const { data: booking, error: bookingError } = await supabase
     .from('bookings')
@@ -216,16 +283,41 @@ async function create(input: CreateBookingInput): Promise<BookingWithRelations |
 
   if (bookingError) throw bookingError
 
-  const destinationRows = destinations.map((d) => ({
-    ...d,
-    booking_id: booking.booking_id,
-  }))
+  if (destinations.length > 0) {
+    const destinationRows = destinations.map((d) => ({
+      ...d,
+      booking_id: booking.booking_id,
+    }))
+    const { error: destError } = await supabase
+      .from('booking_destinations')
+      .insert(destinationRows)
+    if (destError) throw destError
+  }
 
-  const { error: destinationError } = await supabase
-    .from('booking_destinations')
-    .insert(destinationRows)
-
-  if (destinationError) throw destinationError
+  if (cargo_items && cargo_items.length > 0) {
+    const cargoRows = cargo_items.map((item) => ({
+      booking_id:     booking.booking_id,
+      commodity_id:   item.commodity_id   ?? null,
+      commodity_text: item.commodity_text ?? null,
+      product_id:     item.product_id     ?? null,
+      product_text:   item.product_text   ?? null,
+      shc_id:         item.shc_id         ?? null,
+      shc_text:       item.shc_text       ?? null,
+      ashc_id:        item.ashc_id        ?? null,
+      ashc_text:      item.ashc_text      ?? null,
+      quantity:       item.quantity       ?? null,
+      weight_kg:      item.weight_kg      ?? null,
+      volume_cbm:     item.volume_cbm     ?? null,
+      length_cm:      item.length_cm      ?? null,
+      width_cm:       item.width_cm       ?? null,
+      height_cm:      item.height_cm      ?? null,
+      notes:          item.notes          ?? null,
+    }))
+    const { error: cargoError } = await supabase
+      .from('booking_cargo_items')
+      .insert(cargoRows)
+    if (cargoError) throw cargoError
+  }
 
   return findById(booking.booking_id)
 }
@@ -250,6 +342,66 @@ async function updateStatus(bookingId: string, status: string): Promise<BookingW
   return findById(bookingId)
 }
 
+async function updateAccountingStatus(
+  bookingId: string,
+  input: AccountingReviewInput,
+): Promise<BookingWithRelations | null> {
+  const { error } = await supabase
+    .from('bookings')
+    .update({
+      accounting_status: input.accounting_status,
+      rejection_reason:  input.accounting_status === 'rejected' ? input.rejection_reason : null,
+      updated_at:        new Date().toISOString(),
+    })
+    .eq('booking_id', bookingId)
+
+  if (error) throw error
+  return findById(bookingId)
+}
+
+async function updateGmStatus(
+  bookingId: string,
+  input: GmReviewInput,
+): Promise<BookingWithRelations | null> {
+  const { error } = await supabase
+    .from('bookings')
+    .update({
+      gm_status:        input.gm_status,
+      rejection_reason: input.gm_status === 'rejected' ? input.rejection_reason : null,
+      updated_at:       new Date().toISOString(),
+    })
+    .eq('booking_id', bookingId)
+
+  if (error) throw error
+  return findById(bookingId)
+}
+
+async function updateOpsStatus(
+  bookingId: string,
+  input: OpsAssignInput,
+): Promise<BookingWithRelations | null> {
+  const { error } = await supabase
+    .from('bookings')
+    .update({ ops_status: input.ops_status, updated_at: new Date().toISOString() })
+    .eq('booking_id', bookingId)
+
+  if (error) throw error
+  return findById(bookingId)
+}
+
+async function updateFleetStatus(
+  bookingId: string,
+  input: FleetApproveInput,
+): Promise<BookingWithRelations | null> {
+  const { error } = await supabase
+    .from('bookings')
+    .update({ fleet_status: input.fleet_status, updated_at: new Date().toISOString() })
+    .eq('booking_id', bookingId)
+
+  if (error) throw error
+  return findById(bookingId)
+}
+
 async function remove(bookingId: string): Promise<boolean> {
   const { error } = await supabase
     .from('bookings')
@@ -259,6 +411,10 @@ async function remove(bookingId: string): Promise<boolean> {
   if (error) throw error
   return true
 }
+
+// ---------------------------------------------------------------------------
+// Destinations
+// ---------------------------------------------------------------------------
 
 async function findDestinationsByBookingId(bookingId: string): Promise<BookingDestination[]> {
   const { data, error } = await supabase
@@ -271,7 +427,10 @@ async function findDestinationsByBookingId(bookingId: string): Promise<BookingDe
   return data ?? []
 }
 
-async function updateDestination(destinationId: string, input: UpdateDestinationInput): Promise<BookingDestination> {
+async function updateDestination(
+  destinationId: string,
+  input: UpdateDestinationInput,
+): Promise<BookingDestination> {
   const { data, error } = await supabase
     .from('booking_destinations')
     .update(input)
@@ -286,7 +445,6 @@ async function updateDestination(destinationId: string, input: UpdateDestination
 async function updateDestinationStatus(
   destinationId: string,
   status: string,
-  _deliveredAt?: string
 ): Promise<BookingDestination> {
   const { data, error } = await supabase
     .from('booking_destinations')
@@ -312,92 +470,98 @@ async function removeDestination(destinationId: string): Promise<boolean> {
   return true
 }
 
-async function findByDriverId(driverId: string): Promise<BookingWithRelations[]> {
+// ---------------------------------------------------------------------------
+// Cargo items
+// ---------------------------------------------------------------------------
+
+async function findCargoItemsByBookingId(bookingId: string): Promise<BookingCargoItem[]> {
   const { data, error } = await supabase
-    .from('driver_assignments')
+    .from('booking_cargo_items')
     .select(`
-      assignment_id,
-      assigned_at,
-      bookings (
-        booking_id,
-        client_id,
-        origin,
-        origin_latitude,
-        origin_longitude,
-        truck_type_needed,
-        cargo_details,
-        schedule_date,
-        call_time,
-        status,
-        total_cost,
-        estimated_delivery,
-        required_volume_cbm,
-        required_weight_kg,
-        required_length_cm,
-        stackable_required,
-        created_at,
-        updated_at,
-        clients (
-          client_id,
-          company_name,
-          billing_address,
-          payment_terms,
-          users (
-            first_name,
-            last_name,
-            email,
-            phone
-          )
-        ),
-        booking_destinations (
-          destination_id,
-          booking_id,
-          address,
-          sequence_order,
-          status,
-          delivered_at,
-          notes,
-          latitude,
-          longitude,
-          created_at
-        ),
-        truck_assignments (
-          assignment_id,
-          truck_id,
-          assigned_at,
-          trucks (
-            plate_number,
-            truck_models (
-              vehicle_type,
-              name
-            )
-          )
-        )
-      )
+      *,
+      products ( name, unit ),
+      commodities ( name, category ),
+      shc:handling_codes!booking_cargo_items_shc_id_fkey ( code, name, type ),
+      ashc:handling_codes!booking_cargo_items_ashc_id_fkey ( code, name, type )
     `)
-    .eq('driver_id', driverId)
-    .order('assigned_at', { ascending: false })
+    .eq('booking_id', bookingId)
 
   if (error) throw error
-
-  return (data ?? [])
-    .map((row: any) => row.bookings)
-    .filter(Boolean) as BookingWithRelations[]
+  return data ?? []
 }
 
+async function upsertCargoItem(
+  bookingId: string,
+  item: Partial<BookingCargoItem> & { item_id?: string },
+): Promise<BookingCargoItem> {
+  const payload = {
+    booking_id:     bookingId,
+    commodity_id:   item.commodity_id   ?? null,
+    commodity_text: item.commodity_text ?? null,
+    product_id:     item.product_id     ?? null,
+    product_text:   item.product_text   ?? null,
+    shc_id:         item.shc_id         ?? null,
+    shc_text:       item.shc_text       ?? null,
+    ashc_id:        item.ashc_id        ?? null,
+    ashc_text:      item.ashc_text      ?? null,
+    quantity:       item.quantity       ?? null,
+    weight_kg:      item.weight_kg      ?? null,
+    volume_cbm:     item.volume_cbm     ?? null,
+    length_cm:      item.length_cm      ?? null,
+    width_cm:       item.width_cm       ?? null,
+    height_cm:      item.height_cm      ?? null,
+    notes:          item.notes          ?? null,
+    ...(item.item_id ? { item_id: item.item_id } : {}),
+  }
+
+  const { data, error } = await supabase
+    .from('booking_cargo_items')
+    .upsert(payload, { onConflict: 'item_id' })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+async function removeCargoItem(itemId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('booking_cargo_items')
+    .delete()
+    .eq('item_id', itemId)
+
+  if (error) throw error
+  return true
+}
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
+
 export const BookingModel = {
+  // queries
   findAll,
   findAllPaginated,
   countByStatus,
   findById,
   findByClientId,
   findByDriverId,
+  // booking mutations
   create,
   update,
   updateStatus,
+  updateAccountingStatus,
+  updateGmStatus,
+  updateOpsStatus,
+  updateFleetStatus,
   remove,
+  // destination mutations
   findDestinationsByBookingId,
   updateDestination,
   updateDestinationStatus,
   removeDestination,
+  // cargo item mutations
+  findCargoItemsByBookingId,
+  upsertCargoItem,
+  removeCargoItem,
 }
