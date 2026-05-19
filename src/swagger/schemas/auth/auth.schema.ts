@@ -30,7 +30,7 @@ export const authSchemas = {
       email:      { type: 'string', format: 'email', example: 'admin@logistics.com' },
       first_name: { type: 'string', nullable: true, example: 'Juan' },
       last_name:  { type: 'string', nullable: true, example: 'dela Cruz' },
-      role:       { type: 'string', enum: ['admin', 'super_admin', 'client', 'driver', 'vendor'], example: 'client' },
+      role:       { type: 'string', enum: ['admin', 'client', 'driver', 'vendor'], example: 'client' },
       status:     { type: 'string', enum: ['active', 'inactive', 'archived'], example: 'active' },
       clients: {
         type: 'object',

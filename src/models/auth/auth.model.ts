@@ -415,7 +415,7 @@ export async function findUserWithClient(userId: string): Promise<AuthUser | nul
   const { data, error } = await supabase
     .from('users')
     .select(`
-      user_id, email, first_name, last_name, role, status,
+      user_id, email, first_name, last_name, role, status, must_change_password,
       clients (client_id, company_name, billing_address, payment_terms)
     `)
     .eq('user_id', userId)
@@ -434,7 +434,7 @@ export async function findUserWithDriver(userId: string): Promise<AuthUser | nul
   const { data, error } = await supabase
     .from('users')
     .select(`
-      user_id, email, first_name, last_name, role, status,
+      user_id, email, first_name, last_name, role, status, must_change_password,
       drivers (driver_id, license_number, license_expiry, status, is_vendor_driver)
     `)
     .eq('user_id', userId)

@@ -31,7 +31,7 @@ const BCRYPT_ROUNDS     = 12
 const ACCOUNT_LOCK_MINS = 3
 
 const PLATFORM_RESTRICTIONS: Record<UserRole, Platform[]> = {
-  super_admin:      ['web'],
+  admin:      ['web'],
   driver:           ['mobile'],
   general_manager:  ['web'],
   accountant:       ['web'],
@@ -49,7 +49,7 @@ function isRoleAllowedOnPlatform(role: string, platform: Platform): boolean {
 }
 
 const ROLE_PORTAL: Record<UserRole, string> = {
-  super_admin:      '/portal/admin',
+  admin:      '/portal/admin',
   general_manager:  '/portal/operations',
   accountant:       '/portal/finance',
   human_resources:  '/portal/hr',

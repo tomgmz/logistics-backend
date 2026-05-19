@@ -9,7 +9,6 @@ import { createTruckModelSchema, updateTruckModelSchema }             from '../s
 import { createVendorSchema, updateVendorSchema }                     from '../schema/admin/vendor.schema.js'
 import { createAccountantSchema, updateAccountantSchema }             from '../schema/admin/accountant.schema.js'
 import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../schema/admin/general_manager.schema.js'
-import { createHumanResourcesSchema, updateHumanResourcesSchema }    from '../schema/admin/admin_roles.schema.js'
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
 import { createITAdminSchema, updateITAdminSchema }   from '../schema/admin/it_admin.schema.js'
@@ -22,7 +21,6 @@ import * as TruckController           from '../controllers/admin/truck.controlle
 import * as TruckModelController      from '../controllers/admin/truck-model.controller.js'
 import * as AccountantController      from '../controllers/admin/accountant.controller.js'
 import * as GeneralManagerController  from '../controllers/admin/general_manager.controller.js'
-import * as HumanResourcesController  from '../controllers/admin/human_resources.controller.js'
 import * as FleetAdminController      from '../controllers/admin/fleet_admin.controller.js'
 import * as OperationsAdminController from '../controllers/admin/operations_admin.controller.js'
 import * as ITAdminController from '../controllers/admin/it_admin.controller.js'
@@ -42,27 +40,27 @@ import * as CargoCatalogController from '../controllers/admin/cargo-catalog.cont
 const router = Router()
 
 // Role groups
-const isSuperAdmin = authorize('super_admin', 'it_admin')
-const isHR         = authorize('super_admin', 'it_admin', 'human_resources', 'general_manager')
-const isFleet      = authorize('super_admin', 'it_admin', 'fleet_admin', 'general_manager', 'client')
-const isOperations = authorize('super_admin', 'it_admin', 'operations_admin', 'general_manager', 'client')
-const isFinance    = authorize('super_admin', 'it_admin', 'accountant', 'general_manager')
+const isAdmin = authorize('admin', 'it_admin')
+const isHR         = authorize('admin', 'it_admin', 'human_resources', 'general_manager')
+const isFleet      = authorize('admin', 'it_admin', 'fleet_admin', 'general_manager', 'client')
+const isOperations = authorize('admin', 'it_admin', 'operations_admin', 'general_manager', 'client')
+const isFinance    = authorize('admin', 'it_admin', 'accountant', 'general_manager')
 
-//Admins — super_admin / it_admin only
-router.get('/admins',        authenticate, isSuperAdmin, AdminController.getAllAdmins)
-router.get('/admins/:id',    authenticate, isSuperAdmin, AdminController.getAdminById)
-router.post('/admins',       authenticate, isSuperAdmin, validate(createAdminSchema), AdminController.createAdmin)
-router.patch('/admins/:id',  authenticate, isSuperAdmin, validate(updateAdminSchema), AdminController.updateAdmin)
-router.delete('/admins/:id', authenticate, isSuperAdmin, AdminController.deleteAdmin)
+//Admins — admin / it_admin only
+router.get('/admins',        authenticate, isAdmin, AdminController.getAllAdmins)
+router.get('/admins/:id',    authenticate, isAdmin, AdminController.getAdminById)
+router.post('/admins',       authenticate, isAdmin, validate(createAdminSchema), AdminController.createAdmin)
+router.patch('/admins/:id',  authenticate, isAdmin, validate(updateAdminSchema), AdminController.updateAdmin)
+router.delete('/admins/:id', authenticate, isAdmin, AdminController.deleteAdmin)
 
 //Clients
 router.get('/clients',        authenticate, isOperations, ClientController.getAllClients)
 router.get('/clients/:id',    authenticate, isOperations, ClientController.getClientById)
-router.post('/clients',       authenticate, isSuperAdmin,  validate(createClientSchema), ClientController.createClient)
-router.patch('/clients/:id',  authenticate, isSuperAdmin,  validate(updateClientSchema), ClientController.updateClient)
-router.patch('/clients/:id/deactivate', authenticate, isSuperAdmin, ClientController.deactivateClient)
-router.patch('/clients/:id/activate',   authenticate, isSuperAdmin, ClientController.activateClient)
-router.delete('/clients/:id', authenticate, isSuperAdmin,  ClientController.deleteClient)
+router.post('/clients',       authenticate, isAdmin,  validate(createClientSchema), ClientController.createClient)
+router.patch('/clients/:id',  authenticate, isAdmin,  validate(updateClientSchema), ClientController.updateClient)
+router.patch('/clients/:id/deactivate', authenticate, isAdmin, ClientController.deactivateClient)
+router.patch('/clients/:id/activate',   authenticate, isAdmin, ClientController.activateClient)
+router.delete('/clients/:id', authenticate, isAdmin,  ClientController.deleteClient)
 
 //Drivers
 router.get('/drivers',        authenticate, isFleet, DriverController.getAllDrivers)
@@ -84,11 +82,11 @@ router.patch('/assignments/:bookingId/status', authenticate, isOperations, valid
 //Vendors
 router.get('/vendors',        authenticate, isFleet,    VendorController.getAllVendors)
 router.get('/vendors/:id',    authenticate, isFleet,    VendorController.getVendorById)
-router.post('/vendors',       authenticate, isSuperAdmin, validate(createVendorSchema), VendorController.createVendor)
-router.patch('/vendors/:id',  authenticate, isSuperAdmin, validate(updateVendorSchema), VendorController.updateVendor)
-router.patch('/vendors/:id/deactivate', authenticate, isSuperAdmin, VendorController.deactivateVendor)
-router.patch('/vendors/:id/activate',   authenticate, isSuperAdmin, VendorController.activateVendor)
-router.delete('/vendors/:id', authenticate, isSuperAdmin, VendorController.deleteVendor)
+router.post('/vendors',       authenticate, isAdmin, validate(createVendorSchema), VendorController.createVendor)
+router.patch('/vendors/:id',  authenticate, isAdmin, validate(updateVendorSchema), VendorController.updateVendor)
+router.patch('/vendors/:id/deactivate', authenticate, isAdmin, VendorController.deactivateVendor)
+router.patch('/vendors/:id/activate',   authenticate, isAdmin, VendorController.activateVendor)
+router.delete('/vendors/:id', authenticate, isAdmin, VendorController.deleteVendor)
 
 // ── Trucks
 router.get('/trucks',        authenticate, isFleet, TruckController.getAllTrucks)
@@ -107,65 +105,56 @@ router.delete('/truck-models/:id', authenticate, isFleet, TruckModelController.d
 //Accountants
 router.get('/accountants',        authenticate, isFinance,    AccountantController.getAllAccountants)
 router.get('/accountants/:id',    authenticate, isFinance,    AccountantController.getAccountantById)
-router.post('/accountants',       authenticate, isSuperAdmin, validate(createAccountantSchema), AccountantController.createAccountant)
-router.patch('/accountants/:id',  authenticate, isSuperAdmin, validate(updateAccountantSchema), AccountantController.updateAccountant)
-router.delete('/accountants/:id', authenticate, isSuperAdmin, AccountantController.deleteAccountant)
-router.patch('/accountants/:id/deactivate', authenticate, isSuperAdmin, AccountantController.deactivateAccountant)
-router.patch('/accountants/:id/activate',   authenticate, isSuperAdmin, AccountantController.activateAccountant)
+router.post('/accountants',       authenticate, isAdmin, validate(createAccountantSchema), AccountantController.createAccountant)
+router.patch('/accountants/:id',  authenticate, isAdmin, validate(updateAccountantSchema), AccountantController.updateAccountant)
+router.delete('/accountants/:id', authenticate, isAdmin, AccountantController.deleteAccountant)
+router.patch('/accountants/:id/deactivate', authenticate, isAdmin, AccountantController.deactivateAccountant)
+router.patch('/accountants/:id/activate',   authenticate, isAdmin, AccountantController.activateAccountant)
 
 //General Managers
-router.get('/general-managers',        authenticate, isSuperAdmin, GeneralManagerController.getAllGeneralManagers)
-router.get('/general-managers/:id',    authenticate, isSuperAdmin, GeneralManagerController.getGeneralManagerById)
-router.post('/general-managers',       authenticate, isSuperAdmin, validate(createGeneralManagerSchema), GeneralManagerController.createGeneralManager)
-router.patch('/general-managers/:id',  authenticate, isSuperAdmin, validate(updateGeneralManagerSchema), GeneralManagerController.updateGeneralManager)
-router.patch('/general-managers/:id/deactivate', authenticate, isSuperAdmin, GeneralManagerController.deactivateGeneralManager)
-router.patch('/general-managers/:id/activate',   authenticate, isSuperAdmin, GeneralManagerController.activateGeneralManager)
-router.delete('/general-managers/:id', authenticate, isSuperAdmin, GeneralManagerController.deleteGeneralManager)
+router.get('/general-managers',        authenticate, isAdmin, GeneralManagerController.getAllGeneralManagers)
+router.get('/general-managers/:id',    authenticate, isAdmin, GeneralManagerController.getGeneralManagerById)
+router.post('/general-managers',       authenticate, isAdmin, validate(createGeneralManagerSchema), GeneralManagerController.createGeneralManager)
+router.patch('/general-managers/:id',  authenticate, isAdmin, validate(updateGeneralManagerSchema), GeneralManagerController.updateGeneralManager)
+router.patch('/general-managers/:id/deactivate', authenticate, isAdmin, GeneralManagerController.deactivateGeneralManager)
+router.patch('/general-managers/:id/activate',   authenticate, isAdmin, GeneralManagerController.activateGeneralManager)
+router.delete('/general-managers/:id', authenticate, isAdmin, GeneralManagerController.deleteGeneralManager)
 
-//Human Resources — isSuperAdmin manages, isHR can view
-router.get('/human-resources',        authenticate, isHR,        HumanResourcesController.getAllHumanResources)
-router.get('/human-resources/:id',    authenticate, isHR,        HumanResourcesController.getHumanResourcesById)
-router.post('/human-resources',       authenticate, isSuperAdmin, validate(createHumanResourcesSchema), HumanResourcesController.createHumanResources)
-router.patch('/human-resources/:id',  authenticate, isSuperAdmin, validate(updateHumanResourcesSchema), HumanResourcesController.updateHumanResources)
-router.patch('/human-resources/:id/deactivate', authenticate, isSuperAdmin, HumanResourcesController.deactivateHumanResources)
-router.patch('/human-resources/:id/activate',   authenticate, isSuperAdmin, HumanResourcesController.activateHumanResources)
-router.delete('/human-resources/:id', authenticate, isSuperAdmin, HumanResourcesController.deleteHumanResources)
-
-//Fleet Admins — isSuperAdmin manages, isFleet can view
+//Fleet Admins — isAdmin manages, isFleet can view
 router.get('/fleet-admins',        authenticate, isFleet,      FleetAdminController.getAllFleetAdmins)
 router.get('/fleet-admins/:id',    authenticate, isFleet,      FleetAdminController.getFleetAdminById)
-router.post('/fleet-admins',       authenticate, isSuperAdmin, validate(createFleetAdminSchema), FleetAdminController.createFleetAdmin)
-router.patch('/fleet-admins/:id',  authenticate, isSuperAdmin, validate(updateFleetAdminSchema), FleetAdminController.updateFleetAdmin)
-router.patch('/fleet-admins/:id/deactivate', authenticate, isSuperAdmin, FleetAdminController.deactivateFleetAdmin)
-router.patch('/fleet-admins/:id/activate',   authenticate, isSuperAdmin, FleetAdminController.activateFleetAdmin)
-router.delete('/fleet-admins/:id', authenticate, isSuperAdmin, FleetAdminController.deleteFleetAdmin)
+router.post('/fleet-admins',       authenticate, isAdmin, validate(createFleetAdminSchema), FleetAdminController.createFleetAdmin)
+router.patch('/fleet-admins/:id',  authenticate, isAdmin, validate(updateFleetAdminSchema), FleetAdminController.updateFleetAdmin)
+router.patch('/fleet-admins/:id/deactivate', authenticate, isAdmin, FleetAdminController.deactivateFleetAdmin)
+router.patch('/fleet-admins/:id/activate',   authenticate, isAdmin, FleetAdminController.activateFleetAdmin)
+router.delete('/fleet-admins/:id', authenticate, isAdmin, FleetAdminController.deleteFleetAdmin)
 
-//Operations Admins — isSuperAdmin manages, isOperations can view
+//Operations Admins — isAdmin manages, isOperations can view
 router.get('/operations-admins',        authenticate, isOperations, OperationsAdminController.getAllOperationsAdmins)
 router.get('/operations-admins/:id',    authenticate, isOperations, OperationsAdminController.getOperationsAdminById)
-router.post('/operations-admins',       authenticate, isSuperAdmin,  validate(createOperationsAdminSchema), OperationsAdminController.createOperationsAdmin)
-router.patch('/operations-admins/:id',  authenticate, isSuperAdmin,  validate(updateOperationsAdminSchema), OperationsAdminController.updateOperationsAdmin)
-router.patch('/operations-admins/:id/deactivate', authenticate, isSuperAdmin, OperationsAdminController.deactivateOperationsAdmin)
-router.patch('/operations-admins/:id/activate',   authenticate, isSuperAdmin, OperationsAdminController.activateOperationsAdmin)
-router.delete('/operations-admins/:id', authenticate, isSuperAdmin,  OperationsAdminController.deleteOperationsAdmin)
+router.post('/operations-admins',       authenticate, isAdmin,  validate(createOperationsAdminSchema), OperationsAdminController.createOperationsAdmin)
+router.patch('/operations-admins/:id',  authenticate, isAdmin,  validate(updateOperationsAdminSchema), OperationsAdminController.updateOperationsAdmin)
+router.patch('/operations-admins/:id/deactivate', authenticate, isAdmin, OperationsAdminController.deactivateOperationsAdmin)
+router.patch('/operations-admins/:id/activate',   authenticate, isAdmin, OperationsAdminController.activateOperationsAdmin)
+router.delete('/operations-admins/:id', authenticate, isAdmin,  OperationsAdminController.deleteOperationsAdmin)
 
 //IT Admins
-router.get('/it-admins',        authenticate, isSuperAdmin, ITAdminController.getAllITAdmins)
-router.get('/it-admins/:id',    authenticate, isSuperAdmin, ITAdminController.getITAdminById)
-router.post('/it-admins',       authenticate, isSuperAdmin, validate(createITAdminSchema), ITAdminController.createITAdmin)
-router.patch('/it-admins/:id',  authenticate, isSuperAdmin, validate(updateITAdminSchema), ITAdminController.updateITAdmin)
-router.patch('/it-admins/:id/deactivate', authenticate, isSuperAdmin, ITAdminController.deactivateITAdmin)
-router.patch('/it-admins/:id/activate',   authenticate, isSuperAdmin, ITAdminController.activateITAdmin)
-router.delete('/it-admins/:id', authenticate, isSuperAdmin, ITAdminController.deleteITAdmin)
+router.get('/it-admins',        authenticate, isAdmin, ITAdminController.getAllITAdmins)
+router.get('/it-admins/:id',    authenticate, isAdmin, ITAdminController.getITAdminById)
+router.post('/it-admins',       authenticate, isAdmin, validate(createITAdminSchema), ITAdminController.createITAdmin)
+router.patch('/it-admins/:id',  authenticate, isAdmin, validate(updateITAdminSchema), ITAdminController.updateITAdmin)
+router.patch('/it-admins/:id/deactivate', authenticate, isAdmin, ITAdminController.deactivateITAdmin)
+router.patch('/it-admins/:id/activate',   authenticate, isAdmin, ITAdminController.activateITAdmin)
+router.delete('/it-admins/:id', authenticate, isAdmin, ITAdminController.deleteITAdmin)
 
 //Fetch all users
-router.get('/users',       authenticate, isSuperAdmin, UserController.getUsers)
-router.get('/users/stats', authenticate, isSuperAdmin, UserController.getUserStats)
+router.get('/users',       authenticate, isAdmin, UserController.getUsers)
+router.get('/users/stats', authenticate, isAdmin, UserController.getUserStats)
 
 // Audit logs
-router.get('/audit-logs',        authenticate, isSuperAdmin, AuditLogController.getAllLogs)
-router.get('/audit-logs/stats',  authenticate, isSuperAdmin, AuditLogController.getLogStats)
-router.get('/audit-logs/:id',    authenticate, isSuperAdmin, AuditLogController.getLogById)
+router.get('/audit-logs',        authenticate, isAdmin, AuditLogController.getAllLogs)
+router.get('/audit-logs/stats',  authenticate, isAdmin, AuditLogController.getLogStats)
+router.get('/audit-logs/:id',    authenticate, isAdmin, AuditLogController.getLogById)
 
 //upload
 router.post('/upload/image', authenticate, isFleet, uploadSingle, UploadController.uploadImage)

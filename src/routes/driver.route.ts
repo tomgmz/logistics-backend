@@ -5,7 +5,7 @@ import * as BookingController from '../controllers/client/booking.controller.js'
 
 const router = Router()
 
-const isAny = authorize('admin', 'super_admin', 'driver')
+const isAny = authorize('admin', 'driver')
 
 router.get('/:driverId/bookings', authenticate, authenticatedLimiter, isAny, BookingController.getBookingsByDriver)
 

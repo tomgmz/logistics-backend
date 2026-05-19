@@ -8,7 +8,7 @@ const FROM_EMAIL        = process.env.BREVO_SENDER_EMAIL!
 const FROM_NAME         = process.env.APP_NAME             || 'Logistics'
 
 const ROLE_LABELS: Record<string, string> = {
-  super_admin:      'Super Administrator',
+  admin:      'Administrator',
   it_admin:         'IT Administrator',
   general_manager:  'General Manager',
   fleet_admin:      'Fleet Manager',

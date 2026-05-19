@@ -6,7 +6,7 @@ export interface Admin {
   suffix?:         string | null
   email:           string
   phone?:          string | null
-  role:            'admin' | 'super_admin'
+  role:            'admin'
   status:          'active' | 'inactive' | 'archived'
   created_by?:     string | null
   created_at?:     Date
@@ -20,7 +20,7 @@ export interface CreateAdminInput {
   suffix?:         string | null
   email:           string
   phone?:          string
-  role:            'admin' | 'super_admin'
+  role:            'admin'
   created_by?:     string
 }
 
@@ -31,5 +31,5 @@ export interface UpdateAdminInput {
   suffix?:         string | null
   email?:          string
   phone?:          string
-  role?:           'admin' | 'super_admin'
+  role?:           'admin'
 }

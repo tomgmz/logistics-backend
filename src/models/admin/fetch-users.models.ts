@@ -61,7 +61,7 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
       )
     `
     )
-    .neq('role', 'super_admin')
+    .neq('role', 'admin')
     .order('last_name', { ascending: true })
 
   if (roleFilter)   q = q.eq('role', roleFilter)
@@ -98,7 +98,7 @@ export async function countUsersByStatus(): Promise<UserStatsResult> {
   const { data, error } = await supabase
     .from('users')
     .select('status')
-    .neq('role', 'super_admin')
+    .neq('role', 'admin')
 
   if (error) throw error
 
