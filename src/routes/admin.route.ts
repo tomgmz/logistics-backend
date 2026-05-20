@@ -41,7 +41,6 @@ const router = Router()
 
 // Role groups
 const isAdmin = authorize('admin', 'it_admin')
-const isHR         = authorize('admin', 'it_admin', 'human_resources', 'general_manager')
 const isFleet      = authorize('admin', 'it_admin', 'fleet_admin', 'general_manager', 'client')
 const isOperations = authorize('admin', 'it_admin', 'operations_admin', 'general_manager', 'client')
 const isFinance    = authorize('admin', 'it_admin', 'accountant', 'general_manager')

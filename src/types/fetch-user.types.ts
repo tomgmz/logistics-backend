@@ -1,6 +1,6 @@
 export type UserRole =
   | 'client' | 'driver' | 'vendor' | 'accountant'
-  | 'general_manager' | 'human_resources' | 'fleet_admin'
+  | 'general_manager' | 'fleet_admin'
   | 'operations_admin' | 'it_admin' | 'admin'
 
 export interface ClientDetails {

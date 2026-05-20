@@ -49,11 +49,11 @@ function isRoleAllowedOnPlatform(role: string, platform: Platform): boolean {
 
 const ROLE_PORTAL: Record<UserRole, string> = {
   admin:            '/portal/admin',
-  general_manager:  '/portal/operations',
+  general_manager:  '/portal/general_manager',
   accountant:       '/portal/accountant',
-  fleet_admin:      '/portal/fleet',
-  operations_admin: '/portal/operations',
-  it_admin:         '/portal/admin',
+  fleet_admin:      '/portal/fleet_admin',
+  operations_admin: '/portal/operations_admin',
+  it_admin:         '/portal/it_admin',
   driver:           'mobile://navigation',
   client:           '/portal/client',
   vendor:           '/portal/vendor',
