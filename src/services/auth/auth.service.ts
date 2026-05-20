@@ -23,7 +23,7 @@ const JWT_REFRESH_EXPIRES = (process.env.JWT_REFRESH_EXPIRES ?? '7d') as SignOpt
 
 const OTP_RATE_LIMIT    = 10
 const OTP_WINDOW_MINS   = 15
-const OTP_COOLDOWN_SECS = 60   // minimum seconds between OTP requests
+const OTP_COOLDOWN_SECS = 60
 const MAX_OTP_ATTEMPTS  = 3
 const MAX_LOCKUPS       = 3
 const OTP_EXPIRY_MINS   = 5
@@ -31,11 +31,10 @@ const BCRYPT_ROUNDS     = 12
 const ACCOUNT_LOCK_MINS = 3
 
 const PLATFORM_RESTRICTIONS: Record<UserRole, Platform[]> = {
-  admin:      ['web'],
+  admin:            ['web'],
   driver:           ['mobile'],
   general_manager:  ['web'],
   accountant:       ['web'],
-  human_resources:  ['web'],
   fleet_admin:      ['web'],
   operations_admin: ['web'],
   it_admin:         ['web'],
@@ -49,10 +48,9 @@ function isRoleAllowedOnPlatform(role: string, platform: Platform): boolean {
 }
 
 const ROLE_PORTAL: Record<UserRole, string> = {
-  admin:      '/portal/admin',
+  admin:            '/portal/admin',
   general_manager:  '/portal/operations',
-  accountant:       '/portal/finance',
-  human_resources:  '/portal/hr',
+  accountant:       '/portal/accountant',
   fleet_admin:      '/portal/fleet',
   operations_admin: '/portal/operations',
   it_admin:         '/portal/admin',
@@ -82,10 +80,10 @@ async function verifyOtpHash(otp: string, hash: string): Promise<boolean> {
   return bcrypt.compare(otp, hash)
 }
 
-function generateDeviceFingerprint(userAgent: string, ip: string): string {
+function generateDeviceFingerprint(userAgent: string): string {
   return crypto
     .createHash('sha256')
-    .update(`${userAgent}:${ip}`)
+    .update(userAgent)
     .digest('hex')
     .slice(0, 32)
 }
@@ -103,13 +101,13 @@ function buildAuthResponse(
     accessExpiresAt:  accessExpiresAt.toISOString(),
     refreshExpiresAt: refreshExpiresAt.toISOString(),
     user: {
-      user_id:               user.user_id,
-      email:                 user.email,
-      first_name:            user.first_name,
-      last_name:             user.last_name,
-      role:                  user.role,
-      status:                user.status,
-      must_change_password:  user.must_change_password ?? false,
+      user_id:              user.user_id,
+      email:                user.email,
+      first_name:           user.first_name,
+      last_name:            user.last_name,
+      role:                 user.role,
+      status:               user.status,
+      must_change_password: user.must_change_password ?? false,
     },
     portalUrl: ROLE_PORTAL[user.role as UserRole] ?? '/portal',
   }
@@ -150,12 +148,12 @@ async function createTokensAndSession(
 
   await AuthModel.revokeAllUserSessions(user.user_id)
   await AuthModel.createSession({
-    user_id:           user.user_id,
-    token:             accessTokenHash,
-    refresh_token:     refreshTokenHash,
-    expires_at:        accessExpiresAt,
+    user_id:            user.user_id,
+    token:              accessTokenHash,
+    refresh_token:      refreshTokenHash,
+    expires_at:         accessExpiresAt,
     refresh_expires_at: refreshExpiresAt,
-    device_info:       deviceInfo,
+    device_info:        deviceInfo,
   })
 
   return { accessToken, refreshToken, accessExpiresAt, refreshExpiresAt }
@@ -211,8 +209,6 @@ export async function requestOtp(
     return
   }
 
-  // Cooldown check: enforce minimum gap between OTP requests regardless of
-  // how the request was initiated (resend button, modal reopen, etc.)
   const latestOtp = await AuthModel.findLatestOtp(user.user_id)
   if (latestOtp) {
     const secondsSinceLast = (Date.now() - new Date(latestOtp.created_at).getTime()) / 1000
@@ -489,7 +485,7 @@ export async function loginWithPassword(
     await AuthModel.createLoginHistory({
       user_id: user.user_id, email,
       device_info: input.device_info, user_agent: userAgent,
-      attempt_status: 'failed_otp', // reusing closest status
+      attempt_status: 'failed_otp',
       failure_reason: `Wrong password (${remainingAttempts} attempts left)`,
     })
 

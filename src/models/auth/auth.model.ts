@@ -215,7 +215,6 @@ export async function createSession(params: {
   refresh_token?: string
   expires_at: Date
   refresh_expires_at?: Date
-  ip_address?: string
   device_info?: string
 }): Promise<UserSession> {
   const { data, error } = await supabase
@@ -226,7 +225,6 @@ export async function createSession(params: {
       refresh_token: params.refresh_token,
       expires_at: params.expires_at.toISOString(),
       refresh_expires_at: params.refresh_expires_at?.toISOString(),
-      ip_address: params.ip_address ?? null,
       device_info: params.device_info ?? null,
     })
     .select()
@@ -301,7 +299,6 @@ export async function revokeSession(tokenHash: string): Promise<void> {
 export async function createLoginHistory(params: {
   user_id?: string
   email: string
-  ip_address?: string
   device_info?: string
   user_agent?: string
   location_city?: string
@@ -314,7 +311,6 @@ export async function createLoginHistory(params: {
     .insert({
       user_id: params.user_id,
       email: params.email,
-      ip_address: params.ip_address,
       device_info: params.device_info,
       user_agent: params.user_agent,
       location_city: params.location_city,
@@ -388,12 +384,10 @@ export async function removeTrustedDevice(deviceId: string): Promise<void> {
 
 export async function detectSuspiciousLogin(
   userId: string,
-  ipAddress?: string,
   deviceFingerprint?: string
 ): Promise<RiskAssessment> {
   const { data, error } = await supabase.rpc('detect_suspicious_login', {
     p_user_id: userId,
-    p_ip_address: ipAddress || 'unknown',
     p_device_fingerprint: deviceFingerprint || 'unknown',
   })
 
