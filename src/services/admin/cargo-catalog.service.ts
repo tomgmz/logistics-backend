@@ -26,7 +26,7 @@ export async function createHandlingCode(input: CreateHandlingCodeInput, actorId
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'admin_activity',
     action:      'handling_code_created',
     description: `Handling code ${input.code} (${input.type}) created`,
 
@@ -41,7 +41,7 @@ export async function updateHandlingCode(id: string, input: UpdateHandlingCodeIn
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'admin_activity',
     action:      'handling_code_updated',
     description: `Handling code ${id} updated`,
 
@@ -56,7 +56,7 @@ export async function deleteHandlingCode(id: string, actorId?: string | null, ip
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'admin_activity',
     action:      'handling_code_deleted',
     description: `Handling code ${id} deleted`,
 
@@ -82,7 +82,7 @@ export async function createCommodity(input: CreateCommodityInput, actorId?: str
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'admin_activity',
     action:      'commodity_created',
     description: `Commodity "${input.name}" created`,
 
@@ -97,7 +97,7 @@ export async function updateCommodity(id: string, input: UpdateCommodityInput, a
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'admin_activity',
     action:      'commodity_updated',
     description: `Commodity ${id} updated`,
 
@@ -112,7 +112,7 @@ export async function deleteCommodity(id: string, actorId?: string | null, ip?: 
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'admin_activity',
     action:      'commodity_deleted',
     description: `Commodity ${id} deleted`,
 
@@ -138,7 +138,7 @@ export async function createProduct(input: CreateProductInput, actorId?: string 
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'admin_activity',
     action:      'product_created',
     description: `Product "${input.name}" created`,
 
@@ -153,7 +153,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, actor
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'admin_activity',
     action:      'product_updated',
     description: `Product ${id} updated`,
 
@@ -168,7 +168,7 @@ export async function deleteProduct(id: string, actorId?: string | null, ip?: st
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'admin_activity',
     action:      'product_deleted',
     description: `Product ${id} deleted`,
 

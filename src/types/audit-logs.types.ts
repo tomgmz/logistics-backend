@@ -1,5 +1,6 @@
 export type LogType =
   | 'user_activity'
+  | 'admin_activity'
   | 'vehicle_creation'
   | 'vehicle_activity'
   | 'booking'

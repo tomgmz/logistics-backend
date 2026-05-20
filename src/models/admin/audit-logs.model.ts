@@ -30,7 +30,7 @@ export async function findAll(query: GetLogsQuery = {}) {
 
 export async function findById(logId: string) {
   const { data, error } = await supabase
-    .from('audit_logs')  // ✅ fixed
+    .from('audit_logs')
     .select(`
       log_id,
       user_id,
