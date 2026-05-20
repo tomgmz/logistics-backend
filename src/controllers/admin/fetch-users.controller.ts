@@ -23,7 +23,11 @@ export async function getUsers(req: Request, res: Response) {
 
 export async function getUserStats(req: Request, res: Response) {
   try {
-    const stats = await FetchUsersService.getUserStats()
+    const roles = req.query.roles
+      ? (req.query.roles as string).split(',').map((r) => r.trim())
+      : undefined
+
+    const stats = await FetchUsersService.getUserStats(roles)
     res.status(200).json({ status: 'success', data: stats })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })

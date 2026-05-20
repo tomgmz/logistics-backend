@@ -20,8 +20,8 @@ const ROLE_MAP: Record<string, string> = {
 }
 
 export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult> {
-  const roleFilter = query.role
-    ? (ROLE_MAP[query.role] ?? query.role)
+  const roleFilters = query.role
+    ? query.role.split(',').map((r) => ROLE_MAP[r.trim()] ?? r.trim())
     : null
 
   let q = supabase
@@ -64,7 +64,8 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
     .neq('role', 'admin')
     .order('last_name', { ascending: true })
 
-  if (roleFilter)   q = q.eq('role', roleFilter)
+  if (roleFilters?.length === 1) q = q.eq('role', roleFilters[0])
+  else if (roleFilters?.length)  q = q.in('role', roleFilters)
   if (query.status) q = q.eq('status', query.status)
   else              q = q.neq('status', 'archived')
 
@@ -94,12 +95,15 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
   }
 }
 
-export async function countUsersByStatus(): Promise<UserStatsResult> {
-  const { data, error } = await supabase
+export async function countUsersByStatus(roles?: string[]): Promise<UserStatsResult> {
+  let q = supabase
     .from('users')
     .select('status')
     .neq('role', 'admin')
 
+  if (roles?.length) q = q.in('role', roles)
+
+  const { data, error } = await q
   if (error) throw error
 
   return {

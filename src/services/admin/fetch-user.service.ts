@@ -5,6 +5,6 @@ export async function getUsers(query: GetUsersQuery): Promise<GetUsersResult> {
   return FetchUsersModel.findAllUsers(query)
 }
 
-export async function getUserStats(): Promise<UserStatsResult> {
-  return FetchUsersModel.countUsersByStatus()
+export async function getUserStats(roles?: string[]): Promise<UserStatsResult> {
+  return FetchUsersModel.countUsersByStatus(roles)
 }
