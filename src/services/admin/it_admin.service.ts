@@ -35,7 +35,7 @@ export async function createITAdmin(dto: CreateITAdminInput, actorId?: string | 
       log_type:    'user_activity',
       action:      'it_admin_created',
       description: `IT Admin ${dto.email} created (user: ${userId})`,
-      ip_address:  ip,
+  
     })
 
     return result
@@ -61,7 +61,7 @@ export async function updateITAdmin(userId: string, dto: UpdateITAdminInput, act
     log_type:    'user_activity',
     action:      'it_admin_updated',
     description: `IT Admin ${userId} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -75,7 +75,7 @@ export async function deleteITAdmin(userId: string, actorId?: string | null, ip?
     log_type:    'user_activity',
     action:      'it_admin_deleted',
     description: `IT Admin ${userId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result

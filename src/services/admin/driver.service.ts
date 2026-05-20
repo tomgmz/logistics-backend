@@ -36,7 +36,7 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
       log_type:    'user_activity',
       action:      'driver_created',
       description: `Driver ${dto.email} created (user: ${userId})`,
-      ip_address:  ip,
+  
     })
 
     return result
@@ -67,7 +67,7 @@ export async function updateDriver(userId: string, dto: UpdateDriverDTO, actorId
     log_type:    'user_activity',
     action:      'driver_updated',
     description: `Driver ${userId} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -81,7 +81,7 @@ export async function deleteDriver(userId: string, actorId?: string | null, ip?:
     log_type:    'user_activity',
     action:      'driver_deleted',
     description: `Driver ${userId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result

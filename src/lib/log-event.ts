@@ -6,7 +6,6 @@ export function logEvent(params: {
   log_type:     LogType
   action:       string
   description?: string
-  ip_address?:  string | null
 }): void {
   supabase.from('audit_logs').insert(params).then(({ error }) => {
     if (error) console.error('[logEvent]', error.message)

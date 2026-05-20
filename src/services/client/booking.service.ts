@@ -151,7 +151,7 @@ export async function createBookingService(
     log_type:    'booking',
     action:      'booking_created',
     description: `Booking ${booking.booking_id} created for client ${booking.client_id}`,
-    ip_address:  ip,
+
   })
 
   return booking
@@ -182,7 +182,7 @@ export async function updateBookingService(
     log_type:    'booking',
     action:      'booking_updated',
     description: `Booking ${bookingId} updated`,
-    ip_address:  ip,
+
   })
 
   return booking
@@ -219,7 +219,7 @@ export async function updateBookingStatusService(
     log_type:    'booking',
     action:      `booking_${status}`,
     description: `Booking ${bookingId} marked as ${status}`,
-    ip_address:  ip,
+
   })
 
   return booking
@@ -250,7 +250,7 @@ export async function accountingReviewService(
     log_type:    'booking',
     action:      `accounting_${input.accounting_status}`,
     description: `Booking ${bookingId} ${input.accounting_status} by accounting`,
-    ip_address:  ip,
+
   })
 
   return booking
@@ -280,7 +280,7 @@ export async function gmReviewService(
     log_type:    'booking',
     action:      `gm_${input.gm_status}`,
     description: `Booking ${bookingId} ${input.gm_status} by GM`,
-    ip_address:  ip,
+
   })
 
   return booking
@@ -310,7 +310,7 @@ export async function opsAssignService(
     log_type:    'booking',
     action:      'ops_assigned',
     description: `Booking ${bookingId} assigned by operations`,
-    ip_address:  ip,
+
   })
 
   return booking
@@ -340,7 +340,7 @@ export async function fleetApproveService(
     log_type:    'booking',
     action:      'fleet_approved',
     description: `Booking ${bookingId} approved by fleet`,
-    ip_address:  ip,
+
   })
 
   return booking
@@ -370,7 +370,7 @@ export async function deleteBookingService(
     log_type:    'booking',
     action:      'booking_deleted',
     description: `Booking ${bookingId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -400,7 +400,7 @@ export async function updateDestinationService(
     log_type:    'booking',
     action:      'destination_updated',
     description: `Destination ${destinationId} updated`,
-    ip_address:  ip,
+
   })
 
   return destination
@@ -421,7 +421,7 @@ export async function updateDestinationStatusService(
     log_type:    'booking',
     action:      `destination_${status}`,
     description: `Destination ${destinationId} marked as ${status}`,
-    ip_address:  ip,
+
   })
 
   return destination
@@ -439,7 +439,7 @@ export async function deleteDestinationService(
     log_type:    'booking',
     action:      'destination_deleted',
     description: `Destination ${destinationId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -471,7 +471,7 @@ export async function upsertCargoItemService(
     log_type:    'booking',
     action:      item.item_id ? 'cargo_item_updated' : 'cargo_item_created',
     description: `Cargo item ${result.item_id} upserted for booking ${bookingId}`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -489,7 +489,7 @@ export async function deleteCargoItemService(
     log_type:    'booking',
     action:      'cargo_item_deleted',
     description: `Cargo item ${itemId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result

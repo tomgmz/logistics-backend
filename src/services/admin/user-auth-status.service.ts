@@ -57,7 +57,7 @@ export async function deactivateUserWithBan(
     log_type:    'user_activity',
     action:      logAction,
     description: `${entityLabel} ${userId} deactivated`,
-    ip_address:  ip,
+
   })
 
   return data as { user_id: string; status: string }
@@ -105,7 +105,7 @@ export async function activateUserWithUnban(
     log_type:    'user_activity',
     action:      logAction,
     description: `${entityLabel} ${userId} reactivated`,
-    ip_address:  ip,
+
   })
 
   return data as { user_id: string; status: string }

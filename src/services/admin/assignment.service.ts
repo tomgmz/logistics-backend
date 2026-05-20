@@ -65,7 +65,7 @@ export async function assignBookingService(
     log_type:    'booking',
     action:      'booking_assigned',
     description: `Booking ${bookingId} assigned to driver ${input.driver_id} with truck ${input.truck_id}`,
-    ip_address:  ip,
+
   })
 
   return assignment
@@ -110,7 +110,7 @@ export async function updateDeliveryStatusService(
     log_type:    'booking',
     action:      `delivery_${input.status}`,
     description: `Delivery for booking ${bookingId} marked as ${input.status}`,
-    ip_address:  ip,
+
   })
 
   return updated

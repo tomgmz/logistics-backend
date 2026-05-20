@@ -54,7 +54,7 @@ export async function createClient(
       log_type:    'user_activity',
       action:      'client_created',
       description: `Client ${input.email} created (user: ${userId})`,
-      ip_address:  ip,
+  
     })
 
     return result
@@ -93,7 +93,7 @@ export async function updateClient(
     log_type:    'user_activity',
     action:      'client_updated',
     description: `Client ${userId} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -111,7 +111,7 @@ export async function deleteClient(
     log_type:    'user_activity',
     action:      'client_deleted',
     description: `Client ${userId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result

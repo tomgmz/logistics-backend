@@ -49,7 +49,7 @@ export async function createVendor(input: CreateVendorInput, actorId?: string | 
       log_type:    'user_activity',
       action:      'vendor_created',
       description: `Vendor ${input.email} created (user: ${userId})`,
-      ip_address:  ip,
+  
     })
 
     return result
@@ -77,7 +77,7 @@ export async function updateVendor(userId: string, input: UpdateVendorInput, act
     log_type:    'user_activity',
     action:      'vendor_updated',
     description: `Vendor ${userId} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -91,7 +91,7 @@ export async function deleteVendor(userId: string, actorId?: string | null, ip?:
     log_type:    'user_activity',
     action:      'vendor_deleted',
     description: `Vendor ${userId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result

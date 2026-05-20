@@ -44,7 +44,7 @@ export async function createHumanResources(dto: BaseCreateDTO, actorId?: string 
       log_type:    'user_activity',
       action:      'human_resources_created',
       description: `HR staff ${dto.email} created (user: ${userId})`,
-      ip_address:  ip,
+  
     })
 
     return result
@@ -70,7 +70,7 @@ export async function updateHumanResources(userId: string, dto: UpdateHumanResou
     log_type:    'user_activity',
     action:      'human_resources_updated',
     description: `HR staff ${userId} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -84,7 +84,7 @@ export async function deleteHumanResources(userId: string, actorId?: string | nu
     log_type:    'user_activity',
     action:      'human_resources_deleted',
     description: `HR staff ${userId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result

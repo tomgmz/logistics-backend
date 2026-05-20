@@ -88,12 +88,11 @@ export async function resetFailedAttempts(userId: string): Promise<void> {
   if (error) throw error
 }
 
-export async function updateLastLogin(userId: string, ipAddress?: string): Promise<void> {
+export async function updateLastLogin(userId: string): Promise<void> {
   const { error } = await supabase
     .from('users')
     .update({
       last_login_at: new Date().toISOString(),
-      last_login_ip: ipAddress
     })
     .eq('user_id', userId)
 
@@ -106,7 +105,6 @@ export async function createOtp(
   userId: string,
   email: string,
   codeHash: string,
-  ipAddress?: string,
   expiresAt?: Date
 ): Promise<void> {
   await supabase
@@ -125,7 +123,6 @@ export async function createOtp(
       code_hash: codeHash,
       expires_at: otpExpiry.toISOString(),
       attempts: 0,
-      ip_address: ipAddress,
     })
 
   if (error) throw error

@@ -128,7 +128,6 @@ export async function changePassword(
 
 async function createTokensAndSession(
   user: { user_id: string; role: UserRole; email: string },
-  ipAddress?: string,
   deviceInfo?: string,
 ): Promise<{ accessToken: string; refreshToken: string; accessExpiresAt: Date; refreshExpiresAt: Date }> {
   const accessExpiresAt  = new Date(Date.now() + parseDuration(JWT_EXPIRES_IN as string))
@@ -156,7 +155,6 @@ async function createTokensAndSession(
     refresh_token:     refreshTokenHash,
     expires_at:        accessExpiresAt,
     refresh_expires_at: refreshExpiresAt,
-    ip_address:        ipAddress,
     device_info:       deviceInfo,
   })
 
@@ -187,8 +185,7 @@ export async function getAuthStatus(email: string): Promise<AuthStatusResponse> 
 }
 
 export async function requestOtp(
-  input: RequestOtpInput,
-  ipAddress?: string
+  input: RequestOtpInput
 ): Promise<void> {
   const email = input.email.trim().toLowerCase()
 
@@ -196,7 +193,6 @@ export async function requestOtp(
   if (!user || user.status !== 'active') {
     await AuthModel.createLoginHistory({
       email,
-      ip_address: ipAddress,
       attempt_status: user?.status === 'permanently_locked'
         ? 'failed_permanently_locked'
         : 'failed_inactive',
@@ -209,7 +205,6 @@ export async function requestOtp(
     await AuthModel.createLoginHistory({
       user_id: user.user_id,
       email,
-      ip_address: ipAddress,
       attempt_status: 'failed_locked',
       failure_reason: `Account locked until ${user.locked_until}`,
     })
@@ -241,7 +236,7 @@ export async function requestOtp(
   const hashedOtp = await hashOtp(plainOtp)
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINS * 60 * 1000)
 
-  await AuthModel.createOtp(user.user_id, email, hashedOtp, ipAddress, expiresAt)
+  await AuthModel.createOtp(user.user_id, email, hashedOtp, expiresAt)
 
   try {
     await sendOtpEmail(email, plainOtp, user.first_name)
@@ -255,7 +250,6 @@ export async function requestOtp(
 
 export async function verifyOtp(
   input: VerifyOtpInput,
-  ipAddress?: string,
   userAgent?: string
 ): Promise<AuthResponse> {
   const email     = input.email.trim().toLowerCase()
@@ -266,7 +260,6 @@ export async function verifyOtp(
   if (!user) {
     await AuthModel.createLoginHistory({
       email,
-      ip_address: ipAddress,
       device_info: input.device_info,
       user_agent: userAgent,
       attempt_status: 'failed_inactive',
@@ -279,7 +272,6 @@ export async function verifyOtp(
     await AuthModel.createLoginHistory({
       user_id: user.user_id,
       email,
-      ip_address: ipAddress,
       device_info: input.device_info,
       user_agent: userAgent,
       attempt_status: 'failed_permanently_locked',
@@ -291,7 +283,6 @@ export async function verifyOtp(
   if (user.status !== 'active') {
     await AuthModel.createLoginHistory({
       email,
-      ip_address: ipAddress,
       device_info: input.device_info,
       user_agent: userAgent,
       attempt_status: 'failed_inactive',
@@ -305,7 +296,6 @@ export async function verifyOtp(
     await AuthModel.createLoginHistory({
       user_id: user.user_id,
       email,
-      ip_address: ipAddress,
       device_info: input.device_info,
       user_agent: userAgent,
       attempt_status: 'failed_locked',
@@ -322,7 +312,7 @@ export async function verifyOtp(
     if (newLockupCount >= MAX_LOCKUPS) {
       await AuthModel.permanentlyLockUser(user.user_id)
       await AuthModel.createLoginHistory({
-        user_id: user.user_id, email, ip_address: ipAddress,
+        user_id: user.user_id, email,
         device_info: input.device_info, user_agent: userAgent,
         attempt_status: 'failed_permanently_locked',
         failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
@@ -333,7 +323,7 @@ export async function verifyOtp(
     const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
     await AuthModel.lockUserAccount(user.user_id, lockUntil)
     await AuthModel.createLoginHistory({
-      user_id: user.user_id, email, ip_address: ipAddress,
+      user_id: user.user_id, email,
       device_info: input.device_info, user_agent: userAgent,
       attempt_status: 'failed_locked',
       failure_reason: `Account locked (${newLockupCount}/${MAX_LOCKUPS}) after ${MAX_OTP_ATTEMPTS} failed attempts`,
@@ -344,7 +334,7 @@ export async function verifyOtp(
   const latestOtp = await AuthModel.findLatestOtp(user.user_id)
   if (!latestOtp) {
     await AuthModel.createLoginHistory({
-      user_id: user.user_id, email, ip_address: ipAddress,
+      user_id: user.user_id, email,
       device_info: input.device_info, user_agent: userAgent,
       attempt_status: 'failed_otp',
       failure_reason: 'No valid OTP found',
@@ -360,7 +350,7 @@ export async function verifyOtp(
     const remainingAttempts = MAX_OTP_ATTEMPTS - newFailedCount
 
     await AuthModel.createLoginHistory({
-      user_id: user.user_id, email, ip_address: ipAddress,
+      user_id: user.user_id, email,
       device_info: input.device_info, user_agent: userAgent,
       attempt_status: 'failed_otp',
       failure_reason: `Wrong OTP (${remainingAttempts} attempts left)`,
@@ -376,7 +366,7 @@ export async function verifyOtp(
     if (newLockupCount >= MAX_LOCKUPS) {
       await AuthModel.permanentlyLockUser(user.user_id)
       await AuthModel.createLoginHistory({
-        user_id: user.user_id, email, ip_address: ipAddress,
+        user_id: user.user_id, email,
         device_info: input.device_info, user_agent: userAgent,
         attempt_status: 'failed_permanently_locked',
         failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
@@ -387,7 +377,7 @@ export async function verifyOtp(
     const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
     await AuthModel.lockUserAccount(user.user_id, lockUntil)
     await AuthModel.createLoginHistory({
-      user_id: user.user_id, email, ip_address: ipAddress,
+      user_id: user.user_id, email,
       device_info: input.device_info, user_agent: userAgent,
       attempt_status: 'failed_locked',
       failure_reason: `Account locked (${newLockupCount}/${MAX_LOCKUPS})`,
@@ -401,7 +391,7 @@ export async function verifyOtp(
   const requestedPlatform = (input.platform ?? 'web') as Platform
   if (!isRoleAllowedOnPlatform(user.role, requestedPlatform)) {
     await AuthModel.createLoginHistory({
-      user_id: user.user_id, email, ip_address: ipAddress,
+      user_id: user.user_id, email,
       device_info: input.device_info, user_agent: userAgent,
       attempt_status: 'failed_inactive',
       failure_reason: `Role '${user.role}' is not permitted on platform '${requestedPlatform}'`,
@@ -414,11 +404,11 @@ export async function verifyOtp(
   }
 
   const deviceFingerprint = userAgent
-    ? generateDeviceFingerprint(userAgent, ipAddress || 'unknown')
+    ? generateDeviceFingerprint(userAgent)
     : undefined
 
   if (deviceFingerprint) {
-    const riskAssessment = await AuthModel.detectSuspiciousLogin(user.user_id, ipAddress, deviceFingerprint)
+    const riskAssessment = await AuthModel.detectSuspiciousLogin(user.user_id, deviceFingerprint)
     if (riskAssessment.requires_additional_verification) {
       console.warn(`High-risk login detected for user ${user.user_id}:`, riskAssessment)
     }
@@ -432,11 +422,11 @@ export async function verifyOtp(
   }
 
   const { accessToken, refreshToken, accessExpiresAt, refreshExpiresAt } =
-    await createTokensAndSession(user, ipAddress, input.device_info)
+    await createTokensAndSession(user, input.device_info)
 
-  await AuthModel.updateLastLogin(user.user_id, ipAddress)
+  await AuthModel.updateLastLogin(user.user_id)
   await AuthModel.createLoginHistory({
-    user_id: user.user_id, email, ip_address: ipAddress,
+    user_id: user.user_id, email,
     device_info: input.device_info, user_agent: userAgent,
     attempt_status: 'success',
   })
@@ -446,7 +436,6 @@ export async function verifyOtp(
 
 export async function loginWithPassword(
   input: { email: string; password: string; device_info?: string; platform?: string },
-  ipAddress?: string,
   userAgent?: string,
 ): Promise<AuthResponse> {
   const email = input.email.trim().toLowerCase()
@@ -459,7 +448,7 @@ export async function loginWithPassword(
 
   if (user.status === 'permanently_locked') {
     await AuthModel.createLoginHistory({
-      user_id: user.user_id, email, ip_address: ipAddress,
+      user_id: user.user_id, email,
       device_info: input.device_info, user_agent: userAgent,
       attempt_status: 'failed_permanently_locked',
       failure_reason: 'Account permanently locked',
@@ -469,7 +458,7 @@ export async function loginWithPassword(
 
   if (user.status !== 'active') {
     await AuthModel.createLoginHistory({
-      email, ip_address: ipAddress,
+      email,
       device_info: input.device_info, user_agent: userAgent,
       attempt_status: 'failed_inactive',
       failure_reason: `Account status: ${user.status}`,
@@ -480,7 +469,7 @@ export async function loginWithPassword(
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
     const minutesLeft = Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60000)
     await AuthModel.createLoginHistory({
-      user_id: user.user_id, email, ip_address: ipAddress,
+      user_id: user.user_id, email,
       device_info: input.device_info, user_agent: userAgent,
       attempt_status: 'failed_locked',
       failure_reason: `Account locked for ${minutesLeft} more minutes`,
@@ -498,7 +487,7 @@ export async function loginWithPassword(
     const remainingAttempts = MAX_OTP_ATTEMPTS - newFailedCount
 
     await AuthModel.createLoginHistory({
-      user_id: user.user_id, email, ip_address: ipAddress,
+      user_id: user.user_id, email,
       device_info: input.device_info, user_agent: userAgent,
       attempt_status: 'failed_otp', // reusing closest status
       failure_reason: `Wrong password (${remainingAttempts} attempts left)`,
@@ -513,7 +502,7 @@ export async function loginWithPassword(
     if (newLockupCount >= MAX_LOCKUPS) {
       await AuthModel.permanentlyLockUser(user.user_id)
       await AuthModel.createLoginHistory({
-        user_id: user.user_id, email, ip_address: ipAddress,
+        user_id: user.user_id, email,
         device_info: input.device_info, user_agent: userAgent,
         attempt_status: 'failed_permanently_locked',
         failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
@@ -538,11 +527,11 @@ export async function loginWithPassword(
   }
 
   const { accessToken, refreshToken, accessExpiresAt, refreshExpiresAt } =
-    await createTokensAndSession(user, ipAddress, input.device_info)
+    await createTokensAndSession(user, input.device_info)
 
-  await AuthModel.updateLastLogin(user.user_id, ipAddress)
+  await AuthModel.updateLastLogin(user.user_id)
   await AuthModel.createLoginHistory({
-    user_id: user.user_id, email, ip_address: ipAddress,
+    user_id: user.user_id, email,
     device_info: input.device_info, user_agent: userAgent,
     attempt_status: 'success',
   })

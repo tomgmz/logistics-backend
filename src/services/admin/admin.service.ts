@@ -34,7 +34,7 @@ export async function createAdmin(input: CreateAdminInput, actorId?: string | nu
       log_type:    'user_activity',
       action:      'admin_created',
       description: `Admin ${input.email} created (user: ${userId})`,
-      ip_address:  ip,
+  
     })
 
     return result
@@ -60,7 +60,7 @@ export async function updateAdmin(userId: string, input: UpdateAdminInput, actor
     log_type:    'user_activity',
     action:      'admin_updated',
     description: `Admin ${userId} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -74,7 +74,7 @@ export async function deleteAdmin(userId: string, actorId?: string | null, ip?: 
     log_type:    'user_activity',
     action:      'admin_deleted',
     description: `Admin ${userId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result

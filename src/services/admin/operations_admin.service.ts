@@ -58,7 +58,7 @@ export async function createOperationsAdmin(dto: BaseCreateDTO, actorId?: string
       log_type:    'user_activity',
       action:      'operations_admin_created',
       description: `Operations Admin ${dto.email} created (user: ${userId})`,
-      ip_address:  ip,
+  
     })
 
     return result
@@ -86,7 +86,7 @@ export async function updateOperationsAdmin(userId: string, dto: UpdateOperation
     log_type:    'user_activity',
     action:      'operations_admin_updated',
     description: `Operations Admin ${userId} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -100,7 +100,7 @@ export async function deleteOperationsAdmin(userId: string, actorId?: string | n
     log_type:    'user_activity',
     action:      'operations_admin_deleted',
     description: `Operations Admin ${userId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result

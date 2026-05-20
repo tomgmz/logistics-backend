@@ -58,7 +58,7 @@ export async function createAccountant(dto: BaseCreateDTO, actorId?: string | nu
       log_type:    'user_activity',
       action:      'accountant_created',
       description: `Accountant ${dto.email} created (user: ${userId})`,
-      ip_address:  ip,
+  
     })
 
     return result
@@ -88,7 +88,7 @@ export async function updateAccountant(userId: string, dto: UpdateAccountantDTO,
     log_type:    'user_activity',
     action:      'accountant_updated',
     description: `Accountant ${userId} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -102,7 +102,7 @@ export async function deleteAccountant(userId: string, actorId?: string | null, 
     log_type:    'user_activity',
     action:      'accountant_deleted',
     description: `Accountant ${userId} archived`,
-    ip_address:  ip,
+
   })
 
   return result

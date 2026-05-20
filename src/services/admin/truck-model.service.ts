@@ -20,7 +20,7 @@ export async function createTruckModel(input: CreateTruckModelInput, actorId?: s
     log_type:    'vehicle_activity',
     action:      'vehicle_model_created',
     description: `Vehicle model ${input.name} created`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -37,7 +37,7 @@ export async function updateTruckModel(modelId: string, input: UpdateTruckModelI
     log_type:    'vehicle_activity',
     action:      'vehicle_model_updated',
     description: `Vehicle model ${modelId} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -54,7 +54,7 @@ export async function deleteTruckModel(modelId: string, actorId?: string | null,
     log_type:    'vehicle_activity',
     action:      'vehicle_model_deleted',
     description: `Vehicle model ${modelId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result

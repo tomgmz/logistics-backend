@@ -52,8 +52,7 @@ export async function getAuthStatus(req: Request, res: Response) {
 
 export async function requestOtp(req: Request, res: Response) {
   try {
-    const ipAddress = getIpAddress(req)
-    await AuthService.requestOtp(req.body, ipAddress)
+    await AuthService.requestOtp(req.body)
     res.status(200).json({
       status: 'success',
       message: 'If that email is registered, a login code has been sent.',
@@ -86,9 +85,8 @@ export async function requestOtp(req: Request, res: Response) {
 
 export async function verifyOtp(req: Request, res: Response) {
   try {
-    const ipAddress = getIpAddress(req)
     const userAgent = req.headers['user-agent']
-    const data = await AuthService.verifyOtp(req.body, ipAddress, userAgent)
+    const data = await AuthService.verifyOtp(req.body, userAgent)
 
     const isMobile = req.body.platform === 'mobile'
     if (!isMobile) {
@@ -114,9 +112,8 @@ export async function verifyOtp(req: Request, res: Response) {
 
 export async function loginWithPassword(req: Request, res: Response) {
   try {
-    const ipAddress = getIpAddress(req)
     const userAgent = req.headers['user-agent']
-    const data = await AuthService.loginWithPassword(req.body, ipAddress, userAgent)
+    const data = await AuthService.loginWithPassword(req.body, userAgent)
 
     const isMobile = req.body.platform === 'mobile'
     if (!isMobile) {
@@ -222,14 +219,7 @@ export async function me(req: Request, res: Response) {
   }
 }
 
-function getIpAddress(req: Request): string | undefined {
-  return (
-    (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
-    (req.headers['x-real-ip'] as string) ??
-    req.socket.remoteAddress ??
-    undefined
-  )
-}
+
 
 export async function changePassword(req: Request, res: Response) {
   try {

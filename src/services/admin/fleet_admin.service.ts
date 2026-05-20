@@ -58,7 +58,7 @@ export async function createFleetAdmin(dto: BaseCreateDTO, actorId?: string | nu
       log_type:    'user_activity',
       action:      'fleet_admin_created',
       description: `Fleet Admin ${dto.email} created (user: ${userId})`,
-      ip_address:  ip,
+  
     })
 
     return result
@@ -86,7 +86,7 @@ export async function updateFleetAdmin(userId: string, dto: UpdateFleetAdminDTO,
     log_type:    'user_activity',
     action:      'fleet_admin_updated',
     description: `Fleet Admin ${userId} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -100,7 +100,7 @@ export async function deleteFleetAdmin(userId: string, actorId?: string | null, 
     log_type:    'user_activity',
     action:      'fleet_admin_deleted',
     description: `Fleet Admin ${userId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result

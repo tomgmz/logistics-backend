@@ -75,7 +75,6 @@ export const uploadBookingDocuments = async (req: Request, res: Response) => {
       log_type:    'booking',
       action:      'booking_documents_uploaded',
       description: `${files.length} document(s) uploaded${bookingRef ? ` for booking ${bookingRef}` : ''}`,
-      ip_address:  ip,
     })
 
     return res.status(200).json({

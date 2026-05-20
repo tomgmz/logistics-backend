@@ -29,7 +29,7 @@ export async function createHandlingCode(input: CreateHandlingCodeInput, actorId
     log_type:    'user_activity',
     action:      'handling_code_created',
     description: `Handling code ${input.code} (${input.type}) created`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -44,7 +44,7 @@ export async function updateHandlingCode(id: string, input: UpdateHandlingCodeIn
     log_type:    'user_activity',
     action:      'handling_code_updated',
     description: `Handling code ${id} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -59,7 +59,7 @@ export async function deleteHandlingCode(id: string, actorId?: string | null, ip
     log_type:    'user_activity',
     action:      'handling_code_deleted',
     description: `Handling code ${id} deleted`,
-    ip_address:  ip,
+
   })
 
   return true
@@ -85,7 +85,7 @@ export async function createCommodity(input: CreateCommodityInput, actorId?: str
     log_type:    'user_activity',
     action:      'commodity_created',
     description: `Commodity "${input.name}" created`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -100,7 +100,7 @@ export async function updateCommodity(id: string, input: UpdateCommodityInput, a
     log_type:    'user_activity',
     action:      'commodity_updated',
     description: `Commodity ${id} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -115,7 +115,7 @@ export async function deleteCommodity(id: string, actorId?: string | null, ip?: 
     log_type:    'user_activity',
     action:      'commodity_deleted',
     description: `Commodity ${id} deleted`,
-    ip_address:  ip,
+
   })
 
   return true
@@ -141,7 +141,7 @@ export async function createProduct(input: CreateProductInput, actorId?: string 
     log_type:    'user_activity',
     action:      'product_created',
     description: `Product "${input.name}" created`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -156,7 +156,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, actor
     log_type:    'user_activity',
     action:      'product_updated',
     description: `Product ${id} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -171,7 +171,7 @@ export async function deleteProduct(id: string, actorId?: string | null, ip?: st
     log_type:    'user_activity',
     action:      'product_deleted',
     description: `Product ${id} deleted`,
-    ip_address:  ip,
+
   })
 
   return true

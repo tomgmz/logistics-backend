@@ -58,7 +58,7 @@ export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string 
       log_type:    'user_activity',
       action:      'general_manager_created',
       description: `General Manager ${dto.email} created (user: ${userId})`,
-      ip_address:  ip,
+  
     })
 
     return result
@@ -86,7 +86,7 @@ export async function updateGeneralManager(userId: string, dto: UpdateGeneralMan
     log_type:    'user_activity',
     action:      'general_manager_updated',
     description: `General Manager ${userId} updated`,
-    ip_address:  ip,
+
   })
 
   return result
@@ -100,7 +100,7 @@ export async function deleteGeneralManager(userId: string, actorId?: string | nu
     log_type:    'user_activity',
     action:      'general_manager_deleted',
     description: `General Manager ${userId} deleted`,
-    ip_address:  ip,
+
   })
 
   return result
