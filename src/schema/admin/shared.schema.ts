@@ -56,7 +56,7 @@ export const coreCreateFields = () => ({
     .min(2)
     .max(50)
     .regex(
-      /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u,
+      /^[\p{L}]+\.?(?:[ '-][\p{L}]+\.?)*$/u,
       'First name must contain only letters, spaces, hyphens, or apostrophes'
     ),
   last_name: z
@@ -99,7 +99,7 @@ export const coreUpdateFields = () => ({
     .min(2)
     .max(50)
     .regex(
-      /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u,
+      /^[\p{L}]+\.?(?:[ '-][\p{L}]+\.?)*$/u,
       'First name must contain only letters, spaces, hyphens, or apostrophes'
     )
     .optional(),
