@@ -1,24 +1,36 @@
 import { z } from 'zod'
 import { USER_SUFFIXES } from '../../types/user.types.js'
 
+const emailRegex =
+  /^[a-zA-Z0-9](?:[a-zA-Z0-9]|[._%+-](?=[a-zA-Z0-9]))*@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/
+
 export const emailField = () =>
   z
     .string()
-    .email('Invalid email address')
     .min(5, 'Email is too short')
     .max(254, 'Email is too long')
-    .regex(
-      /^[a-zA-Z0-9](?:[a-zA-Z0-9]|[._%+-](?=[a-zA-Z0-9]))*@(?:[a-zA-Z0-9-]+\.){1,3}[a-zA-Z]{2,}$/,
-      'Invalid email address'
+    .regex(emailRegex, 'Invalid email address')
+    .refine(
+      v => v.split('@')[0].length <= 64,
+      'Email local part is too long',
     )
-    .transform(v => v.toLowerCase())
+    .refine(v => {
+      const domain = v.split('@')[1]
+      if (!domain) return true  
+      const parts  = domain.split('.')
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (parts[i] === parts[i + 1]) return false
+      }
+      return true
+    }, 'Invalid domain')
+    .transform(v => v.trim().toLowerCase())
 
 export const mobileField = () =>
   z
     .string()
     .regex(
       /^\+639[0-9]{9}$/,
-      'Phone must be a valid PH mobile number (+639XXXXXXXXX)'
+      'Phone must be a valid PH mobile number (+639XXXXXXXXX)',
     )
 
 export const landlineField = () =>
@@ -48,7 +60,7 @@ export const licenseExpiryField = () =>
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)')
     .refine(val => !isNaN(new Date(val).getTime()), 'Invalid date')
-    .refine(val => new Date(val) > new Date(), 'License is already expired')
+    .refine(val => isNaN(new Date(val).getTime()) || new Date(val) > new Date(), 'License is already expired')
 
 export const coreCreateFields = () => ({
   first_name: z
@@ -57,7 +69,7 @@ export const coreCreateFields = () => ({
     .max(50)
     .regex(
       /^[\p{L}]+\.?(?:[ '-][\p{L}]+\.?)*$/u,
-      'First name must contain only letters, spaces, hyphens, or apostrophes'
+      'First name must contain only letters, spaces, hyphens, or apostrophes',
     ),
   last_name: z
     .string()
@@ -65,7 +77,7 @@ export const coreCreateFields = () => ({
     .max(50)
     .regex(
       /^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u,
-      'Last name must contain only letters, spaces, hyphens, or apostrophes'
+      'Last name must contain only letters, spaces, hyphens, or apostrophes',
     ),
   middle_name: z
     .string()
@@ -74,19 +86,19 @@ export const coreCreateFields = () => ({
     .transform(v => (v === '' ? null : v))
     .refine(
       v => v == null || v.length >= 2,
-      'Middle name must be at least 2 characters'
+      'Middle name must be at least 2 characters',
     )
     .refine(
       v => v == null || v.length <= 50,
-      'Middle name is too long'
+      'Middle name is too long',
     )
     .refine(
       v => v == null || /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u.test(v),
-      'Middle name must contain only letters, spaces, hyphens, or apostrophes'
+      'Middle name must contain only letters, spaces, hyphens, or apostrophes',
     ),
   suffix: z.preprocess(
     v => v === '' ? null : v,
-    z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable()
+    z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable(),
   ),
   email:      emailField(),
   phone:      mobileField(),
@@ -100,7 +112,7 @@ export const coreUpdateFields = () => ({
     .max(50)
     .regex(
       /^[\p{L}]+\.?(?:[ '-][\p{L}]+\.?)*$/u,
-      'First name must contain only letters, spaces, hyphens, or apostrophes'
+      'First name must contain only letters, spaces, hyphens, or apostrophes',
     )
     .optional(),
   last_name: z
@@ -109,7 +121,7 @@ export const coreUpdateFields = () => ({
     .max(50)
     .regex(
       /^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u,
-      'Last name must contain only letters, spaces, hyphens, or apostrophes'
+      'Last name must contain only letters, spaces, hyphens, or apostrophes',
     )
     .optional(),
   middle_name: z
@@ -119,19 +131,19 @@ export const coreUpdateFields = () => ({
     .transform(v => (v === '' ? null : v))
     .refine(
       v => v == null || v.length >= 2,
-      'Middle name must be at least 2 characters'
+      'Middle name must be at least 2 characters',
     )
     .refine(
       v => v == null || v.length <= 50,
-      'Middle name is too long'
+      'Middle name is too long',
     )
     .refine(
       v => v == null || /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u.test(v),
-      'Middle name must contain only letters, spaces, hyphens, or apostrophes'
+      'Middle name must contain only letters, spaces, hyphens, or apostrophes',
     ),
   suffix: z.preprocess(
     v => v === '' ? null : v,
-    z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable()
+    z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable(),
   ),
   email: emailField().optional(),
   phone: mobileField().optional(),
