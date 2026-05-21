@@ -58,6 +58,7 @@ export async function getStats() {
   const counts: Record<string, number> = {
     total:                0,
     user_activity:        0,
+    admin_activity:       0,
     vehicle_creation:     0,
     vehicle_activity:     0,
     booking:              0,
