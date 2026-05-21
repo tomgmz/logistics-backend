@@ -55,6 +55,7 @@ export interface GetUsersQuery {
   search?: string
   page?:   number
   limit?:  number
+  excludeId?: string
 }
 
 export interface GetUsersResult {

@@ -1,10 +1,11 @@
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
-import * as ITAdminService from '../../services/admin/it_admin.service.js'
+import * as ITAdminService from '../../services/admin/it-admin.service.js'
 
 export async function getAllITAdmins(req: Request, res: Response) {
   try {
-    const data = await ITAdminService.getAllITAdmins()
+    const { userId } = getRequestMeta(req)
+    const data = await ITAdminService.getAllITAdmins(userId)
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })

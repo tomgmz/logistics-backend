@@ -71,10 +71,10 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
 
   if (query.search) {
     const s = query.search.trim()
-    q = q.or(
-      `first_name.ilike.%${s}%,last_name.ilike.%${s}%,email.ilike.%${s}%`
-    )
+    q = q.or(`first_name.ilike.%${s}%,last_name.ilike.%${s}%,email.ilike.%${s}%`)
   }
+
+  if (query.excludeId) q = q.neq('user_id', query.excludeId)
 
   const { data, error } = await q
   if (error) throw error
@@ -95,13 +95,14 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
   }
 }
 
-export async function countUsersByStatus(roles?: string[]): Promise<UserStatsResult> {
+export async function countUsersByStatus(roles?: string[], excludeId?: string): Promise<UserStatsResult> {
   let q = supabase
     .from('users')
     .select('status')
     .neq('role', 'admin')
 
-  if (roles?.length) q = q.in('role', roles)
+  if (roles?.length)  q = q.in('role', roles)
+  if (excludeId)      q = q.neq('user_id', excludeId)
 
   const { data, error } = await q
   if (error) throw error
