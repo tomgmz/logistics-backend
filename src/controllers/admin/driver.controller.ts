@@ -1,6 +1,20 @@
-import { Request, Response } from 'express'
+import { Request, Response }  from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
-import * as DriverService from '../../services/admin/driver.service.js'
+import * as DriverService        from '../../services/admin/driver.service.js'
+import { cloudinary }            from '../../lib/cloudinary.js'
+
+function uploadToCloudinary(buffer: Buffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: 'driver_licenses', resource_type: 'image', tags: ['driver_license'] },
+      (error, result) => {
+        if (error || !result) return reject(error ?? new Error('Cloudinary upload failed'))
+        resolve(result.secure_url)
+      },
+    )
+    stream.end(buffer)
+  })
+}
 
 export async function getAllDrivers(req: Request, res: Response) {
   try {
@@ -23,8 +37,17 @@ export async function getDriverById(req: Request, res: Response) {
 
 export async function createDriver(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await DriverService.createDriver(req.body, userId, ip)
+    if (!req.file) {
+      res.status(400).json({ status: 'error', message: 'License image is required' })
+      return
+    }
+    const { userId, ip }    = getRequestMeta(req)
+    const license_image_url = await uploadToCloudinary(req.file.buffer)
+    const data              = await DriverService.createDriver(
+      { ...req.body, license_image_url },
+      userId,
+      ip,
+    )
     res.status(201).json({ status: 'success', data })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })

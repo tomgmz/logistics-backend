@@ -5,14 +5,12 @@ interface CreateLandlinePrefixDTO {
   prefix:    string
   city:      string
   region?:   string | null
-  is_active?: boolean
 }
 
 interface UpdateLandlinePrefixDTO {
   prefix?:    string
   city?:      string
   region?:    string | null
-  is_active?: boolean
 }
 
 export async function getAllLandlinePrefixes() {

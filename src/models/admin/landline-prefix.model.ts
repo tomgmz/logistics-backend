@@ -4,14 +4,12 @@ interface CreateLandlinePrefixDTO {
   prefix:    string
   city:      string
   region?:   string | null
-  is_active?: boolean
 }
 
 interface UpdateLandlinePrefixDTO {
   prefix?:    string
   city?:      string
   region?:    string | null
-  is_active?: boolean
 }
 
 async function findAll() {
@@ -42,7 +40,6 @@ async function create(dto: CreateLandlinePrefixDTO) {
       prefix:    dto.prefix,
       city:      dto.city,
       region:    dto.region ?? null,
-      is_active: dto.is_active ?? true,
     })
     .select()
     .single()
@@ -56,7 +53,6 @@ async function update(prefixId: string, dto: UpdateLandlinePrefixDTO) {
   if (dto.prefix    !== undefined) fields.prefix    = dto.prefix
   if (dto.city      !== undefined) fields.city      = dto.city
   if (dto.region    !== undefined) fields.region    = dto.region
-  if (dto.is_active !== undefined) fields.is_active = dto.is_active
 
   if (Object.keys(fields).length > 0) {
     const { error } = await supabase

@@ -3,6 +3,7 @@ import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status
 import * as DriverModel from '../../models/admin/driver.model.js'
 import { CreateDriverDTO, UpdateDriverDTO } from '../../types/driver.types.js'
 import { logEvent } from '../../lib/log-event.js'
+import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
 
 export async function getAllDrivers() {
   return DriverModel.findAll()
@@ -15,11 +16,12 @@ export async function getDriverById(userId: string) {
 }
 
 export async function createDriver(dto: CreateDriverDTO, actorId?: string | null, ip?: string | null) {
+  const password  = generateSecurePassword()
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         dto.email,
-    password:      dto.password,
+    password,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
     user_metadata: { role: 'driver' },
@@ -31,12 +33,21 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
   try {
     const result = await DriverModel.create(userId, dto)
 
+    sendWelcomeEmail({
+      to:        dto.email,
+      firstName: dto.first_name ?? null,
+      role:      'driver',
+      password,
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`WELCOME_EMAIL_FAILED for driver ${userId}:`, msg)
+    })
+
     logEvent({
       user_id:     actorId,
       log_type:    'user_activity',
       action:      'driver_created',
       description: `Driver ${dto.email} created (user: ${userId})`,
-  
     })
 
     return result
@@ -50,24 +61,18 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
 }
 
 export async function updateDriver(userId: string, dto: UpdateDriverDTO, actorId?: string | null, ip?: string | null) {
-  const authUpdates: { email?: string; password?: string } = {}
-  if (dto.email)    authUpdates.email    = dto.email
-  if (dto.password) authUpdates.password = dto.password
-
-  if (Object.keys(authUpdates).length > 0) {
-    const { error: authError } = await supabase.auth.admin.updateUserById(userId, authUpdates)
+  if (dto.email) {
+    const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: dto.email })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)
   }
 
-  const { password: _, ...dbDto } = dto
-  const result = await DriverModel.update(userId, dbDto)
+  const result = await DriverModel.update(userId, dto)
 
   logEvent({
     user_id:     actorId,
     log_type:    'user_activity',
     action:      'driver_updated',
     description: `Driver ${userId} updated`,
-
   })
 
   return result
@@ -81,7 +86,6 @@ export async function deleteDriver(userId: string, actorId?: string | null, ip?:
     log_type:    'user_activity',
     action:      'driver_deleted',
     description: `Driver ${userId} deleted`,
-
   })
 
   return result

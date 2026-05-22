@@ -63,15 +63,15 @@ router.patch('/clients/:id/deactivate', authenticate, isAdmin, ClientController.
 router.patch('/clients/:id/activate',   authenticate, isAdmin, ClientController.activateClient)
 router.delete('/clients/:id', authenticate, isAdmin,  ClientController.deleteClient)
 
-//Drivers
-router.get('/drivers',        authenticate, isFleet, DriverController.getAllDrivers)
-router.get('/drivers/:id',    authenticate, isFleet, DriverController.getDriverById)
-router.post('/drivers/scan-license', authenticate, isFleet, uploadSingle, DriverOCRController.scanDriverLicense)
-router.post('/drivers',       authenticate, isFleet, validate(createDriverSchema), DriverController.createDriver)
-router.patch('/drivers/:id',  authenticate, isFleet, validate(updateDriverSchema), DriverController.updateDriver)
-router.patch('/drivers/:id/deactivate', authenticate, isFleet, DriverController.deactivateDriver)
-router.patch('/drivers/:id/activate',   authenticate, isFleet, DriverController.activateDriver)
-router.delete('/drivers/:id', authenticate, isFleet, DriverController.deleteDriver)
+// Drivers
+router.get('/drivers',                     authenticate, isFleet, DriverController.getAllDrivers)
+router.post('/drivers/scan-license',       authenticate, isFleet, uploadSingle, DriverOCRController.scanDriverLicense)
+router.get('/drivers/:id',                 authenticate, isFleet, DriverController.getDriverById)
+router.post('/drivers',                    authenticate, isFleet, uploadSingle, validate(createDriverSchema), DriverController.createDriver)
+router.patch('/drivers/:id',               authenticate, isFleet, validate(updateDriverSchema), DriverController.updateDriver)
+router.patch('/drivers/:id/deactivate',    authenticate, isFleet, DriverController.deactivateDriver)
+router.patch('/drivers/:id/activate',      authenticate, isFleet, DriverController.activateDriver)
+router.delete('/drivers/:id',              authenticate, isFleet, DriverController.deleteDriver)
 
 //Assignments
 router.get('/assignments',                    authenticate, isOperations, AssignmentController.getAllAssignments)

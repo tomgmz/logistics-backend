@@ -1,11 +1,9 @@
-export type HandlingCodeType = 'standard' | 'additional'
 
 export interface HandlingCode {
   handling_code_id: string
   code:             string
   name:             string
   description?:     string | null
-  type:             HandlingCodeType
   is_active:        boolean
   created_at?:      Date
 }
@@ -14,7 +12,6 @@ export interface CreateHandlingCodeInput {
   code:         string
   name:         string
   description?: string
-  type:         HandlingCodeType
   is_active?:   boolean
 }
 
@@ -22,7 +19,6 @@ export interface UpdateHandlingCodeInput {
   code?:        string
   name?:        string
   description?: string | null
-  type?:        HandlingCodeType
   is_active?:   boolean
 }
 

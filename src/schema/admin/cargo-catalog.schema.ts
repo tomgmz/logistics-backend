@@ -6,7 +6,6 @@ export const createHandlingCodeSchema = z.object({
   code:        z.string().min(1).max(20).trim().toUpperCase(),
   name:        z.string().min(1).max(100).trim(),
   description: z.string().max(500).optional(),
-  type:        z.enum(['standard', 'additional']),
   is_active:   z.boolean().optional(),
 })
 
@@ -14,7 +13,6 @@ export const updateHandlingCodeSchema = z.object({
   code:        z.string().min(1).max(20).trim().toUpperCase().optional(),
   name:        z.string().min(1).max(100).trim().optional(),
   description: z.string().max(500).optional().nullable(),
-  type:        z.enum(['standard', 'additional']).optional(),
   is_active:   z.boolean().optional(),
 })
 
