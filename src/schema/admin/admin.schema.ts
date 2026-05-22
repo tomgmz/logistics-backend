@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { USER_SUFFIXES } from '../../types/user.types.js'
 
 export const createAdminSchema = z.object({
   first_name:     z
@@ -13,10 +12,13 @@ export const createAdminSchema = z.object({
                   .max(50)
                   .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes'),
   middle_name: z.string().regex(/^[A-Za-z]{1,2}$/, 'Middle initial must be 1–2 letters only').max(2).optional().nullable().transform(v => v === '' ? null : v),
-  suffix: z
-        .preprocess(
+  suffix: z.preprocess(
           v => v === '' ? null : v,
-          z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable()
+          z.string()
+            .max(20, 'Suffix is too long')
+            .regex(/^[\p{L}0-9 .,'-]*$/u, 'Suffix may only contain letters, numbers, spaces, periods, commas, apostrophes, or hyphens')
+            .optional()
+            .nullable(),
         ),
   email:          z.string().email(),
   phone: z

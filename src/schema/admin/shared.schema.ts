@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { USER_SUFFIXES } from '../../types/user.types.js'
 
 const emailRegex =
   /^[a-zA-Z0-9](?:[a-zA-Z0-9]|[._%+-](?=[a-zA-Z0-9]))*@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/
@@ -98,7 +97,11 @@ export const coreCreateFields = () => ({
     ),
   suffix: z.preprocess(
     v => v === '' ? null : v,
-    z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable(),
+    z.string()
+      .max(20, 'Suffix is too long')
+      .regex(/^[\p{L}0-9 .,'-]*$/u, 'Suffix may only contain letters, numbers, spaces, periods, commas, apostrophes, or hyphens')
+      .optional()
+      .nullable(),
   ),
   email:      emailField(),
   phone:      mobileField(),
@@ -143,7 +146,11 @@ export const coreUpdateFields = () => ({
     ),
   suffix: z.preprocess(
     v => v === '' ? null : v,
-    z.enum(USER_SUFFIXES, { message: 'Invalid suffix' }).optional().nullable(),
+    z.string()
+      .max(20, 'Suffix is too long')
+      .regex(/^[\p{L}0-9 .,'-]*$/u, 'Suffix may only contain letters, numbers, spaces, periods, commas, apostrophes, or hyphens')
+      .optional()
+      .nullable(),
   ),
   email: emailField().optional(),
   phone: mobileField().optional(),

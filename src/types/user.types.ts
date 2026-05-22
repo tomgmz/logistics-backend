@@ -1,6 +1,6 @@
 export type UserRole = 'admin' | 'driver' | 'client' | 'vendor' | 'accountant' | 'general_manager'
 export type UserStatus = 'active' | 'inactive' | 'archived'
-export type UserSuffix = 'Jr.' | 'Sr.' | 'II' | 'III' | 'IV' | 'V'
+export type UserSuffix = string
 
 export const USER_SUFFIXES = ['Jr.', 'Sr.', 'II', 'III', 'IV', 'V'] as const
 

@@ -1,8 +1,8 @@
 import axios from 'axios'
 import sharp from 'sharp'
 
-const VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY
-if (!VISION_API_KEY) throw new Error('GOOGLE_VISION_API_KEY is not set')
+const VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY;
+if (!VISION_API_KEY) throw new Error('GOOGLE_VISION_API_KEY is not set');
 
 const VISION_URL = `https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`
 

@@ -28,7 +28,7 @@ export async function createHandlingCode(input: CreateHandlingCodeInput, actorId
     user_id:     actorId,
     log_type:    'admin_activity',
     action:      'handling_code_created',
-    description: `Handling code ${input.code} (${input.type}) created`,
+    description: `Handling code ${input.code} (${input.type ?? 'standard'}) created`,
 
   })
 
