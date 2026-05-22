@@ -96,7 +96,13 @@ export const coreCreateFields = () => ({
       'Middle name must contain only letters, spaces, hyphens, or apostrophes',
     ),
   suffix: z.preprocess(
-    v => v === '' ? null : v,
+    (v) => {
+      if (typeof v !== 'string') return v
+      const normalized = v.trim().toLowerCase()
+      return normalized === '' || normalized === 'n/a' || normalized === 'na' || normalized === 'none' || normalized === 'not applicable'
+        ? null
+        : v
+    },
     z.string()
       .max(20, 'Suffix is too long')
       .regex(/^[\p{L}0-9 .,'-]*$/u, 'Suffix may only contain letters, numbers, spaces, periods, commas, apostrophes, or hyphens')
@@ -145,7 +151,13 @@ export const coreUpdateFields = () => ({
       'Middle name must contain only letters, spaces, hyphens, or apostrophes',
     ),
   suffix: z.preprocess(
-    v => v === '' ? null : v,
+    (v) => {
+      if (typeof v !== 'string') return v
+      const normalized = v.trim().toLowerCase()
+      return normalized === '' || normalized === 'n/a' || normalized === 'na' || normalized === 'none' || normalized === 'not applicable'
+        ? null
+        : v
+    },
     z.string()
       .max(20, 'Suffix is too long')
       .regex(/^[\p{L}0-9 .,'-]*$/u, 'Suffix may only contain letters, numbers, spaces, periods, commas, apostrophes, or hyphens')

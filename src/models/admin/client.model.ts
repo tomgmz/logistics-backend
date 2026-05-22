@@ -56,32 +56,42 @@ async function create(userId: string, input: CreateClientInput) {
     return findById(userId)
 }
 
-async function update(userId: string, input: UpdateClientInput){
-    const userFields: Record<string, any> = {}
-    if (input.first_name     != undefined) userFields.first_name     = input.first_name
-    if (input.last_name      != undefined) userFields.last_name      = input.last_name
-    if (input.middle_name != undefined) userFields.middle_name = input.middle_name
-    if (input.suffix         != undefined) userFields.suffix         = input.suffix
-    if (input.phone          != undefined) userFields.phone          = input.phone
-    if (input.email          != undefined) userFields.email          = input.email
+async function update(userId: string, input: UpdateClientInput) {
+  const userFields: Record<string, any> = {}
 
-    if (Object.keys(userFields).length > 0) {
-        const { error } = await supabase.from('users').update(userFields).eq('user_id', userId)
-        if (error) throw error
-    }
+  if ('first_name' in input) userFields.first_name = input.first_name
+  if ('last_name' in input) userFields.last_name = input.last_name
+  if ('middle_name' in input) userFields.middle_name = input.middle_name
+  if ('suffix' in input) userFields.suffix = input.suffix
+  if ('phone' in input) userFields.phone = input.phone
+  if ('email' in input) userFields.email = input.email
 
-    const clientFields: Record<string, any> = {}
-    if (input.company_name    != undefined) clientFields.company_name    = input.company_name
-    if (input.billing_address != undefined) clientFields.billing_address = input.billing_address
-    if (input.payment_terms   != undefined) clientFields.payment_terms   = input.payment_terms
-    if (input.landline        != undefined) clientFields.landline        = input.landline
+  if (Object.keys(userFields).length > 0) {
+    const { error } = await supabase
+      .from('users')
+      .update(userFields)
+      .eq('user_id', userId)
 
-    if (Object.keys(clientFields).length > 0) {
-        const { error } = await supabase.from('clients').update(clientFields).eq('user_id', userId)
-        if (error) throw error
-    }
+    if (error) throw error
+  }
 
-    return findById(userId)
+  const clientFields: Record<string, any> = {}
+
+  if ('company_name' in input) clientFields.company_name = input.company_name
+  if ('billing_address' in input) clientFields.billing_address = input.billing_address
+  if ('payment_terms' in input) clientFields.payment_terms = input.payment_terms
+  if ('landline' in input) clientFields.landline = input.landline
+
+  if (Object.keys(clientFields).length > 0) {
+    const { error } = await supabase
+      .from('clients')
+      .update(clientFields)
+      .eq('user_id', userId)
+
+    if (error) throw error
+  }
+
+  return findById(userId)
 }
 
 async function remove(userId: string) {

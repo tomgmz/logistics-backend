@@ -62,7 +62,7 @@ app.use(cors({
 }));
 
 // RATE LIMITERS
-app.use(globalLimiter);
+// app.use(globalLimiter);
 
 // MIDDLEWARE
 app.use(cookieParser(process.env.COOKIE_SECRET));
