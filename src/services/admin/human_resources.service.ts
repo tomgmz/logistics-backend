@@ -3,6 +3,7 @@ import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status
 import * as HumanResourcesModel from '../../models/admin/human_resources.model.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
+import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 
 interface UpdateHumanResourcesDTO {
   first_name?: string
@@ -50,9 +51,8 @@ export async function createHumanResources(dto: BaseCreateDTO, actorId?: string 
     return result
   } catch (err: any) {
     console.error('Human Resources creation failed, rolling back auth user...', err.message)
-    const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
-    if (rollbackError) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
-    else console.log('Rollback successful.')
+    const ok = await deleteAuthUserSafely(userId)
+    if (!ok) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
     throw new Error(`Human Resources Creation Failed: ${err.message}`)
   }
 }

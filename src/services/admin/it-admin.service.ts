@@ -4,6 +4,7 @@ import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status
 import { CreateITAdminInput, UpdateITAdminInput } from '../../types/it-admin.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
+import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 
 export async function getAllITAdmins(actorId?: string | null) {
   return ITAdminModel.findAll(actorId ?? undefined)
@@ -58,12 +59,8 @@ export async function createITAdmin(
     const msg = err instanceof Error ? err.message : String(err)
     console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
     console.error('IT Admin creation failed, rolling back auth user...', msg)
-    const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
-    if (rollbackError) {
-      console.error('ROLLBACK FAILED. Orphan auth user with ID:', userId)
-    } else {
-      console.log('Rollback successful.')
-    }
+    const ok = await deleteAuthUserSafely(userId)
+    if (!ok) console.error('ROLLBACK FAILED. Orphan auth user with ID:', userId)
     throw new Error(`IT Admin creation failed: ${msg}`)
   }
 }

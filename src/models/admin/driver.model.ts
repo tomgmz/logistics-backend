@@ -27,6 +27,16 @@ async function findById(userId: string) {
 }
 
 async function create(userId: string, dto: CreateDriverDTO) {
+  // Prevent duplicate license numbers at model level
+  if (dto.license_number) {
+    const { data: existing, error: checkErr } = await supabase
+      .from('drivers')
+      .select('driver_id')
+      .eq('license_number', dto.license_number)
+      .maybeSingle()
+    if (checkErr) throw checkErr
+    if (existing) throw new Error('duplicate key: license_number')
+  }
   const { error: userError } = await supabase
     .from('users')
     .insert({
@@ -84,6 +94,16 @@ async function update(userId: string, dto: UpdateDriverDTO) {
   }
 
   if (Object.keys(driverFields).length > 0) {
+    // If license_number is being changed, ensure no other driver uses it
+    if (driverFields.license_number) {
+      const { data: existing, error: checkErr } = await supabase
+        .from('drivers')
+        .select('driver_id, user_id')
+        .eq('license_number', driverFields.license_number)
+        .maybeSingle()
+      if (checkErr) throw checkErr
+      if (existing && existing.user_id !== userId) throw new Error('duplicate key: license_number')
+    }
     const { error } = await supabase.from('drivers').update(driverFields).eq('user_id', userId)
     if (error) throw error
   }

@@ -4,6 +4,7 @@ import * as FleetAdminModel from '../../models/admin/fleet_admin.models.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
+import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 
 interface UpdateFleetAdminDTO {
   first_name?: string
@@ -66,9 +67,8 @@ export async function createFleetAdmin(dto: BaseCreateDTO, actorId?: string | nu
     const msg = err instanceof Error ? err.message : String(err)
     console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
     console.error('Fleet Admin creation failed, rolling back auth user...', msg)
-    const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
-    if (rollbackError) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
-    else console.log('Rollback successful.')
+    const ok = await deleteAuthUserSafely(userId)
+    if (!ok) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
     throw new Error(`Fleet Admin creation failed: ${msg}`)
   }
 }

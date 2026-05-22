@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import * as AdminModel from '../../models/admin/admin.model.js'
 import { CreateAdminInput, UpdateAdminInput } from '../../types/admin.types.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -40,9 +41,8 @@ export async function createAdmin(input: CreateAdminInput, actorId?: string | nu
     return result
   } catch (err: any) {
     console.error('Admin creation failed, rolling back auth user...', err.message)
-    const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
-    if (rollbackError) console.error('ROLLBACK FAILED. Orphan with user ID:', userId)
-    else console.log('Rollback successful.')
+    const ok = await deleteAuthUserSafely(userId)
+    if (!ok) console.error('ROLLBACK FAILED. Orphan with user ID:', userId)
     throw err
   }
 }

@@ -4,6 +4,7 @@ import * as DriverModel from '../../models/admin/driver.model.js'
 import { CreateDriverDTO, UpdateDriverDTO } from '../../types/driver.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
+import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 
 export async function getAllDrivers() {
   return DriverModel.findAll()
@@ -53,9 +54,8 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
     return result
   } catch (err: any) {
     console.error('Driver creation failed, rolling back auth user...', err.message)
-    const { error: rollbackError } = await supabase.auth.admin.deleteUser(userId)
-    if (rollbackError) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
-    else console.log('Rollback successful.')
+    const ok = await deleteAuthUserSafely(userId)
+    if (!ok) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
     throw new Error(`Driver creation failed: ${err.message}`)
   }
 }
