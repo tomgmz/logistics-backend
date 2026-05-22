@@ -26,8 +26,6 @@ export interface UpdateHandlingCodeInput {
   is_active?:   boolean
 }
 
-// ---------------------------------------------------------------------------
-
 export interface Commodity {
   commodity_id: string
   name:         string
@@ -51,11 +49,9 @@ export interface UpdateCommodityInput {
   is_active?:   boolean
 }
 
-// ---------------------------------------------------------------------------
-
 export interface Product {
   product_id:    string
-  commodity_id:  string           // ✅ required — product must belong to a commodity
+  commodity_id:  string 
   name:          string
   description?:  string | null
   unit?:         string | null
@@ -66,7 +62,7 @@ export interface Product {
 }
 
 export interface CreateProductInput {
-  commodity_id:  string           // ✅ required
+  commodity_id:  string
   name:          string
   description?:  string
   unit?:         string
@@ -74,16 +70,12 @@ export interface CreateProductInput {
 }
 
 export interface UpdateProductInput {
-  commodity_id?: string           // optional on update
+  commodity_id?: string
   name?:         string
   description?:  string | null
   unit?:         string | null
   is_active?:    boolean
 }
-
-// ---------------------------------------------------------------------------
-// Booking cargo item — combobox fields (id if picked, text if typed)
-// ---------------------------------------------------------------------------
 
 export interface BookingCargoItemFields {
   // catalog picks (FK)

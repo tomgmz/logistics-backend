@@ -36,6 +36,8 @@ import {
   createProductSchema,      updateProductSchema,
 } from '../schema/admin/cargo-catalog.schema.js'
 import * as CargoCatalogController from '../controllers/admin/cargo-catalog.controller.js'
+import { createLandlinePrefixSchema, updateLandlinePrefixSchema } from '../schema/admin/landline-prefix.schema.js'
+import * as LandlinePrefixController from '../controllers/admin/landline-prefix.controller.js'
 
 const router = Router()
 
@@ -178,5 +180,12 @@ router.get('/products/:id',    authenticate, isOperations, CargoCatalogControlle
 router.post('/products',       authenticate, isOperations, validate(createProductSchema), CargoCatalogController.createProduct)
 router.patch('/products/:id',  authenticate, isOperations, validate(updateProductSchema), CargoCatalogController.updateProduct)
 router.delete('/products/:id', authenticate, isOperations, CargoCatalogController.deleteProduct)
+
+//landline prefixes
+router.get('/landline-prefixes',        authenticate, isOperations, LandlinePrefixController.getAllLandlinePrefixes)
+router.get('/landline-prefixes/:id',    authenticate, isOperations, LandlinePrefixController.getLandlinePrefixById)
+router.post('/landline-prefixes',       authenticate, isAdmin, validate(createLandlinePrefixSchema), LandlinePrefixController.createLandlinePrefix)
+router.patch('/landline-prefixes/:id',  authenticate, isAdmin, validate(updateLandlinePrefixSchema), LandlinePrefixController.updateLandlinePrefix)
+router.delete('/landline-prefixes/:id', authenticate, isAdmin, LandlinePrefixController.deleteLandlinePrefix)
 
 export default router
