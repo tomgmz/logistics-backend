@@ -1,5 +1,36 @@
 import * as messagingModel from '../../models/messaging/messaging.model.js'
+import { createClient } from '@supabase/supabase-js'
 import type { ConversationWithDetails, MessageRow, MessagableUser } from '../../types/messaging.types.js'
+
+// ── Supabase admin client for Realtime broadcast ──────────────────────────────
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+async function broadcastNewMessage(message: MessageRow): Promise<void> {
+  await Promise.allSettled([
+    // Per-user channels (for MessagingShell + MessengerFloatingPanel)
+    supabaseAdmin.channel(`messaging:user:${message.sender_id}`).send({
+      type: 'broadcast',
+      event: 'new_message',
+      payload: message,
+    }),
+    supabaseAdmin.channel(`messaging:user:${message.receiver_id}`).send({
+      type: 'broadcast',
+      event: 'new_message',
+      payload: message,
+    }),
+    // Per-conversation channel (for ChatWindow + MessengerChatBubble)
+    supabaseAdmin.channel(`messaging:conv:${message.conversation_id}`).send({
+      type: 'broadcast',
+      event: 'new_message',
+      payload: message,
+    }),
+  ])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function getConversations(userId: string): Promise<ConversationWithDetails[]> {
   return messagingModel.getConversationsByUserId(userId)
@@ -98,6 +129,11 @@ export async function sendMessage(
 
   const message = await messagingModel.insertMessage(conversationId, senderId, receiverId, content)
   await messagingModel.touchConversation(conversationId)
+
+  // Fire-and-forget broadcast — never blocks the HTTP response
+  broadcastNewMessage(message).catch(err =>
+    console.error('[Realtime] broadcast failed:', err)
+  )
 
   return message
 }
