@@ -10,7 +10,6 @@ const supabaseAdmin = createClient(
 
 async function broadcastNewMessage(message: MessageRow): Promise<void> {
   await Promise.allSettled([
-    // Per-user channels (for MessagingShell + MessengerFloatingPanel)
     supabaseAdmin.channel(`messaging:user:${message.sender_id}`).send({
       type: 'broadcast',
       event: 'new_message',
@@ -21,11 +20,30 @@ async function broadcastNewMessage(message: MessageRow): Promise<void> {
       event: 'new_message',
       payload: message,
     }),
-    // Per-conversation channel (for ChatWindow + MessengerChatBubble)
     supabaseAdmin.channel(`messaging:conv:${message.conversation_id}`).send({
       type: 'broadcast',
       event: 'new_message',
       payload: message,
+    }),
+  ])
+}
+
+async function broadcastReadReceipt(
+  conversationId: string,
+  senderId: string,
+  readAt: string
+): Promise<void> {
+  // Notify the sender that their messages were read by the recipient
+  await Promise.allSettled([
+    supabaseAdmin.channel(`messaging:user:${senderId}`).send({
+      type: 'broadcast',
+      event: 'read_receipt',
+      payload: { conversation_id: conversationId, read_at: readAt },
+    }),
+    supabaseAdmin.channel(`messaging:conv:${conversationId}`).send({
+      type: 'broadcast',
+      event: 'read_receipt',
+      payload: { conversation_id: conversationId, read_at: readAt },
     }),
   ])
 }
@@ -130,7 +148,6 @@ export async function sendMessage(
   const message = await messagingModel.insertMessage(conversationId, senderId, receiverId, content)
   await messagingModel.touchConversation(conversationId)
 
-  // Fire-and-forget broadcast — never blocks the HTTP response
   broadcastNewMessage(message).catch(err =>
     console.error('[Realtime] broadcast failed:', err)
   )
@@ -151,6 +168,16 @@ export async function markConversationAsRead(conversationId: string, userId: str
   }
 
   await messagingModel.markMessagesRead(conversationId, userId)
+
+  // Notify the other participant (the original sender) that their messages were read
+  const senderId =
+    conversation.participant_a_id === userId
+      ? conversation.participant_b_id
+      : conversation.participant_a_id
+
+  broadcastReadReceipt(conversationId, senderId, new Date().toISOString()).catch(err =>
+    console.error('[Realtime] read_receipt broadcast failed:', err)
+  )
 }
 
 export async function deleteMessage(messageId: string, userId: string): Promise<void> {

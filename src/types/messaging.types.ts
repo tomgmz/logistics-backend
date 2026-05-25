@@ -64,3 +64,47 @@ export interface MessagableUser {
   email: string
   booking_id?: string
 }
+
+export interface GroupRow {
+  group_id: string
+  name: string
+  created_by: string
+  created_at: string
+  updated_at: string
+  last_message_at: string | null
+}
+
+export interface GroupMemberRow {
+  id: string
+  group_id: string
+  user_id: string
+  invited_by: string
+  status: 'pending' | 'accepted' | 'declined'
+  joined_at: string | null
+  created_at: string
+}
+
+export interface GroupMessageRow {
+  message_id: string
+  group_id: string
+  sender_id: string
+  content: string
+  sent_at: string
+}
+
+export interface GroupMemberWithUser extends GroupMemberRow {
+  user: {
+    user_id: string
+    first_name: string | null
+    last_name: string | null
+    role: UserRole
+    email: string
+  }
+}
+
+export interface GroupWithDetails extends GroupRow {
+  members: GroupMemberWithUser[]
+  last_message: { message_id: string; content: string; sent_at: string; sender_id: string } | null
+  unread_count: number
+  my_status: 'pending' | 'accepted' | 'declined'
+}
