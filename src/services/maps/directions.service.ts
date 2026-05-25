@@ -63,11 +63,17 @@ function angleDiff(a: number, b: number): number {
   return Math.abs(((a - b + 540) % 360) - 180)
 }
 
+// FIX 5: Increased maxGapMeters from 50 → 200 so straight highways like
+// NLEX and SCTEX keep enough points for accurate map-matching.
+// Mapbox map-match needs shape context on long straights — with 50m gaps
+// a 10km straight was reduced to ~2 points which confused the matcher.
+// 200m gaps still keep the route shape accurate for display and matching.
+// angleDeg kept at 5 (was 8) so turns in Bulacan side streets are preserved.
 function sampleByAngleAndDistance(
   points: Point[],
   maxPoints    = 98,
-  angleDeg     = 8,
-  maxGapMeters = 50,
+  angleDeg     = 5,
+  maxGapMeters = 200,
 ): Point[] {
   if (points.length <= maxPoints) return points
 
@@ -88,6 +94,7 @@ function sampleByAngleAndDistance(
 
   result.push(points[points.length - 1])
 
+  // If still over budget, do uniform stride — keeps start/end guaranteed
   if (result.length > maxPoints) {
     const step = Math.ceil(result.length / maxPoints)
     return [
@@ -102,9 +109,12 @@ function sampleByAngleAndDistance(
 
 async function snapPolylineToMapbox(points: Point[]): Promise<Point[] | null> {
   try {
-    const sampled = sampleByAngleAndDistance(points, 98, 8, 50)
+    const sampled = sampleByAngleAndDistance(points, 98, 5, 200)
     const coords  = sampled.map((p) => `${p.longitude},${p.latitude}`).join(';')
-    const radii   = sampled.map(() => 25).join(';')
+    // FIX 5: Increased radius from 25 → 40m for highway matching.
+    // Philippine highways sometimes have wide medians; 25m was too tight
+    // and caused mismatches on divided highways like EDSA and C5.
+    const radii   = sampled.map(() => 40).join(';')
     const url     = `${MAP_MATCH_URL}/${coords}?access_token=${MAPBOX_TOKEN}&geometries=geojson&tidy=true&overview=full&radiuses=${radii}`
 
     const res  = await fetch(url)
@@ -124,10 +134,6 @@ async function snapPolylineToMapbox(points: Point[]): Promise<Point[] | null> {
   }
 }
 
-/**
- * Encodes a list of lat/lng points into a Google-compatible encoded polyline string.
- * Used as a straight-line fallback when Google Routes API returns no routes.
- */
 function encodePolyline(points: Point[]): string {
   let prevLat = 0, prevLng = 0
   let result  = ''
@@ -152,10 +158,6 @@ function encodePolyline(points: Point[]): string {
   return result
 }
 
-/**
- * Builds a minimal straight-line DirectionsResult from origin → intermediates → destination.
- * Returned when Google Routes API has no routable path (e.g. remote/off-road coordinates).
- */
 function buildStraightLineFallback(payload: ComputeDirectionsInput): DirectionsResult {
   const toPoint = (wp: ComputeDirectionsInput['origin']): Point => ({
     latitude:  wp.location.latLng.latitude,
@@ -170,7 +172,6 @@ function buildStraightLineFallback(payload: ComputeDirectionsInput): DirectionsR
 
   const encodedPolyline = encodePolyline(allPoints)
 
-  // Estimate straight-line distance and a rough duration (50 km/h average)
   let totalMeters = 0
   for (let i = 0; i < allPoints.length - 1; i++) {
     totalMeters += haversine(allPoints[i], allPoints[i + 1])

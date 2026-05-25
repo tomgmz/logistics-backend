@@ -15,6 +15,7 @@ import directionsRouter from './routes/directions.routes.js'
 import driverRoutes from './routes/driver.route.js'
 import uploadRoutes from './routes/upload.route.js'
 import { globalLimiter } from './middlewares/rateLimit.middleware.js';
+import messagingRoutes from './routes/messaging.routes.js'
 
 dotenv.config();
 
@@ -101,6 +102,7 @@ app.use('/api/directions', directionsRouter);
 app.use('/api/driver', driverRoutes)
 app.use('/api/admin', adminRoutes);
 app.use('/api/uploads', uploadRoutes);
+app.use('/api/messaging', messagingRoutes);
 
 // HEALTH CHECK
 app.get('/api/health', (req: Request, res: Response) => {
