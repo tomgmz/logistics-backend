@@ -9,9 +9,9 @@ const supabaseAdmin = createClient(
 
 async function broadcastGroupMessage(message: GroupMessageRow, memberIds: string[]): Promise<void> {
   await Promise.allSettled([
-    supabaseAdmin.channel(`messaging:group:${message.group_id}`).send({ type: 'broadcast', event: 'new_group_message', payload: message }),
+    supabaseAdmin.channel(`messaging:group:${message.group_id}`).httpSend('broadcast', { event: 'new_group_message', payload: message }),
     ...memberIds.map(uid =>
-      supabaseAdmin.channel(`messaging:user:${uid}`).send({ type: 'broadcast', event: 'new_group_message', payload: message })
+      supabaseAdmin.channel(`messaging:user:${uid}`).httpSend('broadcast', { event: 'new_group_message', payload: message })
     ),
   ])
 }
@@ -19,14 +19,14 @@ async function broadcastGroupMessage(message: GroupMessageRow, memberIds: string
 async function broadcastGroupInvite(groupId: string, inviteeIds: string[], groupName: string): Promise<void> {
   await Promise.allSettled(
     inviteeIds.map(uid =>
-      supabaseAdmin.channel(`messaging:user:${uid}`).send({ type: 'broadcast', event: 'group_invite', payload: { group_id: groupId, group_name: groupName } })
+      supabaseAdmin.channel(`messaging:user:${uid}`).httpSend('broadcast', { event: 'group_invite', payload: { group_id: groupId, group_name: groupName } })
     )
   )
 }
 
 async function broadcastGroupReadReceipt(groupId: string, userId: string, readAt: string): Promise<void> {
-  await supabaseAdmin.channel(`messaging:group:${groupId}`).send({
-    type: 'broadcast', event: 'group_read_receipt', payload: { group_id: groupId, user_id: userId, read_at: readAt },
+  await supabaseAdmin.channel(`messaging:group:${groupId}`).httpSend('broadcast', {
+    event: 'group_read_receipt', payload: { group_id: groupId, user_id: userId, read_at: readAt },
   })
 }
 
@@ -36,9 +36,9 @@ async function broadcastGroupReaction(
   payload: { message_id: string; group_id: string; user_id: string; emoji: string; action: 'added' | 'removed' }
 ): Promise<void> {
   await Promise.allSettled([
-    supabaseAdmin.channel(`messaging:group:${groupId}`).send({ type: 'broadcast', event: 'reaction_toggle', payload }),
+    supabaseAdmin.channel(`messaging:group:${groupId}`).httpSend('broadcast', { event: 'reaction_toggle', payload }),
     ...memberIds.map(uid =>
-      supabaseAdmin.channel(`messaging:user:${uid}`).send({ type: 'broadcast', event: 'reaction_toggle', payload })
+      supabaseAdmin.channel(`messaging:user:${uid}`).httpSend('broadcast', { event: 'reaction_toggle', payload })
     ),
   ])
 }

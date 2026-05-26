@@ -9,16 +9,16 @@ const supabaseAdmin = createClient(
 
 async function broadcastNewMessage(message: MessageRow): Promise<void> {
   await Promise.allSettled([
-    supabaseAdmin.channel(`messaging:user:${message.sender_id}`).send({ type: 'broadcast', event: 'new_message', payload: message }),
-    supabaseAdmin.channel(`messaging:user:${message.receiver_id}`).send({ type: 'broadcast', event: 'new_message', payload: message }),
-    supabaseAdmin.channel(`messaging:conv:${message.conversation_id}`).send({ type: 'broadcast', event: 'new_message', payload: message }),
+    supabaseAdmin.channel(`messaging:user:${message.sender_id}`).httpSend('broadcast', { event: 'new_message', payload: message }),
+    supabaseAdmin.channel(`messaging:user:${message.receiver_id}`).httpSend('broadcast', { event: 'new_message', payload: message }),
+    supabaseAdmin.channel(`messaging:conv:${message.conversation_id}`).httpSend('broadcast', { event: 'new_message', payload: message }),
   ])
 }
 
 async function broadcastReadReceipt(conversationId: string, senderId: string, readAt: string): Promise<void> {
   await Promise.allSettled([
-    supabaseAdmin.channel(`messaging:user:${senderId}`).send({ type: 'broadcast', event: 'read_receipt', payload: { conversation_id: conversationId, read_at: readAt } }),
-    supabaseAdmin.channel(`messaging:conv:${conversationId}`).send({ type: 'broadcast', event: 'read_receipt', payload: { conversation_id: conversationId, read_at: readAt } }),
+    supabaseAdmin.channel(`messaging:user:${senderId}`).httpSend('broadcast', { event: 'read_receipt', payload: { conversation_id: conversationId, read_at: readAt } }),
+    supabaseAdmin.channel(`messaging:conv:${conversationId}`).httpSend('broadcast', { event: 'read_receipt', payload: { conversation_id: conversationId, read_at: readAt } }),
   ])
 }
 
@@ -29,9 +29,9 @@ async function broadcastReaction(
   payload: { message_id: string; user_id: string; emoji: string; action: 'added' | 'removed' }
 ): Promise<void> {
   await Promise.allSettled([
-    supabaseAdmin.channel(`messaging:conv:${conversationId}`).send({ type: 'broadcast', event: 'reaction_toggle', payload }),
-    supabaseAdmin.channel(`messaging:user:${senderId}`).send({ type: 'broadcast', event: 'reaction_toggle', payload }),
-    supabaseAdmin.channel(`messaging:user:${receiverId}`).send({ type: 'broadcast', event: 'reaction_toggle', payload }),
+    supabaseAdmin.channel(`messaging:conv:${conversationId}`).httpSend('broadcast', { event: 'reaction_toggle', payload }),
+    supabaseAdmin.channel(`messaging:user:${senderId}`).httpSend('broadcast', { event: 'reaction_toggle', payload }),
+    supabaseAdmin.channel(`messaging:user:${receiverId}`).httpSend('broadcast', { event: 'reaction_toggle', payload }),
   ])
 }
 
