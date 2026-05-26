@@ -44,6 +44,17 @@ export async function createConversation(
   return data as ConversationRow
 }
 
+export async function findOrCreateConversation(
+  participantAId: string,
+  participantBId: string,
+  contextType: 'direct' | 'booking_transit',
+  bookingId?: string
+): Promise<ConversationRow> {
+  const existing = await findConversationByParticipants(participantAId, participantBId)
+  if (existing) return existing
+  return createConversation(participantAId, participantBId, contextType, bookingId)
+}
+
 export async function findConversationById(conversationId: string): Promise<ConversationRow | null> {
   const { data, error } = await supabase
     .from('conversations')
@@ -100,6 +111,10 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
     }
   }
 
+  const conversationsWithMessages = conversations.filter(
+    c => !!lastMessageMap[c.conversation_id]
+  )
+
   const { data: unreadRows, error: unreadError } = await supabase
     .from('messages')
     .select('conversation_id')
@@ -114,7 +129,7 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
     unreadMap[row.conversation_id] = (unreadMap[row.conversation_id] ?? 0) + 1
   }
 
-  return conversations.reduce<ConversationWithDetails[]>((acc, conv) => {
+  return conversationsWithMessages.reduce<ConversationWithDetails[]>((acc, conv) => {
     const otherUserId = conv.participant_a_id === userId ? conv.participant_b_id : conv.participant_a_id
     const otherUser = userMap[otherUserId]
     if (!otherUser) return acc
