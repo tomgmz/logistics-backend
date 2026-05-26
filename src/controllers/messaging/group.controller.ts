@@ -22,6 +22,7 @@ const respondSchema = z.object({
 
 const sendGroupMessageSchema = z.object({
   content: z.string().min(1).max(5000).transform(v => v.trim()),
+  reply_to_message_id: z.string().uuid().optional(),
 })
 
 const getMessagesQuerySchema = z.object({
@@ -31,6 +32,10 @@ const getMessagesQuerySchema = z.object({
 
 const markReadSchema = z.object({
   message_ids: z.array(z.string().uuid()).min(1),
+})
+
+const reactSchema = z.object({
+  emoji: z.string().min(1).max(10),
 })
 
 export async function createGroup(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -85,7 +90,7 @@ export async function sendGroupMessage(req: Request, res: Response, next: NextFu
       res.status(400).json({ success: false, errors: parsed.error.flatten().fieldErrors })
       return
     }
-    const message = await groupService.sendGroupMessage(groupId, user_id, parsed.data.content)
+    const message = await groupService.sendGroupMessage(groupId, user_id, parsed.data.content, parsed.data.reply_to_message_id)
     res.status(201).json({ success: true, data: message })
   } catch (err: any) {
     if (err.statusCode) { res.status(err.statusCode).json({ success: false, message: err.message }); return }
@@ -121,6 +126,23 @@ export async function markGroupRead(req: Request, res: Response, next: NextFunct
     }
     await groupService.markGroupRead(groupId, user_id, parsed.data.message_ids)
     res.json({ success: true })
+  } catch (err: any) {
+    if (err.statusCode) { res.status(err.statusCode).json({ success: false, message: err.message }); return }
+    next(err)
+  }
+}
+
+export async function reactToGroupMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { user_id } = getAuthUser(req)
+    const { groupId, messageId } = req.params as { groupId: string; messageId: string }
+    const parsed = reactSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ success: false, errors: parsed.error.flatten().fieldErrors })
+      return
+    }
+    const result = await groupService.toggleGroupReaction(groupId, messageId, user_id, parsed.data.emoji)
+    res.json({ success: true, data: result })
   } catch (err: any) {
     if (err.statusCode) { res.status(err.statusCode).json({ success: false, message: err.message }); return }
     next(err)

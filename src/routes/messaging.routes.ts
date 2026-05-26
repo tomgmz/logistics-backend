@@ -36,6 +36,7 @@ router.get('/conversations/:conversationId/messages', messagingController.getMes
 router.post('/conversations/:conversationId/messages', sendRateLimit, enforceClientMessagingPolicy, messagingController.sendMessage)
 router.patch('/conversations/:conversationId/read', messagingController.markAsRead)
 router.delete('/messages/:messageId', messagingController.deleteMessage)
+router.post('/conversations/:conversationId/messages/:messageId/react', messagingController.reactToMessage)
 
 // ── Group messaging ───────────────────────────────────────────────────────────
 router.post('/groups', groupController.createGroup)
@@ -44,5 +45,6 @@ router.patch('/groups/:groupId/invite/respond', groupController.respondToInvite)
 router.get('/groups/:groupId/messages', groupController.getGroupMessages)
 router.post('/groups/:groupId/messages', sendRateLimit, groupController.sendGroupMessage)
 router.patch('/groups/:groupId/read', groupController.markGroupRead)
+router.post('/groups/:groupId/messages/:messageId/react', groupController.reactToGroupMessage)
 
 export default router

@@ -20,7 +20,6 @@ export async function findConversationByParticipants(
       `and(participant_a_id.eq.${userBId},participant_b_id.eq.${userAId})`
     )
     .maybeSingle()
-
   if (error) throw error
   return data as ConversationRow | null
 }
@@ -41,7 +40,6 @@ export async function createConversation(
     })
     .select()
     .single()
-
   if (error) throw error
   return data as ConversationRow
 }
@@ -52,7 +50,6 @@ export async function findConversationById(conversationId: string): Promise<Conv
     .select('*')
     .eq('conversation_id', conversationId)
     .maybeSingle()
-
   if (error) throw error
   return data as ConversationRow | null
 }
@@ -63,32 +60,22 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
     .select('*')
     .or(`participant_a_id.eq.${userId},participant_b_id.eq.${userId}`)
     .order('last_message_at', { ascending: false, nullsFirst: false })
-
   if (convError) throw convError
   if (!conversationsRaw || conversationsRaw.length === 0) return []
 
   const conversations = conversationsRaw as ConversationRow[]
-
-  const otherUserIds = conversations.map((c: ConversationRow) =>
+  const otherUserIds = conversations.map(c =>
     c.participant_a_id === userId ? c.participant_b_id : c.participant_a_id
   )
-  const conversationIds = conversations.map((c: ConversationRow) => c.conversation_id)
+  const conversationIds = conversations.map(c => c.conversation_id)
 
   const { data: usersRaw, error: userError } = await supabase
     .from('users')
     .select('user_id, first_name, last_name, role, email')
     .in('user_id', otherUserIds)
-
   if (userError) throw userError
 
-  type UserRow = {
-    user_id: string
-    first_name: string | null
-    last_name: string | null
-    role: UserRole
-    email: string
-  }
-
+  type UserRow = { user_id: string; first_name: string | null; last_name: string | null; role: UserRole; email: string }
   const userMap: Record<string, UserRow> = Object.fromEntries(
     (usersRaw ?? []).map((u: UserRow) => [u.user_id, u])
   )
@@ -98,11 +85,9 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
     .select('conversation_id, message_id, content, sent_at, sender_id')
     .in('conversation_id', conversationIds)
     .order('sent_at', { ascending: false })
-
   if (msgError) throw msgError
 
   type MessageWithConvId = ConversationLastMessage & { conversation_id: string }
-
   const lastMessageMap: Record<string, ConversationLastMessage> = {}
   for (const msg of (allMessagesRaw ?? []) as MessageWithConvId[]) {
     if (!lastMessageMap[msg.conversation_id]) {
@@ -122,7 +107,6 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
     .eq('receiver_id', userId)
     .eq('is_read', false)
     .eq('deleted_by_receiver', false)
-
   if (unreadError) throw unreadError
 
   const unreadMap: Record<string, number> = {}
@@ -130,26 +114,18 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
     unreadMap[row.conversation_id] = (unreadMap[row.conversation_id] ?? 0) + 1
   }
 
-  return conversations.reduce<ConversationWithDetails[]>(
-    (acc: ConversationWithDetails[], conv: ConversationRow) => {
-      const otherUserId =
-        conv.participant_a_id === userId ? conv.participant_b_id : conv.participant_a_id
-      const otherUser = userMap[otherUserId]
-      if (!otherUser) return acc
-
-      acc.push({
-        ...conv,
-        other_user: {
-          ...otherUser,
-          role: otherUser.role as UserRole,
-        },
-        last_message: lastMessageMap[conv.conversation_id] ?? null,
-        unread_count: unreadMap[conv.conversation_id] ?? 0,
-      })
-      return acc
-    },
-    []
-  )
+  return conversations.reduce<ConversationWithDetails[]>((acc, conv) => {
+    const otherUserId = conv.participant_a_id === userId ? conv.participant_b_id : conv.participant_a_id
+    const otherUser = userMap[otherUserId]
+    if (!otherUser) return acc
+    acc.push({
+      ...conv,
+      other_user: { ...otherUser, role: otherUser.role as UserRole },
+      last_message: lastMessageMap[conv.conversation_id] ?? null,
+      unread_count: unreadMap[conv.conversation_id] ?? 0,
+    })
+    return acc
+  }, [])
 }
 
 export async function getMessagesByConversationId(
@@ -160,7 +136,11 @@ export async function getMessagesByConversationId(
 ): Promise<MessageRow[]> {
   let query = supabase
     .from('messages')
-    .select('*')
+    .select(`
+      *,
+      reply_to:messages!reply_to_message_id(message_id, content, sender_id),
+      reactions:message_reactions(emoji, user_id)
+    `)
     .eq('conversation_id', conversationId)
     .or(
       `and(sender_id.eq.${userId},deleted_by_sender.eq.false),` +
@@ -168,21 +148,18 @@ export async function getMessagesByConversationId(
     )
     .order('sent_at', { ascending: false })
     .limit(limit)
-
-  if (before) {
-    query = query.lt('sent_at', before)
-  }
-
+  if (before) query = query.lt('sent_at', before)
   const { data, error } = await query
   if (error) throw error
-  return ((data ?? []) as MessageRow[]).reverse()
+  return ((data ?? []) as unknown as MessageRow[]).reverse()
 }
 
 export async function insertMessage(
   conversationId: string,
   senderId: string,
   receiverId: string,
-  content: string
+  content: string,
+  replyToMessageId?: string
 ): Promise<MessageRow> {
   const { data, error } = await supabase
     .from('messages')
@@ -191,10 +168,10 @@ export async function insertMessage(
       sender_id: senderId,
       receiver_id: receiverId,
       content,
+      ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}),
     })
     .select()
     .single()
-
   if (error) throw error
   return data as MessageRow
 }
@@ -205,7 +182,6 @@ export async function touchConversation(conversationId: string): Promise<void> {
     .from('conversations')
     .update({ last_message_at: now, updated_at: now })
     .eq('conversation_id', conversationId)
-
   if (error) throw error
 }
 
@@ -216,7 +192,6 @@ export async function markMessagesRead(conversationId: string, receiverId: strin
     .eq('conversation_id', conversationId)
     .eq('receiver_id', receiverId)
     .eq('is_read', false)
-
   if (error) throw error
 }
 
@@ -226,26 +201,40 @@ export async function findMessageById(messageId: string): Promise<MessageRow | n
     .select('*')
     .eq('message_id', messageId)
     .maybeSingle()
-
   if (error) throw error
   return data as MessageRow | null
 }
 
-export async function softDeleteMessage(
-  messageId: string,
-  userId: string,
-  asSender: boolean
-): Promise<void> {
+export async function softDeleteMessage(messageId: string, userId: string, asSender: boolean): Promise<void> {
   const field = asSender ? 'deleted_by_sender' : 'deleted_by_receiver'
   const ownerField = asSender ? 'sender_id' : 'receiver_id'
-
   const { error } = await supabase
     .from('messages')
     .update({ [field]: true })
     .eq('message_id', messageId)
     .eq(ownerField, userId)
-
   if (error) throw error
+}
+
+export async function toggleMessageReaction(
+  messageId: string,
+  userId: string,
+  emoji: string
+): Promise<{ action: 'added' | 'removed' }> {
+  const { data: existing } = await supabase
+    .from('message_reactions')
+    .select('id')
+    .eq('message_id', messageId)
+    .eq('user_id', userId)
+    .eq('emoji', emoji)
+    .maybeSingle()
+
+  if (existing) {
+    await supabase.from('message_reactions').delete().eq('id', (existing as any).id)
+    return { action: 'removed' }
+  }
+  await supabase.from('message_reactions').insert({ message_id: messageId, user_id: userId, emoji })
+  return { action: 'added' }
 }
 
 export async function getMessagableUsersForStaff(currentUserId: string): Promise<MessagableUser[]> {
@@ -255,111 +244,60 @@ export async function getMessagableUsersForStaff(currentUserId: string): Promise
     .neq('user_id', currentUserId)
     .eq('status', 'active')
     .order('first_name', { ascending: true })
-
   if (error) throw error
   return (data ?? []) as MessagableUser[]
 }
 
 export async function getMessagableDriversForClient(clientUserId: string): Promise<MessagableUser[]> {
   const { data: client, error: clientError } = await supabase
-    .from('clients')
-    .select('client_id')
-    .eq('user_id', clientUserId)
-    .maybeSingle()
-
+    .from('clients').select('client_id').eq('user_id', clientUserId).maybeSingle()
   if (clientError) throw clientError
   if (!client) return []
 
   const { data: bookingsRaw, error: bookingError } = await supabase
-    .from('bookings')
-    .select('booking_id')
-    .eq('client_id', (client as { client_id: string }).client_id)
-    .eq('status', 'in_transit')
-
+    .from('bookings').select('booking_id').eq('client_id', (client as any).client_id).eq('status', 'in_transit')
   if (bookingError) throw bookingError
   if (!bookingsRaw || bookingsRaw.length === 0) return []
 
-  const bookingIds = (bookingsRaw as { booking_id: string }[]).map((b: { booking_id: string }) => b.booking_id)
+  const bookingIds = (bookingsRaw as { booking_id: string }[]).map(b => b.booking_id)
 
   const { data: assignments, error: assignError } = await supabase
     .from('driver_assignments')
     .select('booking_id, drivers!inner(driver_id, user_id)')
     .in('booking_id', bookingIds)
-
   if (assignError) throw assignError
   if (!assignments || assignments.length === 0) return []
 
-  const typedAssignments = (assignments as unknown) as { booking_id: string; drivers: { driver_id: string; user_id: string }[] }[]
-
+  const typedAssignments = assignments as unknown as { booking_id: string; drivers: { driver_id: string; user_id: string }[] }[]
   const driverUserIds = [...new Set(typedAssignments.flatMap(a => a.drivers.map(d => d.user_id)))]
 
   const { data: usersRaw, error: userError } = await supabase
-    .from('users')
-    .select('user_id, first_name, last_name, role, email')
-    .in('user_id', driverUserIds)
-    .eq('status', 'active')
-
+    .from('users').select('user_id, first_name, last_name, role, email').in('user_id', driverUserIds).eq('status', 'active')
   if (userError) throw userError
 
-  return (usersRaw ?? []).map((u: { user_id: string; first_name: string | null; last_name: string | null; role: string; email: string }) => ({
+  return (usersRaw ?? []).map((u: any) => ({
     ...u,
     role: u.role as UserRole,
     booking_id: typedAssignments.find(a => a.drivers.some(d => d.user_id === u.user_id))?.booking_id,
   }))
 }
 
-export async function validateClientDriverAccess(
-  clientUserId: string,
-  targetUserId: string
-): Promise<boolean> {
-  const { data: client, error: clientError } = await supabase
-    .from('clients')
-    .select('client_id')
-    .eq('user_id', clientUserId)
-    .maybeSingle()
-
-  if (clientError) throw clientError
+export async function validateClientDriverAccess(clientUserId: string, targetUserId: string): Promise<boolean> {
+  const { data: client } = await supabase.from('clients').select('client_id').eq('user_id', clientUserId).maybeSingle()
   if (!client) return false
-
-  const { data: driver, error: driverError } = await supabase
-    .from('drivers')
-    .select('driver_id')
-    .eq('user_id', targetUserId)
-    .maybeSingle()
-
-  if (driverError) throw driverError
+  const { data: driver } = await supabase.from('drivers').select('driver_id').eq('user_id', targetUserId).maybeSingle()
   if (!driver) return false
-
-  const { data: bookingsRaw, error: bookingError } = await supabase
-    .from('bookings')
-    .select('booking_id')
-    .eq('client_id', (client as { client_id: string }).client_id)
-    .eq('status', 'in_transit')
-
-  if (bookingError) throw bookingError
+  const { data: bookingsRaw } = await supabase.from('bookings').select('booking_id').eq('client_id', (client as any).client_id).eq('status', 'in_transit')
   if (!bookingsRaw || bookingsRaw.length === 0) return false
-
-  const bookingIds = (bookingsRaw as { booking_id: string }[]).map((b: { booking_id: string }) => b.booking_id)
-
-  const { count, error: assignError } = await supabase
-    .from('driver_assignments')
-    .select('assignment_id', { count: 'exact', head: true })
-    .eq('driver_id', (driver as { driver_id: string }).driver_id)
-    .in('booking_id', bookingIds)
-
-  if (assignError) throw assignError
+  const bookingIds = (bookingsRaw as { booking_id: string }[]).map(b => b.booking_id)
+  const { count } = await supabase
+    .from('driver_assignments').select('assignment_id', { count: 'exact', head: true })
+    .eq('driver_id', (driver as any).driver_id).in('booking_id', bookingIds)
   return (count ?? 0) > 0
 }
 
-export async function findTargetUser(
-  targetUserId: string
-): Promise<{ user_id: string; status: string; role: string } | null> {
-  const { data, error } = await supabase
-    .from('users')
-    .select('user_id, status, role')
-    .eq('user_id', targetUserId)
-    .maybeSingle()
-
+export async function findTargetUser(targetUserId: string): Promise<{ user_id: string; status: string; role: string } | null> {
+  const { data, error } = await supabase.from('users').select('user_id, status, role').eq('user_id', targetUserId).maybeSingle()
   if (error) throw error
   return data as { user_id: string; status: string; role: string } | null
 }

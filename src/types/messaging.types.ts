@@ -22,6 +22,17 @@ export interface ConversationRow {
   last_message_at: string | null
 }
 
+export interface ReactionRow {
+  emoji: string
+  user_id: string
+}
+
+export interface ReplyPreview {
+  message_id: string
+  content: string
+  sender_id: string
+}
+
 export interface MessageRow {
   message_id: string
   conversation_id: string
@@ -33,6 +44,9 @@ export interface MessageRow {
   read_at: string | null
   deleted_by_sender: boolean
   deleted_by_receiver: boolean
+  reply_to_message_id?: string | null
+  reply_to?: ReplyPreview | null
+  reactions?: ReactionRow[]
 }
 
 export interface ConversationParticipant {
@@ -90,6 +104,9 @@ export interface GroupMessageRow {
   sender_id: string
   content: string
   sent_at: string
+  reply_to_message_id?: string | null
+  reply_to?: ReplyPreview | null
+  reactions?: ReactionRow[]
 }
 
 export interface GroupMemberWithUser extends GroupMemberRow {
