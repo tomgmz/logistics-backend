@@ -30,8 +30,11 @@ const getMessagesQuerySchema = z.object({
   before: z.string().datetime().optional(),
 })
 
+// ── message_ids is now optional ───────────────────────────────────────────────
+// Sending [] is valid: it still updates last_read_at on group_members
+// but skips writing to group_message_reads (no "seen by" rows needed).
 const markReadSchema = z.object({
-  message_ids: z.array(z.string().uuid()).min(1),
+  message_ids: z.array(z.string().uuid()).default([]),
 })
 
 const reactSchema = z.object({

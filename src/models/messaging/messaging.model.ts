@@ -44,17 +44,6 @@ export async function createConversation(
   return data as ConversationRow
 }
 
-export async function findOrCreateConversation(
-  participantAId: string,
-  participantBId: string,
-  contextType: 'direct' | 'booking_transit',
-  bookingId?: string
-): Promise<ConversationRow> {
-  const existing = await findConversationByParticipants(participantAId, participantBId)
-  if (existing) return existing
-  return createConversation(participantAId, participantBId, contextType, bookingId)
-}
-
 export async function findConversationById(conversationId: string): Promise<ConversationRow | null> {
   const { data, error } = await supabase
     .from('conversations')
@@ -111,10 +100,6 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
     }
   }
 
-  const conversationsWithMessages = conversations.filter(
-    c => !!lastMessageMap[c.conversation_id]
-  )
-
   const { data: unreadRows, error: unreadError } = await supabase
     .from('messages')
     .select('conversation_id')
@@ -129,7 +114,7 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
     unreadMap[row.conversation_id] = (unreadMap[row.conversation_id] ?? 0) + 1
   }
 
-  return conversationsWithMessages.reduce<ConversationWithDetails[]>((acc, conv) => {
+  return conversations.reduce<ConversationWithDetails[]>((acc, conv) => {
     const otherUserId = conv.participant_a_id === userId ? conv.participant_b_id : conv.participant_a_id
     const otherUser = userMap[otherUserId]
     if (!otherUser) return acc
@@ -231,6 +216,14 @@ export async function softDeleteMessage(messageId: string, userId: string, asSen
   if (error) throw error
 }
 
+// ─── Reactions ────────────────────────────────────────────────────────────────
+//
+// UNIQUE(message_id, user_id) — one reaction per user per DM message.
+// Toggle logic:
+//   • same emoji → remove (toggle off)
+//   • different emoji → replace (update in place)
+//   • none yet → insert
+
 export async function toggleMessageReaction(
   messageId: string,
   userId: string,
@@ -238,16 +231,24 @@ export async function toggleMessageReaction(
 ): Promise<{ action: 'added' | 'removed' }> {
   const { data: existing } = await supabase
     .from('message_reactions')
-    .select('id')
+    .select('id, emoji')
     .eq('message_id', messageId)
     .eq('user_id', userId)
-    .eq('emoji', emoji)
     .maybeSingle()
 
   if (existing) {
-    await supabase.from('message_reactions').delete().eq('id', (existing as any).id)
-    return { action: 'removed' }
+    if ((existing as any).emoji === emoji) {
+      await supabase.from('message_reactions').delete().eq('id', (existing as any).id)
+      return { action: 'removed' }
+    }
+    // Different emoji → replace
+    await supabase
+      .from('message_reactions')
+      .update({ emoji })
+      .eq('id', (existing as any).id)
+    return { action: 'added' }
   }
+
   await supabase.from('message_reactions').insert({ message_id: messageId, user_id: userId, emoji })
   return { action: 'added' }
 }

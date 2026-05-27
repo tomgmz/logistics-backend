@@ -96,6 +96,9 @@ export interface GroupMemberRow {
   status: 'pending' | 'accepted' | 'declined'
   joined_at: string | null
   created_at: string
+  // ── Added by migration ────────────────────────────────────────────────────
+  last_read_at: string | null
+  last_read_message_id: string | null
 }
 
 export interface GroupMessageRow {

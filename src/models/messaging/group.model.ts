@@ -6,6 +6,8 @@ import type {
   GroupWithDetails,
 } from '../../types/messaging.types.js'
 
+// ─── Group CRUD ───────────────────────────────────────────────────────────────
+
 export async function createGroup(name: string, createdBy: string, memberIds: string[]): Promise<GroupRow> {
   const { data: group, error: groupError } = await supabase
     .from('group_conversations').insert({ name, created_by: createdBy }).select().single()
@@ -29,25 +31,12 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
   if (memError) throw memError
   if (!myMemberships || myMemberships.length === 0) return []
 
-  type MyMembership = {
-    group_id: string
-    status: string
-    last_read_at: string | null
-    last_read_message_id: string | null
-  }
-
+  type MyMembership = { group_id: string; status: string; last_read_at: string | null; last_read_message_id: string | null }
   const memberships = myMemberships as MyMembership[]
   const groupIds = memberships.map(m => m.group_id)
+  const myStatusMap = Object.fromEntries(memberships.map(m => [m.group_id, m.status]))
+  const myLastReadAtMap = Object.fromEntries(memberships.map(m => [m.group_id, m.last_read_at]))
 
-  // Build lookup maps from my membership rows
-  const myStatusMap: Record<string, string> = Object.fromEntries(
-    memberships.map(m => [m.group_id, m.status])
-  )
-  const myLastReadAtMap: Record<string, string | null> = Object.fromEntries(
-    memberships.map(m => [m.group_id, m.last_read_at])
-  )
-
-  // Fetch group metadata
   const { data: groups, error: groupError } = await supabase
     .from('group_conversations')
     .select('*')
@@ -55,7 +44,7 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
     .order('last_message_at', { ascending: false, nullsFirst: false })
   if (groupError) throw groupError
 
-  // Fetch all members with user info
+  // All members with user info + last_read_at (for seen-by UI)
   const { data: allMembers, error: allMembersError } = await supabase
     .from('group_members')
     .select('*, user:users!group_members_user_id_fkey(user_id, first_name, last_name, role, email)')
@@ -68,11 +57,11 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
     membersByGroup[m.group_id].push(m)
   }
 
-  // Fetch last message per group
   const { data: lastMsgs, error: msgError } = await supabase
     .from('group_messages')
     .select('message_id, group_id, content, sent_at, sender_id')
     .in('group_id', groupIds)
+    .is('deleted_at', null)
     .order('sent_at', { ascending: false })
   if (msgError) throw msgError
 
@@ -81,32 +70,22 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
     if (!lastMsgMap[msg.group_id]) lastMsgMap[msg.group_id] = msg
   }
 
-  // ── Fast unread count using last_read_at from group_members ──────────────
-  // Count messages sent after my last_read_at, excluding my own messages.
-  // This replaces the old approach that fetched ALL messages + ALL read rows.
-  const unreadMap: Record<string, number> = {}
-
-  await Promise.all(
+  // ── Fast unread count: one COUNT query per group using last_read_at ────────
+  const unreadCounts = await Promise.all(
     groupIds.map(async (groupId) => {
       const lastReadAt = myLastReadAtMap[groupId]
-
       let query = supabase
         .from('group_messages')
         .select('message_id', { count: 'exact', head: true })
         .eq('group_id', groupId)
         .neq('sender_id', userId)
         .is('deleted_at', null)
-
-      if (lastReadAt) {
-        // Only count messages newer than last read
-        query = query.gt('sent_at', lastReadAt)
-      }
-      // If no last_read_at, ALL non-own messages are unread
-
+      if (lastReadAt) query = query.gt('sent_at', lastReadAt)
       const { count } = await query
-      unreadMap[groupId] = count ?? 0
+      return [groupId, count ?? 0] as [string, number]
     })
   )
+  const unreadMap = Object.fromEntries(unreadCounts)
 
   return (groups as GroupRow[]).map(g => ({
     ...g,
@@ -138,6 +117,8 @@ export async function updateMemberStatus(groupId: string, userId: string, status
     .eq('group_id', groupId).eq('user_id', userId)
   if (error) throw error
 }
+
+// ─── Messages ─────────────────────────────────────────────────────────────────
 
 export async function insertGroupMessage(
   groupId: string,
@@ -177,58 +158,90 @@ export async function getGroupMessages(groupId: string, limit: number, before?: 
   return ((data ?? []) as unknown as GroupMessageRow[]).reverse()
 }
 
+// ─── Read receipts ────────────────────────────────────────────────────────────
+//
+// Two writes happen together:
+//   1. last_read_at on group_members  → source of truth for unread COUNT (fast, permanent)
+//   2. group_message_reads rows       → drives "seen by" avatars (purged after 30 days)
+//
+// ALWAYS updates last_read_at. Only writes group_message_reads if messageIds provided.
+
 export async function markGroupMessagesRead(
   groupId: string,
   userId: string,
   messageIds: string[]
 ): Promise<void> {
-  if (messageIds.length === 0) return
-
   const now = new Date().toISOString()
 
-  // 1. Upsert per-message read rows (used for per-message receipts / purge job)
-  const rows = messageIds.map(message_id => ({
-    message_id,
-    group_id: groupId,
-    user_id: userId,
-    read_at: now,
-  }))
-  const { error: readError } = await supabase
-    .from('group_message_reads')
-    .upsert(rows, { onConflict: 'message_id,user_id' })
-  if (readError) throw readError
+  // Always update the last-read pointer — source of truth for unread badge
+  const updatePayload: Record<string, string> = { last_read_at: now }
+  if (messageIds.length > 0) {
+    updatePayload.last_read_message_id = messageIds[messageIds.length - 1]
+  }
 
-  // 2. Update last_read_at + last_read_message_id on group_members
-  //    This is what the fast unread count in getGroupsByUserId reads from.
-  //    messageIds are passed in sent_at order (oldest → newest) from the service layer,
-  //    so the last element is the most recent message read.
-  const lastMessageId = messageIds[messageIds.length - 1]
   const { error: memberError } = await supabase
     .from('group_members')
-    .update({
-      last_read_at: now,
-      last_read_message_id: lastMessageId,
-    })
+    .update(updatePayload)
     .eq('group_id', groupId)
     .eq('user_id', userId)
   if (memberError) throw memberError
+
+  // Write per-message rows for "seen by" UI only when IDs are provided
+  if (messageIds.length > 0) {
+    const rows = messageIds.map(message_id => ({
+      message_id,
+      group_id: groupId,
+      user_id: userId,
+      read_at: now,
+    }))
+    const { error: readError } = await supabase
+      .from('group_message_reads')
+      .upsert(rows, { onConflict: 'message_id,user_id' })
+    if (readError) throw readError
+  }
 }
+
+// ─── Reactions ────────────────────────────────────────────────────────────────
+//
+// UNIQUE(message_id, user_id) enforced at DB → one reaction per user per message.
+// Toggle logic:
+//   • same emoji already there → remove (toggle off)
+//   • different emoji           → replace (update)
+//   • nothing yet               → insert
 
 export async function toggleGroupMessageReaction(
   messageId: string,
   userId: string,
   emoji: string
 ): Promise<{ action: 'added' | 'removed' }> {
+  // Check current reaction for this user on this message (any emoji)
   const { data: existing } = await supabase
     .from('group_message_reactions')
-    .select('id').eq('message_id', messageId).eq('user_id', userId).eq('emoji', emoji).maybeSingle()
+    .select('id, emoji')
+    .eq('message_id', messageId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
   if (existing) {
-    await supabase.from('group_message_reactions').delete().eq('id', (existing as any).id)
-    return { action: 'removed' }
+    if ((existing as any).emoji === emoji) {
+      // Same emoji → toggle off
+      await supabase.from('group_message_reactions').delete().eq('id', (existing as any).id)
+      return { action: 'removed' }
+    }
+    // Different emoji → replace (update in place to respect UNIQUE constraint)
+    await supabase
+      .from('group_message_reactions')
+      .update({ emoji })
+      .eq('id', (existing as any).id)
+    return { action: 'added' }
   }
+
+  // No existing reaction → insert
   await supabase.from('group_message_reactions').insert({ message_id: messageId, user_id: userId, emoji })
   return { action: 'added' }
 }
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
 export async function touchGroup(groupId: string): Promise<void> {
   const now = new Date().toISOString()
