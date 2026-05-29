@@ -17,10 +17,6 @@ function getAuth(req: Request): { user_id: string; role: string } {
   return { user_id, role }
 }
 
-function param(req: Request, key: string): string {
-  return req.params[key] as string
-}
-
 function fail(res: Response, err: unknown): void {
   const e = err as { statusCode?: number; message?: string }
   if (e.statusCode) { res.status(e.statusCode).json({ success: false, message: e.message }); return }
@@ -48,7 +44,7 @@ export async function getMessages(req: Request, res: Response, next: NextFunctio
     const { user_id } = getAuth(req)
     const p = getMessagesQuerySchema.safeParse(req.query)
     if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
-    res.json({ success: true, data: await service.getConversationMessages(param(req, 'conversationId'), user_id, p.data.limit, p.data.before) })
+    res.json({ success: true, data: await service.getConversationMessages(req.params.conversationId as string, user_id, p.data.limit, p.data.before) })
   } catch (err) { fail(res, err) }
 }
 
@@ -57,14 +53,14 @@ export async function sendMessage(req: Request, res: Response, next: NextFunctio
     const { user_id, role } = getAuth(req)
     const p = sendMessageSchema.safeParse(req.body)
     if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
-    res.status(201).json({ success: true, data: await service.sendMessage(param(req, 'conversationId'), user_id, role, p.data.content, p.data.reply_to_message_id) })
+    res.status(201).json({ success: true, data: await service.sendMessage(req.params.conversationId as string, user_id, role, p.data.content, p.data.reply_to_message_id) })
   } catch (err) { fail(res, err) }
 }
 
 export async function markAsRead(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { user_id } = getAuth(req)
-    await service.markConversationAsRead(param(req, 'conversationId'), user_id)
+    await service.markConversationAsRead(req.params.conversationId as string, user_id)
     res.json({ success: true })
   } catch (err) { fail(res, err) }
 }
@@ -72,7 +68,7 @@ export async function markAsRead(req: Request, res: Response, next: NextFunction
 export async function deleteMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { user_id } = getAuth(req)
-    await service.deleteMessage(param(req, 'messageId'), user_id)
+    await service.deleteMessage(req.params.messageId as string, user_id)
     res.json({ success: true })
   } catch (err) { fail(res, err) }
 }
@@ -82,7 +78,7 @@ export async function reactToMessage(req: Request, res: Response, next: NextFunc
     const { user_id } = getAuth(req)
     const p = reactSchema.safeParse(req.body)
     if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
-    res.json({ success: true, data: await service.toggleReaction(param(req, 'conversationId'), param(req, 'messageId'), user_id, p.data.emoji) })
+    res.json({ success: true, data: await service.toggleReaction(req.params.conversationId as string, req.params.messageId as string, user_id, p.data.emoji) })
   } catch (err) { fail(res, err) }
 }
 

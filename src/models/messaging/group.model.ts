@@ -23,7 +23,7 @@ export async function createGroup(name: string, createdBy: string, memberIds: st
 }
 
 export async function getGroupsByUserId(userId: string): Promise<GroupWithDetails[]> {
-  // 1. My memberships — includes last_read_at for fast unread count
+  // 1. My memberships — last_read_at drives unread count
   const { data: myData, error: myErr } = await supabase
     .from('group_members')
     .select('group_id, status, last_read_at, last_read_message_id')
@@ -33,61 +33,74 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
   if (!myData?.length) return []
 
   type MyRow = { group_id: string; status: string; last_read_at: string | null; last_read_message_id: string | null }
-  const mine     = myData as MyRow[]
-  const groupIds = mine.map(m => m.group_id)
-  const statusMap  = Object.fromEntries(mine.map(m => [m.group_id, m.status]))
-  const readAtMap  = Object.fromEntries(mine.map(m => [m.group_id, m.last_read_at]))
+  const mine      = myData as MyRow[]
+  const groupIds  = mine.map(m => m.group_id)
+  const statusMap = Object.fromEntries(mine.map(m => [m.group_id, m.status]))
+  const readAtMap = Object.fromEntries(mine.map(m => [m.group_id, m.last_read_at]))
 
-  // 2. Group rows, all members, last messages — in parallel
+  // 2. Fetch groups, all members, and ALL messages in 3 parallel queries.
+  //    We use allMsgs for BOTH last_message AND unread counts in a single pass —
+  //    eliminating the previous N parallel COUNT queries.
   const [
-    { data: groups, error: gErr },
+    { data: groups,     error: gErr },
     { data: allMembers, error: mErr },
-    { data: lastMsgs, error: lErr },
+    { data: allMsgs,    error: lErr },
   ] = await Promise.all([
-    supabase.from('group_conversations').select('*').in('group_id', groupIds).order('last_message_at', { ascending: false, nullsFirst: false }),
-    supabase.from('group_members').select('*, user:users!group_members_user_id_fkey(user_id, first_name, last_name, role, email)').in('group_id', groupIds),
-    supabase.from('group_messages').select('message_id, group_id, content, sent_at, sender_id').in('group_id', groupIds).is('deleted_at', null).order('sent_at', { ascending: false }),
+    supabase.from('group_conversations')
+      .select('*')
+      .in('group_id', groupIds)
+      .order('last_message_at', { ascending: false, nullsFirst: false }),
+
+    supabase.from('group_members')
+      .select('*, user:users!group_members_user_id_fkey(user_id, first_name, last_name, role, email)')
+      .in('group_id', groupIds),
+
+    // Fetch all non-deleted messages across all groups in one query.
+    // Used for: (a) last_message per group, (b) in-memory unread count.
+    supabase.from('group_messages')
+      .select('message_id, group_id, content, sent_at, sender_id')
+      .in('group_id', groupIds)
+      .is('deleted_at', null)
+      .order('sent_at', { ascending: false }),
   ])
   if (gErr) throw gErr
   if (mErr) throw mErr
   if (lErr) throw lErr
 
+  // ── Build membersByGroup map ──────────────────────────────────────────────
   const membersByGroup: Record<string, unknown[]> = {}
   for (const m of allMembers ?? []) {
     const row = m as { group_id: string }
-    if (!membersByGroup[row.group_id]) membersByGroup[row.group_id] = []
-    membersByGroup[row.group_id].push(m)
+    ;(membersByGroup[row.group_id] ??= []).push(m)
   }
 
-  const lastMsgMap: Record<string, { message_id: string; content: string; sent_at: string; sender_id: string }> = {}
-  for (const m of lastMsgs ?? []) {
-    const row = m as { group_id: string; message_id: string; content: string; sent_at: string; sender_id: string }
-    if (!lastMsgMap[row.group_id]) lastMsgMap[row.group_id] = row
-  }
+  // ── Single pass over allMsgs: derive last_message + unread count ──────────
+  // This replaces the previous N parallel COUNT queries with O(total_messages)
+  // in-memory computation — one iteration, zero additional DB round trips.
+  type MsgRow = { message_id: string; group_id: string; content: string; sent_at: string; sender_id: string }
 
-  // 3. Unread count per group — O(1) per group using last_read_at (not group_message_reads)
-  const unreadCounts = await Promise.all(
-    groupIds.map(async (gid) => {
-      let q = supabase
-        .from('group_messages')
-        .select('message_id', { count: 'exact', head: true })
-        .eq('group_id', gid)
-        .neq('sender_id', userId)
-        .is('deleted_at', null)
-      const lat = readAtMap[gid]
-      if (lat) q = q.gt('sent_at', lat)
-      const { count } = await q
-      return [gid, count ?? 0] as [string, number]
-    })
-  )
-  const unreadMap = Object.fromEntries(unreadCounts)
+  const lastMsgMap: Record<string, MsgRow>    = {}
+  const unreadMap:  Record<string, number>    = {}
+
+  for (const m of (allMsgs ?? []) as MsgRow[]) {
+    // Last message: allMsgs is ordered desc, first seen per group wins
+    if (!lastMsgMap[m.group_id]) lastMsgMap[m.group_id] = m
+
+    // Unread count: skip own messages, count those newer than last_read_at
+    if (m.sender_id === userId) continue
+    const readAt = readAtMap[m.group_id]
+    const isUnread = readAt === null || m.sent_at > readAt
+    if (isUnread) unreadMap[m.group_id] = (unreadMap[m.group_id] ?? 0) + 1
+  }
 
   return (groups as GroupRow[]).map(g => ({
     ...g,
-    members: (membersByGroup[g.group_id] ?? []) as GroupWithDetails['members'],
-    last_message: lastMsgMap[g.group_id] ?? null,
+    members:      (membersByGroup[g.group_id] ?? []) as GroupWithDetails['members'],
+    last_message: lastMsgMap[g.group_id]
+      ? { message_id: lastMsgMap[g.group_id].message_id, content: lastMsgMap[g.group_id].content, sent_at: lastMsgMap[g.group_id].sent_at, sender_id: lastMsgMap[g.group_id].sender_id }
+      : null,
     unread_count: unreadMap[g.group_id] ?? 0,
-    my_status: (statusMap[g.group_id] ?? 'pending') as 'pending' | 'accepted' | 'declined',
+    my_status:    (statusMap[g.group_id] ?? 'pending') as 'pending' | 'accepted' | 'declined',
   }))
 }
 
@@ -143,15 +156,15 @@ export async function getGroupMessages(groupId: string, limit: number, before?: 
 }
 
 // ─── Read receipts ────────────────────────────────────────────────────────────
-// ALWAYS updates last_read_at (unread count source of truth).
-// Writes group_message_reads rows only when messageIds provided (for "seen by" UI).
+// ALWAYS updates last_read_at on group_members (source of truth for unread badge).
+// Writes group_message_reads only when messageIds are provided (for "seen by" UI).
 
 export async function markGroupMessagesRead(
   groupId: string,
   userId: string,
   messageIds: string[]
 ): Promise<void> {
-  const now = new Date().toISOString()
+  const now   = new Date().toISOString()
   const patch: Record<string, string> = { last_read_at: now }
   if (messageIds.length > 0) patch.last_read_message_id = messageIds[messageIds.length - 1]
 
@@ -161,14 +174,15 @@ export async function markGroupMessagesRead(
 
   if (messageIds.length > 0) {
     const rows = messageIds.map(mid => ({ message_id: mid, group_id: groupId, user_id: userId, read_at: now }))
-    const { error: readErr } = await supabase.from('group_message_reads').upsert(rows, { onConflict: 'message_id,user_id' })
+    const { error: readErr } = await supabase
+      .from('group_message_reads').upsert(rows, { onConflict: 'message_id,user_id' })
     if (readErr) throw readErr
   }
 }
 
 // ─── Reactions ────────────────────────────────────────────────────────────────
 // UNIQUE(message_id, user_id): one reaction per user per message.
-// Same emoji → remove. Different emoji → replace. None → insert.
+// Same emoji → remove. Different emoji → update in place. None → insert.
 
 export async function toggleGroupMessageReaction(
   messageId: string,

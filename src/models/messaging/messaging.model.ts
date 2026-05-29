@@ -205,25 +205,16 @@ export async function getMessagableDriversForClient(clientUserId: string): Promi
   if (!assignments?.length) return []
 
   type Assignment = { booking_id: string; drivers: { driver_id: string; user_id: string }[] }
-  const typed     = assignments as unknown as Assignment[]
-  const driverIds = [...new Set(typed.flatMap(a => a.drivers.map(d => d.user_id)))]
+  const typed       = assignments as unknown as Assignment[]
+  const driverIds   = [...new Set(typed.flatMap(a => a.drivers.map(d => d.user_id)))]
 
   const { data: users } = await supabase
     .from('users').select('user_id, first_name, last_name, role, email').in('user_id', driverIds).eq('status', 'active')
 
-  type UserRow = { user_id: string; first_name: string | null; last_name: string | null; role: UserRole; email: string }
-
-  return (users ?? []).map((u) => {
-    const row = u as unknown as UserRow
-    return {
-      user_id:    row.user_id,
-      first_name: row.first_name,
-      last_name:  row.last_name,
-      role:       row.role,
-      email:      row.email,
-      booking_id: typed.find(a => a.drivers.some(d => d.user_id === row.user_id))?.booking_id,
-    } satisfies MessagableUser
-  })
+  return (users ?? []).map((u: Record<string, unknown>) => ({
+    ...(u as unknown as MessagableUser),
+    booking_id: typed.find(a => a.drivers.some(d => d.user_id === u.user_id))?.booking_id,
+  }))
 }
 
 export async function validateClientDriverAccess(clientUserId: string, targetUserId: string): Promise<boolean> {
