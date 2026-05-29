@@ -1,42 +1,19 @@
-import * as messagingModel from '../../models/messaging/messaging.model.js'
+import * as model from '../../models/messaging/messaging.model.js'
 import { createClient } from '@supabase/supabase-js'
 import type { ConversationWithDetails, MessageRow, MessagableUser } from '../../types/messaging.types.js'
 
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
-async function broadcastNewMessage(message: MessageRow): Promise<void> {
-  await Promise.allSettled([
-    supabaseAdmin.channel(`messaging:user:${message.sender_id}`).httpSend('broadcast', { event: 'new_message', payload: message }),
-    supabaseAdmin.channel(`messaging:user:${message.receiver_id}`).httpSend('broadcast', { event: 'new_message', payload: message }),
-    supabaseAdmin.channel(`messaging:conv:${message.conversation_id}`).httpSend('broadcast', { event: 'new_message', payload: message }),
-  ])
+// ─── Broadcasts ───────────────────────────────────────────────────────────────
+
+async function broadcast(channel: string, event: string, payload: unknown): Promise<void> {
+  await admin.channel(channel).send({ type: 'broadcast', event, payload })
 }
 
-async function broadcastReadReceipt(conversationId: string, senderId: string, readAt: string): Promise<void> {
-  await Promise.allSettled([
-    supabaseAdmin.channel(`messaging:user:${senderId}`).httpSend('broadcast', { event: 'read_receipt', payload: { conversation_id: conversationId, read_at: readAt } }),
-    supabaseAdmin.channel(`messaging:conv:${conversationId}`).httpSend('broadcast', { event: 'read_receipt', payload: { conversation_id: conversationId, read_at: readAt } }),
-  ])
-}
-
-async function broadcastReaction(
-  conversationId: string,
-  senderId: string,
-  receiverId: string,
-  payload: { message_id: string; user_id: string; emoji: string; action: 'added' | 'removed' }
-): Promise<void> {
-  await Promise.allSettled([
-    supabaseAdmin.channel(`messaging:conv:${conversationId}`).httpSend('broadcast', { event: 'reaction_toggle', payload }),
-    supabaseAdmin.channel(`messaging:user:${senderId}`).httpSend('broadcast', { event: 'reaction_toggle', payload }),
-    supabaseAdmin.channel(`messaging:user:${receiverId}`).httpSend('broadcast', { event: 'reaction_toggle', payload }),
-  ])
-}
+// ─── Service ──────────────────────────────────────────────────────────────────
 
 export async function getConversations(userId: string): Promise<ConversationWithDetails[]> {
-  return messagingModel.getConversationsByUserId(userId)
+  return model.getConversationsByUserId(userId)
 }
 
 export async function getOrCreateConversation(
@@ -45,39 +22,27 @@ export async function getOrCreateConversation(
   targetUserId: string,
   bookingId?: string
 ) {
-  if (currentUserId === targetUserId) {
-    throw Object.assign(new Error('Cannot create a conversation with yourself'), { statusCode: 400 })
-  }
-  const targetUser = await messagingModel.findTargetUser(targetUserId)
-  if (!targetUser || targetUser.status !== 'active') {
-    throw Object.assign(new Error('User not found or inactive'), { statusCode: 404 })
-  }
+  if (currentUserId === targetUserId) throw Object.assign(new Error('Cannot create a conversation with yourself'), { statusCode: 400 })
+
+  const target = await model.findTargetUser(targetUserId)
+  if (!target || target.status !== 'active') throw Object.assign(new Error('User not found or inactive'), { statusCode: 404 })
+
   if (currentUserRole === 'client') {
-    if (targetUser.role !== 'driver') {
-      throw Object.assign(new Error('Clients can only message drivers assigned to their bookings'), { statusCode: 403 })
-    }
-    const canMessage = await messagingModel.validateClientDriverAccess(currentUserId, targetUserId)
-    if (!canMessage) {
-      throw Object.assign(new Error('No active in-transit booking found with this driver'), { statusCode: 403 })
-    }
+    if (target.role !== 'driver') throw Object.assign(new Error('Clients can only message drivers assigned to their bookings'), { statusCode: 403 })
+    const ok = await model.validateClientDriverAccess(currentUserId, targetUserId)
+    if (!ok) throw Object.assign(new Error('No active in-transit booking found with this driver'), { statusCode: 403 })
   }
-  const existing = await messagingModel.findConversationByParticipants(currentUserId, targetUserId)
+
+  const existing = await model.findConversationByParticipants(currentUserId, targetUserId)
   if (existing) return existing
-  const contextType = currentUserRole === 'client' ? 'booking_transit' : 'direct'
-  return messagingModel.createConversation(currentUserId, targetUserId, contextType, bookingId)
+  return model.createConversation(currentUserId, targetUserId, currentUserRole === 'client' ? 'booking_transit' : 'direct', bookingId)
 }
 
-export async function getConversationMessages(
-  conversationId: string,
-  userId: string,
-  limit: number,
-  before?: string
-): Promise<MessageRow[]> {
-  const conversation = await messagingModel.findConversationById(conversationId)
-  if (!conversation) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 })
-  const isParticipant = conversation.participant_a_id === userId || conversation.participant_b_id === userId
-  if (!isParticipant) throw Object.assign(new Error('Access denied'), { statusCode: 403 })
-  return messagingModel.getMessagesByConversationId(conversationId, userId, limit, before)
+export async function getConversationMessages(conversationId: string, userId: string, limit: number, before?: string): Promise<MessageRow[]> {
+  const conv = await model.findConversationById(conversationId)
+  if (!conv) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 })
+  if (conv.participant_a_id !== userId && conv.participant_b_id !== userId) throw Object.assign(new Error('Access denied'), { statusCode: 403 })
+  return model.getMessagesByConversationId(conversationId, userId, limit, before)
 }
 
 export async function sendMessage(
@@ -87,40 +52,49 @@ export async function sendMessage(
   content: string,
   replyToMessageId?: string
 ): Promise<MessageRow> {
-  const conversation = await messagingModel.findConversationById(conversationId)
-  if (!conversation) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 })
-  const isParticipant = conversation.participant_a_id === senderId || conversation.participant_b_id === senderId
-  if (!isParticipant) throw Object.assign(new Error('Access denied'), { statusCode: 403 })
-  const receiverId = conversation.participant_a_id === senderId ? conversation.participant_b_id : conversation.participant_a_id
+  const conv = await model.findConversationById(conversationId)
+  if (!conv) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 })
+  if (conv.participant_a_id !== senderId && conv.participant_b_id !== senderId) throw Object.assign(new Error('Access denied'), { statusCode: 403 })
+
+  const receiverId = conv.participant_a_id === senderId ? conv.participant_b_id : conv.participant_a_id
   if (senderRole === 'client') {
-    const canMessage = await messagingModel.validateClientDriverAccess(senderId, receiverId)
-    if (!canMessage) throw Object.assign(new Error('Messaging is only allowed while a booking with this driver is in transit'), { statusCode: 403 })
+    const ok = await model.validateClientDriverAccess(senderId, receiverId)
+    if (!ok) throw Object.assign(new Error('Messaging only allowed while booking is in transit'), { statusCode: 403 })
   }
-  const message = await messagingModel.insertMessage(conversationId, senderId, receiverId, content, replyToMessageId)
-  await messagingModel.touchConversation(conversationId)
-  broadcastNewMessage(message).catch(err => console.error('[Realtime] broadcast failed:', err))
+
+  const message = await model.insertMessage(conversationId, senderId, receiverId, content, replyToMessageId)
+  await model.touchConversation(conversationId)
+
+  void Promise.allSettled([
+    broadcast(`messaging:user:${senderId}`, 'new_message', message),
+    broadcast(`messaging:user:${receiverId}`, 'new_message', message),
+    broadcast(`messaging:conv:${conversationId}`, 'new_message', message),
+  ])
+
   return message
 }
 
 export async function markConversationAsRead(conversationId: string, userId: string): Promise<void> {
-  const conversation = await messagingModel.findConversationById(conversationId)
-  if (!conversation) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 })
-  const isParticipant = conversation.participant_a_id === userId || conversation.participant_b_id === userId
-  if (!isParticipant) throw Object.assign(new Error('Access denied'), { statusCode: 403 })
-  await messagingModel.markMessagesRead(conversationId, userId)
-  const senderId = conversation.participant_a_id === userId ? conversation.participant_b_id : conversation.participant_a_id
-  broadcastReadReceipt(conversationId, senderId, new Date().toISOString()).catch(err =>
-    console.error('[Realtime] read_receipt broadcast failed:', err)
-  )
+  const conv = await model.findConversationById(conversationId)
+  if (!conv) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 })
+  if (conv.participant_a_id !== userId && conv.participant_b_id !== userId) throw Object.assign(new Error('Access denied'), { statusCode: 403 })
+  await model.markMessagesRead(conversationId, userId)
+
+  const senderId = conv.participant_a_id === userId ? conv.participant_b_id : conv.participant_a_id
+  const payload  = { conversation_id: conversationId, read_at: new Date().toISOString() }
+  void Promise.allSettled([
+    broadcast(`messaging:user:${senderId}`, 'read_receipt', payload),
+    broadcast(`messaging:conv:${conversationId}`, 'read_receipt', payload),
+  ])
 }
 
 export async function deleteMessage(messageId: string, userId: string): Promise<void> {
-  const message = await messagingModel.findMessageById(messageId)
-  if (!message) throw Object.assign(new Error('Message not found'), { statusCode: 404 })
-  const isSender = message.sender_id === userId
-  const isReceiver = message.receiver_id === userId
+  const msg = await model.findMessageById(messageId)
+  if (!msg) throw Object.assign(new Error('Message not found'), { statusCode: 404 })
+  const isSender   = msg.sender_id === userId
+  const isReceiver = msg.receiver_id === userId
   if (!isSender && !isReceiver) throw Object.assign(new Error('Access denied'), { statusCode: 403 })
-  await messagingModel.softDeleteMessage(messageId, userId, isSender)
+  await model.softDeleteMessage(messageId, userId, isSender)
 }
 
 export async function toggleReaction(
@@ -129,17 +103,22 @@ export async function toggleReaction(
   userId: string,
   emoji: string
 ): Promise<{ action: 'added' | 'removed' }> {
-  const conversation = await messagingModel.findConversationById(conversationId)
-  if (!conversation) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 })
-  const isParticipant = conversation.participant_a_id === userId || conversation.participant_b_id === userId
-  if (!isParticipant) throw Object.assign(new Error('Access denied'), { statusCode: 403 })
-  const result = await messagingModel.toggleMessageReaction(messageId, userId, emoji)
-  const otherId = conversation.participant_a_id === userId ? conversation.participant_b_id : conversation.participant_a_id
-  broadcastReaction(conversationId, userId, otherId, { message_id: messageId, user_id: userId, emoji, action: result.action }).catch(() => {})
+  const conv = await model.findConversationById(conversationId)
+  if (!conv) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 })
+  if (conv.participant_a_id !== userId && conv.participant_b_id !== userId) throw Object.assign(new Error('Access denied'), { statusCode: 403 })
+
+  const result  = await model.toggleMessageReaction(messageId, userId, emoji)
+  const otherId = conv.participant_a_id === userId ? conv.participant_b_id : conv.participant_a_id
+  const payload = { message_id: messageId, user_id: userId, emoji, action: result.action }
+
+  void Promise.allSettled([
+    broadcast(`messaging:conv:${conversationId}`, 'reaction_toggle', payload),
+    broadcast(`messaging:user:${userId}`, 'reaction_toggle', payload),
+    broadcast(`messaging:user:${otherId}`, 'reaction_toggle', payload),
+  ])
   return result
 }
 
 export async function getMessagableUsers(userId: string, role: string): Promise<MessagableUser[]> {
-  if (role === 'client') return messagingModel.getMessagableDriversForClient(userId)
-  return messagingModel.getMessagableUsersForStaff(userId)
+  return role === 'client' ? model.getMessagableDriversForClient(userId) : model.getMessagableUsersForStaff(userId)
 }

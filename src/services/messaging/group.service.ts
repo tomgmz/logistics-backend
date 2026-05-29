@@ -2,52 +2,39 @@ import * as groupModel from '../../models/messaging/group.model.js'
 import { createClient } from '@supabase/supabase-js'
 import type { GroupWithDetails, GroupMessageRow } from '../../types/messaging.types.js'
 
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
-async function broadcastGroupMessage(message: GroupMessageRow, memberIds: string[]): Promise<void> {
-  await Promise.allSettled([
-    supabaseAdmin.channel(`messaging:group:${message.group_id}`).httpSend('broadcast', { event: 'new_group_message', payload: message }),
-    ...memberIds.map(uid =>
-      supabaseAdmin.channel(`messaging:user:${uid}`).httpSend('broadcast', { event: 'new_group_message', payload: message })
-    ),
-  ])
+// ─── Broadcast helper ─────────────────────────────────────────────────────────
+// Per Supabase docs: calling .send() BEFORE .subscribe() uses HTTP (REST).
+// This is the correct server-side pattern — no WebSocket needed.
+
+async function broadcast(channel: string, event: string, payload: unknown): Promise<void> {
+  const ch = admin.channel(channel)
+  await ch.send({ type: 'broadcast', event, payload })
 }
 
-async function broadcastGroupInvite(groupId: string, inviteeIds: string[], groupName: string): Promise<void> {
-  await Promise.allSettled(
-    inviteeIds.map(uid =>
-      supabaseAdmin.channel(`messaging:user:${uid}`).httpSend('broadcast', { event: 'group_invite', payload: { group_id: groupId, group_name: groupName } })
-    )
-  )
+async function broadcastMany(channels: string[], event: string, payload: unknown): Promise<void> {
+  await Promise.allSettled(channels.map(c => broadcast(c, event, payload)))
 }
 
-async function broadcastGroupReadReceipt(groupId: string, userId: string, readAt: string): Promise<void> {
-  await supabaseAdmin.channel(`messaging:group:${groupId}`).httpSend('broadcast', {
-    event: 'group_read_receipt', payload: { group_id: groupId, user_id: userId, read_at: readAt },
-  })
-}
+// ─── Service ──────────────────────────────────────────────────────────────────
 
-async function broadcastGroupReaction(
-  groupId: string,
-  memberIds: string[],
-  payload: { message_id: string; group_id: string; user_id: string; emoji: string; action: 'added' | 'removed' }
-): Promise<void> {
-  await Promise.allSettled([
-    supabaseAdmin.channel(`messaging:group:${groupId}`).httpSend('broadcast', { event: 'reaction_toggle', payload }),
-    ...memberIds.map(uid =>
-      supabaseAdmin.channel(`messaging:user:${uid}`).httpSend('broadcast', { event: 'reaction_toggle', payload })
-    ),
-  ])
-}
-
-export async function createGroup(createdBy: string, name: string, memberIds: string[]): Promise<{ group_id: string }> {
+export async function createGroup(
+  createdBy: string,
+  name: string,
+  memberIds: string[]
+): Promise<{ group_id: string }> {
   if (memberIds.length < 1) throw Object.assign(new Error('A group needs at least one other member'), { statusCode: 400 })
   if (memberIds.includes(createdBy)) throw Object.assign(new Error('Do not include yourself in memberIds'), { statusCode: 400 })
+
   const group = await groupModel.createGroup(name, createdBy, memberIds)
-  broadcastGroupInvite(group.group_id, memberIds, name).catch(err => console.error('[Realtime] group_invite broadcast failed:', err))
+
+  void broadcastMany(
+    memberIds.map(uid => `messaging:user:${uid}`),
+    'group_invite',
+    { group_id: group.group_id, group_name: name }
+  )
+
   return { group_id: group.group_id }
 }
 
@@ -68,31 +55,59 @@ export async function sendGroupMessage(
   content: string,
   replyToMessageId?: string
 ): Promise<GroupMessageRow> {
-  const group = await groupModel.getGroupById(groupId)
+  const [group, member] = await Promise.all([
+    groupModel.getGroupById(groupId),
+    groupModel.getGroupMember(groupId, senderId),
+  ])
   if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 })
-  const member = await groupModel.getGroupMember(groupId, senderId)
-  if (!member || member.status !== 'accepted') throw Object.assign(new Error('You must accept the group invite before messaging'), { statusCode: 403 })
+  if (!member || member.status !== 'accepted') throw Object.assign(new Error('Must accept invite before messaging'), { statusCode: 403 })
+
   const message = await groupModel.insertGroupMessage(groupId, senderId, content, replyToMessageId)
   await groupModel.touchGroup(groupId)
-  const { data: members } = await supabaseAdmin
-    .from('group_members').select('user_id').eq('group_id', groupId).eq('status', 'accepted')
-  const memberIds = (members ?? []).map((m: any) => m.user_id)
-  broadcastGroupMessage(message, memberIds).catch(err => console.error('[Realtime] group broadcast failed:', err))
+
+  // Get accepted member IDs for fan-out
+  const { data: members } = await admin
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', groupId)
+    .eq('status', 'accepted')
+  const memberIds = (members ?? []).map((m: { user_id: string }) => m.user_id)
+
+  void broadcastMany(
+    [`messaging:group:${groupId}`, ...memberIds.map(uid => `messaging:user:${uid}`)],
+    'new_group_message',
+    message
+  )
+
   return message
 }
 
-export async function getGroupMessages(groupId: string, userId: string, limit: number, before?: string): Promise<GroupMessageRow[]> {
+export async function getGroupMessages(
+  groupId: string,
+  userId: string,
+  limit: number,
+  before?: string
+): Promise<GroupMessageRow[]> {
   const member = await groupModel.getGroupMember(groupId, userId)
   if (!member || member.status !== 'accepted') throw Object.assign(new Error('Access denied'), { statusCode: 403 })
   return groupModel.getGroupMessages(groupId, limit, before)
 }
 
-export async function markGroupRead(groupId: string, userId: string, messageIds: string[]): Promise<void> {
+export async function markGroupRead(
+  groupId: string,
+  userId: string,
+  messageIds: string[]
+): Promise<void> {
   const member = await groupModel.getGroupMember(groupId, userId)
   if (!member || member.status !== 'accepted') throw Object.assign(new Error('Access denied'), { statusCode: 403 })
+
   await groupModel.markGroupMessagesRead(groupId, userId, messageIds)
-  broadcastGroupReadReceipt(groupId, userId, new Date().toISOString()).catch(err =>
-    console.error('[Realtime] group read receipt broadcast failed:', err)
+
+  // Notify group channel so other members can update seen-by UI in real time
+  void broadcast(
+    `messaging:group:${groupId}`,
+    'group_read_receipt',
+    { group_id: groupId, user_id: userId, read_at: new Date().toISOString() }
   )
 }
 
@@ -104,10 +119,22 @@ export async function toggleGroupReaction(
 ): Promise<{ action: 'added' | 'removed' }> {
   const member = await groupModel.getGroupMember(groupId, userId)
   if (!member || member.status !== 'accepted') throw Object.assign(new Error('Access denied'), { statusCode: 403 })
+
   const result = await groupModel.toggleGroupMessageReaction(messageId, userId, emoji)
-  const { data: members } = await supabaseAdmin
-    .from('group_members').select('user_id').eq('group_id', groupId).eq('status', 'accepted')
-  const memberIds = (members ?? []).map((m: any) => m.user_id)
-  broadcastGroupReaction(groupId, memberIds, { message_id: messageId, group_id: groupId, user_id: userId, emoji, action: result.action }).catch(() => {})
+
+  const { data: members } = await admin
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', groupId)
+    .eq('status', 'accepted')
+  const memberIds = (members ?? []).map((m: { user_id: string }) => m.user_id)
+  const payload   = { message_id: messageId, group_id: groupId, user_id: userId, emoji, action: result.action }
+
+  void broadcastMany(
+    [`messaging:group:${groupId}`, ...memberIds.map(uid => `messaging:user:${uid}`)],
+    'reaction_toggle',
+    payload
+  )
+
   return result
 }
