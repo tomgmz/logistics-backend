@@ -65,13 +65,21 @@ export async function sendMessage(
   const message = await model.insertMessage(conversationId, senderId, receiverId, content, replyToMessageId)
   await model.touchConversation(conversationId)
 
+  // Attach reply snippet so realtime consumers see it immediately without a re-fetch
+  let reply_to: { message_id: string; content: string; sender_id: string } | null = null
+  if (replyToMessageId) {
+    const ref = await model.findMessageById(replyToMessageId)
+    if (ref) reply_to = { message_id: ref.message_id, content: ref.content, sender_id: ref.sender_id }
+  }
+  const payload = { ...message, reply_to }
+
   void Promise.allSettled([
-    broadcast(`messaging:user:${senderId}`, 'new_message', message),
-    broadcast(`messaging:user:${receiverId}`, 'new_message', message),
-    broadcast(`messaging:conv:${conversationId}`, 'new_message', message),
+    broadcast(`messaging:user:${senderId}`, 'new_message', payload),
+    broadcast(`messaging:user:${receiverId}`, 'new_message', payload),
+    broadcast(`messaging:conv:${conversationId}`, 'new_message', payload),
   ])
 
-  return message
+  return payload
 }
 
 export async function markConversationAsRead(conversationId: string, userId: string): Promise<void> {

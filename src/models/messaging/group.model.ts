@@ -142,9 +142,10 @@ export async function insertGroupMessage(
 }
 
 export async function getGroupMessages(groupId: string, limit: number, before?: string): Promise<GroupMessageRow[]> {
+  // Fetch without self-referential join — resolve reply context separately.
   let q = supabase
     .from('group_messages')
-    .select('*, reply_to:group_messages!reply_to_message_id(message_id, content, sender_id), reactions:group_message_reactions(emoji, user_id)')
+    .select('*, reactions:group_message_reactions(emoji, user_id)')
     .eq('group_id', groupId)
     .is('deleted_at', null)
     .order('sent_at', { ascending: false })
@@ -152,7 +153,31 @@ export async function getGroupMessages(groupId: string, limit: number, before?: 
   if (before) q = q.lt('sent_at', before)
   const { data, error } = await q
   if (error) throw error
-  return ((data ?? []) as unknown as GroupMessageRow[]).reverse()
+
+  const msgs = ((data ?? []) as unknown as GroupMessageRow[]).reverse()
+
+  const replyIds = [...new Set(
+    msgs.map(m => m.reply_to_message_id).filter((id): id is string => !!id)
+  )]
+
+  type ReplySnippet = { message_id: string; content: string; sender_id: string }
+  const replyMap: Record<string, ReplySnippet> = {}
+
+  if (replyIds.length > 0) {
+    const { data: replyRows } = await supabase
+      .from('group_messages')
+      .select('message_id, content, sender_id')
+      .in('message_id', replyIds)
+    for (const r of (replyRows ?? []) as ReplySnippet[]) {
+      replyMap[r.message_id] = r
+    }
+  }
+
+  return msgs.map(m => ({
+    ...m,
+    reply_to:  m.reply_to_message_id ? (replyMap[m.reply_to_message_id] ?? null) : null,
+    reactions: Array.isArray(m.reactions) ? m.reactions : [],
+  }))
 }
 
 // ─── Read receipts ────────────────────────────────────────────────────────────

@@ -92,9 +92,12 @@ export async function getMessagesByConversationId(
   limit: number,
   before?: string
 ): Promise<MessageRow[]> {
+  // Fetch messages WITHOUT the self-referential join — PostgREST self-joins
+  // are unreliable without an explicit FK constraint and return {} for all rows.
+  // We resolve reply context in a separate targeted query below.
   let q = supabase
     .from('messages')
-    .select('*, reply_to:messages!reply_to_message_id(message_id, content, sender_id), reactions:message_reactions(emoji, user_id)')
+    .select('*, reactions:message_reactions(emoji, user_id)')
     .eq('conversation_id', conversationId)
     .or(`and(sender_id.eq.${userId},deleted_by_sender.eq.false),and(receiver_id.eq.${userId},deleted_by_receiver.eq.false)`)
     .order('sent_at', { ascending: false })
@@ -102,7 +105,32 @@ export async function getMessagesByConversationId(
   if (before) q = q.lt('sent_at', before)
   const { data, error } = await q
   if (error) throw error
-  return ((data ?? []) as unknown as MessageRow[]).reverse()
+
+  const msgs = ((data ?? []) as unknown as MessageRow[]).reverse()
+
+  // Batch-fetch only the messages that are actual replies
+  const replyIds = [...new Set(
+    msgs.map(m => m.reply_to_message_id).filter((id): id is string => !!id)
+  )]
+
+  type ReplySnippet = { message_id: string; content: string; sender_id: string }
+  const replyMap: Record<string, ReplySnippet> = {}
+
+  if (replyIds.length > 0) {
+    const { data: replyRows } = await supabase
+      .from('messages')
+      .select('message_id, content, sender_id')
+      .in('message_id', replyIds)
+    for (const r of (replyRows ?? []) as ReplySnippet[]) {
+      replyMap[r.message_id] = r
+    }
+  }
+
+  return msgs.map(m => ({
+    ...m,
+    reply_to:  m.reply_to_message_id ? (replyMap[m.reply_to_message_id] ?? null) : null,
+    reactions: Array.isArray(m.reactions) ? m.reactions : [],
+  }))
 }
 
 export async function insertMessage(

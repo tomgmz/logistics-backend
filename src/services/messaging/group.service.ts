@@ -65,6 +65,18 @@ export async function sendGroupMessage(
   const message = await groupModel.insertGroupMessage(groupId, senderId, content, replyToMessageId)
   await groupModel.touchGroup(groupId)
 
+  // Attach reply snippet so realtime consumers see it immediately without a re-fetch
+  let reply_to: { message_id: string; content: string; sender_id: string } | null = null
+  if (replyToMessageId) {
+    const { data: ref } = await admin
+      .from('group_messages')
+      .select('message_id, content, sender_id')
+      .eq('message_id', replyToMessageId)
+      .maybeSingle()
+    if (ref) reply_to = ref as { message_id: string; content: string; sender_id: string }
+  }
+  const payload = { ...message, reply_to }
+
   // Get accepted member IDs for fan-out
   const { data: members } = await admin
     .from('group_members')
@@ -76,10 +88,10 @@ export async function sendGroupMessage(
   void broadcastMany(
     [`messaging:group:${groupId}`, ...memberIds.map(uid => `messaging:user:${uid}`)],
     'new_group_message',
-    message
+    payload
   )
 
-  return message
+  return payload
 }
 
 export async function getGroupMessages(
