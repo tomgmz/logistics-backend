@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import * as AdminModel from '../../models/admin/admin.model.js'
+import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
 import { CreateAdminInput, UpdateAdminInput } from '../../types/admin.types.js'
 import { logEvent } from '../../lib/log-event.js'
 
@@ -78,4 +79,12 @@ export async function deleteAdmin(userId: string, actorId?: string | null, ip?: 
   })
 
   return result
+}
+
+export async function deactivateAdmin(userId: string, actorId?: string | null, ip?: string | null) {
+  return deactivateUserWithBan(userId, 'admin', 'admin_deactivated', 'Admin', actorId, ip)
+}
+
+export async function activateAdmin(userId: string, actorId?: string | null, ip?: string | null) {
+  return activateUserWithUnban(userId, 'admin', 'admin_activated', 'Admin', actorId, ip)
 }

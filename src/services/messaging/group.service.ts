@@ -105,21 +105,16 @@ export async function getGroupMessages(
   return groupModel.getGroupMessages(groupId, limit, before)
 }
 
-export async function markGroupRead(
-  groupId: string,
-  userId: string,
-  messageIds: string[]
-): Promise<void> {
+export async function markGroupRead(groupId: string, userId: string): Promise<void> {
   const member = await groupModel.getGroupMember(groupId, userId)
   if (!member || member.status !== 'accepted') throw Object.assign(new Error('Access denied'), { statusCode: 403 })
 
-  await groupModel.markGroupMessagesRead(groupId, userId, messageIds)
+  const read_at = await groupModel.markGroupMessagesRead(groupId, userId)
 
-  // Notify group channel so other members can update seen-by UI in real time
   void broadcast(
     `messaging:group:${groupId}`,
     'group_read_receipt',
-    { group_id: groupId, user_id: userId, read_at: new Date().toISOString() }
+    { group_id: groupId, user_id: userId, read_at }
   )
 }
 

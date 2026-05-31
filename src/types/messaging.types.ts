@@ -35,6 +35,8 @@ export interface ConversationRow {
   created_at: string
   updated_at: string
   last_message_at: string | null
+  participant_a_last_read_at: string | null
+  participant_b_last_read_at: string | null
 }
 
 export interface MessageRow {
@@ -43,9 +45,7 @@ export interface MessageRow {
   sender_id: string
   receiver_id: string
   content: string
-  is_read: boolean
   sent_at: string
-  read_at: string | null
   deleted_by_sender: boolean
   deleted_by_receiver: boolean
   reply_to_message_id: string | null
@@ -65,6 +65,7 @@ export interface ConversationWithDetails extends ConversationRow {
   other_user: ConversationParticipant
   last_message: { message_id: string; content: string; sent_at: string; sender_id: string } | null
   unread_count: number
+  // participant_a_last_read_at and participant_b_last_read_at inherited from ConversationRow
 }
 
 export interface MessagableUser {

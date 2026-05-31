@@ -52,6 +52,8 @@ router.get('/admins',        authenticate, isAdmin, AdminController.getAllAdmins
 router.get('/admins/:id',    authenticate, isAdmin, AdminController.getAdminById)
 router.post('/admins',       authenticate, isAdmin, validate(createAdminSchema), AdminController.createAdmin)
 router.patch('/admins/:id',  authenticate, isAdmin, validate(updateAdminSchema), AdminController.updateAdmin)
+router.patch('/admins/:id/deactivate', authenticate, isAdmin, AdminController.deactivateAdmin)
+router.patch('/admins/:id/activate',   authenticate, isAdmin, AdminController.activateAdmin)
 router.delete('/admins/:id', authenticate, isAdmin, AdminController.deleteAdmin)
 
 //Clients

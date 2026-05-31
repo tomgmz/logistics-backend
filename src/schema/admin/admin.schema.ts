@@ -11,7 +11,17 @@ export const createAdminSchema = z.object({
                   .min(2)
                   .max(50)
                   .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes'),
-  middle_name: z.string().regex(/^[A-Za-z]{1,2}$/, 'Middle initial must be 1–2 letters only').max(2).optional().nullable().transform(v => v === '' ? null : v),
+  middle_name: z
+                  .string()
+                  .optional()
+                  .nullable()
+                  .transform(v => (v === '' ? null : v))
+                  .refine(v => v == null || v.length >= 2,  'Middle name must be at least 2 characters')
+                  .refine(v => v == null || v.length <= 50, 'Middle name is too long')
+                  .refine(
+                    v => v == null || /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u.test(v),
+                    'Middle name must contain only letters, spaces, hyphens, or apostrophes',
+                  ),
   suffix: z.preprocess(
           (v) => {
             if (typeof v !== 'string') return v
@@ -51,7 +61,17 @@ export const updateAdminSchema = z.object({
                   .max(50)
                   .regex(/^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u, 'Last name must contain only letters, spaces, hyphens, or apostrophes')
                   .optional(),
-  middle_name: z.string().max(1).optional().nullable(),
+  middle_name: z
+                  .string()
+                  .optional()
+                  .nullable()
+                  .transform(v => (v === '' ? null : v))
+                  .refine(v => v == null || v.length >= 2,  'Middle name must be at least 2 characters')
+                  .refine(v => v == null || v.length <= 50, 'Middle name is too long')
+                  .refine(
+                    v => v == null || /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u.test(v),
+                    'Middle name must contain only letters, spaces, hyphens, or apostrophes',
+                  ),
   suffix: z.preprocess(
           (v) => {
             if (typeof v !== 'string') return v

@@ -5,6 +5,7 @@ import { logEvent } from '../../lib/log-event.js'
 const BAN_DURATION = '876000h'
 
 export type BanManagedUserRole =
+  | 'admin'
   | 'client'
   | 'driver'
   | 'vendor'

@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express'
 import * as service from '../../services/messaging/messaging.service.js'
 import {
   createConversationSchema,
+  resolveConversationSchema,
+  sendDirectMessageSchema,
   sendMessageSchema,
   getMessagesQuerySchema,
   reactSchema,
@@ -36,6 +38,24 @@ export async function createOrGetConversation(req: Request, res: Response, next:
     const p = createConversationSchema.safeParse(req.body)
     if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
     res.status(201).json({ success: true, data: await service.getOrCreateConversation(user_id, role, p.data.target_user_id, p.data.booking_id) })
+  } catch (err) { fail(res, err) }
+}
+
+export async function resolveConversation(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { user_id, role } = getAuth(req)
+    const p = resolveConversationSchema.safeParse(req.query)
+    if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
+    res.json({ success: true, data: await service.resolveConversation(user_id, role, p.data.target_user_id) })
+  } catch (err) { fail(res, err) }
+}
+
+export async function sendDirectMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { user_id, role } = getAuth(req)
+    const p = sendDirectMessageSchema.safeParse(req.body)
+    if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
+    res.status(201).json({ success: true, data: await service.sendDirectMessage(user_id, role, p.data.target_user_id, p.data.content, p.data.reply_to_message_id, p.data.booking_id) })
   } catch (err) { fail(res, err) }
 }
 

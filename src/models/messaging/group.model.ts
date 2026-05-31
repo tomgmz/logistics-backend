@@ -81,6 +81,7 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
 
   const lastMsgMap: Record<string, MsgRow>    = {}
   const unreadMap:  Record<string, number>    = {}
+  const toMs = (iso: string) => new Date(iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`).getTime()
 
   for (const m of (allMsgs ?? []) as MsgRow[]) {
     // Last message: allMsgs is ordered desc, first seen per group wins
@@ -88,8 +89,8 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
 
     // Unread count: skip own messages, count those newer than last_read_at
     if (m.sender_id === userId) continue
-    const readAt = readAtMap[m.group_id]
-    const isUnread = readAt === null || m.sent_at > readAt
+    const readAt   = readAtMap[m.group_id]
+    const isUnread = readAt === null || toMs(m.sent_at) > toMs(readAt)
     if (isUnread) unreadMap[m.group_id] = (unreadMap[m.group_id] ?? 0) + 1
   }
 
@@ -181,28 +182,33 @@ export async function getGroupMessages(groupId: string, limit: number, before?: 
 }
 
 // ─── Read receipts ────────────────────────────────────────────────────────────
-// ALWAYS updates last_read_at on group_members (source of truth for unread badge).
-// Writes group_message_reads only when messageIds are provided (for "seen by" UI).
+// Updates last_read_at (and last_read_message_id when available) on group_members.
+// This single row is the source of truth for unread counts and "seen by" avatars.
 
-export async function markGroupMessagesRead(
-  groupId: string,
-  userId: string,
-  messageIds: string[]
-): Promise<void> {
-  const now   = new Date().toISOString()
-  const patch: Record<string, string> = { last_read_at: now }
-  if (messageIds.length > 0) patch.last_read_message_id = messageIds[messageIds.length - 1]
+export async function markGroupMessagesRead(groupId: string, userId: string): Promise<string> {
+  // Like DMs: last_read_at must share the DB clock with group_messages.sent_at,
+  // otherwise the "seen by" comparison (last_read_at >= msg.sent_at) fails for
+  // messages read within the Node↔Postgres clock-skew window. Use the latest
+  // message's sent_at as the read marker instead of Node's new Date().
+  const { data: latest } = await supabase
+    .from('group_messages')
+    .select('message_id, sent_at')
+    .eq('group_id', groupId)
+    .is('deleted_at', null)
+    .order('sent_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
-  const { error: memberErr } = await supabase
+  const row    = latest as { message_id: string; sent_at: string } | null
+  const readAt = row?.sent_at ?? new Date().toISOString()
+
+  const patch: Record<string, string> = { last_read_at: readAt }
+  if (row) patch.last_read_message_id = row.message_id
+
+  const { error } = await supabase
     .from('group_members').update(patch).eq('group_id', groupId).eq('user_id', userId)
-  if (memberErr) throw memberErr
-
-  if (messageIds.length > 0) {
-    const rows = messageIds.map(mid => ({ message_id: mid, group_id: groupId, user_id: userId, read_at: now }))
-    const { error: readErr } = await supabase
-      .from('group_message_reads').upsert(rows, { onConflict: 'message_id,user_id' })
-    if (readErr) throw readErr
-  }
+  if (error) throw error
+  return readAt
 }
 
 // ─── Reactions ────────────────────────────────────────────────────────────────

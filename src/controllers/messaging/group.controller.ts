@@ -34,11 +34,7 @@ const getMessagesQuerySchema = z.object({
   before: z.string().datetime().optional(),
 })
 
-// message_ids has a default of [] so calling PATCH /groups/:id/read with {}
-// still updates last_read_at (unread badge) without writing group_message_reads rows.
-const markReadSchema = z.object({
-  message_ids: z.array(z.string().uuid()).default([]),
-})
+const markReadSchema = z.object({})
 
 const reactSchema = z.object({ emoji: z.string().min(1).max(10) })
 
@@ -89,9 +85,7 @@ export async function getGroupMessages(req: Request, res: Response, next: NextFu
 export async function markGroupRead(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { user_id } = getAuth(req)
-    const p = markReadSchema.safeParse(req.body)
-    if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
-    await service.markGroupRead(req.params.groupId as string, user_id, p.data.message_ids)
+    await service.markGroupRead(req.params.groupId as string, user_id)
     res.json({ success: true })
   } catch (err) { fail(res, err) }
 }

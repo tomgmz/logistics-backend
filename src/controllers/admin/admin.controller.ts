@@ -50,3 +50,29 @@ export async function deleteAdmin(req: Request, res: Response) {
     res.status(500).json({ status: 'error', message: err.message })
   }
 }
+
+export async function deactivateAdmin(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await AdminService.deactivateAdmin(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Admin deactivated', data })
+  } catch (err: any) {
+    const status = err.message.includes('not found') ? 404
+      : err.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: err.message })
+  }
+}
+
+export async function activateAdmin(req: Request, res: Response) {
+  try {
+    const { userId, ip } = getRequestMeta(req)
+    const data = await AdminService.activateAdmin(param(req.params.id), userId, ip)
+    res.status(200).json({ status: 'success', message: 'Admin activated', data })
+  } catch (err: any) {
+    const status = err.message.includes('not found') ? 404
+      : err.message.includes('already') ? 409
+      : 500
+    res.status(status).json({ status: 'error', message: err.message })
+  }
+}

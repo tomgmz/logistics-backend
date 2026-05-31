@@ -40,6 +40,8 @@ export async function findConversationById(id: string): Promise<ConversationRow 
   return data as ConversationRow | null
 }
 
+const toMs = (iso: string) => new Date(iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`).getTime()
+
 export async function getConversationsByUserId(userId: string): Promise<ConversationWithDetails[]> {
   const { data: convRaw, error: convErr } = await supabase
     .from('conversations')
@@ -53,26 +55,38 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
   const ids   = convs.map(c => c.conversation_id)
   const other = convs.map(c => c.participant_a_id === userId ? c.participant_b_id : c.participant_a_id)
 
-  const [{ data: usersRaw, error: userErr }, { data: msgsRaw, error: msgErr }, { data: unreadRaw, error: unreadErr }] =
+  const [{ data: usersRaw, error: userErr }, { data: msgsRaw, error: msgErr }] =
     await Promise.all([
       supabase.from('users').select('user_id, first_name, last_name, role, email').in('user_id', other),
-      supabase.from('messages').select('conversation_id, message_id, content, sent_at, sender_id').in('conversation_id', ids).order('sent_at', { ascending: false }),
-      supabase.from('messages').select('conversation_id').in('conversation_id', ids).eq('receiver_id', userId).eq('is_read', false).eq('deleted_by_receiver', false),
+      // Fetch all messages for last_message display + in-memory unread count
+      supabase.from('messages')
+        .select('conversation_id, message_id, content, sent_at, sender_id, deleted_by_receiver')
+        .in('conversation_id', ids)
+        .order('sent_at', { ascending: false }),
     ])
   if (userErr) throw userErr
   if (msgErr) throw msgErr
-  if (unreadErr) throw unreadErr
 
   type UserRow = { user_id: string; first_name: string | null; last_name: string | null; role: UserRole; email: string }
-  const userMap   = Object.fromEntries((usersRaw ?? []).map((u: UserRow) => [u.user_id, u]))
+  const userMap = Object.fromEntries((usersRaw ?? []).map((u: UserRow) => [u.user_id, u]))
+  const convMap = Object.fromEntries(convs.map(c => [c.conversation_id, c]))
+
   const lastMsgMap: Record<string, { message_id: string; content: string; sent_at: string; sender_id: string }> = {}
-  for (const m of msgsRaw ?? []) {
-    const row = m as { conversation_id: string; message_id: string; content: string; sent_at: string; sender_id: string }
-    if (!lastMsgMap[row.conversation_id]) lastMsgMap[row.conversation_id] = row
-  }
-  const unreadMap: Record<string, number> = {}
-  for (const r of (unreadRaw ?? []) as { conversation_id: string }[]) {
-    unreadMap[r.conversation_id] = (unreadMap[r.conversation_id] ?? 0) + 1
+  const unreadMap:  Record<string, number> = {}
+
+  type MsgRow = { conversation_id: string; message_id: string; content: string; sent_at: string; sender_id: string; deleted_by_receiver: boolean }
+  for (const m of (msgsRaw ?? []) as MsgRow[]) {
+    // Last message: desc order means first seen per conv wins
+    if (!lastMsgMap[m.conversation_id]) lastMsgMap[m.conversation_id] = m
+
+    // Unread: only other person's messages, not deleted by receiver, newer than my last_read_at
+    if (m.sender_id === userId || m.deleted_by_receiver) continue
+    const conv         = convMap[m.conversation_id]
+    const myLastReadAt = conv.participant_a_id === userId
+      ? conv.participant_a_last_read_at
+      : conv.participant_b_last_read_at
+    if (myLastReadAt === null || toMs(m.sent_at) > toMs(myLastReadAt))
+      unreadMap[m.conversation_id] = (unreadMap[m.conversation_id] ?? 0) + 1
   }
 
   return convs.reduce<ConversationWithDetails[]>((acc, c) => {
@@ -155,14 +169,38 @@ export async function touchConversation(id: string): Promise<void> {
   if (error) throw error
 }
 
-export async function markMessagesRead(conversationId: string, receiverId: string): Promise<void> {
+export async function markMessagesRead(conversationId: string, userId: string): Promise<string> {
+  // CRITICAL: last_read_at must come from the SAME clock as message.sent_at.
+  // message.sent_at is the Postgres (Railway DB) clock; new Date() here is the Node
+  // process clock. Those clocks can be skewed by hundreds of ms, which makes the
+  // "Seen" comparison (sent_at <= last_read_at) fail when the recipient reads a
+  // message within that skew window — i.e. while actively viewing the chat.
+  // Using the latest message's sent_at keeps the read marker on the DB clock.
+  const [{ data: conv, error: convErr }, { data: latest, error: latestErr }] = await Promise.all([
+    supabase.from('conversations').select('participant_a_id').eq('conversation_id', conversationId).single(),
+    supabase.from('messages')
+      .select('sent_at')
+      .eq('conversation_id', conversationId)
+      .order('sent_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+  if (convErr) throw convErr
+  if (latestErr) throw latestErr
+
+  // Fall back to Node now() only when the conversation has no messages yet.
+  const readAt = (latest as { sent_at: string } | null)?.sent_at ?? new Date().toISOString()
+
+  const col = (conv as { participant_a_id: string }).participant_a_id === userId
+    ? 'participant_a_last_read_at'
+    : 'participant_b_last_read_at'
+
   const { error } = await supabase
-    .from('messages')
-    .update({ is_read: true, read_at: new Date().toISOString() })
+    .from('conversations')
+    .update({ [col]: readAt })
     .eq('conversation_id', conversationId)
-    .eq('receiver_id', receiverId)
-    .eq('is_read', false)
   if (error) throw error
+  return readAt
 }
 
 export async function findMessageById(id: string): Promise<MessageRow | null> {
