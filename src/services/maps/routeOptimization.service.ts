@@ -59,9 +59,6 @@ async function callOptimizationAPI(
 
   const accessToken = await getAccessToken()
 
-  // Time horizon in PHT (UTC+8). Google requires an explicit global window that
-  // contains all vehicle/shipment time windows; the API default is anchored to
-  // request time and rejects windows that fall outside it.
   const dayStartPht = new Date(`${scheduleDate}T00:00:00+08:00`)
   const windowEndInclusive = new Date(`${scheduleDate}T23:59:59+08:00`)
 
@@ -80,16 +77,12 @@ async function callOptimizationAPI(
     }],
   }))
 
-  // DRIVING costs for reordering only; map lines belong to Directions API on the client.
-  // No startTimeWindows: avoids infeasible single-day departure squeezes for long PH legs.
   const vehicles = [{
     label:          'truck_1',
     travelMode:     'DRIVING' as const,
     routeModifiers: { avoidFerries: false },
     startLocation:  { latitude: origin.latitude, longitude: origin.longitude },
     endLocation:    { latitude: origin.latitude, longitude: origin.longitude },
-    // Prefer minimizing road distance (full tour incl. return to depot). Without
-    // explicit costs, the API still optimizes, but this matches “shortest route” intuition.
     costPerKilometer: 1,
   }]
 
@@ -116,7 +109,6 @@ async function callOptimizationAPI(
     const drivingBody = {
       model,
       useGeodesicDistances: false,
-      // Future schedule_date: traffic is not meaningful; avoids extra routing constraints.
       considerRoadTraffic: false,
     }
 

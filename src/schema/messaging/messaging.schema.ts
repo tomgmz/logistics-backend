@@ -26,6 +26,8 @@ export const getMessagesQuerySchema = z.object({
   before: z.string().datetime().optional(),
 })
 
+export const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡'] as const
+
 export const reactSchema = z.object({
-  emoji: z.string().min(1).max(10),
+  emoji: z.enum(REACTION_EMOJIS),
 })

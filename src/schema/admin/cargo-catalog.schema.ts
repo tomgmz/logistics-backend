@@ -1,7 +1,5 @@
 import { z } from 'zod'
 
-// ── Handling Codes ──────────────────────────────────────────────────────────
-
 export const createHandlingCodeSchema = z.object({
   code:        z.string().min(1).max(20).trim().toUpperCase(),
   name:        z.string().min(1).max(100).trim(),
@@ -18,8 +16,6 @@ export const updateHandlingCodeSchema = z.object({
   is_active:   z.boolean().optional(),
 })
 
-// ── Commodities ─────────────────────────────────────────────────────────────
-
 export const createCommoditySchema = z.object({
   name:        z.string().min(1).max(100).trim(),
   description: z.string().max(500).optional(),
@@ -33,8 +29,6 @@ export const updateCommoditySchema = z.object({
   category:    z.string().max(100).trim().optional().nullable(),
   is_active:   z.boolean().optional(),
 })
-
-// ── Products ────────────────────────────────────────────────────────────────
 
 export const createProductSchema = z.object({
   commodity_id: z.string().uuid(),
@@ -51,10 +45,6 @@ export const updateProductSchema = z.object({
   unit:         z.string().max(50).trim().optional().nullable(),
   is_active:    z.boolean().optional(),
 })
-
-// ── Booking cargo item combobox fields ──────────────────────────────────────
-// Used when validating cargo items inside a booking submission.
-// Each pair is mutually exclusive — either the FK id or the free text, not both.
 
 export const cargoItemComboboxSchema = z.object({
   commodity_id:   z.string().uuid().optional().nullable(),

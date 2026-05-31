@@ -24,7 +24,6 @@ const sendLimit = rateLimit({
 router.use(authenticate)
 router.use(readLimit)
 
-// ── DM ────────────────────────────────────────────────────────────────────────
 router.get('/users',                                                            dm.getMessagableUsers)
 router.get('/conversations',                                                    dm.getConversations)
 router.post('/conversations',                                                   dm.createOrGetConversation)
@@ -34,9 +33,8 @@ router.get('/conversations/:conversationId/messages',                           
 router.post('/conversations/:conversationId/messages', sendLimit, enforceClientMessagingPolicy, dm.sendMessage)
 router.patch('/conversations/:conversationId/read',                             dm.markAsRead)
 router.delete('/messages/:messageId',                                           dm.deleteMessage)
-router.post('/conversations/:conversationId/messages/:messageId/react',         dm.reactToMessage)
+router.post('/conversations/:conversationId/messages/:messageId/react', enforceClientMessagingPolicy, dm.reactToMessage)
 
-// ── Groups ────────────────────────────────────────────────────────────────────
 router.post('/groups',                                                          group.createGroup)
 router.get('/groups',                                                           group.getGroups)
 router.patch('/groups/:groupId/invite/respond',                                 group.respondToInvite)

@@ -23,10 +23,6 @@ import {
   deleteCargoItemService,
 } from '../../services/client/booking.service.js'
 
-// ---------------------------------------------------------------------------
-// Bookings — reads
-// ---------------------------------------------------------------------------
-
 export const getAllBookings = async (req: Request, res: Response) => {
   try {
     const pageRaw  = req.query.page
@@ -77,10 +73,6 @@ export const getBookingsByDriver = async (req: Request, res: Response) => {
     res.status(status).json({ status: 'error', message: error.message })
   }
 }
-
-// ---------------------------------------------------------------------------
-// Bookings — mutations
-// ---------------------------------------------------------------------------
 
 export const createBooking = async (req: Request, res: Response) => {
   try {
@@ -137,10 +129,6 @@ export const deleteBooking = async (req: Request, res: Response) => {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Approval pipeline
-// ---------------------------------------------------------------------------
-
 export const accountingReview = async (req: Request, res: Response) => {
   try {
     const { userId, ip } = getRequestMeta(req)
@@ -191,10 +179,6 @@ export const fleetApprove = async (req: Request, res: Response) => {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Destinations
-// ---------------------------------------------------------------------------
-
 export const getDestinationsByBooking = async (req: Request, res: Response) => {
   try {
     const destinations = await getDestinationsByBookingService(param(req.params.id))
@@ -239,10 +223,6 @@ export const deleteDestination = async (req: Request, res: Response) => {
     res.status(status).json({ status: 'error', message: error.message })
   }
 }
-
-// ---------------------------------------------------------------------------
-// Cargo items
-// ---------------------------------------------------------------------------
 
 export const getCargoItemsByBooking = async (req: Request, res: Response) => {
   try {

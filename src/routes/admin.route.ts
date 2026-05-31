@@ -91,7 +91,7 @@ router.patch('/vendors/:id/deactivate', authenticate, isAdmin, VendorController.
 router.patch('/vendors/:id/activate',   authenticate, isAdmin, VendorController.activateVendor)
 router.delete('/vendors/:id', authenticate, isAdmin, VendorController.deleteVendor)
 
-// ── Trucks
+// Trucks
 router.get('/trucks',        authenticate, isFleet, TruckController.getAllTrucks)
 router.get('/trucks/:id',    authenticate, isFleet, TruckController.getTruckById)
 router.post('/trucks',       authenticate, isFleet, validate(createTruckSchema), TruckController.createTruck)

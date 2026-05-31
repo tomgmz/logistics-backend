@@ -77,12 +77,10 @@ export interface UpdateProductInput {
 }
 
 export interface BookingCargoItemFields {
-  // catalog picks (FK)
   commodity_id?:   string | null
   product_id?:     string | null
   shc_id?:         string | null
   ashc_id?:        string | null
-  // free-text fallbacks (mutually exclusive with their FK counterpart)
   commodity_text?: string | null
   product_text?:   string | null
   shc_text?:       string | null

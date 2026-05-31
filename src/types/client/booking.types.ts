@@ -5,24 +5,17 @@ export type GmStatus           = 'pending' | 'approved' | 'rejected'
 export type OpsStatus          = 'pending' | 'assigned'
 export type FleetStatus        = 'pending' | 'approved'
 
-// ---------------------------------------------------------------------------
-// Cargo
-// ---------------------------------------------------------------------------
-
 export interface BookingCargoItem {
   item_id:        string
   booking_id?:    string
-  // catalog FK picks
   product_id?:    string | null
   commodity_id?:  string | null
   shc_id?:        string | null
   ashc_id?:       string | null
-  // free-text fallbacks (mutually exclusive with FK counterpart)
   commodity_text?: string | null
   product_text?:   string | null
   shc_text?:       string | null
   ashc_text?:      string | null
-  // dimensions
   quantity?:      number | null
   weight_kg?:     number | null
   volume_cbm?:    number | null
@@ -59,14 +52,10 @@ export interface CreateCargoItemInput {
 
 export interface UpdateCargoItemInput extends Partial<CreateCargoItemInput> {}
 
-// ---------------------------------------------------------------------------
-// Destinations
-// ---------------------------------------------------------------------------
-
 export interface BookingDestination {
   destination_id:  string
   booking_id:      string
-  delivery_id?:    string | null   // fix #5
+  delivery_id?:    string | null
   address:         string
   sequence_order:  number
   status:          DestinationStatus
@@ -95,9 +84,6 @@ export interface UpdateDestinationInput {
   latitude?:       number | null
 }
 
-// ---------------------------------------------------------------------------
-// Booking
-// ---------------------------------------------------------------------------
 
 export interface Booking {
   booking_id:             string
@@ -110,7 +96,6 @@ export interface Booking {
   call_time:              string
   status:                 BookingStatus
 
-  // approval pipeline columns (fix #2)
   accounting_status?:     AccountingStatus | null
   gm_status?:             GmStatus | null
   ops_status?:            OpsStatus | null
@@ -120,7 +105,6 @@ export interface Booking {
   cancelled_at?:          Date | null
   reference_number?:      string | null
 
-  // cargo dimensions & cost
   required_volume_cbm?:   number | null
   required_weight_kg?:    number | null
   required_length_cm?:    number | null
@@ -129,7 +113,6 @@ export interface Booking {
   estimated_delivery?:    string | null
   payment_terms?:         string | null
 
-  /** Up to 3 Cloudinary URLs for transaction summary documents */
   transaction_documents?: string[] | null
 
   created_at?:            Date
@@ -137,7 +120,7 @@ export interface Booking {
 }
 
 export interface BookingWithRelations extends Booking {
-  booking_cargo_items?: BookingCargoItem[]    // fix #10
+  booking_cargo_items?: BookingCargoItem[]
 
   booking_destinations?: BookingDestination[]
 
@@ -178,10 +161,6 @@ export interface BookingWithRelations extends Booking {
   }>
 }
 
-// ---------------------------------------------------------------------------
-// Create / Update inputs
-// ---------------------------------------------------------------------------
-
 export interface CreateBookingInput {
   client_id:               string
   origin:                  string
@@ -195,10 +174,9 @@ export interface CreateBookingInput {
   required_length_cm?:     number
   stackable_required?:     boolean
   payment_terms?:          string
-  /** Cloudinary URLs — populated after documents are uploaded pre-submission */
   transaction_documents?:  string[]
   destinations:            CreateDestinationInput[]
-  cargo_items?:            CreateCargoItemInput[]   // fix #12 — replaces cargo_details blob
+  cargo_items?:            CreateCargoItemInput[]
 }
 
 export interface UpdateBookingInput {
@@ -214,11 +192,8 @@ export interface UpdateBookingInput {
   stackable_required?:     boolean | null
   payment_terms?:          string | null
   transaction_documents?:  string[] | null
-  // NOTE: status is intentionally excluded — use updateBookingStatus endpoint
-  // NOTE: approval statuses are intentionally excluded — use dedicated approval endpoints
 }
 
-// Approval pipeline inputs (fix #4)
 export interface AccountingReviewInput {
   accounting_status: Exclude<AccountingStatus, 'pending'>
   rejection_reason?: string

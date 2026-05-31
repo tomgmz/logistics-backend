@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import * as service from '../../services/messaging/group.service.js'
 import { z } from 'zod'
+import { reactSchema } from '../../schema/messaging/messaging.schema.js'
 
 function getAuth(req: Request): { user_id: string; role: string } {
   const u = (req as Request & { user?: Record<string, unknown> }).user
@@ -35,8 +36,6 @@ const getMessagesQuerySchema = z.object({
 })
 
 const markReadSchema = z.object({})
-
-const reactSchema = z.object({ emoji: z.string().min(1).max(10) })
 
 export async function createGroup(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {

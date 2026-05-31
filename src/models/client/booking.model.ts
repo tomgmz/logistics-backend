@@ -20,10 +20,6 @@ export interface BookingListQuery {
   search?: string | null
 }
 
-// ---------------------------------------------------------------------------
-// Shared select strings
-// ---------------------------------------------------------------------------
-
 const BOOKING_WITH_RELATIONS_SELECT = `
   booking_id,
   client_id,
@@ -125,10 +121,6 @@ const BOOKING_WITH_RELATIONS_SELECT = `
   )
 `
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 async function countByStatus(): Promise<Record<string, number>> {
   const result = await pool.query<{ status: string; n: string }>(
     `SELECT status::text AS status, COUNT(*)::int AS n FROM bookings GROUP BY status`
@@ -143,10 +135,6 @@ async function countByStatus(): Promise<Record<string, number>> {
   out.all = all
   return out
 }
-
-// ---------------------------------------------------------------------------
-// Queries
-// ---------------------------------------------------------------------------
 
 async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWithRelations[]; total: number }> {
   const page   = Math.max(1, q.page)
@@ -267,10 +255,6 @@ async function findByDriverId(driverId: string): Promise<BookingWithRelations[]>
     .map((row: any) => row.bookings)
     .filter(Boolean) as BookingWithRelations[]
 }
-
-// ---------------------------------------------------------------------------
-// Mutations
-// ---------------------------------------------------------------------------
 
 async function create(input: CreateBookingInput): Promise<BookingWithRelations | null> {
   const { destinations, cargo_items, ...bookingData } = input
@@ -412,10 +396,6 @@ async function remove(bookingId: string): Promise<boolean> {
   return true
 }
 
-// ---------------------------------------------------------------------------
-// Destinations
-// ---------------------------------------------------------------------------
-
 async function findDestinationsByBookingId(bookingId: string): Promise<BookingDestination[]> {
   const { data, error } = await supabase
     .from('booking_destinations')
@@ -469,10 +449,6 @@ async function removeDestination(destinationId: string): Promise<boolean> {
   if (error) throw error
   return true
 }
-
-// ---------------------------------------------------------------------------
-// Cargo items
-// ---------------------------------------------------------------------------
 
 async function findCargoItemsByBookingId(bookingId: string): Promise<BookingCargoItem[]> {
   const { data, error } = await supabase
@@ -533,10 +509,6 @@ async function removeCargoItem(itemId: string): Promise<boolean> {
   if (error) throw error
   return true
 }
-
-// ---------------------------------------------------------------------------
-// Export
-// ---------------------------------------------------------------------------
 
 export const BookingModel = {
   // queries

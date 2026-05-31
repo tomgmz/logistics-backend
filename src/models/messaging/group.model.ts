@@ -6,8 +6,6 @@ import type {
   GroupWithDetails,
 } from '../../types/messaging.types.js'
 
-// ─── Groups ────────────────────────────────────────────────────────────────────
-
 export async function createGroup(name: string, createdBy: string, memberIds: string[]): Promise<GroupRow> {
   const { data: group, error } = await supabase
     .from('group_conversations').insert({ name, created_by: createdBy }).select().single()
@@ -23,7 +21,6 @@ export async function createGroup(name: string, createdBy: string, memberIds: st
 }
 
 export async function getGroupsByUserId(userId: string): Promise<GroupWithDetails[]> {
-  // 1. My memberships — last_read_at drives unread count
   const { data: myData, error: myErr } = await supabase
     .from('group_members')
     .select('group_id, status, last_read_at, last_read_message_id')
@@ -38,9 +35,6 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
   const statusMap = Object.fromEntries(mine.map(m => [m.group_id, m.status]))
   const readAtMap = Object.fromEntries(mine.map(m => [m.group_id, m.last_read_at]))
 
-  // 2. Fetch groups, all members, and ALL messages in 3 parallel queries.
-  //    We use allMsgs for BOTH last_message AND unread counts in a single pass —
-  //    eliminating the previous N parallel COUNT queries.
   const [
     { data: groups,     error: gErr },
     { data: allMembers, error: mErr },
@@ -55,8 +49,6 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
       .select('*, user:users!group_members_user_id_fkey(user_id, first_name, last_name, role, email)')
       .in('group_id', groupIds),
 
-    // Fetch all non-deleted messages across all groups in one query.
-    // Used for: (a) last_message per group, (b) in-memory unread count.
     supabase.from('group_messages')
       .select('message_id, group_id, content, sent_at, sender_id')
       .in('group_id', groupIds)
@@ -67,16 +59,12 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
   if (mErr) throw mErr
   if (lErr) throw lErr
 
-  // ── Build membersByGroup map ──────────────────────────────────────────────
   const membersByGroup: Record<string, unknown[]> = {}
   for (const m of allMembers ?? []) {
     const row = m as { group_id: string }
     ;(membersByGroup[row.group_id] ??= []).push(m)
   }
 
-  // ── Single pass over allMsgs: derive last_message + unread count ──────────
-  // This replaces the previous N parallel COUNT queries with O(total_messages)
-  // in-memory computation — one iteration, zero additional DB round trips.
   type MsgRow = { message_id: string; group_id: string; content: string; sent_at: string; sender_id: string }
 
   const lastMsgMap: Record<string, MsgRow>    = {}
@@ -84,10 +72,8 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
   const toMs = (iso: string) => new Date(iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`).getTime()
 
   for (const m of (allMsgs ?? []) as MsgRow[]) {
-    // Last message: allMsgs is ordered desc, first seen per group wins
     if (!lastMsgMap[m.group_id]) lastMsgMap[m.group_id] = m
 
-    // Unread count: skip own messages, count those newer than last_read_at
     if (m.sender_id === userId) continue
     const readAt   = readAtMap[m.group_id]
     const isUnread = readAt === null || toMs(m.sent_at) > toMs(readAt)
@@ -125,8 +111,6 @@ export async function updateMemberStatus(groupId: string, userId: string, status
   if (error) throw error
 }
 
-// ─── Messages ─────────────────────────────────────────────────────────────────
-
 export async function insertGroupMessage(
   groupId: string,
   senderId: string,
@@ -143,7 +127,6 @@ export async function insertGroupMessage(
 }
 
 export async function getGroupMessages(groupId: string, limit: number, before?: string): Promise<GroupMessageRow[]> {
-  // Fetch without self-referential join — resolve reply context separately.
   let q = supabase
     .from('group_messages')
     .select('*, reactions:group_message_reactions(emoji, user_id)')
@@ -181,15 +164,8 @@ export async function getGroupMessages(groupId: string, limit: number, before?: 
   }))
 }
 
-// ─── Read receipts ────────────────────────────────────────────────────────────
-// Updates last_read_at (and last_read_message_id when available) on group_members.
-// This single row is the source of truth for unread counts and "seen by" avatars.
 
 export async function markGroupMessagesRead(groupId: string, userId: string): Promise<string> {
-  // Like DMs: last_read_at must share the DB clock with group_messages.sent_at,
-  // otherwise the "seen by" comparison (last_read_at >= msg.sent_at) fails for
-  // messages read within the Node↔Postgres clock-skew window. Use the latest
-  // message's sent_at as the read marker instead of Node's new Date().
   const { data: latest } = await supabase
     .from('group_messages')
     .select('message_id, sent_at')
@@ -210,10 +186,6 @@ export async function markGroupMessagesRead(groupId: string, userId: string): Pr
   if (error) throw error
   return readAt
 }
-
-// ─── Reactions ────────────────────────────────────────────────────────────────
-// UNIQUE(message_id, user_id): one reaction per user per message.
-// Same emoji → remove. Different emoji → update in place. None → insert.
 
 export async function toggleGroupMessageReaction(
   messageId: string,
@@ -236,8 +208,6 @@ export async function toggleGroupMessageReaction(
   await supabase.from('group_message_reactions').insert({ message_id: messageId, user_id: userId, emoji })
   return { action: 'added' }
 }
-
-// ─── Utilities ────────────────────────────────────────────────────────────────
 
 export async function touchGroup(groupId: string): Promise<void> {
   const now = new Date().toISOString()

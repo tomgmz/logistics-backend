@@ -63,12 +63,6 @@ function angleDiff(a: number, b: number): number {
   return Math.abs(((a - b + 540) % 360) - 180)
 }
 
-// FIX 5: Increased maxGapMeters from 50 → 200 so straight highways like
-// NLEX and SCTEX keep enough points for accurate map-matching.
-// Mapbox map-match needs shape context on long straights — with 50m gaps
-// a 10km straight was reduced to ~2 points which confused the matcher.
-// 200m gaps still keep the route shape accurate for display and matching.
-// angleDeg kept at 5 (was 8) so turns in Bulacan side streets are preserved.
 function sampleByAngleAndDistance(
   points: Point[],
   maxPoints    = 98,
@@ -111,9 +105,6 @@ async function snapPolylineToMapbox(points: Point[]): Promise<Point[] | null> {
   try {
     const sampled = sampleByAngleAndDistance(points, 98, 5, 200)
     const coords  = sampled.map((p) => `${p.longitude},${p.latitude}`).join(';')
-    // FIX 5: Increased radius from 25 → 40m for highway matching.
-    // Philippine highways sometimes have wide medians; 25m was too tight
-    // and caused mismatches on divided highways like EDSA and C5.
     const radii   = sampled.map(() => 40).join(';')
     const url     = `${MAP_MATCH_URL}/${coords}?access_token=${MAPBOX_TOKEN}&geometries=geojson&tidy=true&overview=full&radiuses=${radii}`
 

@@ -2,8 +2,6 @@ import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as CargoCatalogService from '../../services/admin/cargo-catalog.service.js'
 
-// ── Handling Codes ──────────────────────────────────────────────────────────
-
 export async function getAllHandlingCodes(req: Request, res: Response) {
   try {
     const type = req.query.type as 'standard' | 'additional' | undefined
@@ -56,8 +54,6 @@ export async function deleteHandlingCode(req: Request, res: Response) {
   }
 }
 
-// ── Commodities ─────────────────────────────────────────────────────────────
-
 export async function getAllCommodities(req: Request, res: Response) {
   try {
     const data = await CargoCatalogService.getAllCommodities()
@@ -108,8 +104,6 @@ export async function deleteCommodity(req: Request, res: Response) {
     res.status(status).json({ status: 'error', message: error.message })
   }
 }
-
-// ── Products ────────────────────────────────────────────────────────────────
 
 export async function getAllProducts(req: Request, res: Response) {
   try {

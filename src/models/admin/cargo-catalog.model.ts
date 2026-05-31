@@ -8,8 +8,6 @@ import {
   UpdateProductInput,
 } from '../../types/cargo-catalog.types.js'
 
-// ── Handling Codes ──────────────────────────────────────────────────────────
-
 export async function findAllHandlingCodes(type?: 'standard' | 'additional') {
   let q = supabase
     .from('handling_codes')
@@ -67,8 +65,6 @@ export async function removeHandlingCode(id: string) {
   return true
 }
 
-// ── Commodities ─────────────────────────────────────────────────────────────
-
 export async function findAllCommodities() {
   const { data, error } = await supabase
     .from('commodities')
@@ -122,8 +118,6 @@ export async function removeCommodity(id: string) {
   if (error) throw error
   return true
 }
-
-// ── Products ────────────────────────────────────────────────────────────────
 
 export async function findAllProducts(commodityId?: string) {
   let q = supabase

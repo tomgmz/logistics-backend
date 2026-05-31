@@ -4,16 +4,11 @@ import type { ConversationWithDetails, MessageRow, MessagableUser } from '../../
 
 const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
-// ─── Broadcasts ───────────────────────────────────────────────────────────────
 
 async function broadcast(channel: string, event: string, payload: unknown): Promise<void> {
   await admin.channel(channel).send({ type: 'broadcast', event, payload })
 }
 
-// ─── Shared helpers ─────────────────────────────────────────────────────────────
-
-// Verify the current user is allowed to message the target, mirroring the rules in
-// getOrCreateConversation. Throws on violation; returns the target user on success.
 async function assertCanMessage(currentUserId: string, currentUserRole: string, targetUserId: string) {
   if (currentUserId === targetUserId) throw Object.assign(new Error('Cannot message yourself'), { statusCode: 400 })
 
@@ -28,8 +23,6 @@ async function assertCanMessage(currentUserId: string, currentUserRole: string, 
   return target
 }
 
-// Insert a message into an existing conversation, bump its timestamp, attach any
-// reply snippet, and fan the payload out to both participants + the conv channel.
 async function deliverMessage(
   conv: { conversation_id: string; participant_a_id: string; participant_b_id: string },
   senderId: string,
@@ -37,15 +30,18 @@ async function deliverMessage(
   replyToMessageId?: string
 ): Promise<MessageRow> {
   const receiverId = conv.participant_a_id === senderId ? conv.participant_b_id : conv.participant_a_id
-  const message    = await model.insertMessage(conv.conversation_id, senderId, receiverId, content, replyToMessageId)
-  await model.touchConversation(conv.conversation_id)
 
-  // Attach reply snippet so realtime consumers see it immediately without a re-fetch
   let reply_to: { message_id: string; content: string; sender_id: string } | null = null
   if (replyToMessageId) {
     const ref = await model.findMessageById(replyToMessageId)
-    if (ref) reply_to = { message_id: ref.message_id, content: ref.content, sender_id: ref.sender_id }
+    if (!ref || ref.conversation_id !== conv.conversation_id)
+      throw Object.assign(new Error('Reply target not found in this conversation'), { statusCode: 400 })
+    reply_to = { message_id: ref.message_id, content: ref.content, sender_id: ref.sender_id }
   }
+
+  const message = await model.insertMessage(conv.conversation_id, senderId, receiverId, content, replyToMessageId)
+  await model.touchConversation(conv.conversation_id)
+
   const payload = { ...message, reply_to }
 
   void Promise.allSettled([
@@ -57,7 +53,6 @@ async function deliverMessage(
   return payload
 }
 
-// ─── Service ──────────────────────────────────────────────────────────────────
 
 export async function getConversations(userId: string): Promise<ConversationWithDetails[]> {
   return model.getConversationsByUserId(userId)
@@ -112,8 +107,6 @@ export async function sendMessage(
   return deliverMessage(conv, senderId, content, replyToMessageId)
 }
 
-// Returns the existing conversation id for this pair, or null. Does NOT create a
-// row — conversations are now created lazily on first message (see sendDirectMessage).
 export async function resolveConversation(
   currentUserId: string,
   currentUserRole: string,
@@ -124,8 +117,6 @@ export async function resolveConversation(
   return { conversation_id: existing?.conversation_id ?? null }
 }
 
-// Lazily create-or-find the conversation, then send the first message. This is the
-// only path that persists a conversation row — opening a draft no longer does.
 export async function sendDirectMessage(
   currentUserId: string,
   currentUserRole: string,

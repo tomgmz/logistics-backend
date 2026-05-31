@@ -14,10 +14,6 @@ import {
 import { optimizeDestinationsService } from '../maps/routeOptimization.service.js'
 import { logEvent } from '../../lib/log-event.js'
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function validateScheduleDate(scheduleDate: string): void {
   const [year, month, day] = scheduleDate.split('-').map(Number)
   const scheduled = new Date(year, month - 1, day)
@@ -39,12 +35,7 @@ function validateScheduleDate(scheduleDate: string): void {
   }
 }
 
-// fix #6 — statuses from which a booking cannot be deleted
 const NON_DELETABLE_STATUSES = ['approved', 'assigned', 'in_transit', 'completed']
-
-// ---------------------------------------------------------------------------
-// Paginated list
-// ---------------------------------------------------------------------------
 
 export interface PaginatedBookingsMeta {
   total:        number
@@ -80,9 +71,6 @@ export async function getAllBookingsPaginatedService(params: {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Basic reads
-// ---------------------------------------------------------------------------
 
 export async function getAllBookingsService(): Promise<BookingWithRelations[]> {
   return await BookingModel.findAll() ?? []
@@ -101,10 +89,6 @@ export async function getBookingsByClientService(clientId: string): Promise<Book
 export async function getBookingsByDriverService(driverId: string): Promise<BookingWithRelations[]> {
   return await BookingModel.findByDriverId(driverId) ?? []
 }
-
-// ---------------------------------------------------------------------------
-// Create
-// ---------------------------------------------------------------------------
 
 export async function createBookingService(
   input: CreateBookingInput,
@@ -157,10 +141,6 @@ export async function createBookingService(
   return booking
 }
 
-// ---------------------------------------------------------------------------
-// Update
-// ---------------------------------------------------------------------------
-
 export async function updateBookingService(
   bookingId: string,
   input: UpdateBookingInput,
@@ -187,10 +167,6 @@ export async function updateBookingService(
 
   return booking
 }
-
-// ---------------------------------------------------------------------------
-// Status flow
-// ---------------------------------------------------------------------------
 
 export async function updateBookingStatusService(
   bookingId: string,
@@ -224,10 +200,6 @@ export async function updateBookingStatusService(
 
   return booking
 }
-
-// ---------------------------------------------------------------------------
-// Approval pipeline services (fix #4)
-// ---------------------------------------------------------------------------
 
 export async function accountingReviewService(
   bookingId: string,
@@ -346,10 +318,6 @@ export async function fleetApproveService(
   return booking
 }
 
-// ---------------------------------------------------------------------------
-// Delete
-// ---------------------------------------------------------------------------
-
 export async function deleteBookingService(
   bookingId: string,
   userId?: string | null,
@@ -358,7 +326,6 @@ export async function deleteBookingService(
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
 
-  // fix #6 — block deletion once the booking has moved past pending
   if (NON_DELETABLE_STATUSES.includes(existing.status)) {
     throw new Error(`Cannot delete a booking with status '${existing.status}'`)
   }
@@ -375,10 +342,6 @@ export async function deleteBookingService(
 
   return result
 }
-
-// ---------------------------------------------------------------------------
-// Destinations
-// ---------------------------------------------------------------------------
 
 export async function getDestinationsByBookingService(bookingId: string): Promise<BookingDestination[]> {
   const existing = await BookingModel.findById(bookingId)
@@ -444,10 +407,6 @@ export async function deleteDestinationService(
 
   return result
 }
-
-// ---------------------------------------------------------------------------
-// Cargo items
-// ---------------------------------------------------------------------------
 
 export async function getCargoItemsByBookingService(bookingId: string): Promise<BookingCargoItem[]> {
   const existing = await BookingModel.findById(bookingId)

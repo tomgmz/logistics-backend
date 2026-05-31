@@ -4,10 +4,6 @@ import type { GroupWithDetails, GroupMessageRow } from '../../types/messaging.ty
 
 const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
-// ─── Broadcast helper ─────────────────────────────────────────────────────────
-// Per Supabase docs: calling .send() BEFORE .subscribe() uses HTTP (REST).
-// This is the correct server-side pattern — no WebSocket needed.
-
 async function broadcast(channel: string, event: string, payload: unknown): Promise<void> {
   const ch = admin.channel(channel)
   await ch.send({ type: 'broadcast', event, payload })
@@ -17,8 +13,6 @@ async function broadcastMany(channels: string[], event: string, payload: unknown
   await Promise.allSettled(channels.map(c => broadcast(c, event, payload)))
 }
 
-// ─── Service ──────────────────────────────────────────────────────────────────
-
 export async function createGroup(
   createdBy: string,
   name: string,
@@ -27,10 +21,18 @@ export async function createGroup(
   if (memberIds.length < 1) throw Object.assign(new Error('A group needs at least one other member'), { statusCode: 400 })
   if (memberIds.includes(createdBy)) throw Object.assign(new Error('Do not include yourself in memberIds'), { statusCode: 400 })
 
-  const group = await groupModel.createGroup(name, createdBy, memberIds)
+  const uniqueIds = [...new Set(memberIds)]
+  const { data: users, error } = await admin
+    .from('users').select('user_id, status').in('user_id', uniqueIds)
+  if (error) throw error
+  const activeIds = new Set((users ?? []).filter(u => u.status === 'active').map(u => u.user_id))
+  if (uniqueIds.some(id => !activeIds.has(id)))
+    throw Object.assign(new Error('One or more members are invalid or inactive'), { statusCode: 400 })
+
+  const group = await groupModel.createGroup(name, createdBy, uniqueIds)
 
   void broadcastMany(
-    memberIds.map(uid => `messaging:user:${uid}`),
+    uniqueIds.map(uid => `messaging:user:${uid}`),
     'group_invite',
     { group_id: group.group_id, group_name: name }
   )
@@ -62,22 +64,24 @@ export async function sendGroupMessage(
   if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 })
   if (!member || member.status !== 'accepted') throw Object.assign(new Error('Must accept invite before messaging'), { statusCode: 403 })
 
-  const message = await groupModel.insertGroupMessage(groupId, senderId, content, replyToMessageId)
-  await groupModel.touchGroup(groupId)
-
-  // Attach reply snippet so realtime consumers see it immediately without a re-fetch
   let reply_to: { message_id: string; content: string; sender_id: string } | null = null
   if (replyToMessageId) {
     const { data: ref } = await admin
       .from('group_messages')
       .select('message_id, content, sender_id')
       .eq('message_id', replyToMessageId)
+      .eq('group_id', groupId)
       .maybeSingle()
-    if (ref) reply_to = ref as { message_id: string; content: string; sender_id: string }
+    if (!ref)
+      throw Object.assign(new Error('Reply target not found in this group'), { statusCode: 400 })
+    reply_to = ref as { message_id: string; content: string; sender_id: string }
   }
+
+  const message = await groupModel.insertGroupMessage(groupId, senderId, content, replyToMessageId)
+  await groupModel.touchGroup(groupId)
+
   const payload = { ...message, reply_to }
 
-  // Get accepted member IDs for fan-out
   const { data: members } = await admin
     .from('group_members')
     .select('user_id')

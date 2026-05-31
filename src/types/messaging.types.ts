@@ -1,4 +1,3 @@
-// ─── Shared ───────────────────────────────────────────────────────────────────
 
 export type ConversationContextType = 'direct' | 'booking_transit'
 
@@ -23,8 +22,6 @@ export interface ReplyPreview {
   content: string
   sender_id: string
 }
-
-// ─── DM ──────────────────────────────────────────────────────────────────────
 
 export interface ConversationRow {
   conversation_id: string
@@ -65,7 +62,6 @@ export interface ConversationWithDetails extends ConversationRow {
   other_user: ConversationParticipant
   last_message: { message_id: string; content: string; sent_at: string; sender_id: string } | null
   unread_count: number
-  // participant_a_last_read_at and participant_b_last_read_at inherited from ConversationRow
 }
 
 export interface MessagableUser {
@@ -76,8 +72,6 @@ export interface MessagableUser {
   email: string
   booking_id?: string
 }
-
-// ─── Group ────────────────────────────────────────────────────────────────────
 
 export interface GroupRow {
   group_id: string

@@ -9,8 +9,6 @@ import {
   UpdateProductInput,
 } from '../../types/cargo-catalog.types.js'
 
-// ── Handling Codes ──────────────────────────────────────────────────────────
-
 export async function getAllHandlingCodes(type?: 'standard' | 'additional') {
   return CargoCatalogModel.findAllHandlingCodes(type)
 }
@@ -65,8 +63,6 @@ export async function deleteHandlingCode(id: string, actorId?: string | null, ip
   return true
 }
 
-// ── Commodities ─────────────────────────────────────────────────────────────
-
 export async function getAllCommodities() {
   return CargoCatalogModel.findAllCommodities()
 }
@@ -120,8 +116,6 @@ export async function deleteCommodity(id: string, actorId?: string | null, ip?: 
 
   return true
 }
-
-// ── Products ────────────────────────────────────────────────────────────────
 
 export async function getAllProducts(commodityId?: string) {
   return CargoCatalogModel.findAllProducts(commodityId)

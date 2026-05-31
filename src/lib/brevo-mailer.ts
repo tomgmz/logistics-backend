@@ -19,8 +19,6 @@ const ROLE_LABELS: Record<string, string> = {
   vendor:           'Vendor',
 }
 
-// ─── Password generation ──────────────────────────────────────────────────────
-
 const UPPER  = 'ABCDEFGHJKLMNPQRSTUVWXYZ'  // no I, O
 const LOWER  = 'abcdefghjkmnpqrstuvwxyz'    // no i, l, o
 const DIGITS = '23456789'                   // no 0, 1
@@ -39,7 +37,6 @@ export function generateSecurePassword(): string {
     ...pick(UPPER + LOWER + DIGITS, 2),
   ]
 
-  // Fisher-Yates shuffle with cryptographic randomness
   for (let i = chars.length - 1; i > 0; i--) {
     const j = crypto.randomBytes(1)[0] % (i + 1)
     ;[chars[i], chars[j]] = [chars[j], chars[i]]
@@ -47,8 +44,6 @@ export function generateSecurePassword(): string {
 
   return chars.join('')
 }
-
-// ─── Brevo client ─────────────────────────────────────────────────────────────
 
 function getBrevoClient(): BrevoClient {
   if (!process.env.BREVO_API_KEY) {
@@ -59,8 +54,6 @@ function getBrevoClient(): BrevoClient {
     environment: BrevoEnvironment.Default,
   })
 }
-
-// ─── OTP email (existing) ─────────────────────────────────────────────────────
 
 export async function sendOtpEmail(
   to: string,
@@ -95,8 +88,6 @@ export async function sendOtpEmail(
     throw new Error(`Failed to send OTP email: ${error}`)
   }
 }
-
-// ─── Welcome / credentials email (new) ───────────────────────────────────────
 
 export interface WelcomeEmailParams {
   to:        string
@@ -136,8 +127,6 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams): Promise<void
     throw new Error(`Failed to send welcome email: ${error}`)
   }
 }
-
-// ─── OTP email templates (existing, untouched) ────────────────────────────────
 
 function generateOtpEmailHtml(name: string, code: string): string {
   const year = new Date().getFullYear()
@@ -279,8 +268,6 @@ For concerns, contact us at ${APP_SUPPORT_EMAIL}.
 ${PHYSICAL_ADDRESS}
   `.trim()
 }
-
-// ─── Welcome email templates (new) ───────────────────────────────────────────
 
 function generateWelcomeEmailHtml(
   name:      string,

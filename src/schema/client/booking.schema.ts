@@ -1,9 +1,5 @@
 import { z } from 'zod'
 
-// ---------------------------------------------------------------------------
-// Cargo item schemas
-// ---------------------------------------------------------------------------
-
 export const createCargoItemSchema = z.object({
   commodity_id:   z.string().uuid().optional(),
   commodity_text: z.string().max(200).optional(),
@@ -36,10 +32,6 @@ export const createCargoItemSchema = z.object({
 
 export const updateCargoItemSchema = createCargoItemSchema
 
-// ---------------------------------------------------------------------------
-// Destination schemas
-// ---------------------------------------------------------------------------
-
 export const createDestinationSchema = z.object({
   address:        z.string().min(1, 'Address is required'),
   sequence_order: z.number().int().positive(),
@@ -63,9 +55,6 @@ export const updateDestinationStatusSchema = z.object({
   delivered_at: z.string().datetime().optional(),
 })
 
-// ---------------------------------------------------------------------------
-// Booking schemas
-// ---------------------------------------------------------------------------
 
 export const createBookingSchema = z.object({
   client_id:             z.string().uuid(),
@@ -100,7 +89,6 @@ export const updateBookingSchema = z.object({
   truck_type_needed:     z.string().min(1).optional(),
   schedule_date:         z.string().date().optional(),
   call_time:             z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'call_time must be in HH:MM format').optional(),
-  // status intentionally removed — use PATCH /:id/status endpoint
   required_volume_cbm:   z.number().min(0).optional().nullable(),
   required_weight_kg:    z.number().min(0).optional().nullable(),
   required_length_cm:    z.number().min(0).optional().nullable(),
@@ -113,9 +101,6 @@ export const updateBookingStatusSchema = z.object({
   status: z.enum(['pending', 'approved', 'assigned', 'in_transit', 'completed', 'cancelled']),
 })
 
-// ---------------------------------------------------------------------------
-// Approval pipeline schemas
-// ---------------------------------------------------------------------------
 
 export const accountingReviewSchema = z.object({
   accounting_status: z.enum(['approved', 'rejected', 'forwarded']),

@@ -58,12 +58,11 @@ export async function requestOtp(req: Request, res: Response) {
       message: 'If that email is registered, a login code has been sent.',
     })
   } catch (err: unknown) {
-    // Cooldown: user requested OTP too soon — tell the frontend how long to wait
     if (err instanceof Error && (err as any).code === 'OTP_COOLDOWN') {
       res.status(429).json({
         status: 'error',
         code: 'OTP_COOLDOWN',
-        retryAfter: (err as any).retryAfter, // seconds — use this to drive the resend timer on the frontend
+        retryAfter: (err as any).retryAfter,
         message: err.message,
       })
       return
