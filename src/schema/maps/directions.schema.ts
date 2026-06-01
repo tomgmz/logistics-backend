@@ -19,6 +19,12 @@ export const computeDirectionsSchema = z.object({
   .array(z.string())
   .optional(),
 
+  // When true (used by mobile re-routing), the server skips the expensive
+  // Mapbox map-matching snap and does not force traffic computation. The
+  // client renders the raw Google polyline, so snapped-index traffic data
+  // would be misaligned anyway.
+  fast: z.boolean().optional().default(false),
+
   intermediates: z.array(waypointSchema).optional(),
 
   travelMode: z

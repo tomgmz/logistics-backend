@@ -191,14 +191,22 @@ function buildStraightLineFallback(payload: ComputeDirectionsInput): DirectionsR
 export async function computeDirectionsService(
   payload: ComputeDirectionsInput,
 ): Promise<DirectionsResult> {
+  const { fast, ...routePayload } = payload as ComputeDirectionsInput & { fast?: boolean }
+
+  // In fast mode (mobile re-routing) honor the client's request to skip the
+  // costly traffic computation; otherwise always include it.
+  const extraComputations = fast
+    ? ((routePayload as any).extraComputations ?? [])
+    : [
+        ...new Set([
+          ...((routePayload as any).extraComputations ?? []),
+          'TRAFFIC_ON_POLYLINE',
+        ]),
+      ]
+
   const body = {
-    ...payload,
-    extraComputations: [
-      ...new Set([
-        ...((payload as any).extraComputations ?? []),
-        'TRAFFIC_ON_POLYLINE',
-      ]),
-    ],
+    ...routePayload,
+    extraComputations,
   }
 
   const response = await fetch(ROUTES_API_URL, {
@@ -223,11 +231,19 @@ export async function computeDirectionsService(
     return buildStraightLineFallback(payload)
   }
 
+  // Fast mode: the client uses the raw Google polyline, so skip the snap and
+  // leave the traffic intervals (if any) in Google's own index space.
+  if (fast) {
+    return { routes: data.routes }
+  }
+
   const route  = data.routes[0]
   const points = decodePolyline(route.polyline.encodedPolyline)
 
   const snapped = await snapPolylineToMapbox(points)
-  console.log('[snap] result:', snapped ? `✓ ${snapped.length} points` : '✗ null — falling back to Google polyline')
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[snap] result:', snapped ? `✓ ${snapped.length} points` : '✗ null — falling back to Google polyline')
+  }
   if (snapped) {
     route.polyline._snappedCoords = snapped
 

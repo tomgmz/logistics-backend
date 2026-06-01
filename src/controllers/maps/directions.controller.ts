@@ -12,21 +12,13 @@ export const computeDirections = async (
   try {
     const result = await computeDirectionsService(req.body)
 
-    const route = result.routes?.[0] as any
-    
-    if (route) {
-      console.log('\n--- [MAPS DEBUG] TRAFFIC ANALYSIS ---')
-      console.log(`Route Duration: ${route.duration} (Static: ${route.staticDuration})`)
-      
-      const intervals = route.travelAdvisory?.speedReadingIntervals ?? []
-      console.log(`Found ${intervals.length} traffic intervals`)
-      
-      if (intervals.length > 0) {
-        console.table(intervals.map((iv: any) => ({
-          start: iv.startPolylinePointIndex ?? 0,
-          end: iv.endPolylinePointIndex ?? 'END',
-          speed: iv.speed ?? 'UNSPECIFIED'
-        })))
+    if (process.env.NODE_ENV !== 'production') {
+      const route = result.routes?.[0] as any
+      if (route) {
+        const intervals = route.travelAdvisory?.speedReadingIntervals ?? []
+        console.log(
+          `[MAPS DEBUG] duration=${route.duration} static=${route.staticDuration} intervals=${intervals.length}`,
+        )
       }
     }
 
