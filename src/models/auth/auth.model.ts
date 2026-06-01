@@ -200,11 +200,12 @@ export async function getOtpAttemptsSince(
 // SESSIONS
 
 export async function revokeAllUserSessions(userId: string): Promise<void> {
+  const now = new Date().toISOString()
   const { error } = await supabase
     .from('active_sessions')
-    .update({ expires_at: new Date().toISOString() })
+    .update({ expires_at: now, refresh_expires_at: now })
     .eq('user_id', userId)
-    .gt('expires_at', new Date().toISOString())
+    .gt('refresh_expires_at', now)
 
   if (error) throw error
 }
@@ -286,9 +287,10 @@ export async function refreshSessionLastSeen(sessionId: string): Promise<void> {
 }
 
 export async function revokeSession(tokenHash: string): Promise<void> {
+  const now = new Date().toISOString()
   const { error } = await supabase
     .from('active_sessions')
-    .update({ expires_at: new Date().toISOString() })
+    .update({ expires_at: now, refresh_expires_at: now })
     .eq('token', tokenHash)
 
   if (error) throw error
