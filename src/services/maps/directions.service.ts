@@ -2,15 +2,18 @@ import { ComputeDirectionsInput } from '../../schema/maps/directions.schema.js'
 import { DirectionsResult }       from '../../types/maps/directions.types.js'
 
 const GOOGLE_MAPS_KEY  = process.env.GOOGLE_MAPS_API_KEY!
-const MAPBOX_TOKEN     = process.env.MAPBOX_ACCESS_TOKEN!
 const ROUTES_API_URL   = 'https://routes.googleapis.com/directions/v2:computeRoutes'
-const MAP_MATCH_URL    = 'https://api.mapbox.com/matching/v5/mapbox/driving'
+
+const ROADS_SNAP_URL   = 'https://roads.googleapis.com/v1/snapToRoads'
 
 const FIELD_MASK = [
   'routes.polyline.encodedPolyline',
   'routes.duration',
   'routes.staticDuration',
   'routes.distanceMeters',
+  'routes.description',
+  'routes.routeLabels',
+  'routes.routeToken',
   'routes.legs.duration',
   'routes.legs.staticDuration',
   'routes.legs.steps.navigationInstruction',
@@ -88,7 +91,6 @@ function sampleByAngleAndDistance(
 
   result.push(points[points.length - 1])
 
-  // If still over budget, do uniform stride — keeps start/end guaranteed
   if (result.length > maxPoints) {
     const step = Math.ceil(result.length / maxPoints)
     return [
@@ -101,26 +103,30 @@ function sampleByAngleAndDistance(
   return result
 }
 
-async function snapPolylineToMapbox(points: Point[]): Promise<Point[] | null> {
+// Google Roads "Snap to Roads" accepts at most 100 points per request.
+const ROADS_MAX_POINTS = 100
+
+async function snapPolylineToGoogleRoads(points: Point[]): Promise<Point[] | null> {
   try {
-    const sampled = sampleByAngleAndDistance(points, 98, 5, 200)
-    const coords  = sampled.map((p) => `${p.longitude},${p.latitude}`).join(';')
-    const radii   = sampled.map(() => 40).join(';')
-    const url     = `${MAP_MATCH_URL}/${coords}?access_token=${MAPBOX_TOKEN}&geometries=geojson&tidy=true&overview=full&radiuses=${radii}`
+    // Keep the trace within the 100-point cap; interpolate=true then re-densifies
+    // the result so the rendered line stays smooth between sampled points.
+    const sampled = sampleByAngleAndDistance(points, ROADS_MAX_POINTS, 5, 200)
+    const path    = sampled.map((p) => `${p.latitude},${p.longitude}`).join('|')
+    const url     = `${ROADS_SNAP_URL}?interpolate=true&path=${encodeURIComponent(path)}&key=${GOOGLE_MAPS_KEY}`
 
     const res  = await fetch(url)
     const data = await res.json()
 
-    if (!res.ok || !data.matchings?.[0]) {
-      console.warn('[map-match] Mapbox snap failed:', data.message ?? res.status)
+    if (!res.ok || !data.snappedPoints?.length) {
+      console.warn('[snap] Google Roads snap failed:', data?.error?.message ?? res.status)
       return null
     }
 
-    return (data.matchings[0].geometry.coordinates as [number, number][]).map(
-      ([lng, lat]) => ({ latitude: lat, longitude: lng }),
+    return (data.snappedPoints as Array<{ location: { latitude: number; longitude: number } }>).map(
+      (sp) => ({ latitude: sp.location.latitude, longitude: sp.location.longitude }),
     )
   } catch (err) {
-    console.warn('[map-match] Snap error, falling back to Google polyline:', err)
+    console.warn('[snap] Google Roads snap error, falling back to Google polyline:', err)
     return null
   }
 }
@@ -237,26 +243,32 @@ export async function computeDirectionsService(
     return { routes: data.routes }
   }
 
-  const route  = data.routes[0]
-  const points = decodePolyline(route.polyline.encodedPolyline)
+  // Snap every returned route to road centerlines. With computeAlternativeRoutes
+  // there are several; each is snapped independently so the driver's route picker
+  // renders clean, road-aligned lines for all options. A failed snap on any one
+  // route falls back to its raw Google polyline.
+  await Promise.all(
+    (data.routes as any[]).map(async (route, i) => {
+      const points  = decodePolyline(route.polyline.encodedPolyline)
+      const snapped = await snapPolylineToGoogleRoads(points)
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[snap] route ${i}:`, snapped ? `✓ ${snapped.length} points` : '✗ null — falling back to Google polyline')
+      }
+      if (!snapped) return
 
-  const snapped = await snapPolylineToMapbox(points)
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('[snap] result:', snapped ? `✓ ${snapped.length} points` : '✗ null — falling back to Google polyline')
-  }
-  if (snapped) {
-    route.polyline._snappedCoords = snapped
+      route.polyline._snappedCoords = snapped
 
-    const ratio     = snapped.length / points.length
-    const intervals = route.travelAdvisory?.speedReadingIntervals
-    if (intervals?.length) {
-      route.travelAdvisory.speedReadingIntervals = intervals.map((iv: any) => ({
-        ...iv,
-        startPolylinePointIndex: Math.round((iv.startPolylinePointIndex ?? 0) * ratio),
-        endPolylinePointIndex:   Math.round((iv.endPolylinePointIndex   ?? points.length - 1) * ratio),
-      }))
-    }
-  }
+      const ratio     = snapped.length / points.length
+      const intervals = route.travelAdvisory?.speedReadingIntervals
+      if (intervals?.length) {
+        route.travelAdvisory.speedReadingIntervals = intervals.map((iv: any) => ({
+          ...iv,
+          startPolylinePointIndex: Math.round((iv.startPolylinePointIndex ?? 0) * ratio),
+          endPolylinePointIndex:   Math.round((iv.endPolylinePointIndex   ?? points.length - 1) * ratio),
+        }))
+      }
+    }),
+  )
 
   return { routes: data.routes }
 }

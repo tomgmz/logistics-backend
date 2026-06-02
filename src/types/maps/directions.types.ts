@@ -41,6 +41,12 @@ export interface DirectionsLeg {
   duration: string
 }
 
+export type RouteLabel =
+  | 'DEFAULT_ROUTE'
+  | 'DEFAULT_ROUTE_ALTERNATE'
+  | 'FUEL_EFFICIENT'
+  | 'SHORTER_DISTANCE'
+
 export interface DirectionsRoute {
   polyline: {
     encodedPolyline: string
@@ -49,6 +55,9 @@ export interface DirectionsRoute {
   duration:       string
   staticDuration: string
   distanceMeters: number
+  description?:    string
+  routeLabels?:    RouteLabel[]
+  routeToken?:     string
   legs:           DirectionsLeg[]
   travelAdvisory?: {
     speedReadingIntervals?: Array<{
