@@ -1,4 +1,5 @@
 import * as model from '../../models/messaging/messaging.model.js'
+import * as push from './push.service.js'
 import { createClient } from '@supabase/supabase-js'
 import type { ConversationWithDetails, MessageRow, MessagableUser } from '../../types/messaging.types.js'
 
@@ -49,6 +50,14 @@ async function deliverMessage(
     broadcast(`messaging:user:${receiverId}`, 'new_message', payload),
     broadcast(`messaging:conv:${conv.conversation_id}`, 'new_message', payload),
   ])
+
+  void push.getDisplayName(senderId).then((title) =>
+    push.sendToUsers([receiverId], {
+      title,
+      body: push.preview(content),
+      data: { type: 'direct', conversation_id: conv.conversation_id, message_id: message.message_id, sender_id: senderId },
+    })
+  )
 
   return payload
 }

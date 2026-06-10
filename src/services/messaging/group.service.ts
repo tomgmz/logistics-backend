@@ -1,4 +1,5 @@
 import * as groupModel from '../../models/messaging/group.model.js'
+import * as push from './push.service.js'
 import { createClient } from '@supabase/supabase-js'
 import type { GroupWithDetails, GroupMessageRow } from '../../types/messaging.types.js'
 
@@ -94,6 +95,17 @@ export async function sendGroupMessage(
     'new_group_message',
     payload
   )
+
+  const recipients = memberIds.filter((uid: string) => uid !== senderId)
+  if (recipients.length) {
+    void push.getDisplayName(senderId).then((sender) =>
+      push.sendToUsers(recipients, {
+        title: `${sender} • ${group.name}`,
+        body:  push.preview(content),
+        data:  { type: 'group', group_id: groupId, message_id: message.message_id, sender_id: senderId },
+      })
+    )
+  }
 
   return payload
 }

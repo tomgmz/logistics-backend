@@ -19,12 +19,14 @@
     "@google-cloud/vision": "^5.3.6",
     "@googlemaps/routeoptimization": "^0.6.0",
     "@supabase/supabase-js": "^2.97.0",
+    "@types/web-push": "^3.6.4",
     "axios": "^1.13.6",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.10.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
+    "expo-server-sdk": "^6.1.0",
     "express": "^5.2.1",
     "express-basic-auth": "^1.2.1",
     "express-rate-limit": "^8.3.1",
@@ -38,6 +40,7 @@
     "sharp": "^0.34.5",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
+    "web-push": "^3.6.7",
     "zod": "^4.3.6"
   },
   "devDependencies": {
