@@ -1,5 +1,9 @@
 import { z } from 'zod'
 
+// Capitalize the first letter of each word (start, space, hyphen, apostrophe), leaving the rest as entered.
+const toNameCase = (v: string): string =>
+  v.replace(/(^|[\s'-])(\p{L})/gu, (_m, sep: string, ch: string) => sep + ch.toUpperCase())
+
 const emailRegex =
   /^[a-zA-Z0-9](?:[a-zA-Z0-9]|[._%+-](?=[a-zA-Z0-9]))*@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/
 
@@ -69,7 +73,8 @@ export const coreCreateFields = () => ({
     .regex(
       /^[\p{L}]+\.?(?:[ '-][\p{L}]+\.?)*$/u,
       'First name must contain only letters, spaces, hyphens, or apostrophes',
-    ),
+    )
+    .transform(toNameCase),
   last_name: z
     .string()
     .min(2)
@@ -77,7 +82,8 @@ export const coreCreateFields = () => ({
     .regex(
       /^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u,
       'Last name must contain only letters, spaces, hyphens, or apostrophes',
-    ),
+    )
+    .transform(toNameCase),
   middle_name: z
     .string()
     .optional()
@@ -94,7 +100,8 @@ export const coreCreateFields = () => ({
     .refine(
       v => v == null || /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u.test(v),
       'Middle name must contain only letters, spaces, hyphens, or apostrophes',
-    ),
+    )
+    .transform(v => (v == null ? v : toNameCase(v))),
   suffix: z.preprocess(
     (v) => {
       if (typeof v !== 'string') return v
@@ -123,6 +130,7 @@ export const coreUpdateFields = () => ({
       /^[\p{L}]+\.?(?:[ '-][\p{L}]+\.?)*$/u,
       'First name must contain only letters, spaces, hyphens, or apostrophes',
     )
+    .transform(toNameCase)
     .optional(),
   last_name: z
     .string()
@@ -132,6 +140,7 @@ export const coreUpdateFields = () => ({
       /^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u,
       'Last name must contain only letters, spaces, hyphens, or apostrophes',
     )
+    .transform(toNameCase)
     .optional(),
   middle_name: z
     .string()
@@ -149,7 +158,8 @@ export const coreUpdateFields = () => ({
     .refine(
       v => v == null || /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u.test(v),
       'Middle name must contain only letters, spaces, hyphens, or apostrophes',
-    ),
+    )
+    .transform(v => (v == null ? v : toNameCase(v))),
   suffix: z.preprocess(
     (v) => {
       if (typeof v !== 'string') return v
