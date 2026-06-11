@@ -32,7 +32,7 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
   const userId = authData.user.id
 
   try {
-    const result = await DriverModel.create(userId, dto)
+    const result = await DriverModel.create(userId, { ...dto, created_by: actorId ?? dto.created_by ?? null })
 
     sendWelcomeEmail({
       to:        dto.email,

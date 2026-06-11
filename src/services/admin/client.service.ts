@@ -36,7 +36,7 @@ export async function createClient(
 
   try {
     // 2. Insert into public.users + public.clients
-    const result = await ClientModel.create(userId, input)
+    const result = await ClientModel.create(userId, { ...input, created_by: actorId ?? input.created_by ?? undefined })
 
     // 3. Fire welcome email — non-blocking: a failure logs but does NOT roll back
     sendWelcomeEmail({

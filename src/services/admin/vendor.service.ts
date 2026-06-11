@@ -32,7 +32,7 @@ export async function createVendor(input: CreateVendorInput, actorId?: string | 
   const userId = authData.user.id
 
   try {
-    const result = await VendorModel.create(userId, input)
+    const result = await VendorModel.create(userId, { ...input, created_by: actorId ?? input.created_by ?? null })
 
     sendWelcomeEmail({
       to:        input.email,

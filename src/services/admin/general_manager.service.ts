@@ -41,7 +41,7 @@ export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string 
   const userId = authData.user.id
 
   try {
-    const result = await GeneralManagerModel.create(userId, dto)
+    const result = await GeneralManagerModel.create(userId, { ...dto, created_by: actorId ?? dto.created_by ?? null })
 
     sendWelcomeEmail({
       to:        dto.email,

@@ -41,7 +41,7 @@ export async function createAccountant(dto: BaseCreateDTO, actorId?: string | nu
   const userId = authData.user.id
 
   try {
-    const result = await AccountantModel.create(userId, dto)
+    const result = await AccountantModel.create(userId, { ...dto, created_by: actorId ?? dto.created_by ?? null })
 
     sendWelcomeEmail({
       to:        dto.email,

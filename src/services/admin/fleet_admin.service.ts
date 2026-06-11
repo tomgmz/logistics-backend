@@ -41,7 +41,7 @@ export async function createFleetAdmin(dto: BaseCreateDTO, actorId?: string | nu
   const userId = authData.user.id
 
   try {
-    const result = await FleetAdminModel.create(userId, dto)
+    const result = await FleetAdminModel.create(userId, { ...dto, created_by: actorId ?? dto.created_by ?? null })
 
     sendWelcomeEmail({
       to:        dto.email,

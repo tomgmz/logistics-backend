@@ -34,7 +34,7 @@ export async function createITAdmin(
   const userId = authData.user.id
 
   try {
-    const result = await ITAdminModel.create(userId, input)
+    const result = await ITAdminModel.create(userId, { ...input, created_by: actorId ?? input.created_by ?? undefined })
 
     sendWelcomeEmail({
       to:        input.email,

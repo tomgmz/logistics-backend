@@ -27,6 +27,11 @@ declare global {
 
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
   try {
+    // Idempotent: if an upstream mount already authenticated this request
+    // (e.g. /api/admin runs authenticate before moduleGuard), don't redo the
+    // session lookup when per-route authenticate runs again.
+    if (req.user) return next()
+
     // Cookie first (web), then Bearer header (API/mobile)
     let token = req.cookies?.access_token
 

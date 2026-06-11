@@ -29,7 +29,7 @@ export async function createAdmin(input: CreateAdminInput, actorId?: string | nu
   const userId = authData.user.id
 
   try {
-    const result = await AdminModel.create(userId, input)
+    const result = await AdminModel.create(userId, { ...input, created_by: actorId ?? input.created_by ?? undefined })
 
     logEvent({
       user_id:     actorId,

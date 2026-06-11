@@ -27,6 +27,8 @@ import * as ITAdminController from '../controllers/admin/it-admin.controller.js'
 import * as AssignmentController from '../controllers/admin/assignment.controller.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as AuditLogController from '../controllers/admin/audit-logs.controller.js'
+import * as PermissionsController from '../controllers/admin/permissions.controller.js'
+import { replacePermissionsSchema } from '../schema/admin/permissions.schema.js'
 import { uploadSingle }    from '../middlewares/upload.middleware.js'
 import * as UploadController from '../controllers/admin/uploadImage.controller.js'
 import * as DriverOCRController from '../controllers/admin/driver-ocr.controller.js'
@@ -153,6 +155,10 @@ router.delete('/it-admins/:id', authenticate, isAdmin, ITAdminController.deleteI
 //Fetch all users
 router.get('/users',       authenticate, isAdmin, UserController.getUsers)
 router.get('/users/stats', authenticate, isAdmin, UserController.getUserStats)
+
+//Module permissions (RBAC) — managed by admin / it_admin
+router.get('/users/:id/permissions', authenticate, isAdmin, PermissionsController.getUserPermissions)
+router.put('/users/:id/permissions', authenticate, isAdmin, validate(replacePermissionsSchema), PermissionsController.setUserPermissions)
 
 // Audit logs
 router.get('/audit-logs',        authenticate, isAdmin, AuditLogController.getAllLogs)

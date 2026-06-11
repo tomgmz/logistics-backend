@@ -5,6 +5,9 @@ import type { SignOptions } from 'jsonwebtoken'
 import * as AuthModel from '../../models/auth/auth.model.js'
 import { sendOtpEmail } from '../../lib/brevo-mailer.js'
 import { supabase, supabaseAnon } from '../../lib/supabase.js'
+import { isManagedRole } from '../../constants/modules.js'
+import { getSessionPermissions } from '../admin/permissions.service.js'
+import { isProtectedAdmin } from '../../lib/protected-admin.js'
 import {
   RequestOtpInput,
   VerifyOtpInput,
@@ -589,8 +592,16 @@ export async function getMe(userId: string) {
     }
     case 'client':
       return AuthModel.findUserWithClient(userId)
-    default:
+    default: {
+      // Attach per-module permissions so the web app can gate UI for managed
+      // staff. The root administrator is never restricted, so leave their
+      // session with no permission matrix (full role-default access).
+      if (isManagedRole(user.role) && !(await isProtectedAdmin(userId))) {
+        const module_permissions = await getSessionPermissions(userId)
+        return { ...user, module_permissions }
+      }
       return user
+    }
   }
 }
 

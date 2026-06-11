@@ -8,6 +8,8 @@ import swaggerUi from 'swagger-ui-express';
 import basicAuth from 'express-basic-auth';
 import { swaggerSpec } from './swagger/swagger.config.js';
 import adminRoutes from './routes/admin.route.js';
+import { authenticate } from './middlewares/auth.middleware.js';
+import { moduleGuard } from './middlewares/moduleAccess.middleware.js';
 import clientRoutes from './routes/client.routes.js';
 import routeOptimizationRoutes from './routes/routeOptimization.route.js';
 import authRoutes from './routes/auth.route.js';
@@ -101,7 +103,7 @@ app.use('/api/booking', clientRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
 app.use('/api/directions', directionsRouter);
 app.use('/api/driver', driverRoutes)
-app.use('/api/admin', adminRoutes);
+app.use('/api/admin', authenticate, moduleGuard, adminRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/messaging', messagingRoutes);
 app.use('/api/notifications', notificationsRoutes);
