@@ -11,7 +11,6 @@ export type BanManagedUserRole =
   | 'vendor'
   | 'accountant'
   | 'general_manager'
-  | 'human_resources'
   | 'fleet_admin'
   | 'operations_admin'
   | 'it_admin'

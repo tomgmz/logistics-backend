@@ -13,7 +13,6 @@ const ROLE_MAP: Record<string, string> = {
   'vendors':           'vendor',
   'accountants':       'accountant',
   'general-managers':  'general_manager',
-  'human-resources':   'human_resources',
   'fleet-admins':      'fleet_admin',
   'operations-admins': 'operations_admin',
   'it-admins':         'it_admin',

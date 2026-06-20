@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { createUserWithProfile } from '../../lib/user-provisioning.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 
 interface UpdateAccountantDTO {
@@ -36,21 +37,16 @@ async function findById(userId: string) {
 }
 
 async function create(userId: string, dto: BaseCreateDTO) {
-  const { error: userError } = await supabase
-    .from('users')
-    .insert({
-      user_id:        userId,
-      email:          dto.email,
-      first_name:     dto.first_name,
-      last_name:      dto.last_name,
-      middle_name: dto.middle_name ?? null,
-      suffix:         dto.suffix ?? null,
-      phone:          dto.phone,
-      role:           'accountant',
-      created_by:     dto.created_by ?? null,
-      must_change_password: true,
-    })
-  if (userError) throw userError
+  await createUserWithProfile(userId, 'accountant', {
+    email:                dto.email,
+    first_name:           dto.first_name,
+    last_name:            dto.last_name,
+    middle_name:          dto.middle_name ?? null,
+    suffix:               dto.suffix ?? null,
+    phone:                dto.phone,
+    created_by:           dto.created_by ?? null,
+    must_change_password: true,
+  })
 
   return findById(userId)
 }

@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { createUserWithProfile } from '../../lib/user-provisioning.js'
 import { CreateITAdminInput, UpdateITAdminInput } from '../../types/it-admin.types.js'
 
 async function findAll(excludeId?: string) {
@@ -30,21 +31,16 @@ async function findById(userId: string) {
 }
 
 async function create(userId: string, input: CreateITAdminInput) {
-  const { error } = await supabase
-    .from('users')
-    .insert({
-      user_id:              userId,
-      email:                input.email,
-      first_name:           input.first_name,
-      last_name:            input.last_name,
-      middle_name:          input.middle_name ?? null,
-      suffix:               input.suffix ?? null,
-      phone:                input.phone ?? null,
-      role:                 'it_admin',
-      created_by:           input.created_by ?? null,
-      must_change_password: true,
-    })
-  if (error) throw error
+  await createUserWithProfile(userId, 'it_admin', {
+    email:                input.email,
+    first_name:           input.first_name,
+    last_name:            input.last_name,
+    middle_name:          input.middle_name ?? null,
+    suffix:               input.suffix ?? null,
+    phone:                input.phone ?? null,
+    created_by:           input.created_by ?? null,
+    must_change_password: true,
+  })
   return findById(userId)
 }
 

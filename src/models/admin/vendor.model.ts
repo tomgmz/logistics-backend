@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { createUserWithProfile } from '../../lib/user-provisioning.js'
 import { CreateVendorInput, UpdateVendorInput } from '../../types/vendor.types.js'
 
 async function findAll() {
@@ -27,31 +28,25 @@ async function findById(userId: string) {
 }
 
 async function create(userId: string, input: CreateVendorInput) {
-  const { error: userError } = await supabase
-    .from('users')
-    .insert({
-      user_id:        userId,
-      email:          input.email,
-      first_name:     input.first_name,
-      last_name:      input.last_name,
-      middle_name: input.middle_name ?? null,
-      suffix:         input.suffix ?? null,
-      phone:          input.phone,
-      role:           'vendor',
-      created_by:     input.created_by ?? null,
+  await createUserWithProfile(
+    userId,
+    'vendor',
+    {
+      email:                input.email,
+      first_name:           input.first_name,
+      last_name:            input.last_name,
+      middle_name:          input.middle_name ?? null,
+      suffix:               input.suffix ?? null,
+      phone:                input.phone,
+      created_by:           input.created_by ?? null,
       must_change_password: true,
-    })
-  if (userError) throw userError
-
-  const { error: vendorError } = await supabase
-    .from('vendors')
-    .insert({
-      user_id:        userId,
-      vendor_type:    input.vendor_type,
-      company_name:   input.company_name ?? null,
+    },
+    {
+      vendor_type:     input.vendor_type,
+      company_name:    input.company_name ?? null,
       business_permit: input.business_permit ?? null,
-    })
-  if (vendorError) throw vendorError
+    },
+  )
 
   return findById(userId)
 }

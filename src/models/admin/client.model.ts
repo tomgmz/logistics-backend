@@ -1,4 +1,5 @@
 import { supabase } from "../../lib/supabase.js";
+import { createUserWithProfile } from "../../lib/user-provisioning.js";
 import { CreateClientInput, UpdateClientInput } from "../../types/client.types.js";
 
 async function findAll() {
@@ -27,32 +28,26 @@ async function findById(userId: string) {
 }
 
 async function create(userId: string, input: CreateClientInput) {
-    const { error: userError } = await supabase
-    .from('users')
-    .insert({
-      user_id:        userId,
-      email:          input.email,
-      first_name:     input.first_name,
-      last_name:      input.last_name,
-      middle_name: input.middle_name ?? null,
-      suffix:         input.suffix ?? null,
-      phone:       input.phone,
-      role:           'client',
-      created_by:     input.created_by ?? null,
-      must_change_password: true,
-    })
-    if (userError) throw userError
-
-    const { error: clientError } = await supabase
-    .from('clients')
-    .insert({
-        user_id:         userId,
+    await createUserWithProfile(
+      userId,
+      'client',
+      {
+        email:                input.email,
+        first_name:           input.first_name,
+        last_name:            input.last_name,
+        middle_name:          input.middle_name ?? null,
+        suffix:               input.suffix ?? null,
+        phone:                input.phone,
+        created_by:           input.created_by ?? null,
+        must_change_password: true,
+      },
+      {
         company_name:    input.company_name ?? null,
         billing_address: input.billing_address ?? null,
         payment_terms:   input.payment_terms ?? 30,
-        landline:        input.landline        ?? null,  
-    })
-    if (clientError) throw clientError
+        landline:        input.landline ?? null,
+      },
+    )
     return findById(userId)
 }
 

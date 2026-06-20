@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { createUserWithProfile } from '../../lib/user-provisioning.js'
 import { CreateDriverDTO, UpdateDriverDTO } from '../../types/driver.types.js'
 
 async function findAll() {
@@ -37,33 +38,27 @@ async function create(userId: string, dto: CreateDriverDTO) {
     if (checkErr) throw checkErr
     if (existing) throw new Error('duplicate key: license_number')
   }
-  const { error: userError } = await supabase
-    .from('users')
-    .insert({
-      user_id:              userId,
+  await createUserWithProfile(
+    userId,
+    'driver',
+    {
       email:                dto.email,
       first_name:           dto.first_name,
       last_name:            dto.last_name,
       middle_name:          dto.middle_name ?? null,
       suffix:               dto.suffix ?? null,
       phone:                dto.phone ?? null,
-      role:                 'driver',
       created_by:           dto.created_by ?? null,
       must_change_password: true,
-    })
-  if (userError) throw userError
-
-  const { error: driverError } = await supabase
-    .from('drivers')
-    .insert({
-      user_id:           userId,
+    },
+    {
       license_number:    dto.license_number,
       license_expiry:    dto.license_expiry,
       license_image_url: dto.license_image_url ?? null,
       is_vendor_driver:  dto.is_vendor_driver ?? false,
       vendor_id:         dto.vendor_id ?? null,
-    })
-  if (driverError) throw driverError
+    },
+  )
 
   return findById(userId)
 }

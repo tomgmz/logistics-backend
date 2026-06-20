@@ -7,6 +7,7 @@ import {
   isManagedRole,
   moduleForPath,
   requiredFlagForMethod,
+  ModuleKey,
 } from '../constants/modules.js'
 
 // Small per-user TTL cache so we don't hit the DB on every admin request.
@@ -66,5 +67,42 @@ export async function moduleGuard(req: Request, res: Response, next: NextFunctio
   } catch (err) {
     console.error('MODULE GUARD ERROR:', err)
     res.status(500).json({ status: 'error', message: 'Authorization error' })
+  }
+}
+
+// Pin module enforcement to a fixed module, for operational routes that live
+// outside /api/admin (e.g. booking approve/reject on /api/booking) and so aren't
+// covered by moduleForPath. Same bypass/managed/protected rules as moduleGuard;
+// the HTTP method still selects the required flag (PATCH/PUT -> can_edit, etc.).
+export function requireModule(moduleKey: ModuleKey) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user
+      if (!user) return next() // authenticate handles the 401
+
+      if (isBypassRole(user.role)) return next()
+      if (!isManagedRole(user.role)) return next()
+      if (await isProtectedAdmin(user.sub)) return next()
+
+      const rows = await getUserPermissions(user.sub)
+      if (rows.length === 0) return next() // no custom permissions -> role default
+
+      const requiredFlag = requiredFlagForMethod(req.method)
+      if (!requiredFlag) return next()
+
+      const row = rows.find((r) => r.module_name === moduleKey)
+      if (!row || !row[requiredFlag]) {
+        res.status(403).json({
+          status:  'error',
+          message: 'You do not have permission to perform this action on this module.',
+        })
+        return
+      }
+
+      next()
+    } catch (err) {
+      console.error('REQUIRE MODULE ERROR:', err)
+      res.status(500).json({ status: 'error', message: 'Authorization error' })
+    }
   }
 }
