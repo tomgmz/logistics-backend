@@ -3,7 +3,7 @@ export type DestinationStatus  = 'pending' | 'delivered' | 'failed'
 export type AccountingStatus   = 'pending' | 'approved' | 'rejected' | 'forwarded'
 export type GmStatus           = 'pending' | 'approved' | 'rejected'
 export type OpsStatus          = 'pending' | 'assigned'
-export type FleetStatus        = 'pending' | 'approved'
+export type FleetStatus        = 'pending' | 'approved' | 'rejected'
 
 export interface BookingCargoItem {
   item_id:        string
@@ -208,6 +208,9 @@ export interface OpsAssignInput {
   ops_status: 'assigned'
 }
 
+// Fleet runs the BLOWBAGETS readiness check. On 'rejected' the booking is sent
+// back to operations (ops_status reset to 'pending') for re-assignment.
 export interface FleetApproveInput {
-  fleet_status: 'approved'
+  decision:          'approved' | 'rejected'
+  rejection_reason?: string
 }

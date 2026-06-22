@@ -1,6 +1,8 @@
 import { AssignmentModel } from '../../models/admin/assignment.model.js'
+import { BookingModel } from '../../models/client/booking.model.js'
 import { supabase } from '../../lib/supabase.js'
 import { logEvent } from '../../lib/log-event.js'
+import { notifyStage } from '../notification/notification.service.js'
 import type {
   AssignmentWithRelations,
   AssignBookingInput,
@@ -67,6 +69,12 @@ export async function assignBookingService(
     description: `Booking ${bookingId} assigned to driver ${input.driver_id} with truck ${input.truck_id}`,
 
   })
+
+  // A vehicle/driver is now appointed: advance the ops stage (also resets
+  // fleet_status to 'pending' for a clean fleet re-entry) and notify the fleet
+  // manager to run the BLOWBAGETS readiness check.
+  const advanced = await BookingModel.updateOpsStatus(bookingId, { ops_status: 'assigned' })
+  if (advanced) void notifyStage('fleet_pending', advanced)
 
   return assignment
 }

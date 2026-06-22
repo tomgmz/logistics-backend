@@ -45,8 +45,11 @@ const router = Router()
 
 // Role groups
 const isAdmin = authorize('admin', 'it_admin')
-const isFleet      = authorize('admin', 'it_admin', 'fleet_admin', 'general_manager', 'client')
-const isOperations = authorize('admin', 'it_admin', 'operations_admin', 'general_manager', 'client')
+const isFleet      = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager', 'client')
+const isOperations = authorize('admin', 'it_admin', 'operations_manager', 'general_manager', 'client')
+// Read-only view of drivers/trucks for operations (needed to populate the
+// assignment dropdowns). CRUD stays restricted to isFleet.
+const isFleetRead  = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager', 'client', 'operations_manager')
 const isFinance    = authorize('admin', 'it_admin', 'accountant', 'general_manager')
 
 //Admins — admin / it_admin only
@@ -68,9 +71,9 @@ router.patch('/clients/:id/activate',   authenticate, isAdmin, ClientController.
 router.delete('/clients/:id', authenticate, isAdmin,  ClientController.deleteClient)
 
 // Drivers
-router.get('/drivers',                     authenticate, isFleet, DriverController.getAllDrivers)
+router.get('/drivers',                     authenticate, isFleetRead, DriverController.getAllDrivers)
 router.post('/drivers/scan-license',       authenticate, isFleet, uploadSingle, DriverOCRController.scanDriverLicense)
-router.get('/drivers/:id',                 authenticate, isFleet, DriverController.getDriverById)
+router.get('/drivers/:id',                 authenticate, isFleetRead, DriverController.getDriverById)
 router.post('/drivers',                    authenticate, isFleet, uploadSingle, validate(createDriverSchema), DriverController.createDriver)
 router.patch('/drivers/:id',               authenticate, isFleet, validate(updateDriverSchema), DriverController.updateDriver)
 router.patch('/drivers/:id/deactivate',    authenticate, isFleet, DriverController.deactivateDriver)
@@ -94,8 +97,8 @@ router.patch('/vendors/:id/activate',   authenticate, isAdmin, VendorController.
 router.delete('/vendors/:id', authenticate, isAdmin, VendorController.deleteVendor)
 
 // Trucks
-router.get('/trucks',        authenticate, isFleet, TruckController.getAllTrucks)
-router.get('/trucks/:id',    authenticate, isFleet, TruckController.getTruckById)
+router.get('/trucks',        authenticate, isFleetRead, TruckController.getAllTrucks)
+router.get('/trucks/:id',    authenticate, isFleetRead, TruckController.getTruckById)
 router.post('/trucks',       authenticate, isFleet, validate(createTruckSchema), TruckController.createTruck)
 router.patch('/trucks/:id',  authenticate, isFleet, validate(updateTruckSchema), TruckController.updateTruck)
 router.delete('/trucks/:id', authenticate, isFleet, TruckController.deleteTruck)

@@ -13,6 +13,7 @@ import {
 } from '../../types/client/booking.types.js'
 import { optimizeDestinationsService } from '../maps/routeOptimization.service.js'
 import { logEvent } from '../../lib/log-event.js'
+import { notifyStage, hasActiveUsersWithRoles } from '../notification/notification.service.js'
 
 function validateScheduleDate(scheduleDate: string): void {
   const [year, month, day] = scheduleDate.split('-').map(Number)
@@ -138,6 +139,9 @@ export async function createBookingService(
 
   })
 
+  // Stage 1: send to accountants (+ admins) for the profitability check.
+  void notifyStage('accounting_pending', booking)
+
   return booking
 }
 
@@ -198,6 +202,26 @@ export async function updateBookingStatusService(
 
   })
 
+  // Approving the booking via the top-level status control hands it to
+  // operations: clear any still-pending upstream sub-stages so the record is
+  // consistent, then notify the operations manager to assign vehicle(s)/driver(s).
+  if (status === 'approved' && existing.status !== 'approved' && existing.ops_status !== 'assigned') {
+    if (existing.accounting_status === 'pending') {
+      await BookingModel.updateAccountingStatus(bookingId, { accounting_status: 'approved' })
+    }
+    if (existing.gm_status === 'pending') {
+      await BookingModel.updateGmStatus(bookingId, { gm_status: 'approved' })
+    }
+    const advanced = await BookingModel.findById(bookingId)
+    logEvent({
+      user_id:     userId,
+      log_type:    'booking',
+      action:      'booking_approved_to_ops',
+      description: `Booking ${bookingId} approved; routed to operations`,
+    })
+    void notifyStage('ops_pending', advanced ?? booking)
+  }
+
   return booking
 }
 
@@ -224,6 +248,27 @@ export async function accountingReviewService(
     description: `Booking ${bookingId} ${input.accounting_status} by accounting`,
 
   })
+
+  if (input.accounting_status === 'rejected') {
+    void notifyStage('rejected_accounting', booking, { reason: input.rejection_reason })
+  } else {
+    // approved or forwarded: hand to the GM if one is staffed, otherwise skip the
+    // GM stage (auto-clear it) and route straight to operations.
+    const gmStaffed = await hasActiveUsersWithRoles(['general_manager'])
+    if (gmStaffed) {
+      void notifyStage('gm_pending', booking)
+    } else {
+      await BookingModel.updateGmStatus(bookingId, { gm_status: 'approved' })
+      const advanced = await BookingModel.updateStatus(bookingId, 'approved')
+      logEvent({
+        user_id:     userId,
+        log_type:    'booking',
+        action:      'gm_auto_approved',
+        description: `Booking ${bookingId} GM stage auto-cleared (no general manager staffed)`,
+      })
+      void notifyStage('ops_pending', advanced ?? booking)
+    }
+  }
 
   return booking
 }
@@ -255,6 +300,15 @@ export async function gmReviewService(
 
   })
 
+  if (input.gm_status === 'rejected') {
+    void notifyStage('rejected_gm', booking, { reason: input.rejection_reason })
+  } else {
+    // approved: advance the lifecycle to 'approved' (so operations sees it) and
+    // send to operations to select vehicle(s) and driver(s).
+    const advanced = await BookingModel.updateStatus(bookingId, 'approved')
+    void notifyStage('ops_pending', advanced ?? booking)
+  }
+
   return booking
 }
 
@@ -285,6 +339,9 @@ export async function opsAssignService(
 
   })
 
+  // Send to fleet manager for the BLOWBAGETS readiness check.
+  void notifyStage('fleet_pending', booking)
+
   return booking
 }
 
@@ -310,10 +367,18 @@ export async function fleetApproveService(
   logEvent({
     user_id:     userId,
     log_type:    'booking',
-    action:      'fleet_approved',
-    description: `Booking ${bookingId} approved by fleet`,
+    action:      input.decision === 'rejected' ? 'fleet_rejected' : 'fleet_approved',
+    description: `Booking ${bookingId} ${input.decision} by fleet`,
 
   })
+
+  if (input.decision === 'rejected') {
+    // BLOWBAGETS failed: bounce back to operations to assign another vehicle.
+    void notifyStage('fleet_rejected', booking, { reason: input.rejection_reason })
+  } else {
+    // Vehicle is ready: notify the assigned driver(s) of their delivery.
+    void notifyStage('assigned', booking)
+  }
 
   return booking
 }

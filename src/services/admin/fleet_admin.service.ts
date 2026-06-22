@@ -34,7 +34,7 @@ export async function createFleetAdmin(dto: BaseCreateDTO, actorId?: string | nu
     password,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: { role: 'fleet_admin' },
+    user_metadata: { role: 'fleet_manager' },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 
@@ -46,12 +46,12 @@ export async function createFleetAdmin(dto: BaseCreateDTO, actorId?: string | nu
     sendWelcomeEmail({
       to:        dto.email,
       firstName: dto.first_name ?? null,
-      role:      'fleet_admin',
+      role:      'fleet_manager',
       password,
     }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
-      console.error(`WELCOME_EMAIL_FAILED for fleet_admin ${userId}:`, msg)
+      console.error(`WELCOME_EMAIL_FAILED for fleet_manager ${userId}:`, msg)
     })
 
     logEvent({
@@ -107,9 +107,9 @@ export async function deleteFleetAdmin(userId: string, actorId?: string | null, 
 }
 
 export async function deactivateFleetAdmin(userId: string, actorId?: string | null, ip?: string | null) {
-  return deactivateUserWithBan(userId, 'fleet_admin', 'fleet_admin_deactivated', 'Fleet Admin', actorId, ip)
+  return deactivateUserWithBan(userId, 'fleet_manager', 'fleet_admin_deactivated', 'Fleet Admin', actorId, ip)
 }
 
 export async function activateFleetAdmin(userId: string, actorId?: string | null, ip?: string | null) {
-  return activateUserWithUnban(userId, 'fleet_admin', 'fleet_admin_activated', 'Fleet Admin', actorId, ip)
+  return activateUserWithUnban(userId, 'fleet_manager', 'fleet_admin_activated', 'Fleet Admin', actorId, ip)
 }

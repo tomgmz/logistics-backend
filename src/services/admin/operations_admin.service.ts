@@ -34,7 +34,7 @@ export async function createOperationsAdmin(dto: BaseCreateDTO, actorId?: string
     password,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
-    user_metadata: { role: 'operations_admin' },
+    user_metadata: { role: 'operations_manager' },
   })
   if (authError) throw new Error(`Auth Error: ${authError.message}`)
 
@@ -46,12 +46,12 @@ export async function createOperationsAdmin(dto: BaseCreateDTO, actorId?: string
     sendWelcomeEmail({
       to:        dto.email,
       firstName: dto.first_name ?? null,
-      role:      'operations_admin',
+      role:      'operations_manager',
       password,
     }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
-      console.error(`WELCOME_EMAIL_FAILED for operations_admin ${userId}:`, msg)
+      console.error(`WELCOME_EMAIL_FAILED for operations_manager ${userId}:`, msg)
     })
 
     logEvent({
@@ -107,9 +107,9 @@ export async function deleteOperationsAdmin(userId: string, actorId?: string | n
 }
 
 export async function deactivateOperationsAdmin(userId: string, actorId?: string | null, ip?: string | null) {
-  return deactivateUserWithBan(userId, 'operations_admin', 'operations_admin_deactivated', 'Operations Admin', actorId, ip)
+  return deactivateUserWithBan(userId, 'operations_manager', 'operations_admin_deactivated', 'Operations Admin', actorId, ip)
 }
 
 export async function activateOperationsAdmin(userId: string, actorId?: string | null, ip?: string | null) {
-  return activateUserWithUnban(userId, 'operations_admin', 'operations_admin_activated', 'Operations Admin', actorId, ip)
+  return activateUserWithUnban(userId, 'operations_manager', 'operations_admin_activated', 'Operations Admin', actorId, ip)
 }

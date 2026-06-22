@@ -4,6 +4,7 @@ import * as AdminModel from '../../models/admin/admin.model.js'
 import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
 import { CreateAdminInput, UpdateAdminInput } from '../../types/admin.types.js'
 import { logEvent } from '../../lib/log-event.js'
+import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
 
 export async function getAllAdmin() {
   return AdminModel.findAll()
@@ -17,9 +18,11 @@ export async function getAdminById(userId: string) {
 
 export async function createAdmin(input: CreateAdminInput, actorId?: string | null, ip?: string | null) {
   const e164Phone = input.phone ? '+63' + input.phone.slice(1) : undefined
+  const password  = generateSecurePassword()
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         input.email,
+    password,
     email_confirm: true,
     phone:         e164Phone ?? undefined,
     user_metadata: { role: 'admin' },
@@ -31,12 +34,23 @@ export async function createAdmin(input: CreateAdminInput, actorId?: string | nu
   try {
     const result = await AdminModel.create(userId, { ...input, created_by: actorId ?? input.created_by ?? undefined })
 
+    sendWelcomeEmail({
+      to:        input.email,
+      firstName: input.first_name ?? null,
+      role:      'admin',
+      password,
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
+      console.error(`WELCOME_EMAIL_FAILED for admin ${userId}:`, msg)
+    })
+
     logEvent({
       user_id:     actorId,
       log_type:    'user_activity',
       action:      'admin_created',
       description: `Admin ${input.email} created (user: ${userId})`,
-  
+
     })
 
     return result

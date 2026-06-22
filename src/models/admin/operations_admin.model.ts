@@ -15,7 +15,7 @@ async function findAll() {
   const { data, error } = await supabase
     .from('users')
     .select('*')
-    .eq('role', 'operations_admin')
+    .eq('role', 'operations_manager')
     .neq('status', 'archived')
     .order('last_name', { ascending: true })
 
@@ -28,7 +28,7 @@ async function findById(userId: string) {
     .from('users')
     .select('*')
     .eq('user_id', userId)
-    .eq('role', 'operations_admin')
+    .eq('role', 'operations_manager')
     .neq('status', 'archived')
     .maybeSingle()
 
@@ -37,7 +37,7 @@ async function findById(userId: string) {
 }
 
 async function create(userId: string, dto: BaseCreateDTO) {
-  await createUserWithProfile(userId, 'operations_admin', {
+  await createUserWithProfile(userId, 'operations_manager', {
     email:                dto.email,
     first_name:           dto.first_name,
     last_name:            dto.last_name,

@@ -11,8 +11,8 @@ export type BanManagedUserRole =
   | 'vendor'
   | 'accountant'
   | 'general_manager'
-  | 'fleet_admin'
-  | 'operations_admin'
+  | 'fleet_manager'
+  | 'operations_manager'
   | 'it_admin'
 
 export async function deactivateUserWithBan(

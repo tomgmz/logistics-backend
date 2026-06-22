@@ -364,9 +364,11 @@ async function updateOpsStatus(
   bookingId: string,
   input: OpsAssignInput,
 ): Promise<BookingWithRelations | null> {
+  // Reset fleet_status to 'pending' so a re-assignment after a fleet rejection
+  // re-enters the fleet review cleanly.
   const { error } = await supabase
     .from('bookings')
-    .update({ ops_status: input.ops_status, updated_at: new Date().toISOString() })
+    .update({ ops_status: input.ops_status, fleet_status: 'pending', updated_at: new Date().toISOString() })
     .eq('booking_id', bookingId)
 
   if (error) throw error
@@ -377,9 +379,16 @@ async function updateFleetStatus(
   bookingId: string,
   input: FleetApproveInput,
 ): Promise<BookingWithRelations | null> {
+  const payload: Record<string, unknown> =
+    input.decision === 'rejected'
+      // BLOWBAGETS failed: bounce back to operations for re-assignment. Reset the
+      // lifecycle to 'approved' so the booking reappears in the operations queue.
+      ? { fleet_status: 'rejected', ops_status: 'pending', status: 'approved', rejection_reason: input.rejection_reason ?? null }
+      : { fleet_status: 'approved', rejection_reason: null }
+
   const { error } = await supabase
     .from('bookings')
-    .update({ fleet_status: input.fleet_status, updated_at: new Date().toISOString() })
+    .update({ ...payload, updated_at: new Date().toISOString() })
     .eq('booking_id', bookingId)
 
   if (error) throw error

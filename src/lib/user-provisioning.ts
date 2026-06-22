@@ -8,10 +8,10 @@ export type ProvisionRole =
   | 'driver'
   | 'vendor'
   | 'it_admin'
-  | 'operations_admin'
+  | 'operations_manager'
   | 'accountant'
   | 'general_manager'
-  | 'fleet_admin'
+  | 'fleet_manager'
 
 export interface BaseUserFields {
   email:                 string

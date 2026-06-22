@@ -122,6 +122,10 @@ export const opsAssignSchema = z.object({
   ops_status: z.literal('assigned'),
 })
 
-export const fleetApproveSchema = z.object({
-  fleet_status: z.literal('approved'),
-})
+export const fleetReviewSchema = z.object({
+  decision:         z.enum(['approved', 'rejected']),
+  rejection_reason: z.string().min(1).optional(),
+}).refine(
+  (data) => data.decision !== 'rejected' || !!data.rejection_reason,
+  { message: 'rejection_reason is required when rejecting', path: ['rejection_reason'] }
+)
