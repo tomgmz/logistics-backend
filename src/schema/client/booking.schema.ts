@@ -122,10 +122,31 @@ export const opsAssignSchema = z.object({
   ops_status: z.literal('assigned'),
 })
 
+// The 10 BLOWBAGETS inspection items. Every key is required so a partial/renamed
+// payload is rejected at the boundary.
+export const blowbagetsSchema = z.object({
+  battery: z.boolean(),
+  lights:  z.boolean(),
+  oil:     z.boolean(),
+  water:   z.boolean(),
+  brakes:  z.boolean(),
+  air:     z.boolean(),
+  gas:     z.boolean(),
+  engine:  z.boolean(),
+  tires:   z.boolean(),
+  self:    z.boolean(),
+})
+
 export const fleetReviewSchema = z.object({
   decision:         z.enum(['approved', 'rejected']),
   rejection_reason: z.string().min(1).optional(),
+  blowbagets:       blowbagetsSchema.optional(),
 }).refine(
   (data) => data.decision !== 'rejected' || !!data.rejection_reason,
   { message: 'rejection_reason is required when rejecting', path: ['rejection_reason'] }
+).refine(
+  // Approval demands a complete, all-passing inspection — enforced here so the
+  // rule holds even if a client bypasses the UI gate.
+  (data) => data.decision !== 'approved' || (!!data.blowbagets && Object.values(data.blowbagets).every(Boolean)),
+  { message: 'All BLOWBAGETS items must be checked before the vehicle can be approved', path: ['blowbagets'] }
 )

@@ -10,6 +10,7 @@ import {
   GmReviewInput,
   OpsAssignInput,
   FleetApproveInput,
+  BlowbagetsCheck,
 } from '../../types/client/booking.types.js'
 import { optimizeDestinationsService } from '../maps/routeOptimization.service.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -361,7 +362,11 @@ export async function fleetApproveService(
     throw new Error('Booking has already been reviewed by fleet')
   }
 
-  const booking = await BookingModel.updateFleetStatus(bookingId, input)
+  const check: BlowbagetsCheck | null = input.blowbagets
+    ? { items: input.blowbagets, checked_by: userId ?? null, checked_at: new Date().toISOString() }
+    : null
+
+  const booking = await BookingModel.updateFleetStatus(bookingId, input, check)
   if (!booking) throw new Error('Failed to update fleet status')
 
   logEvent({

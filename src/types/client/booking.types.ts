@@ -5,6 +5,29 @@ export type GmStatus           = 'pending' | 'approved' | 'rejected'
 export type OpsStatus          = 'pending' | 'assigned'
 export type FleetStatus        = 'pending' | 'approved' | 'rejected'
 
+// The fleet manager's BLOWBAGETS pre-dispatch inspection. Each key is one item
+// of the mnemonic; `true` means it passed. Battery and Brakes share the letter
+// B but have distinct keys.
+export interface BlowbagetsItems {
+  battery: boolean
+  lights:  boolean
+  oil:     boolean
+  water:   boolean
+  brakes:  boolean
+  air:     boolean
+  gas:     boolean
+  engine:  boolean
+  tires:   boolean
+  self:    boolean
+}
+
+// The snapshot persisted on the booking at the moment of the fleet review.
+export interface BlowbagetsCheck {
+  items:      BlowbagetsItems
+  checked_by: string | null
+  checked_at: string
+}
+
 export interface BookingCargoItem {
   item_id:        string
   booking_id?:    string
@@ -100,6 +123,7 @@ export interface Booking {
   gm_status?:             GmStatus | null
   ops_status?:            OpsStatus | null
   fleet_status?:          FleetStatus | null
+  blowbagets_check?:      BlowbagetsCheck | null
   rejection_reason?:      string | null
   cancelled_by?:          string | null
   cancelled_at?:          Date | null
@@ -213,4 +237,7 @@ export interface OpsAssignInput {
 export interface FleetApproveInput {
   decision:          'approved' | 'rejected'
   rejection_reason?: string
+  // The BLOWBAGETS inspection captured by the fleet manager. Required (all items
+  // true) on 'approved'; on 'rejected' it records which items failed.
+  blowbagets?:       BlowbagetsItems
 }

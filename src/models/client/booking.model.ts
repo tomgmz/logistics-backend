@@ -11,6 +11,7 @@ import {
   GmReviewInput,
   OpsAssignInput,
   FleetApproveInput,
+  BlowbagetsCheck,
 } from '../../types/client/booking.types.js'
 
 export interface BookingListQuery {
@@ -34,6 +35,7 @@ const BOOKING_WITH_RELATIONS_SELECT = `
   gm_status,
   ops_status,
   fleet_status,
+  blowbagets_check,
   rejection_reason,
   cancelled_by,
   cancelled_at,
@@ -378,6 +380,7 @@ async function updateOpsStatus(
 async function updateFleetStatus(
   bookingId: string,
   input: FleetApproveInput,
+  check: BlowbagetsCheck | null,
 ): Promise<BookingWithRelations | null> {
   const payload: Record<string, unknown> =
     input.decision === 'rejected'
@@ -385,6 +388,10 @@ async function updateFleetStatus(
       // lifecycle to 'approved' so the booking reappears in the operations queue.
       ? { fleet_status: 'rejected', ops_status: 'pending', status: 'approved', rejection_reason: input.rejection_reason ?? null }
       : { fleet_status: 'approved', rejection_reason: null }
+
+  // Record the inspection snapshot when the fleet manager supplied one (both a
+  // pass and a fault-finding rejection are worth preserving).
+  if (check) payload.blowbagets_check = check
 
   const { error } = await supabase
     .from('bookings')
