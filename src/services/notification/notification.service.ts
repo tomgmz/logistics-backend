@@ -61,8 +61,18 @@ const ROLE_PATHS: Record<string, string> = {
   operations_manager: '/operations_admin/booking-management',
   fleet_manager:      '/fleet_admin/booking-management',
   admin:            '/admin/booking-management',
-  client:           '/client/booking',
+  // Client rejection notifications open the booking in Transaction History (the
+  // read view), not /client/booking which is the new-booking wizard.
+  client:           '/client/history',
   driver:           '/driver/driver-assignment',
+}
+
+// Deep-link a recipient to their own module page focused on the booking. The
+// `?booking=` param is read by the web booking view (openDetail); mobile clients
+// route off `data.booking_id` directly. Roles fall back to the admin page.
+function actionUrlForRole(role: string, bookingId: string): string {
+  const base = ROLE_PATHS[role] ?? ROLE_PATHS.admin
+  return `${base}?booking=${encodeURIComponent(bookingId)}`
 }
 
 function bookingLabel(booking: BookingWithRelations): string {
@@ -95,18 +105,26 @@ function copyFor(
   }
 }
 
-async function resolveRecipients(stage: NotificationStage, booking: BookingWithRelations): Promise<string[]> {
+interface Recipient {
+  user_id: string
+  // The recipient's own role, used to deep-link them to their module page.
+  role: string
+}
+
+async function resolveRecipients(stage: NotificationStage, booking: BookingWithRelations): Promise<Recipient[]> {
   const cfg = STAGE_CONFIG[stage]
   if (cfg.audience === 'client') {
     const uid = await model.resolveClientUserId(booking.client_id)
-    return uid ? [uid] : []
+    return uid ? [{ user_id: uid, role: 'client' }] : []
   }
   if (cfg.audience === 'drivers') {
-    return model.resolveDriverUserIds(booking.booking_id)
+    const ids = await model.resolveDriverUserIds(booking.booking_id)
+    return ids.map((user_id) => ({ user_id, role: 'driver' }))
   }
-  // Staff stage: the responsible role plus admins (RBAC fallback).
+  // Staff stage: the responsible role plus admins (RBAC fallback). Roles are
+  // kept per recipient so each lands on their own module page.
   const roles = [...new Set([...(cfg.roles ?? []), 'admin'])]
-  return model.resolveUserIdsByRoles(roles)
+  return model.resolveRecipientsByRoles(roles)
 }
 
 /**
@@ -125,27 +143,23 @@ export async function notifyStage(
 
     const cfg = STAGE_CONFIG[stage]
     const { title, body } = copyFor(stage, booking, extra?.reason)
-    const actionPath = cfg.audience === 'client'
-      ? ROLE_PATHS.client
-      : cfg.audience === 'drivers'
-        ? ROLE_PATHS.driver
-        : ROLE_PATHS[(cfg.roles ?? [])[0]] ?? ROLE_PATHS.admin
 
-    const data = {
+    // Each recipient gets their own row + action_url so the tap deep-links them
+    // to their own module page focused on this booking.
+    const baseData = {
       type:             cfg.type,
       stage,
       booking_id:       booking.booking_id,
       reference_number: booking.reference_number ?? null,
-      action_url:       actionPath,
     }
 
-    const rows: CreateNotificationInput[] = recipients.map((user_id) => ({
+    const rows: CreateNotificationInput[] = recipients.map(({ user_id, role }) => ({
       user_id,
       type:       cfg.type,
       title,
       body,
       booking_id: booking.booking_id,
-      data,
+      data:       { ...baseData, action_url: actionUrlForRole(role, booking.booking_id) },
     }))
 
     const inserted = await model.insertMany(rows)
@@ -157,8 +171,22 @@ export async function notifyStage(
       ),
     )
 
-    // Push fan-out (web + Expo), reusing the existing subscription store.
-    void push.sendToUsers(recipients, { title, body, data })
+    // Push fan-out (web + Expo). Group by action_url so each recipient's push
+    // carries the deep-link into their own module page.
+    const byUrl = new Map<string, string[]>()
+    for (const { user_id, role } of recipients) {
+      const url = actionUrlForRole(role, booking.booking_id)
+      const list = byUrl.get(url)
+      if (list) list.push(user_id)
+      else byUrl.set(url, [user_id])
+    }
+    for (const [url, userIds] of byUrl) {
+      void push.sendToUsers(userIds, {
+        title,
+        body,
+        data: { ...baseData, action_url: url },
+      })
+    }
   } catch (err) {
     console.error('[notifications] notifyStage failed', stage, err)
   }

@@ -103,6 +103,22 @@ export async function resolveUserIdsByRoles(roles: string[]): Promise<string[]> 
   return (data ?? []).map((r: { user_id: string }) => r.user_id)
 }
 
+// Same as resolveUserIdsByRoles but keeps each recipient's role, so the caller
+// can build a per-recipient deep-link into that role's own module page (an admin
+// recipient must land on /admin/..., not the responsible role's route).
+export async function resolveRecipientsByRoles(
+  roles: string[],
+): Promise<{ user_id: string; role: string }[]> {
+  if (roles.length === 0) return []
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id, role')
+    .in('role', roles)
+    .eq('status', 'active')
+  if (error) throw error
+  return (data ?? []) as { user_id: string; role: string }[]
+}
+
 // The user account behind a booking's client_id (bookings.client_id -> clients.client_id).
 export async function resolveClientUserId(clientId: string): Promise<string | null> {
   const { data, error } = await supabase
