@@ -15,7 +15,6 @@ export interface TruckListQuery {
   page:      number
   limit:     number
   status?:   string | null
-  owned_by?: string | null
   search?:   string | null
 }
 
@@ -25,7 +24,6 @@ async function findAllPaginated(q: TruckListQuery) {
   const offset = (page - 1) * limit
 
   const status  = (q.status  ?? 'all').trim().toLowerCase()
-  const ownedBy = (q.owned_by ?? 'all').trim().toLowerCase()
   const search  = (q.search  ?? '').trim()
 
   const params: unknown[] = []
@@ -39,11 +37,6 @@ async function findAllPaginated(q: TruckListQuery) {
       params.push(status)
       where.push(`t.status = $${params.length}`)
     }
-  }
-
-  if (ownedBy === 'company' || ownedBy === 'vendor') {
-    params.push(ownedBy)
-    where.push(`t.owned_by = $${params.length}`)
   }
 
   if (search) {
@@ -96,14 +89,12 @@ async function findById(truckId: string) {
 
 async function create(input: CreateTruckInput) {
   const result = await pool.query(
-    `INSERT INTO trucks (plate_number, model_id, owned_by, vendor_id)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO trucks (plate_number, model_id)
+     VALUES ($1, $2)
      RETURNING *`,
     [
       input.plate_number,
       input.model_id  ?? null,
-      input.owned_by,
-      input.vendor_id ?? null,
     ]
   )
   return findById(result.rows[0].truck_id)
@@ -117,8 +108,6 @@ async function update(truckId: string, input: UpdateTruckInput) {
   if (input.plate_number !== undefined) { fields.push(`plate_number = $${index++}`); values.push(input.plate_number) }
   if (input.model_id     !== undefined) { fields.push(`model_id = $${index++}`);     values.push(input.model_id) }
   if (input.status       !== undefined) { fields.push(`status = $${index++}`);       values.push(input.status) }
-  if (input.owned_by     !== undefined) { fields.push(`owned_by = $${index++}`);     values.push(input.owned_by) }
-  if (input.vendor_id    !== undefined) { fields.push(`vendor_id = $${index++}`);    values.push(input.vendor_id) }
 
   if (fields.length === 0) return findById(truckId)
 

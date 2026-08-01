@@ -42,7 +42,6 @@ const PLATFORM_RESTRICTIONS: Record<UserRole, Platform[]> = {
   operations_manager: ['web'],
   it_admin:         ['web'],
   client:           ['web'],
-  vendor:           ['web'],
 }
 
 function isRoleAllowedOnPlatform(role: string, platform: Platform): boolean {
@@ -59,7 +58,6 @@ const ROLE_PORTAL: Record<UserRole, string> = {
   it_admin:         '/portal/it_admin',
   driver:           'mobile://navigation',
   client:           '/portal/client',
-  vendor:           '/portal/vendor',
 }
 
 function generateOtp(): string {

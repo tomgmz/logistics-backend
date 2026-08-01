@@ -11,7 +11,7 @@ async function sleep(ms: number) {
  *
  * With the public.users -> auth.users ON DELETE CASCADE foreign key in place,
  * a successful deletion here also removes the profile row (and its
- * clients/drivers/vendors detail) if one somehow exists. Returns false only
+ * clients/drivers detail) if one somehow exists. Returns false only
  * when every attempt fails, in which case a durable audit record is written so
  * the orphaned auth identity can be reconciled later.
  */

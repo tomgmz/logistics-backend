@@ -16,7 +16,6 @@ const ROLE_LABELS: Record<string, string> = {
   accountant:       'Accountant',
   driver:           'Driver',
   client:           'Client',
-  vendor:           'Vendor',
 }
 
 const UPPER  = 'ABCDEFGHJKLMNPQRSTUVWXYZ'  // no I, O

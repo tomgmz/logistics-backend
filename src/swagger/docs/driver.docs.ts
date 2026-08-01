@@ -39,8 +39,6 @@ export const driverPaths = {
               phone: '+639171234567',
               license_number: 'N01-12-123456',
               license_expiry: '2027-12-31',
-              is_vendor_driver: false,
-              vendor_id: null,
               created_by: null,
             },
           },

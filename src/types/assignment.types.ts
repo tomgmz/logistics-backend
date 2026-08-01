@@ -1,6 +1,17 @@
 export type DeliveryStatus = 'pending' | 'in_transit' | 'completed' | 'cancelled'
 
-export interface Delivery {
+export interface VendorSnapshot {
+  is_vendor_supplied:    boolean
+  vendor_name:           string | null
+  vendor_contact:        string | null
+  vendor_driver_name:    string | null
+  vendor_driver_license: string | null
+  vendor_driver_phone:   string | null
+  vendor_vehicle_plate:  string | null
+  vendor_vehicle_type:   string | null
+}
+
+export interface Delivery extends VendorSnapshot {
   delivery_id:   string
   booking_id:    string
   driver_id:     string | null
@@ -28,7 +39,7 @@ export interface TruckAssignment {
   assigned_by:   string | null
 }
 
-export interface AssignmentWithRelations {
+export interface AssignmentWithRelations extends VendorSnapshot {
   delivery_id:   string
   booking_id:    string
   driver_id:     string | null
@@ -55,7 +66,6 @@ export interface AssignmentWithRelations {
     truck_id:     string
     plate_number: string
     status:       string
-    owned_by:     string | null
     truck_models?: {
       vehicle_type: string
       name:         string
@@ -74,8 +84,17 @@ export interface AssignmentWithRelations {
 }
 
 export interface AssignBookingInput {
-  driver_id: string
-  truck_id:  string
+  driver_id?: string
+  truck_id?:  string
+
+  is_vendor_supplied?:   boolean
+  vendor_name?:          string
+  vendor_contact?:       string
+  vendor_driver_name?:   string
+  vendor_driver_license?: string
+  vendor_driver_phone?:  string
+  vendor_vehicle_plate?: string
+  vendor_vehicle_type?:  string
 }
 
 export interface UpdateDeliveryStatusInput {

@@ -164,7 +164,6 @@ const MODULE_ROUTE_MAP: { prefix: string; module: ModuleKey }[] = [
   { prefix: '/truck-models',      module: 'vehicle-management' },
   { prefix: '/trucks',            module: 'vehicle-management' },
   { prefix: '/drivers',           module: 'vehicle-management' },
-  { prefix: '/vendors',           module: 'vehicle-management' },
   { prefix: '/assignments',       module: 'booking-management' },
   // Cargo catalog + landline prefixes are managed on the admin-only System
   // Maintenance page, so their CRUD is governed by the system-maintenance tier

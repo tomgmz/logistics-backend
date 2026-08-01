@@ -34,8 +34,6 @@ export const truckPaths = {
               truck_type:       'Wing Van',
               capacity_tons:    10,
               model_id:         null,
-              owned_by:         'company',
-              vendor_id:   null,
               created_by:       null,
             },
           },

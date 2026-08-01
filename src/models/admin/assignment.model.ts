@@ -16,6 +16,14 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
   delivery_time,
   created_at,
   updated_at,
+  is_vendor_supplied,
+  vendor_name,
+  vendor_contact,
+  vendor_driver_name,
+  vendor_driver_license,
+  vendor_driver_phone,
+  vendor_vehicle_plate,
+  vendor_vehicle_type,
   drivers (
     driver_id,
     license_number,
@@ -33,7 +41,6 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
     truck_id,
     plate_number,
     status,
-    owned_by,
     truck_models ( vehicle_type, name )
   ),
   bookings (
@@ -87,7 +94,25 @@ async function assign(
   input:      AssignBookingInput,
   assignedBy: string | null,
 ): Promise<AssignmentWithRelations | null> {
-  const now = new Date().toISOString()
+  const now           = new Date().toISOString()
+  const isVendor       = input.is_vendor_supplied === true
+  const driverId       = isVendor ? null : input.driver_id ?? null
+  const truckId        = isVendor ? null : input.truck_id ?? null
+
+  // Vendor-supplied crew is snapshotted onto the delivery; company crew clears the
+  // snapshot so re-assigning between paths never leaves stale details behind.
+  const deliveryFields = {
+    driver_id:             driverId,
+    truck_id:              truckId,
+    is_vendor_supplied:    isVendor,
+    vendor_name:           isVendor ? input.vendor_name           ?? null : null,
+    vendor_contact:        isVendor ? input.vendor_contact        ?? null : null,
+    vendor_driver_name:    isVendor ? input.vendor_driver_name    ?? null : null,
+    vendor_driver_license: isVendor ? input.vendor_driver_license ?? null : null,
+    vendor_driver_phone:   isVendor ? input.vendor_driver_phone   ?? null : null,
+    vendor_vehicle_plate:  isVendor ? input.vendor_vehicle_plate  ?? null : null,
+    vendor_vehicle_type:   isVendor ? input.vendor_vehicle_type   ?? null : null,
+  }
 
   const { data: existing } = await supabase
     .from('deliveries')
@@ -98,11 +123,7 @@ async function assign(
   if (existing?.delivery_id) {
     const { error: updateErr } = await supabase
       .from('deliveries')
-      .update({
-        driver_id:  input.driver_id,
-        truck_id:   input.truck_id,
-        updated_at: now,
-      })
+      .update({ ...deliveryFields, updated_at: now })
       .eq('delivery_id', existing.delivery_id)
     if (updateErr) throw updateErr
   } else {
@@ -110,8 +131,7 @@ async function assign(
       .from('deliveries')
       .insert({
         booking_id: bookingId,
-        driver_id:  input.driver_id,
-        truck_id:   input.truck_id,
+        ...deliveryFields,
         status:     'pending',
         created_at: now,
         updated_at: now,
@@ -119,6 +139,8 @@ async function assign(
     if (insertErr) throw insertErr
   }
 
+  // History tables reference registered fleet rows (NOT NULL FKs), so they only
+  // apply to the company path. Always clear prior rows first.
   const { error: delDriverErr } = await supabase
     .from('driver_assignments')
     .delete()
@@ -131,25 +153,27 @@ async function assign(
     .eq('booking_id', bookingId)
   if (delTruckErr) throw delTruckErr
 
-  const { error: insDriverErr } = await supabase
-    .from('driver_assignments')
-    .insert({
-      booking_id:  bookingId,
-      driver_id:   input.driver_id,
-      assigned_at: now,
-      assigned_by: assignedBy,
-    })
-  if (insDriverErr) throw insDriverErr
+  if (!isVendor) {
+    const { error: insDriverErr } = await supabase
+      .from('driver_assignments')
+      .insert({
+        booking_id:  bookingId,
+        driver_id:   driverId,
+        assigned_at: now,
+        assigned_by: assignedBy,
+      })
+    if (insDriverErr) throw insDriverErr
 
-  const { error: insTruckErr } = await supabase
-    .from('truck_assignments')
-    .insert({
-      booking_id:  bookingId,
-      truck_id:    input.truck_id,
-      assigned_at: now,
-      assigned_by: assignedBy,
-    })
-  if (insTruckErr) throw insTruckErr
+    const { error: insTruckErr } = await supabase
+      .from('truck_assignments')
+      .insert({
+        booking_id:  bookingId,
+        truck_id:    truckId,
+        assigned_at: now,
+        assigned_by: assignedBy,
+      })
+    if (insTruckErr) throw insTruckErr
+  }
 
   const { error: bookingErr } = await supabase
     .from('bookings')
@@ -209,7 +233,6 @@ async function getAssignmentHistory(bookingId: string): Promise<{
           truck_id,
           plate_number,
           status,
-          owned_by,
           truck_models ( vehicle_type, name )
         )
       `)

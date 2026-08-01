@@ -6,7 +6,6 @@ import { createClientSchema, updateClientSchema }                     from '../s
 import { createDriverSchema, updateDriverSchema }                     from '../schema/admin/driver.schema.js'
 import { createTruckSchema, updateTruckSchema }                       from '../schema/admin/truck.schema.js'
 import { createTruckModelSchema, updateTruckModelSchema }             from '../schema/admin/truck-model.schema.js'
-import { createVendorSchema, updateVendorSchema }                     from '../schema/admin/vendor.schema.js'
 import { createAccountantSchema, updateAccountantSchema }             from '../schema/admin/accountant.schema.js'
 import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../schema/admin/general_manager.schema.js'
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
@@ -16,7 +15,6 @@ import { assignBookingSchema, updateDeliveryStatusSchema } from '../schema/admin
 import * as AdminController           from '../controllers/admin/admin.controller.js'
 import * as ClientController          from '../controllers/admin/client.controller.js'
 import * as DriverController          from '../controllers/admin/driver.controller.js'
-import * as VendorController          from '../controllers/admin/vendor.controller.js'
 import * as TruckController           from '../controllers/admin/truck.controller.js'
 import * as TruckModelController      from '../controllers/admin/truck-model.controller.js'
 import * as AccountantController      from '../controllers/admin/accountant.controller.js'
@@ -86,15 +84,6 @@ router.get('/assignments/:bookingId',         authenticate, isOperations, Assign
 router.get('/assignments/:bookingId/history', authenticate, isOperations, AssignmentController.getAssignmentHistory)
 router.post('/assignments/:bookingId',        authenticate, isOperations, validate(assignBookingSchema), AssignmentController.assignBooking)
 router.patch('/assignments/:bookingId/status', authenticate, isOperations, validate(updateDeliveryStatusSchema), AssignmentController.updateDeliveryStatus)
-
-//Vendors
-router.get('/vendors',        authenticate, isFleet,    VendorController.getAllVendors)
-router.get('/vendors/:id',    authenticate, isFleet,    VendorController.getVendorById)
-router.post('/vendors',       authenticate, isAdmin, validate(createVendorSchema), VendorController.createVendor)
-router.patch('/vendors/:id',  authenticate, isAdmin, validate(updateVendorSchema), VendorController.updateVendor)
-router.patch('/vendors/:id/deactivate', authenticate, isAdmin, VendorController.deactivateVendor)
-router.patch('/vendors/:id/activate',   authenticate, isAdmin, VendorController.activateVendor)
-router.delete('/vendors/:id', authenticate, isAdmin, VendorController.deleteVendor)
 
 // Trucks
 router.get('/trucks',        authenticate, isFleetRead, TruckController.getAllTrucks)

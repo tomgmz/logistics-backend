@@ -55,8 +55,6 @@ async function create(userId: string, dto: CreateDriverDTO) {
       license_number:    dto.license_number,
       license_expiry:    dto.license_expiry,
       license_image_url: dto.license_image_url ?? null,
-      is_vendor_driver:  dto.is_vendor_driver ?? false,
-      vendor_id:         dto.vendor_id ?? null,
     },
   )
 
@@ -81,12 +79,6 @@ async function update(userId: string, dto: UpdateDriverDTO) {
   if (dto.license_number    !== undefined) driverFields.license_number    = dto.license_number
   if (dto.license_expiry    !== undefined) driverFields.license_expiry    = dto.license_expiry
   if (dto.license_image_url !== undefined) driverFields.license_image_url = dto.license_image_url
-  if (dto.is_vendor_driver  !== undefined) driverFields.is_vendor_driver  = dto.is_vendor_driver
-  if (dto.vendor_id         !== undefined) driverFields.vendor_id         = dto.vendor_id
-
-  if (dto.is_vendor_driver === false) {
-    driverFields.vendor_id = null
-  }
 
   if (Object.keys(driverFields).length > 0) {
     // If license_number is being changed, ensure no other driver uses it

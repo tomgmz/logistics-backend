@@ -1,5 +1,5 @@
 export type UserRole =
-  | 'client' | 'driver' | 'vendor' | 'accountant'
+  | 'client' | 'driver' | 'accountant'
   | 'general_manager' | 'fleet_manager'
   | 'operations_manager' | 'it_admin' | 'admin'
 
@@ -15,15 +15,6 @@ export interface DriverDetails {
   license_number:   string
   license_expiry:   string
   status:           'available' | 'assigned' | 'on_leave' | 'inactive'
-  is_vendor_driver: boolean
-  vendor_id:        string | null
-}
-
-export interface VendorDetails {
-  vendor_id:       string
-  vendor_type:     'individual' | 'company'
-  company_name:    string | null
-  business_permit: string | null
 }
 
 export interface UserListItemRaw {
@@ -40,13 +31,11 @@ export interface UserListItemRaw {
   updated_at:     string
   clients:        ClientDetails[]
   drivers:        DriverDetails[]
-  vendors:        VendorDetails[]
 }
 
-export interface UserListItem extends Omit<UserListItemRaw, 'clients' | 'drivers' | 'vendors'> {
+export interface UserListItem extends Omit<UserListItemRaw, 'clients' | 'drivers'> {
   clients: ClientDetails | null
   drivers: DriverDetails | null
-  vendors: VendorDetails | null
 }
 
 export interface GetUsersQuery {

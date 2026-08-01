@@ -13,8 +13,6 @@ export const driverSchemas = {
             created_by:              { type: 'string', format: 'uuid', nullable: true, example: '26429db4-6f20-4c60-b7dd-0063b6566c33' },
             license_number:          { type: 'string', maxLength: 50, example: 'N01-12-123456' },
             license_expiry:          { type: 'string', format: 'date', example: '2027-12-31' },
-            is_vendor_driver: { type: 'boolean', example: false },
-            vendor_id:       { type: 'string', format: 'uuid', nullable: true, example: null },
           },
         },
         UpdateDriverRequest: {
@@ -28,8 +26,6 @@ export const driverSchemas = {
             phone:                   { type: 'string', maxLength: 13, nullable: true, example: '09171234567' },
             license_number:          { type: 'string', maxLength: 50, example: 'N01-12-123456' },
             license_expiry:          { type: 'string', format: 'date', example: '2027-12-31' },
-            is_vendor_driver: { type: 'boolean', example: false },
-            vendor_id:       { type: 'string', format: 'uuid', nullable: true, example: null },
           },
         },
         Driver: {
@@ -48,8 +44,6 @@ export const driverSchemas = {
             updated_at:              { type: 'string', format: 'date-time', example: '2026-02-22T12:47:52.044911' },
             license_number:          { type: 'string', example: 'N01-12-123456' },
             license_expiry:          { type: 'string', format: 'date', example: '2027-12-31' },
-            is_vendor_driver: { type: 'boolean', example: false },
-            vendor_id:       { type: 'string', format: 'uuid', nullable: true, example: null },
           },
         },
 }

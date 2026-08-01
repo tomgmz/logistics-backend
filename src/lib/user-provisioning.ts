@@ -6,7 +6,6 @@ export type ProvisionRole =
   | 'admin'
   | 'client'
   | 'driver'
-  | 'vendor'
   | 'it_admin'
   | 'operations_manager'
   | 'accountant'
@@ -26,7 +25,7 @@ export interface BaseUserFields {
 
 /**
  * Atomically create the public.users row plus the role-specific detail row
- * (clients/drivers/vendors) via the create_user_with_profile DB function.
+ * (clients/drivers) via the create_user_with_profile DB function.
  *
  * Both inserts run inside a single Postgres transaction: if either fails the
  * whole thing rolls back, so the database never keeps a partial profile. The

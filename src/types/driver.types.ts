@@ -16,8 +16,6 @@ export interface Driver {
   license_number:    string
   license_expiry:    string
   license_image_url?: string | null
-  is_vendor_driver:  boolean
-  vendor_id?:        string | null
 }
 
 export interface CreateDriverDTO {
@@ -31,8 +29,6 @@ export interface CreateDriverDTO {
   license_number:     string
   license_expiry:     string
   license_image_url?: string | null
-  is_vendor_driver?:  boolean
-  vendor_id?:         string | null
 }
 
 export interface UpdateDriverDTO {
@@ -45,6 +41,4 @@ export interface UpdateDriverDTO {
   license_number?:    string
   license_expiry?:    string
   license_image_url?: string | null
-  is_vendor_driver?:  boolean
-  vendor_id?:         string | null
 }

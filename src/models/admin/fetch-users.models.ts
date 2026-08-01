@@ -10,7 +10,6 @@ import {
 const ROLE_MAP: Record<string, string> = {
   'clients':           'client',
   'drivers':           'driver',
-  'vendors':           'vendor',
   'accountants':       'accountant',
   'general-managers':  'general_manager',
   'fleet-admins':      'fleet_manager',
@@ -48,15 +47,7 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
         driver_id,
         license_number,
         license_expiry,
-        status,
-        is_vendor_driver,
-        vendor_id
-      ),
-      vendors (
-        vendor_id,
-        vendor_type,
-        company_name,
-        business_permit
+        status
       )
     `
     )
@@ -82,7 +73,6 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
     ...u,
     clients: u.clients?.[0] ?? null,
     drivers: u.drivers?.[0] ?? null,
-    vendors: u.vendors?.[0] ?? null,
   }))
 
   return {

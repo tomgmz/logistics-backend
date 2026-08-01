@@ -7,7 +7,6 @@ export type UserRole =
   | 'it_admin'
   | 'driver'
   | 'client'
-  | 'vendor'
 
 export type Platform = 'web' | 'mobile'
 
@@ -67,7 +66,6 @@ export interface AuthUser {
     license_number:   string
     license_expiry:   string
     status:           string
-    is_vendor_driver: boolean
   } | null
 }
 

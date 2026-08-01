@@ -54,19 +54,30 @@ export async function assignBookingService(
   ip?:       string | null,
 ): Promise<AssignmentWithRelations> {
   await assertBookingAssignable(bookingId)
-  await Promise.all([
-    assertDriverExists(input.driver_id),
-    assertTruckExists(input.truck_id),
-  ])
+
+  if (input.is_vendor_supplied) {
+    if (!input.vendor_driver_name) throw new Error('Vendor driver name is required')
+    if (!input.vendor_vehicle_plate) throw new Error('Vendor vehicle plate is required')
+  } else {
+    if (!input.driver_id) throw new Error('driver_id is required')
+    if (!input.truck_id)  throw new Error('truck_id is required')
+    await Promise.all([
+      assertDriverExists(input.driver_id),
+      assertTruckExists(input.truck_id),
+    ])
+  }
 
   const assignment = await AssignmentModel.assign(bookingId, input, userId ?? null)
   if (!assignment) throw new Error('Failed to create assignment')
 
+  const crewDescription = input.is_vendor_supplied
+    ? `vendor driver ${input.vendor_driver_name} with vehicle ${input.vendor_vehicle_plate}`
+    : `driver ${input.driver_id} with truck ${input.truck_id}`
   logEvent({
     user_id:     userId,
     log_type:    'booking',
     action:      'booking_assigned',
-    description: `Booking ${bookingId} assigned to driver ${input.driver_id} with truck ${input.truck_id}`,
+    description: `Booking ${bookingId} assigned to ${crewDescription}`,
 
   })
 

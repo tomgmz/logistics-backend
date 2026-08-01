@@ -11,15 +11,7 @@ export const createTruckSchema = z.object({
       'Invalid PH plate format (e.g. ABC 1234). Only letters, and numbers are allowed.',
     ),
   model_id:  z.string().uuid().optional().nullable(),
-  owned_by:  z.enum(['company', 'vendor']).default('company'),
-  vendor_id: z.string().uuid().optional().nullable(),
-}).refine(
-  (data) => data.owned_by === 'company' || !!data.vendor_id,
-  {
-    path: ['vendor_id'],
-    message: 'Vendor ID is required when owned_by is vendor',
-  },
-)
+})
 
 export const updateTruckSchema = z.object({
   plate_number: z
@@ -32,6 +24,4 @@ export const updateTruckSchema = z.object({
     .optional(),
   model_id:  z.string().uuid().optional().nullable(),
   status:    z.enum(['available', 'in_use', 'under_maintenance', 'inactive', 'archived']).optional(),
-  owned_by:  z.enum(['company', 'vendor']).optional(),
-  vendor_id: z.string().uuid().optional().nullable(),
 })

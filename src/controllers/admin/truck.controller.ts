@@ -11,9 +11,8 @@ export async function getAllTrucks(req: Request, res: Response) {
 
     if (Number.isFinite(page) && Number.isFinite(limit) && limit > 0 && page > 0) {
       const status   = typeof req.query.status   === 'string' ? req.query.status   : 'all'
-      const owned_by = typeof req.query.owned_by === 'string' ? req.query.owned_by : 'all'
       const search   = typeof req.query.search   === 'string' ? req.query.search   : ''
-      const result   = await TruckService.getAllTrucksPaginated({ page, limit, status, owned_by, search })
+      const result   = await TruckService.getAllTrucksPaginated({ page, limit, status, search })
       return res.status(200).json({ status: 'success', data: result.data, meta: result.meta })
     }
 

@@ -8,7 +8,6 @@ export type BanManagedUserRole =
   | 'admin'
   | 'client'
   | 'driver'
-  | 'vendor'
   | 'accountant'
   | 'general_manager'
   | 'fleet_manager'
