@@ -83,6 +83,9 @@ export interface BookingDestination {
   sequence_order:  number
   status:          DestinationStatus
   delivered_at?:   Date | null
+  // Proof of delivery: the photo the driver took at this drop-off.
+  proof_photo_url?: string | null
+  proof_at?:        Date | null
   notes?:          string | null
   longitude?:      number | null
   latitude?:       number | null
@@ -138,6 +141,10 @@ export interface Booking {
   payment_terms?:         string | null
 
   transaction_documents?: string[] | null
+
+  // Proof of pickup: the photo the driver took at the origin.
+  pickup_proof_photo_url?: string | null
+  pickup_proof_at?:        Date | null
 
   created_at?:            Date
   updated_at?:            Date

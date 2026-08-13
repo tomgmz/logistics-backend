@@ -17,6 +17,9 @@ import {
   getDestinationsByBookingService,
   updateDestinationService,
   updateDestinationStatusService,
+  driverConfirmPickupService,
+  driverConfirmDeliveryService,
+  driverCompleteBookingService,
   deleteDestinationService,
   getCargoItemsByBookingService,
   upsertCargoItemService,
@@ -82,6 +85,7 @@ export const createBooking = async (req: Request, res: Response) => {
   } catch (error: any) {
     const status = (
       error.message.includes('required') ||
+      error.message.includes('at most') ||
       error.message.includes('scheduled at least') ||
       error.message.includes('more than 1 year') ||
       error.message.includes('unique')
@@ -210,6 +214,64 @@ export const updateDestinationStatus = async (req: Request, res: Response) => {
   } catch (error: any) {
     const httpStatus = error.message.includes('not found') ? 404 : 500
     res.status(httpStatus).json({ status: 'error', message: error.message })
+  }
+}
+
+/* ── Driver trip progress (mobile navigation screen) ───────────────────── */
+
+// Shared HTTP mapping for the three driver confirmations: 403 when the caller
+// isn't the assigned driver, 404 for a missing booking/destination, 409 when the
+// stop is confirmed out of order, 500 otherwise.
+function driverProgressStatus(message: string): number {
+  if (message.includes('not assigned'))  return 403
+  if (message.includes('not found'))     return 404
+  if (
+    message.includes('Cannot ') ||
+    message.includes('Confirm the pickup') ||
+    message.includes('still pending') ||
+    message.includes('no destinations')
+  ) return 409
+  return 500
+}
+
+function driverActor(req: Request) {
+  const { userId, ip } = getRequestMeta(req)
+  return { userId, ip, role: req.user?.role ?? null }
+}
+
+export const driverConfirmPickup = async (req: Request, res: Response) => {
+  try {
+    const booking = await driverConfirmPickupService(
+      param(req.params.bookingId),
+      req.body.proof_photo_url,
+      driverActor(req),
+    )
+    res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    res.status(driverProgressStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+export const driverConfirmDelivery = async (req: Request, res: Response) => {
+  try {
+    const destination = await driverConfirmDeliveryService(
+      param(req.params.bookingId),
+      param(req.params.destinationId),
+      req.body.proof_photo_url,
+      driverActor(req),
+    )
+    res.status(200).json({ status: 'success', data: destination })
+  } catch (error: any) {
+    res.status(driverProgressStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+export const driverCompleteBooking = async (req: Request, res: Response) => {
+  try {
+    const booking = await driverCompleteBookingService(param(req.params.bookingId), driverActor(req))
+    res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    res.status(driverProgressStatus(error.message)).json({ status: 'error', message: error.message })
   }
 }
 

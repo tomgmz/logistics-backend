@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 
 export const createCargoItemSchema = z.object({
   commodity_id:   z.string().uuid().optional(),
@@ -70,8 +71,12 @@ export const createBookingSchema = z.object({
   stackable_required:    z.boolean().optional(),
   payment_terms:         z.string().optional(),
   transaction_documents: z.array(z.string().url()).min(1, 'At least one transaction document is required').max(3),
+  // One to three drop-offs per booking: a single trip carries at most three, and
+  // the driver app's stop flow (pickup -> drop-offs -> done) is built to that.
+  // The client wizard already caps its UI at 3; this is the API-side rule.
   destinations: z.array(createDestinationSchema)
     .min(1, 'At least one destination is required')
+    .max(MAX_DESTINATIONS_PER_BOOKING, `A booking can have at most ${MAX_DESTINATIONS_PER_BOOKING} drop-offs`)
     .refine(
       (destinations) => {
         const orders = destinations.map((d) => d.sequence_order)
@@ -95,6 +100,12 @@ export const updateBookingSchema = z.object({
   stackable_required:    z.boolean().optional().nullable(),
   payment_terms:         z.string().optional().nullable(),
   transaction_documents: z.array(z.string().url()).min(1).max(3).optional().nullable(),
+})
+
+// Stop confirmations from the driver app carry the proof photo the driver took
+// at that stop (already uploaded via POST /driver/proof-photo).
+export const driverStopProofSchema = z.object({
+  proof_photo_url: z.string().url('A proof photo is required to confirm this stop'),
 })
 
 export const updateBookingStatusSchema = z.object({

@@ -13,6 +13,7 @@ import {
   BlowbagetsCheck,
 } from '../../types/client/booking.types.js'
 import { optimizeDestinationsService } from '../maps/routeOptimization.service.js'
+import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 import { logEvent } from '../../lib/log-event.js'
 import { notifyStage, hasActiveUsersWithRoles } from '../notification/notification.service.js'
 
@@ -99,6 +100,9 @@ export async function createBookingService(
 ): Promise<BookingWithRelations> {
   if (!input.destinations || input.destinations.length === 0) {
     throw new Error('At least one destination is required')
+  }
+  if (input.destinations.length > MAX_DESTINATIONS_PER_BOOKING) {
+    throw new Error(`A booking can have at most ${MAX_DESTINATIONS_PER_BOOKING} drop-offs`)
   }
 
   validateScheduleDate(input.schedule_date)
@@ -458,6 +462,147 @@ export async function updateDestinationStatusService(
   })
 
   return destination
+}
+
+/* ── Driver trip progress ──────────────────────────────────────────────────
+ *
+ * The driver app confirms each stop MANUALLY from the navigation map: pickup
+ * done -> route continues to the drop-offs, each drop-off done, then the whole
+ * booking marked done. These services are the write side of that flow. They
+ * differ from the admin `updateBookingStatus`/`updateDestinationStatus` routes
+ * in two ways: the caller must be the driver actually assigned to the booking
+ * (admins bypass for support), and each transition is validated against the
+ * stage before it, so a stop can't be confirmed out of order.
+ *
+ * All three are idempotent — re-sending a confirmation (the mobile offline
+ * queue retries) returns the current record instead of failing.
+ */
+
+export interface DriverActor {
+  userId?: string | null
+  role?:   string | null
+  ip?:     string | null
+}
+
+async function assertDriverOnBooking(bookingId: string, actor: DriverActor): Promise<BookingWithRelations> {
+  const booking = await BookingModel.findById(bookingId)
+  if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
+
+  // Admins act on any booking (support / correction); a driver only on their own.
+  if (actor.role === 'admin') return booking
+
+  const assigned = actor.userId
+    ? await BookingModel.isDriverAssignedToBooking(bookingId, actor.userId)
+    : false
+  if (!assigned) throw new Error('You are not assigned to this booking')
+
+  return booking
+}
+
+/**
+ * Pickup confirmed by the driver: the booking moves to `in_transit`.
+ * `proofPhotoUrl` is the photo taken at the origin and is required — a stop
+ * can't be confirmed without proof.
+ */
+export async function driverConfirmPickupService(
+  bookingId: string,
+  proofPhotoUrl: string,
+  actor: DriverActor,
+): Promise<BookingWithRelations> {
+  const booking = await assertDriverOnBooking(bookingId, actor)
+
+  if (booking.status === 'in_transit' || booking.status === 'completed') return booking
+  if (booking.status !== 'assigned') {
+    throw new Error(`Cannot confirm pickup while the booking is '${booking.status}'`)
+  }
+  if (!proofPhotoUrl) {
+    throw new Error('A proof-of-pickup photo is required to confirm the pickup')
+  }
+
+  await BookingModel.setPickupProof(bookingId, proofPhotoUrl)
+  const updated = await BookingModel.updateStatus(bookingId, 'in_transit')
+  if (!updated) throw new Error('Failed to update booking status')
+
+  logEvent({
+    user_id:     actor.userId,
+    log_type:    'booking',
+    action:      'driver_pickup_confirmed',
+    description: `Driver confirmed pickup for booking ${bookingId}; booking is in transit`,
+  })
+
+  return updated
+}
+
+/**
+ * One drop-off confirmed by the driver. `proofPhotoUrl` is the photo taken at
+ * that drop-off and is required.
+ */
+export async function driverConfirmDeliveryService(
+  bookingId: string,
+  destinationId: string,
+  proofPhotoUrl: string,
+  actor: DriverActor,
+): Promise<BookingDestination> {
+  const booking      = await assertDriverOnBooking(bookingId, actor)
+  const destinations = await BookingModel.findDestinationsByBookingId(bookingId) ?? []
+  const destination  = destinations.find((d) => d.destination_id === destinationId)
+
+  if (!destination) {
+    throw new Error(`Destination with ID ${destinationId} not found on this booking`)
+  }
+  if (destination.status === 'delivered') return destination
+  if (booking.status !== 'in_transit' && booking.status !== 'completed') {
+    throw new Error('Confirm the pickup before marking a drop-off as delivered')
+  }
+  if (!proofPhotoUrl) {
+    throw new Error('A proof-of-delivery photo is required to confirm this drop-off')
+  }
+
+  const updated = await BookingModel.updateDestinationStatus(destinationId, 'delivered', proofPhotoUrl)
+  if (!updated) throw new Error(`Destination with ID ${destinationId} not found`)
+
+  logEvent({
+    user_id:     actor.userId,
+    log_type:    'booking',
+    action:      'driver_delivery_confirmed',
+    description: `Driver marked destination ${destinationId} of booking ${bookingId} as delivered`,
+  })
+
+  return updated
+}
+
+/** Whole delivery marked done — only once every drop-off has been confirmed. */
+export async function driverCompleteBookingService(
+  bookingId: string,
+  actor: DriverActor,
+): Promise<BookingWithRelations> {
+  const booking = await assertDriverOnBooking(bookingId, actor)
+
+  if (booking.status === 'completed') return booking
+  if (booking.status !== 'in_transit') {
+    throw new Error(`Cannot complete a booking that is '${booking.status}'`)
+  }
+
+  const destinations = await BookingModel.findDestinationsByBookingId(bookingId) ?? []
+  if (destinations.length === 0) {
+    throw new Error('Booking has no destinations to deliver')
+  }
+  const remaining = destinations.filter((d) => d.status !== 'delivered' && d.status !== 'failed')
+  if (remaining.length > 0) {
+    throw new Error(`${remaining.length} drop-off(s) still pending — confirm every drop-off before completing`)
+  }
+
+  const updated = await BookingModel.updateStatus(bookingId, 'completed')
+  if (!updated) throw new Error('Failed to update booking status')
+
+  logEvent({
+    user_id:     actor.userId,
+    log_type:    'booking',
+    action:      'driver_booking_completed',
+    description: `Driver marked booking ${bookingId} as completed`,
+  })
+
+  return updated
 }
 
 export async function deleteDestinationService(

@@ -48,6 +48,8 @@ const BOOKING_WITH_RELATIONS_SELECT = `
   stackable_required,
   payment_terms,
   transaction_documents,
+  pickup_proof_photo_url,
+  pickup_proof_at,
   created_at,
   updated_at,
   clients (
@@ -70,6 +72,8 @@ const BOOKING_WITH_RELATIONS_SELECT = `
     sequence_order,
     status,
     delivered_at,
+    proof_photo_url,
+    proof_at,
     notes,
     latitude,
     longitude,
@@ -258,6 +262,23 @@ async function findByDriverId(driverId: string): Promise<BookingWithRelations[]>
     .filter(Boolean) as BookingWithRelations[]
 }
 
+/**
+ * Whether the user behind `userId` is the driver assigned to this booking.
+ * `driver_assignments.driver_id` points at `drivers`, so the check goes through
+ * that table's `user_id` (the id carried in the access token).
+ */
+async function isDriverAssignedToBooking(bookingId: string, userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('driver_assignments')
+    .select('assignment_id, drivers!inner ( user_id )')
+    .eq('booking_id', bookingId)
+    .eq('drivers.user_id', userId)
+    .limit(1)
+
+  if (error) throw error
+  return (data ?? []).length > 0
+}
+
 async function create(input: CreateBookingInput): Promise<BookingWithRelations | null> {
   const { destinations, cargo_items, ...bookingData } = input
 
@@ -441,12 +462,17 @@ async function updateDestination(
 async function updateDestinationStatus(
   destinationId: string,
   status: string,
+  proofPhotoUrl?: string | null,
 ): Promise<BookingDestination> {
+  const now = new Date().toISOString()
   const { data, error } = await supabase
     .from('booking_destinations')
     .update({
       status,
-      delivered_at: status === 'delivered' ? new Date().toISOString() : null,
+      delivered_at: status === 'delivered' ? now : null,
+      // Only touch the proof when one is supplied — an admin correcting a status
+      // shouldn't wipe the driver's photo.
+      ...(proofPhotoUrl ? { proof_photo_url: proofPhotoUrl, proof_at: now } : {}),
     })
     .eq('destination_id', destinationId)
     .select()
@@ -454,6 +480,20 @@ async function updateDestinationStatus(
 
   if (error) throw error
   return data
+}
+
+/** Record the driver's proof-of-pickup photo on the booking. */
+async function setPickupProof(bookingId: string, proofPhotoUrl: string): Promise<void> {
+  const { error } = await supabase
+    .from('bookings')
+    .update({
+      pickup_proof_photo_url: proofPhotoUrl,
+      pickup_proof_at:        new Date().toISOString(),
+      updated_at:             new Date().toISOString(),
+    })
+    .eq('booking_id', bookingId)
+
+  if (error) throw error
 }
 
 async function removeDestination(destinationId: string): Promise<boolean> {
@@ -534,6 +574,7 @@ export const BookingModel = {
   findById,
   findByClientId,
   findByDriverId,
+  isDriverAssignedToBooking,
   // booking mutations
   create,
   update,
@@ -543,6 +584,7 @@ export const BookingModel = {
   updateOpsStatus,
   updateFleetStatus,
   remove,
+  setPickupProof,
   // destination mutations
   findDestinationsByBookingId,
   updateDestination,
