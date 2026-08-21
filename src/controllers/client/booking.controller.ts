@@ -207,6 +207,7 @@ export const driverConfirmPickup = async (req: Request, res: Response) => {
       param(req.params.bookingId),
       req.body.proof_photo_url,
       driverActor(req),
+      req.body.early_start === true,
     )
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {

@@ -11,26 +11,32 @@ import {
 import { optimizeDestinationsService } from '../maps/routeOptimization.service.js'
 import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 import { logEvent } from '../../lib/log-event.js'
+import { bookingRef } from '../../lib/booking-ref.js'
+import { isBeforeScheduledDay, phDay } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers } from '../notification/notification.service.js'
 import { crewOnBooking, releaseCrew } from '../admin/fleet-availability.service.js'
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * How far ahead a client has to book: tomorrow at the earliest, a year out at
+ * the latest.
+ *
+ * Compared in Philippine calendar days, matching the `date` column — the
+ * server's own timezone must not decide what "tomorrow" means to a client in
+ * Manila.
+ */
 function validateScheduleDate(scheduleDate: string): void {
-  const [year, month, day] = scheduleDate.split('-').map(Number)
-  const scheduled = new Date(year, month - 1, day)
+  const scheduled = scheduleDate.slice(0, 10)
 
-  const now      = new Date()
-  const earliest = new Date(now)
-  earliest.setDate(earliest.getDate() + 7)
-  const earliestDateOnly = new Date(earliest.getFullYear(), earliest.getMonth(), earliest.getDate())
-
-  const maxDate = new Date(now)
-  maxDate.setFullYear(maxDate.getFullYear() + 1)
-  const maxDateOnly = new Date(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate())
-
-  if (scheduled < earliestDateOnly) {
-    throw new Error('Booking must be scheduled at least 1 week in advance')
+  const earliest = phDay(Date.now() + DAY_MS)
+  if (scheduled < earliest) {
+    throw new Error(`Booking must be scheduled at least a day ahead (earliest: ${earliest})`)
   }
-  if (scheduled > maxDateOnly) {
+
+  const oneYearOut = new Date()
+  oneYearOut.setFullYear(oneYearOut.getFullYear() + 1)
+  if (scheduled > phDay(oneYearOut)) {
     throw new Error('Booking cannot be scheduled more than 1 year in advance')
   }
 }
@@ -137,7 +143,7 @@ export async function createBookingService(
     user_id:     userId,
     log_type:    'booking',
     action:      'booking_created',
-    description: `Booking ${booking.booking_id} created for client ${booking.client_id}`,
+    description: `Booking ${bookingRef(booking)} created for client ${booking.client_id}`,
 
   })
 
@@ -170,7 +176,7 @@ async function routeNewBookingToGm(
       user_id:     userId,
       log_type:    'booking',
       action:      'gm_auto_approved',
-      description: `Booking ${booking.booking_id} GM stage auto-cleared (no general manager or proxy staffed)`,
+      description: `Booking ${bookingRef(booking)} GM stage auto-cleared (no general manager or proxy staffed)`,
     })
     await notifyStage('ops_pending', advanced ?? booking)
   } catch (err) {
@@ -198,7 +204,7 @@ export async function updateBookingService(
     user_id:     userId,
     log_type:    'booking',
     action:      'booking_updated',
-    description: `Booking ${bookingId} updated`,
+    description: `Booking ${bookingRef(booking)} updated`,
 
   })
 
@@ -240,8 +246,8 @@ export async function updateBookingStatusService(
     log_type:    'booking',
     action:      `booking_${status}`,
     description: status === 'cancelled' && rejectionReason
-      ? `Booking ${bookingId} rejected by the administrator: ${rejectionReason}`
-      : `Booking ${bookingId} marked as ${status}`,
+      ? `Booking ${bookingRef(booking)} rejected by the administrator: ${rejectionReason}`
+      : `Booking ${bookingRef(booking)} marked as ${status}`,
 
   })
 
@@ -257,7 +263,7 @@ export async function updateBookingStatusService(
       user_id:     userId,
       log_type:    'booking',
       action:      'booking_approved_to_ops',
-      description: `Booking ${bookingId} approved; routed to operations`,
+      description: `Booking ${bookingRef(advanced ?? booking)} approved; routed to operations`,
     })
     void notifyStage('ops_pending', advanced ?? booking)
   }
@@ -329,7 +335,7 @@ export async function gmReviewService(
     user_id:     userId,
     log_type:    'booking',
     action:      `gm_${input.gm_status}`,
-    description: `Booking ${bookingId} ${input.gm_status} by GM`,
+    description: `Booking ${bookingRef(booking)} ${input.gm_status} by GM`,
 
   })
 
@@ -365,7 +371,7 @@ export async function deleteBookingService(
     user_id:     userId,
     log_type:    'booking',
     action:      'booking_deleted',
-    description: `Booking ${bookingId} deleted`,
+    description: `Booking ${bookingRef(existing)} deleted`,
 
   })
 
@@ -463,6 +469,7 @@ export async function driverConfirmPickupService(
   bookingId: string,
   proofPhotoUrl: string,
   actor: DriverActor,
+  earlyStart = false,
 ): Promise<BookingWithRelations> {
   const booking = await assertDriverOnBooking(bookingId, actor)
 
@@ -474,6 +481,18 @@ export async function driverConfirmPickupService(
     throw new Error('A proof-of-pickup photo is required to confirm the pickup')
   }
 
+  // A pickup stamps the booking `in_transit` and starts the proof trail every
+  // drop-off hangs off, so it must not land days before the job is due. The app
+  // gates this too, but a device clock is the driver's to set — this is the
+  // check that actually holds. Starting early stays possible when the driver
+  // deliberately overrides it, and that decision is recorded below.
+  const early = isBeforeScheduledDay(booking.schedule_date)
+  if (early && !earlyStart) {
+    throw new Error(
+      `Cannot confirm pickup before the scheduled day — this booking is scheduled for ${booking.schedule_date}.`,
+    )
+  }
+
   await BookingModel.setPickupProof(bookingId, proofPhotoUrl)
   const updated = await BookingModel.updateStatus(bookingId, 'in_transit')
   if (!updated) throw new Error('Failed to update booking status')
@@ -481,8 +500,10 @@ export async function driverConfirmPickupService(
   logEvent({
     user_id:     actor.userId,
     log_type:    'booking',
-    action:      'driver_pickup_confirmed',
-    description: `Driver confirmed pickup for booking ${bookingId}; booking is in transit`,
+    action:      early ? 'driver_pickup_confirmed_early' : 'driver_pickup_confirmed',
+    description: early
+      ? `Driver confirmed pickup for booking ${bookingRef(updated)} EARLY — scheduled for ${booking.schedule_date}; booking is in transit`
+      : `Driver confirmed pickup for booking ${bookingRef(updated)}; booking is in transit`,
   })
 
   return updated
@@ -520,7 +541,7 @@ export async function driverConfirmDeliveryService(
     user_id:     actor.userId,
     log_type:    'booking',
     action:      'driver_delivery_confirmed',
-    description: `Driver marked destination ${destinationId} of booking ${bookingId} as delivered`,
+    description: `Driver marked destination ${destinationId} of booking ${bookingRef(booking)} as delivered`,
   })
 
   return updated
@@ -554,7 +575,7 @@ export async function driverCompleteBookingService(
     user_id:     actor.userId,
     log_type:    'booking',
     action:      'driver_booking_completed',
-    description: `Driver marked booking ${bookingId} as completed`,
+    description: `Driver marked booking ${bookingRef(updated)} as completed`,
   })
 
   // Vehicle goes back in the pool; the driver stands down to 'unavailable' and is
@@ -603,7 +624,7 @@ export async function upsertCargoItemService(
     user_id:     userId,
     log_type:    'booking',
     action:      item.item_id ? 'cargo_item_updated' : 'cargo_item_created',
-    description: `Cargo item ${result.item_id} upserted for booking ${bookingId}`,
+    description: `Cargo item ${result.item_id} upserted for booking ${bookingRef(existing)}`,
 
   })
 

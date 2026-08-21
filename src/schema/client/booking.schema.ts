@@ -106,6 +106,10 @@ export const updateBookingSchema = z.object({
 // at that stop (already uploaded via POST /driver/proof-photo).
 export const driverStopProofSchema = z.object({
   proof_photo_url: z.string().url('A proof photo is required to confirm this stop'),
+  // Set by the app when the driver has deliberately chosen to run a booking
+  // ahead of its scheduled day. Only the pickup consults it; it is recorded in
+  // the audit log so an early start is never silent.
+  early_start: z.boolean().optional(),
 })
 
 export const updateBookingStatusSchema = z.object({

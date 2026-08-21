@@ -3,6 +3,7 @@ import { BookingModel } from '../../models/client/booking.model.js'
 import { supabase } from '../../lib/supabase.js'
 import { logEvent } from '../../lib/log-event.js'
 import { notifyStage } from '../notification/notification.service.js'
+import { bookingRefById } from '../../lib/booking-ref.js'
 import {
   assertDriverAssignable,
   assertTruckPassedInspection,
@@ -108,7 +109,7 @@ export async function assignBookingService(
     user_id:     userId,
     log_type:    'booking',
     action:      'booking_assigned',
-    description: `Booking ${bookingId} assigned to ${crewDescription}`,
+    description: `Booking ${await bookingRefById(bookingId)} assigned to ${crewDescription}`,
 
   })
 
@@ -177,7 +178,7 @@ export async function updateDeliveryStatusService(
     user_id:     userId,
     log_type:    'booking',
     action:      `delivery_${input.status}`,
-    description: `Delivery for booking ${bookingId} marked as ${input.status}`,
+    description: `Delivery for booking ${await bookingRefById(bookingId)} marked as ${input.status}`,
 
   })
 

@@ -8,6 +8,7 @@ import {
   NotificationType,
 } from '../../types/notification.types.js'
 import { BookingWithRelations } from '../../types/client/booking.types.js'
+import { bookingRef } from '../../lib/booking-ref.js'
 
 // --- read-side pass-throughs ------------------------------------------------
 
@@ -105,7 +106,9 @@ function actionUrlForRole(
 }
 
 function bookingLabel(booking: BookingWithRelations): string {
-  return booking.reference_number || booking.origin || `#${booking.booking_id.slice(0, 8)}`
+  // Reference first, always. An address still beats a UUID in push copy, so it
+  // keeps its place ahead of bookingRef()'s marked-id fallback.
+  return booking.reference_number?.trim() || booking.origin || bookingRef(booking)
 }
 
 function copyFor(
