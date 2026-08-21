@@ -76,3 +76,19 @@ export async function activateAccountant(req: Request, res: Response) {
     res.status(status).json({ status: 'error', message: error.message })
   }
 }
+// Appoint or stand down this accountant as the GM's booking-approval proxy.
+export async function setAccountantGmProxy(req: Request, res: Response) {
+  try {
+    const { userId } = getRequestMeta(req)
+    const isProxy = req.body?.is_gm_proxy === true
+    const data = await AccountantService.setGmProxy(param(req.params.id), isProxy, userId)
+    res.status(200).json({
+      status:  'success',
+      message: isProxy ? 'Appointed as GM approval proxy' : 'Stood down as GM approval proxy',
+      data,
+    })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404 : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}

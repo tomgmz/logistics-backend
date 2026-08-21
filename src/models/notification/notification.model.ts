@@ -78,7 +78,7 @@ export async function countUnread(userId: string): Promise<number> {
 // --- recipient resolution ---------------------------------------------------
 
 // True if at least one active user holds any of the given roles. Used to decide
-// whether a workflow stage is staffed (e.g. is there an accountant / GM yet?).
+// whether a workflow stage is staffed (e.g. is there a GM yet?).
 export async function hasActiveUsersWithRoles(roles: string[]): Promise<boolean> {
   if (roles.length === 0) return false
   const { count, error } = await supabase
@@ -90,8 +90,40 @@ export async function hasActiveUsersWithRoles(roles: string[]): Promise<boolean>
   return (count ?? 0) > 0
 }
 
+// Anyone who may act on the GM approval stage: the general manager(s) plus any
+// user the IT admin has appointed as a GM proxy (an accountant standing in while
+// the GM is unavailable). Used both for recipient resolution and for the
+// staffing check that decides whether the stage can be auto-cleared.
+export async function resolveGmApprovers(): Promise<{ user_id: string; role: string }[]> {
+  const [gms, proxies] = await Promise.all([
+    supabase.from('users').select('user_id, role').eq('role', 'general_manager').eq('status', 'active'),
+    supabase.from('users').select('user_id, role').eq('is_gm_proxy', true).eq('status', 'active'),
+  ])
+  if (gms.error)     throw gms.error
+  if (proxies.error) throw proxies.error
+
+  const byId = new Map<string, { user_id: string; role: string }>()
+  for (const row of [...(gms.data ?? []), ...(proxies.data ?? [])] as { user_id: string; role: string }[]) {
+    byId.set(row.user_id, row)
+  }
+  return [...byId.values()]
+}
+
+// Whether a given user is allowed to act on the GM approval stage — the GM
+// themselves, an admin, or an appointed proxy.
+export async function isGmApprover(userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('role, status, is_gm_proxy')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data || data.status !== 'active') return false
+  return data.role === 'general_manager' || data.role === 'admin' || data.is_gm_proxy === true
+}
+
 // Active users whose role is in the given set. `admin` is always included by the
-// caller as the RBAC fallback ("the system can work if there are no accountants").
+// caller as the RBAC fallback ("the system can work if there is no GM").
 export async function resolveUserIdsByRoles(roles: string[]): Promise<string[]> {
   if (roles.length === 0) return []
   const { data, error } = await supabase

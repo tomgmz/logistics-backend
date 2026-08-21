@@ -25,6 +25,38 @@ export async function getAccountantById(userId: string) {
   return accountant
 }
 
+/**
+ * Appoint (or stand down) an accountant as the general manager's proxy for
+ * booking approvals — the stand-in used when the GM is away or busy. A proxy
+ * receives the same approval notifications as the GM and may act on the GM
+ * review endpoint; nothing else about their access changes.
+ */
+export async function setGmProxy(
+  userId: string,
+  isProxy: boolean,
+  actorId?: string | null,
+) {
+  const accountant = await AccountantModel.findById(userId)
+  if (!accountant) throw new Error('Accountant not found')
+
+  const { error } = await supabase
+    .from('users')
+    .update({ is_gm_proxy: isProxy, updated_at: new Date().toISOString() })
+    .eq('user_id', userId)
+  if (error) throw error
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_activity',
+    action:      isProxy ? 'gm_proxy_appointed' : 'gm_proxy_revoked',
+    description: isProxy
+      ? `Accountant ${accountant.email} appointed as GM approval proxy`
+      : `Accountant ${accountant.email} stood down as GM approval proxy`,
+  })
+
+  return AccountantModel.findById(userId)
+}
+
 export async function createAccountant(dto: BaseCreateDTO, actorId?: string | null, ip?: string | null) {
   const password = generateSecurePassword()
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined

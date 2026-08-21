@@ -55,7 +55,9 @@ export async function permanentlyLockUser(userId: string): Promise<void> {
 export async function findUserById(userId: string): Promise<AuthUser | null> {
   const { data, error } = await supabase
     .from('users')
-    .select('user_id, email, first_name, last_name, role, status, must_change_password')
+    // `is_gm_proxy` travels with the session so the web app can show an
+    // appointed accountant the GM's approve/reject controls.
+    .select('user_id, email, first_name, last_name, role, status, must_change_password, is_gm_proxy')
     .eq('user_id', userId)
     .single()
 

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as TruckService from '../../services/admin/truck.service.js'
+import * as InspectionService from '../../services/admin/truck-inspection.service.js'
 
 export async function getAllTrucks(req: Request, res: Response) {
   try {
@@ -47,6 +48,28 @@ export async function updateTruck(req: Request, res: Response) {
   try {
     const { userId, ip } = getRequestMeta(req)
     const data = await TruckService.updateTruck(param(req.params.id), req.body, userId, ip)
+    res.status(200).json({ status: 'success', data })
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+}
+
+// The fleet manager's BLOWBAGETS inspection of a vehicle. The newest inspection
+// decides whether operations can pick this vehicle for a booking.
+export async function recordTruckInspection(req: Request, res: Response) {
+  try {
+    const { userId } = getRequestMeta(req)
+    const data = await InspectionService.recordInspection(param(req.params.id), req.body, userId)
+    res.status(201).json({ status: 'success', data })
+  } catch (err: any) {
+    const status = err.message === 'Truck not found' ? 404 : 500
+    res.status(status).json({ status: 'error', message: err.message })
+  }
+}
+
+export async function getTruckInspections(req: Request, res: Response) {
+  try {
+    const data = await InspectionService.getInspectionHistory(param(req.params.id))
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })

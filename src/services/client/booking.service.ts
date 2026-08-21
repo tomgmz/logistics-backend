@@ -6,16 +6,13 @@ import {
   BookingWithRelations,
   BookingDestination,
   BookingCargoItem,
-  AccountingReviewInput,
   GmReviewInput,
-  OpsAssignInput,
-  FleetApproveInput,
-  BlowbagetsCheck,
 } from '../../types/client/booking.types.js'
 import { optimizeDestinationsService } from '../maps/routeOptimization.service.js'
 import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 import { logEvent } from '../../lib/log-event.js'
-import { notifyStage, hasActiveUsersWithRoles } from '../notification/notification.service.js'
+import { notifyStage, hasGmApprovers } from '../notification/notification.service.js'
+import { crewOnBooking, releaseCrew } from '../admin/fleet-availability.service.js'
 
 function validateScheduleDate(scheduleDate: string): void {
   const [year, month, day] = scheduleDate.split('-').map(Number)
@@ -144,10 +141,41 @@ export async function createBookingService(
 
   })
 
-  // Stage 1: send to accountants (+ admins) for the profitability check.
-  void notifyStage('accounting_pending', booking)
+  // Stage 1: straight to the general manager (or an appointed GM proxy) for
+  // approval. If nobody can act on that stage, clear it and hand the booking to
+  // operations so a new booking is never stranded.
+  void routeNewBookingToGm(booking, userId)
 
   return booking
+}
+
+/**
+ * Send a freshly created booking into the approval chain. Normally that means
+ * notifying the GM stage; with nobody staffed to approve (no general manager and
+ * no proxy) the stage is auto-cleared and the booking goes straight to ops.
+ */
+async function routeNewBookingToGm(
+  booking: BookingWithRelations,
+  userId?: string | null,
+): Promise<void> {
+  try {
+    if (await hasGmApprovers()) {
+      await notifyStage('gm_pending', booking)
+      return
+    }
+
+    await BookingModel.updateGmStatus(booking.booking_id, { gm_status: 'approved' })
+    const advanced = await BookingModel.updateStatus(booking.booking_id, 'approved')
+    logEvent({
+      user_id:     userId,
+      log_type:    'booking',
+      action:      'gm_auto_approved',
+      description: `Booking ${booking.booking_id} GM stage auto-cleared (no general manager or proxy staffed)`,
+    })
+    await notifyStage('ops_pending', advanced ?? booking)
+  } catch (err) {
+    console.error('[booking] failed to route new booking to the GM stage', booking.booking_id, err)
+  }
 }
 
 export async function updateBookingService(
@@ -182,6 +210,9 @@ export async function updateBookingStatusService(
   status: string,
   userId?: string | null,
   ip?: string | null,
+  // The administrator's remarks when turning a booking down. Stored on the
+  // booking and sent to the client with the rejection notification.
+  rejectionReason?: string | null,
 ): Promise<BookingWithRelations> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
@@ -196,24 +227,28 @@ export async function updateBookingStatusService(
     throw new Error(`Cannot change status from '${existing.status}' back to '${status}'`)
   }
 
-  const booking = await BookingModel.updateStatus(bookingId, status)
+  // A cancellation is a decision with an author: record who made it and why, so
+  // the client can be told the reason and the record shows it was the
+  // administrator — not the general manager, who may never have seen it.
+  const booking = status === 'cancelled'
+    ? await BookingModel.cancelBooking(bookingId, { reason: rejectionReason, cancelledBy: userId })
+    : await BookingModel.updateStatus(bookingId, status)
   if (!booking) throw new Error('Failed to update booking status')
 
   logEvent({
     user_id:     userId,
     log_type:    'booking',
     action:      `booking_${status}`,
-    description: `Booking ${bookingId} marked as ${status}`,
+    description: status === 'cancelled' && rejectionReason
+      ? `Booking ${bookingId} rejected by the administrator: ${rejectionReason}`
+      : `Booking ${bookingId} marked as ${status}`,
 
   })
 
   // Approving the booking via the top-level status control hands it to
-  // operations: clear any still-pending upstream sub-stages so the record is
-  // consistent, then notify the operations manager to assign vehicle(s)/driver(s).
+  // operations: clear a still-pending GM stage so the record is consistent, then
+  // notify the operations manager to select a vehicle and driver.
   if (status === 'approved' && existing.status !== 'approved' && existing.ops_status !== 'assigned') {
-    if (existing.accounting_status === 'pending') {
-      await BookingModel.updateAccountingStatus(bookingId, { accounting_status: 'approved' })
-    }
     if (existing.gm_status === 'pending') {
       await BookingModel.updateGmStatus(bookingId, { gm_status: 'approved' })
     }
@@ -227,57 +262,50 @@ export async function updateBookingStatusService(
     void notifyStage('ops_pending', advanced ?? booking)
   }
 
-  return booking
-}
+  // The delivery is over: hand the vehicle back to the pool and take the driver
+  // off the booking. A completed delivery stands the driver down so they have to
+  // opt back in; a cancelled one never happened, so they keep their slot.
+  if (status === 'completed') {
+    void releaseBookingCrew(bookingId, 'unavailable')
+  } else if (status === 'cancelled') {
+    void releaseBookingCrew(bookingId, 'available')
 
-export async function accountingReviewService(
-  bookingId: string,
-  input: AccountingReviewInput,
-  userId?: string | null,
-  ip?: string | null,
-): Promise<BookingWithRelations> {
-  const existing = await BookingModel.findById(bookingId)
-  if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
-
-  if (existing.accounting_status !== 'pending') {
-    throw new Error(`Booking has already been reviewed by accounting (status: ${existing.accounting_status})`)
-  }
-
-  const booking = await BookingModel.updateAccountingStatus(bookingId, input)
-  if (!booking) throw new Error('Failed to update accounting status')
-
-  logEvent({
-    user_id:     userId,
-    log_type:    'booking',
-    action:      `accounting_${input.accounting_status}`,
-    description: `Booking ${bookingId} ${input.accounting_status} by accounting`,
-
-  })
-
-  if (input.accounting_status === 'rejected') {
-    void notifyStage('rejected_accounting', booking, { reason: input.rejection_reason })
-  } else {
-    // approved or forwarded: hand to the GM if one is staffed, otherwise skip the
-    // GM stage (auto-clear it) and route straight to operations.
-    const gmStaffed = await hasActiveUsersWithRoles(['general_manager'])
-    if (gmStaffed) {
-      void notifyStage('gm_pending', booking)
-    } else {
-      await BookingModel.updateGmStatus(bookingId, { gm_status: 'approved' })
-      const advanced = await BookingModel.updateStatus(bookingId, 'approved')
-      logEvent({
-        user_id:     userId,
-        log_type:    'booking',
-        action:      'gm_auto_approved',
-        description: `Booking ${bookingId} GM stage auto-cleared (no general manager staffed)`,
-      })
-      void notifyStage('ops_pending', advanced ?? booking)
+    // Tell the client their booking was turned down, and why. Only for a booking
+    // that hadn't already been rejected upstream, so the client isn't told twice
+    // about the same decision.
+    if (existing.status !== 'cancelled' && existing.gm_status !== 'rejected') {
+      void notifyStage('rejected_admin', booking, { reason: rejectionReason })
     }
   }
 
   return booking
 }
 
+/**
+ * Return a finished booking's driver and vehicle to their resting states. Best
+ * effort — a booking that never got an assignment simply has no crew to release.
+ */
+async function releaseBookingCrew(
+  bookingId: string,
+  driverTo: 'unavailable' | 'available',
+): Promise<void> {
+  try {
+    const { driver_id, truck_id } = await crewOnBooking(bookingId)
+    await releaseCrew(driver_id, truck_id, driverTo)
+  } catch (err) {
+    console.error('[booking] failed to release crew for booking', bookingId, err)
+  }
+}
+
+/**
+ * The general manager's decision — the only approval gate on a booking. An
+ * appointed GM proxy (an accountant the IT admin nominated) may act here too;
+ * the route guard decides who gets in.
+ *
+ * A rejection carries the GM's remarks and cancels the booking, so it drops out
+ * of the queue instead of sitting there un-actionable. The remarks are stored on
+ * the booking and shown to the client in the rejection notification.
+ */
 export async function gmReviewService(
   bookingId: string,
   input: GmReviewInput,
@@ -287,11 +315,11 @@ export async function gmReviewService(
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
 
-  if (existing.accounting_status !== 'forwarded' && existing.accounting_status !== 'approved') {
-    throw new Error('Booking must be approved or forwarded by accounting before GM review')
-  }
   if (existing.gm_status !== 'pending') {
-    throw new Error(`Booking has already been reviewed by GM (status: ${existing.gm_status})`)
+    throw new Error(`Booking has already been reviewed by the general manager (status: ${existing.gm_status})`)
+  }
+  if (input.gm_status === 'rejected' && !input.rejection_reason?.trim()) {
+    throw new Error('Remarks explaining the rejection are required')
   }
 
   const booking = await BookingModel.updateGmStatus(bookingId, input)
@@ -306,90 +334,17 @@ export async function gmReviewService(
   })
 
   if (input.gm_status === 'rejected') {
-    void notifyStage('rejected_gm', booking, { reason: input.rejection_reason })
-  } else {
-    // approved: advance the lifecycle to 'approved' (so operations sees it) and
-    // send to operations to select vehicle(s) and driver(s).
-    const advanced = await BookingModel.updateStatus(bookingId, 'approved')
-    void notifyStage('ops_pending', advanced ?? booking)
+    const closed = await BookingModel.updateStatus(bookingId, 'cancelled')
+    void notifyStage('rejected_gm', closed ?? booking, { reason: input.rejection_reason })
+    return closed ?? booking
   }
 
-  return booking
-}
+  // approved: advance the lifecycle to 'approved' (so operations sees it) and
+  // send to operations to select a vehicle and driver.
+  const advanced = await BookingModel.updateStatus(bookingId, 'approved')
+  void notifyStage('ops_pending', advanced ?? booking)
 
-export async function opsAssignService(
-  bookingId: string,
-  input: OpsAssignInput,
-  userId?: string | null,
-  ip?: string | null,
-): Promise<BookingWithRelations> {
-  const existing = await BookingModel.findById(bookingId)
-  if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
-
-  if (existing.gm_status !== 'approved') {
-    throw new Error('Booking must be approved by GM before operations assignment')
-  }
-  if (existing.ops_status !== 'pending') {
-    throw new Error('Booking has already been assigned by operations')
-  }
-
-  const booking = await BookingModel.updateOpsStatus(bookingId, input)
-  if (!booking) throw new Error('Failed to update ops status')
-
-  logEvent({
-    user_id:     userId,
-    log_type:    'booking',
-    action:      'ops_assigned',
-    description: `Booking ${bookingId} assigned by operations`,
-
-  })
-
-  // Send to fleet manager for the BLOWBAGETS readiness check.
-  void notifyStage('fleet_pending', booking)
-
-  return booking
-}
-
-export async function fleetApproveService(
-  bookingId: string,
-  input: FleetApproveInput,
-  userId?: string | null,
-  ip?: string | null,
-): Promise<BookingWithRelations> {
-  const existing = await BookingModel.findById(bookingId)
-  if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
-
-  if (existing.ops_status !== 'assigned') {
-    throw new Error('Booking must be assigned by operations before fleet approval')
-  }
-  if (existing.fleet_status !== 'pending') {
-    throw new Error('Booking has already been reviewed by fleet')
-  }
-
-  const check: BlowbagetsCheck | null = input.blowbagets
-    ? { items: input.blowbagets, checked_by: userId ?? null, checked_at: new Date().toISOString() }
-    : null
-
-  const booking = await BookingModel.updateFleetStatus(bookingId, input, check)
-  if (!booking) throw new Error('Failed to update fleet status')
-
-  logEvent({
-    user_id:     userId,
-    log_type:    'booking',
-    action:      input.decision === 'rejected' ? 'fleet_rejected' : 'fleet_approved',
-    description: `Booking ${bookingId} ${input.decision} by fleet`,
-
-  })
-
-  if (input.decision === 'rejected') {
-    // BLOWBAGETS failed: bounce back to operations to assign another vehicle.
-    void notifyStage('fleet_rejected', booking, { reason: input.rejection_reason })
-  } else {
-    // Vehicle is ready: notify the assigned driver(s) of their delivery.
-    void notifyStage('assigned', booking)
-  }
-
-  return booking
+  return advanced ?? booking
 }
 
 export async function deleteBookingService(
@@ -601,6 +556,10 @@ export async function driverCompleteBookingService(
     action:      'driver_booking_completed',
     description: `Driver marked booking ${bookingId} as completed`,
   })
+
+  // Vehicle goes back in the pool; the driver stands down to 'unavailable' and is
+  // prompted in the app to opt back in when ready for the next delivery.
+  void releaseBookingCrew(bookingId, 'unavailable')
 
   return updated
 }

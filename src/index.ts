@@ -19,6 +19,7 @@ import uploadRoutes from './routes/upload.route.js'
 import { globalLimiter } from './middlewares/rateLimit.middleware.js';
 import messagingRoutes from './routes/messaging.routes.js'
 import notificationsRoutes from './routes/notifications.routes.js'
+import { startFleetRecheckScheduler } from './services/notification/fleet-recheck.scheduler.js'
 
 dotenv.config();
 
@@ -146,6 +147,10 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Backend running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Allowed origins:`, allowedOrigins);
+
+  // Reminds the fleet manager to re-run BLOWBAGETS the day before a booking
+  // dispatches and again on the day itself.
+  startFleetRecheckScheduler();
 });
 
 process.on('SIGTERM', () => process.exit(0));

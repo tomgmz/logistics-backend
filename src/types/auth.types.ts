@@ -53,6 +53,9 @@ export interface AuthUser {
   lockup_count?:          number
   locked_until?:          Date | null
   must_change_password?:  boolean
+  // Set on an accountant the IT admin appointed to stand in for the general
+  // manager on booking approvals.
+  is_gm_proxy?:           boolean
 
   clients?: {
     client_id:       string

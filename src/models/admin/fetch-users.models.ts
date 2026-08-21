@@ -35,6 +35,7 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
       phone,
       role,
       status,
+      is_gm_proxy,
       created_at,
       updated_at,
       clients (

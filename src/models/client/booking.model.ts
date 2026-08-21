@@ -7,11 +7,8 @@ import {
   BookingWithRelations,
   BookingDestination,
   BookingCargoItem,
-  AccountingReviewInput,
   GmReviewInput,
   OpsAssignInput,
-  FleetApproveInput,
-  BlowbagetsCheck,
 } from '../../types/client/booking.types.js'
 
 export interface BookingListQuery {
@@ -349,16 +346,27 @@ async function updateStatus(bookingId: string, status: string): Promise<BookingW
   return findById(bookingId)
 }
 
-async function updateAccountingStatus(
+/**
+ * Cancel a booking and record WHO decided and why.
+ *
+ * The admin is a decision-maker in their own right, not a stand-in for the GM —
+ * in a small operation they turn a booking down without the GM ever seeing it.
+ * So their rejection is stamped on `cancelled_by`/`cancelled_at` rather than on
+ * `gm_status`, which would misattribute it to a general manager who never
+ * reviewed the booking.
+ */
+async function cancelBooking(
   bookingId: string,
-  input: AccountingReviewInput,
+  opts: { reason?: string | null; cancelledBy?: string | null },
 ): Promise<BookingWithRelations | null> {
   const { error } = await supabase
     .from('bookings')
     .update({
-      accounting_status: input.accounting_status,
-      rejection_reason:  input.accounting_status === 'rejected' ? input.rejection_reason : null,
-      updated_at:        new Date().toISOString(),
+      status:           'cancelled',
+      rejection_reason: opts.reason ?? null,
+      cancelled_by:     opts.cancelledBy ?? null,
+      cancelled_at:     new Date().toISOString(),
+      updated_at:       new Date().toISOString(),
     })
     .eq('booking_id', bookingId)
 
@@ -387,40 +395,30 @@ async function updateOpsStatus(
   bookingId: string,
   input: OpsAssignInput,
 ): Promise<BookingWithRelations | null> {
-  // Reset fleet_status to 'pending' so a re-assignment after a fleet rejection
-  // re-enters the fleet review cleanly.
   const { error } = await supabase
     .from('bookings')
-    .update({ ops_status: input.ops_status, fleet_status: 'pending', updated_at: new Date().toISOString() })
+    .update({ ops_status: input.ops_status, updated_at: new Date().toISOString() })
     .eq('booking_id', bookingId)
 
   if (error) throw error
   return findById(bookingId)
 }
 
-async function updateFleetStatus(
+/**
+ * Record that a scheduled BLOWBAGETS re-check reminder went out for this booking,
+ * so the scheduler never sends the same nudge twice (including across restarts).
+ */
+async function markFleetRecheckSent(
   bookingId: string,
-  input: FleetApproveInput,
-  check: BlowbagetsCheck | null,
-): Promise<BookingWithRelations | null> {
-  const payload: Record<string, unknown> =
-    input.decision === 'rejected'
-      // BLOWBAGETS failed: bounce back to operations for re-assignment. Reset the
-      // lifecycle to 'approved' so the booking reappears in the operations queue.
-      ? { fleet_status: 'rejected', ops_status: 'pending', status: 'approved', rejection_reason: input.rejection_reason ?? null }
-      : { fleet_status: 'approved', rejection_reason: null }
-
-  // Record the inspection snapshot when the fleet manager supplied one (both a
-  // pass and a fault-finding rejection are worth preserving).
-  if (check) payload.blowbagets_check = check
-
+  window: 'day_before' | 'day_of',
+): Promise<void> {
+  const column = window === 'day_of' ? 'fleet_recheck_day_of_at' : 'fleet_recheck_day_before_at'
   const { error } = await supabase
     .from('bookings')
-    .update({ ...payload, updated_at: new Date().toISOString() })
+    .update({ [column]: new Date().toISOString() })
     .eq('booking_id', bookingId)
 
   if (error) throw error
-  return findById(bookingId)
 }
 
 async function remove(bookingId: string): Promise<boolean> {
@@ -579,10 +577,10 @@ export const BookingModel = {
   create,
   update,
   updateStatus,
-  updateAccountingStatus,
+  cancelBooking,
   updateGmStatus,
   updateOpsStatus,
-  updateFleetStatus,
+  markFleetRecheckSent,
   remove,
   setPickupProof,
   // destination mutations

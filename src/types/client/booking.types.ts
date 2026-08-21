@@ -1,13 +1,15 @@
 export type BookingStatus      = 'pending' | 'approved' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
 export type DestinationStatus  = 'pending' | 'delivered' | 'failed'
-export type AccountingStatus   = 'pending' | 'approved' | 'rejected' | 'forwarded'
 export type GmStatus           = 'pending' | 'approved' | 'rejected'
 export type OpsStatus          = 'pending' | 'assigned'
+// Legacy sub-stages kept for historical rows. Accounting no longer gates the
+// flow, and BLOWBAGETS moved off the booking and onto the vehicle.
+export type AccountingStatus   = 'pending' | 'approved' | 'rejected' | 'forwarded'
 export type FleetStatus        = 'pending' | 'approved' | 'rejected'
 
-// The fleet manager's BLOWBAGETS pre-dispatch inspection. Each key is one item
-// of the mnemonic; `true` means it passed. Battery and Brakes share the letter
-// B but have distinct keys.
+// The fleet manager's BLOWBAGETS vehicle inspection. Each key is one item of the
+// mnemonic; `true` means it passed. Battery and Brakes share the letter B but
+// have distinct keys.
 export interface BlowbagetsItems {
   battery: boolean
   lights:  boolean
@@ -225,11 +227,6 @@ export interface UpdateBookingInput {
   transaction_documents?:  string[] | null
 }
 
-export interface AccountingReviewInput {
-  accounting_status: Exclude<AccountingStatus, 'pending'>
-  rejection_reason?: string
-}
-
 export interface GmReviewInput {
   gm_status:         Exclude<GmStatus, 'pending'>
   rejection_reason?: string
@@ -239,12 +236,3 @@ export interface OpsAssignInput {
   ops_status: 'assigned'
 }
 
-// Fleet runs the BLOWBAGETS readiness check. On 'rejected' the booking is sent
-// back to operations (ops_status reset to 'pending') for re-assignment.
-export interface FleetApproveInput {
-  decision:          'approved' | 'rejected'
-  rejection_reason?: string
-  // The BLOWBAGETS inspection captured by the fleet manager. Required (all items
-  // true) on 'approved'; on 'rejected' it records which items failed.
-  blowbagets?:       BlowbagetsItems
-}

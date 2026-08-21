@@ -3,6 +3,13 @@ import { BookingModel } from '../../models/client/booking.model.js'
 import { supabase } from '../../lib/supabase.js'
 import { logEvent } from '../../lib/log-event.js'
 import { notifyStage } from '../notification/notification.service.js'
+import {
+  assertDriverAssignable,
+  assertTruckPassedInspection,
+  crewOnBooking,
+  releaseCrew,
+  reserveCrew,
+} from './fleet-availability.service.js'
 import type {
   AssignmentWithRelations,
   AssignBookingInput,
@@ -47,6 +54,20 @@ async function assertTruckExists(truckId: string): Promise<void> {
   if (!data) throw new Error(`Truck with ID ${truckId} not found`)
 }
 
+/** Plate + model of a truck, for the fleet manager's notification copy. */
+async function truckLabel(truckId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('trucks')
+    .select('plate_number, truck_models ( name, vehicle_type )')
+    .eq('truck_id', truckId)
+    .maybeSingle()
+
+  if (error || !data) return 'A vehicle'
+  const model = (data as any).truck_models
+  const name  = model?.name ?? model?.vehicle_type ?? null
+  return name ? `${data.plate_number} · ${name}` : String(data.plate_number)
+}
+
 export async function assignBookingService(
   bookingId: string,
   input:     AssignBookingInput,
@@ -54,6 +75,10 @@ export async function assignBookingService(
   ip?:       string | null,
 ): Promise<AssignmentWithRelations> {
   await assertBookingAssignable(bookingId)
+
+  // Whoever is on the booking right now — they get stood down if this call swaps
+  // in a different driver/vehicle, and stay valid if they are being kept.
+  const previous = await crewOnBooking(bookingId)
 
   if (input.is_vendor_supplied) {
     if (!input.vendor_driver_name) throw new Error('Vendor driver name is required')
@@ -64,6 +89,12 @@ export async function assignBookingService(
     await Promise.all([
       assertDriverExists(input.driver_id),
       assertTruckExists(input.truck_id),
+    ])
+    // Operations may only pick from the vetted pools: a driver who marked
+    // themselves available, and a vehicle whose latest BLOWBAGETS check passed.
+    await Promise.all([
+      assertDriverAssignable(input.driver_id, previous.driver_id),
+      assertTruckPassedInspection(input.truck_id),
     ])
   }
 
@@ -81,11 +112,29 @@ export async function assignBookingService(
 
   })
 
-  // A vehicle/driver is now appointed: advance the ops stage (also resets
-  // fleet_status to 'pending' for a clean fleet re-entry) and notify the fleet
-  // manager to run the BLOWBAGETS readiness check.
+  // Reserve the new crew and release whoever was displaced by this call. A
+  // displaced driver never drove, so they go back to 'available' — they stay in
+  // the pool they opted into rather than having to opt in again.
+  const nextDriverId = input.is_vendor_supplied ? null : input.driver_id ?? null
+  const nextTruckId  = input.is_vendor_supplied ? null : input.truck_id  ?? null
+  await releaseCrew(
+    previous.driver_id && previous.driver_id !== nextDriverId ? previous.driver_id : null,
+    previous.truck_id  && previous.truck_id  !== nextTruckId  ? previous.truck_id  : null,
+    'available',
+  )
+  await reserveCrew(nextDriverId, nextTruckId)
+
+  // The booking is now crewed: tell the driver they have a delivery, and tell the
+  // fleet manager one of their vehicles has been taken.
   const advanced = await BookingModel.updateOpsStatus(bookingId, { ops_status: 'assigned' })
-  if (advanced) void notifyStage('fleet_pending', advanced)
+  const booking  = advanced ?? (await BookingModel.findById(bookingId))
+  if (booking) {
+    void notifyStage('assigned', booking)
+    const label = nextTruckId
+      ? await truckLabel(nextTruckId)
+      : input.vendor_vehicle_plate ?? 'A vendor-supplied vehicle'
+    void notifyStage('vehicle_assigned', booking, { vehicleLabel: label })
+  }
 
   return assignment
 }

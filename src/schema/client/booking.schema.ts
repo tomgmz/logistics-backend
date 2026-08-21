@@ -110,54 +110,25 @@ export const driverStopProofSchema = z.object({
 
 export const updateBookingStatusSchema = z.object({
   status: z.enum(['pending', 'approved', 'assigned', 'in_transit', 'completed', 'cancelled']),
+  // The administrator's remarks when rejecting a booking outright. Optional —
+  // this endpoint also drives ordinary lifecycle moves that carry no remarks.
+  rejection_reason: z.string().min(1).max(500).optional(),
 })
 
 
-export const accountingReviewSchema = z.object({
-  accounting_status: z.enum(['approved', 'rejected', 'forwarded']),
-  rejection_reason:  z.string().min(1).optional(),
-}).refine(
-  (data) => data.accounting_status !== 'rejected' || !!data.rejection_reason,
-  { message: 'rejection_reason is required when rejecting', path: ['rejection_reason'] }
-)
-
+// The general manager's decision — the single approval gate on a booking. A
+// rejection must carry the GM's remarks; the client sees them in the rejection
+// notification and on the booking record.
 export const gmReviewSchema = z.object({
   gm_status:        z.enum(['approved', 'rejected']),
   rejection_reason: z.string().min(1).optional(),
 }).refine(
-  (data) => data.gm_status !== 'rejected' || !!data.rejection_reason,
-  { message: 'rejection_reason is required when rejecting', path: ['rejection_reason'] }
+  (data) => data.gm_status !== 'rejected' || !!data.rejection_reason?.trim(),
+  { message: 'Remarks explaining the rejection are required', path: ['rejection_reason'] }
 )
 
-export const opsAssignSchema = z.object({
-  ops_status: z.literal('assigned'),
+// The driver's own availability switch from the mobile app. 'assigned' is
+// system-owned and deliberately not accepted here.
+export const driverAvailabilitySchema = z.object({
+  status: z.enum(['available', 'unavailable']),
 })
-
-// The 10 BLOWBAGETS inspection items. Every key is required so a partial/renamed
-// payload is rejected at the boundary.
-export const blowbagetsSchema = z.object({
-  battery: z.boolean(),
-  lights:  z.boolean(),
-  oil:     z.boolean(),
-  water:   z.boolean(),
-  brakes:  z.boolean(),
-  air:     z.boolean(),
-  gas:     z.boolean(),
-  engine:  z.boolean(),
-  tires:   z.boolean(),
-  self:    z.boolean(),
-})
-
-export const fleetReviewSchema = z.object({
-  decision:         z.enum(['approved', 'rejected']),
-  rejection_reason: z.string().min(1).optional(),
-  blowbagets:       blowbagetsSchema.optional(),
-}).refine(
-  (data) => data.decision !== 'rejected' || !!data.rejection_reason,
-  { message: 'rejection_reason is required when rejecting', path: ['rejection_reason'] }
-).refine(
-  // Approval demands a complete, all-passing inspection — enforced here so the
-  // rule holds even if a client bypasses the UI gate.
-  (data) => data.decision !== 'approved' || (!!data.blowbagets && Object.values(data.blowbagets).every(Boolean)),
-  { message: 'All BLOWBAGETS items must be checked before the vehicle can be approved', path: ['blowbagets'] }
-)

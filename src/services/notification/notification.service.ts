@@ -24,6 +24,17 @@ export function hasActiveUsersWithRoles(roles: string[]) {
   return model.hasActiveUsersWithRoles(roles)
 }
 
+// Whether anyone can act on the GM approval stage — a general manager or an
+// accountant the IT admin appointed as GM proxy.
+export async function hasGmApprovers(): Promise<boolean> {
+  return (await model.resolveGmApprovers()).length > 0
+}
+
+// Whether this specific user may approve/reject on the GM stage.
+export function isGmApprover(userId: string) {
+  return model.isGmApprover(userId)
+}
+
 export function markRead(userId: string, notificationId: string) {
   return model.markRead(userId, notificationId)
 }
@@ -39,19 +50,22 @@ interface StageConfig {
   // Roles that should be notified for staff stages. `admin` is the RBAC fallback
   // and is appended automatically, so it can be omitted here.
   roles?: string[]
-  // For stages targeting the client or the assigned driver(s) instead of a role.
-  audience?: 'client' | 'drivers'
+  // For stages targeting the client, the assigned driver(s), or everyone who may
+  // act on the GM approval stage (the GM plus any appointed proxy).
+  audience?: 'client' | 'drivers' | 'gm_approvers'
+  // Stages about a vehicle rather than an approval step deep-link the recipient
+  // into Vehicle Management instead of Booking Management.
+  target?: 'booking' | 'vehicle'
 }
 
 const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
-  accounting_pending:  { type: 'booking.accounting_pending',  roles: ['accountant'] },
-  gm_pending:          { type: 'booking.gm_pending',          roles: ['general_manager'] },
-  rejected_accounting: { type: 'booking.rejected_accounting', audience: 'client' },
-  ops_pending:         { type: 'booking.ops_pending',         roles: ['operations_manager'] },
-  rejected_gm:         { type: 'booking.rejected_gm',         audience: 'client' },
-  fleet_pending:       { type: 'booking.fleet_pending',       roles: ['fleet_manager'] },
-  fleet_rejected:      { type: 'booking.fleet_rejected',      roles: ['operations_manager'] },
-  assigned:            { type: 'booking.assigned',            audience: 'drivers' },
+  gm_pending:       { type: 'booking.gm_pending',       audience: 'gm_approvers' },
+  rejected_gm:      { type: 'booking.rejected_gm',      audience: 'client' },
+  rejected_admin:   { type: 'booking.rejected_admin',   audience: 'client' },
+  ops_pending:      { type: 'booking.ops_pending',      roles: ['operations_manager'] },
+  assigned:         { type: 'booking.assigned',         audience: 'drivers' },
+  vehicle_assigned: { type: 'booking.vehicle_assigned', roles: ['fleet_manager'] },
+  fleet_recheck:    { type: 'booking.fleet_recheck',    roles: ['fleet_manager'], target: 'vehicle' },
 }
 
 // Route map per role so a notification tap lands on the right dashboard page.
@@ -67,10 +81,25 @@ const ROLE_PATHS: Record<string, string> = {
   driver:           '/driver/driver-assignment',
 }
 
+// Where a vehicle-centric notification lands. The fleet manager's BLOWBAGETS
+// re-check is done in Vehicle Management, not on the booking.
+const VEHICLE_PATHS: Record<string, string> = {
+  fleet_manager: '/fleet_admin/vehicle-management',
+  admin:         '/admin/vehicle-management',
+}
+
 // Deep-link a recipient to their own module page focused on the booking. The
 // `?booking=` param is read by the web booking view (openDetail); mobile clients
 // route off `data.booking_id` directly. Roles fall back to the admin page.
-function actionUrlForRole(role: string, bookingId: string): string {
+function actionUrlForRole(
+  role: string,
+  bookingId: string,
+  target: 'booking' | 'vehicle' = 'booking',
+): string {
+  if (target === 'vehicle') {
+    const base = VEHICLE_PATHS[role] ?? VEHICLE_PATHS.admin
+    return `${base}?booking=${encodeURIComponent(bookingId)}`
+  }
   const base = ROLE_PATHS[role] ?? ROLE_PATHS.admin
   return `${base}?booking=${encodeURIComponent(bookingId)}`
 }
@@ -82,26 +111,34 @@ function bookingLabel(booking: BookingWithRelations): string {
 function copyFor(
   stage: NotificationStage,
   booking: BookingWithRelations,
-  reason?: string | null,
+  extra?: NotifyExtra,
 ): { title: string; body: string } {
-  const label = bookingLabel(booking)
+  const label  = bookingLabel(booking)
+  const reason = extra?.reason
   switch (stage) {
-    case 'accounting_pending':
-      return { title: 'New booking to review', body: `Booking ${label} needs an accounting profitability check.` }
     case 'gm_pending':
-      return { title: 'Booking awaiting your approval', body: `Booking ${label} passed accounting and needs the GM's final say.` }
-    case 'rejected_accounting':
-      return { title: 'Booking rejected', body: `Your booking ${label} was rejected by accounting${reason ? `: ${reason}` : '.'}` }
-    case 'ops_pending':
-      return { title: 'Booking ready for assignment', body: `Booking ${label} was approved. Assign vehicle(s) and driver(s).` }
+      return { title: 'New booking awaiting your approval', body: `Booking ${label} was submitted by the client and needs your approval.` }
     case 'rejected_gm':
       return { title: 'Booking rejected', body: `Your booking ${label} was rejected by the general manager${reason ? `: ${reason}` : '.'}` }
-    case 'fleet_pending':
-      return { title: 'Vehicle check needed', body: `Booking ${label} has assignments. Run the BLOWBAGETS check before dispatch.` }
-    case 'fleet_rejected':
-      return { title: 'Vehicle rejected — reassign', body: `Fleet rejected the vehicle for booking ${label}${reason ? `: ${reason}` : '.'} Please assign another.` }
+    // Turned down by the administrator directly, without going to the GM.
+    case 'rejected_admin':
+      return { title: 'Booking rejected', body: `Your booking ${label} was not approved${reason ? `: ${reason}` : '.'}` }
+    case 'ops_pending':
+      return { title: 'Booking ready for assignment', body: `Booking ${label} was approved by the GM. Select a vehicle and driver.` }
     case 'assigned':
       return { title: 'New delivery assigned', body: `You have been assigned to booking ${label}.` }
+    case 'vehicle_assigned':
+      return {
+        title: 'Vehicle assigned to a booking',
+        body:  `${extra?.vehicleLabel ?? 'A vehicle'} was selected by operations for booking ${label}.`,
+      }
+    case 'fleet_recheck':
+      return {
+        title: extra?.window === 'day_of' ? 'Re-check vehicle — dispatching today' : 'Re-check vehicle — dispatching tomorrow',
+        body:  extra?.window === 'day_of'
+          ? `Booking ${label} dispatches today. Run BLOWBAGETS on ${extra?.vehicleLabel ?? 'the assigned vehicle'} before it rolls out.`
+          : `Booking ${label} dispatches tomorrow. Re-run BLOWBAGETS on ${extra?.vehicleLabel ?? 'the assigned vehicle'} so any fault can still be fixed.`,
+      }
   }
 }
 
@@ -121,10 +158,27 @@ async function resolveRecipients(stage: NotificationStage, booking: BookingWithR
     const ids = await model.resolveDriverUserIds(booking.booking_id)
     return ids.map((user_id) => ({ user_id, role: 'driver' }))
   }
+  if (cfg.audience === 'gm_approvers') {
+    // The GM plus any appointed proxy, plus admins as the standing fallback.
+    const approvers = await model.resolveGmApprovers()
+    const admins    = await model.resolveRecipientsByRoles(['admin'])
+    const byId      = new Map<string, Recipient>()
+    for (const r of [...approvers, ...admins]) byId.set(r.user_id, r)
+    return [...byId.values()]
+  }
   // Staff stage: the responsible role plus admins (RBAC fallback). Roles are
   // kept per recipient so each lands on their own module page.
   const roles = [...new Set([...(cfg.roles ?? []), 'admin'])]
   return model.resolveRecipientsByRoles(roles)
+}
+
+export interface NotifyExtra {
+  // Rejection remarks, surfaced to the client in the notification body.
+  reason?:       string | null
+  // Plate/model of the vehicle a fleet notification is about.
+  vehicleLabel?: string | null
+  // Which re-check nudge this is, for the `fleet_recheck` stage.
+  window?:       'day_before' | 'day_of'
 }
 
 /**
@@ -135,14 +189,14 @@ async function resolveRecipients(stage: NotificationStage, booking: BookingWithR
 export async function notifyStage(
   stage: NotificationStage,
   booking: BookingWithRelations,
-  extra?: { reason?: string | null },
+  extra?: NotifyExtra,
 ): Promise<void> {
   try {
     const recipients = await resolveRecipients(stage, booking)
     if (recipients.length === 0) return
 
     const cfg = STAGE_CONFIG[stage]
-    const { title, body } = copyFor(stage, booking, extra?.reason)
+    const { title, body } = copyFor(stage, booking, extra)
 
     // Each recipient gets their own row + action_url so the tap deep-links them
     // to their own module page focused on this booking.
@@ -159,7 +213,7 @@ export async function notifyStage(
       title,
       body,
       booking_id: booking.booking_id,
-      data:       { ...baseData, action_url: actionUrlForRole(role, booking.booking_id) },
+      data:       { ...baseData, action_url: actionUrlForRole(role, booking.booking_id, cfg.target) },
     }))
 
     const inserted = await model.insertMany(rows)
@@ -175,7 +229,7 @@ export async function notifyStage(
     // carries the deep-link into their own module page.
     const byUrl = new Map<string, string[]>()
     for (const { user_id, role } of recipients) {
-      const url = actionUrlForRole(role, booking.booking_id)
+      const url = actionUrlForRole(role, booking.booking_id, cfg.target)
       const list = byUrl.get(url)
       if (list) list.push(user_id)
       else byUrl.set(url, [user_id])

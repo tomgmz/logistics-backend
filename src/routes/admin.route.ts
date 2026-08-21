@@ -4,9 +4,9 @@ import { authenticate, authorize }   from '../middlewares/auth.middleware.js'
 import { createAdminSchema, updateAdminSchema }                       from '../schema/admin/admin.schema.js'
 import { createClientSchema, updateClientSchema }                     from '../schema/admin/client.schema.js'
 import { createDriverSchema, updateDriverSchema }                     from '../schema/admin/driver.schema.js'
-import { createTruckSchema, updateTruckSchema }                       from '../schema/admin/truck.schema.js'
+import { createTruckSchema, updateTruckSchema, recordTruckInspectionSchema } from '../schema/admin/truck.schema.js'
 import { createTruckModelSchema, updateTruckModelSchema }             from '../schema/admin/truck-model.schema.js'
-import { createAccountantSchema, updateAccountantSchema }             from '../schema/admin/accountant.schema.js'
+import { createAccountantSchema, updateAccountantSchema, setGmProxySchema } from '../schema/admin/accountant.schema.js'
 import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../schema/admin/general_manager.schema.js'
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
@@ -88,6 +88,12 @@ router.patch('/assignments/:bookingId/status', authenticate, isOperations, valid
 // Trucks
 router.get('/trucks',        authenticate, isFleetRead, TruckController.getAllTrucks)
 router.get('/trucks/:id',    authenticate, isFleetRead, TruckController.getTruckById)
+// BLOWBAGETS inspections live on the VEHICLE: the fleet manager records them
+// here, and only a vehicle whose latest inspection passed can be picked by
+// operations. Read is open to the same roles that can read the fleet so the
+// assignment UI can show readiness.
+router.get('/trucks/:id/inspections',  authenticate, isFleetRead, TruckController.getTruckInspections)
+router.post('/trucks/:id/inspections', authenticate, isFleet, validate(recordTruckInspectionSchema), TruckController.recordTruckInspection)
 router.post('/trucks',       authenticate, isFleet, validate(createTruckSchema), TruckController.createTruck)
 router.patch('/trucks/:id',  authenticate, isFleet, validate(updateTruckSchema), TruckController.updateTruck)
 router.delete('/trucks/:id', authenticate, isFleet, TruckController.deleteTruck)
@@ -107,6 +113,8 @@ router.patch('/accountants/:id',  authenticate, isAdmin, validate(updateAccounta
 router.delete('/accountants/:id', authenticate, isAdmin, AccountantController.deleteAccountant)
 router.patch('/accountants/:id/deactivate', authenticate, isAdmin, AccountantController.deactivateAccountant)
 router.patch('/accountants/:id/activate',   authenticate, isAdmin, AccountantController.activateAccountant)
+// Appoint an accountant to stand in for the general manager on booking approvals.
+router.patch('/accountants/:id/gm-proxy',   authenticate, isAdmin, validate(setGmProxySchema), AccountantController.setAccountantGmProxy)
 
 //General Managers
 router.get('/general-managers',        authenticate, isAdmin, GeneralManagerController.getAllGeneralManagers)

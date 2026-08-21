@@ -9,12 +9,10 @@ import {
   updateBookingStatusSchema,
   updateDestinationSchema,
   updateDestinationStatusSchema,
-  accountingReviewSchema,
   gmReviewSchema,
-  opsAssignSchema,
-  fleetReviewSchema,
 } from '../schema/client/booking.schema.js'
 import * as BookingController from '../controllers/client/booking.controller.js'
+import { requireGmApprover } from '../middlewares/gmApprover.middleware.js'
 
 const router = Router()
 
@@ -32,10 +30,6 @@ const canViewBookings = authorize(
 // Approval-stage gates: stage authority is inherent to the ROLE (not the
 // booking-management module tier — accountant is read-only and fleet has no
 // booking-management at all), so these are gated by role only.
-const isAccountant = authorize('accountant', 'admin')
-const isGm         = authorize('general_manager', 'admin')
-const isOps        = authorize('operations_manager', 'admin')
-const isFleet      = authorize('fleet_manager', 'admin')
 
 // Booking write actions are governed by the booking-management module tier for
 // managed staff (clients/drivers bypass; it_admin bypasses). Method picks the
@@ -54,12 +48,14 @@ router.patch('/:id',            authenticate, authenticatedLimiter, isClient, va
 router.patch('/:id/status',     authenticate, authenticatedLimiter, isAdmin,  canManageBooking, validate(updateBookingStatusSchema), BookingController.updateBookingStatus)
 router.delete('/:id',           authenticate, authenticatedLimiter, isClient, BookingController.deleteBooking)
 
-// Approval workflow: accounting -> GM -> operations -> fleet (BLOWBAGETS).
-// Gated by role only (see note above); each role may act on its own stage.
-router.patch('/:id/accounting-review', authenticate, authenticatedLimiter, isAccountant, validate(accountingReviewSchema), BookingController.accountingReview)
-router.patch('/:id/gm-review',         authenticate, authenticatedLimiter, isGm,         validate(gmReviewSchema),         BookingController.gmReview)
-router.patch('/:id/ops-assign',        authenticate, authenticatedLimiter, isOps,        validate(opsAssignSchema),        BookingController.opsAssign)
-router.patch('/:id/fleet-review',      authenticate, authenticatedLimiter, isFleet,      validate(fleetReviewSchema),      BookingController.fleetApprove)
+// Approval workflow: the GM is the only gate. Once approved, operations picks a
+// vehicle and driver through POST /admin/assignments/:bookingId, which notifies
+// the driver and the fleet manager — there is no separate fleet approval step.
+//
+// `requireGmApprover` admits the general manager, admins, and any user the IT
+// admin has appointed as a GM proxy (an accountant standing in while the GM is
+// unavailable), so it can't be a plain role check.
+router.patch('/:id/gm-review', authenticate, authenticatedLimiter, requireGmApprover, validate(gmReviewSchema), BookingController.gmReview)
 
 router.patch('/destinations/:destinationId',        authenticate, authenticatedLimiter, isAdmin, canManageBooking, validate(updateDestinationSchema),       BookingController.updateDestination)
 router.patch('/destinations/:destinationId/status', authenticate, authenticatedLimiter, isAdmin, canManageBooking, validate(updateDestinationStatusSchema), BookingController.updateDestinationStatus)

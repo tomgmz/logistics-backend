@@ -1,15 +1,24 @@
 // In-app notification types for the booking approval workflow.
 // Each stage transition emits one of these to a resolved set of recipients.
+//
+// The live workflow is GM-first: client books -> GM approves -> operations picks
+// a vehicle + driver -> the driver is told about the delivery and the fleet
+// manager is told one of their vehicles was taken.
 
 export type NotificationType =
-  | 'booking.accounting_pending'   // new booking -> accountants + admins
-  | 'booking.gm_pending'           // accounting approved/forwarded -> GMs + admins
-  | 'booking.rejected_accounting'  // accounting rejected -> client
-  | 'booking.ops_pending'          // GM approved -> ops + admins
+  | 'booking.gm_pending'           // new booking -> GMs (+ GM proxies) + admins
   | 'booking.rejected_gm'          // GM rejected -> client
-  | 'booking.fleet_pending'        // ops assigned -> fleet + admins
-  | 'booking.fleet_rejected'       // fleet rejected (BLOWBAGETS) -> ops + admins
-  | 'booking.assigned'             // fleet approved -> assigned driver(s)
+  | 'booking.rejected_admin'       // admin rejected outright -> client
+  | 'booking.ops_pending'          // GM approved -> ops + admins
+  | 'booking.assigned'             // ops assigned -> assigned driver(s)
+  | 'booking.vehicle_assigned'     // ops assigned -> fleet + admins (informational)
+  | 'booking.fleet_recheck'        // scheduled BLOWBAGETS re-check -> fleet + admins
+  // Legacy types, still present on historical rows. No longer emitted: accounting
+  // was removed from the chain and the fleet stage no longer gates dispatch.
+  | 'booking.accounting_pending'
+  | 'booking.rejected_accounting'
+  | 'booking.fleet_pending'
+  | 'booking.fleet_rejected'
 
 export interface NotificationRow {
   notification_id: string
@@ -34,11 +43,10 @@ export interface CreateNotificationInput {
 
 // The approval stages that trigger a notification fan-out.
 export type NotificationStage =
-  | 'accounting_pending'
   | 'gm_pending'
-  | 'rejected_accounting'
-  | 'ops_pending'
   | 'rejected_gm'
-  | 'fleet_pending'
-  | 'fleet_rejected'
+  | 'rejected_admin'
+  | 'ops_pending'
   | 'assigned'
+  | 'vehicle_assigned'
+  | 'fleet_recheck'

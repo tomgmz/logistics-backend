@@ -10,10 +10,7 @@ import {
   updateBookingService,
   updateBookingStatusService,
   deleteBookingService,
-  accountingReviewService,
   gmReviewService,
-  opsAssignService,
-  fleetApproveService,
   getDestinationsByBookingService,
   updateDestinationService,
   updateDestinationStatusService,
@@ -112,7 +109,9 @@ export const updateBooking = async (req: Request, res: Response) => {
 export const updateBookingStatus = async (req: Request, res: Response) => {
   try {
     const { userId, ip } = getRequestMeta(req)
-    const booking = await updateBookingStatusService(param(req.params.id), req.body.status, userId, ip)
+    const booking = await updateBookingStatusService(
+      param(req.params.id), req.body.status, userId, ip, req.body.rejection_reason,
+    )
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
     const isNotFound   = error.message.includes('not found')
@@ -133,17 +132,6 @@ export const deleteBooking = async (req: Request, res: Response) => {
   }
 }
 
-export const accountingReview = async (req: Request, res: Response) => {
-  try {
-    const { userId, ip } = getRequestMeta(req)
-    const booking = await accountingReviewService(param(req.params.id), req.body, userId, ip)
-    res.status(200).json({ status: 'success', data: booking })
-  } catch (error: any) {
-    const status = error.message.includes('not found') ? 404 : error.message.includes('already been') ? 409 : 500
-    res.status(status).json({ status: 'error', message: error.message })
-  }
-}
-
 export const gmReview = async (req: Request, res: Response) => {
   try {
     const { userId, ip } = getRequestMeta(req)
@@ -152,33 +140,7 @@ export const gmReview = async (req: Request, res: Response) => {
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404
       : error.message.includes('already been') ? 409
-      : error.message.includes('must be') ? 400 : 500
-    res.status(status).json({ status: 'error', message: error.message })
-  }
-}
-
-export const opsAssign = async (req: Request, res: Response) => {
-  try {
-    const { userId, ip } = getRequestMeta(req)
-    const booking = await opsAssignService(param(req.params.id), req.body, userId, ip)
-    res.status(200).json({ status: 'success', data: booking })
-  } catch (error: any) {
-    const status = error.message.includes('not found') ? 404
-      : error.message.includes('already been') ? 409
-      : error.message.includes('must be') ? 400 : 500
-    res.status(status).json({ status: 'error', message: error.message })
-  }
-}
-
-export const fleetApprove = async (req: Request, res: Response) => {
-  try {
-    const { userId, ip } = getRequestMeta(req)
-    const booking = await fleetApproveService(param(req.params.id), req.body, userId, ip)
-    res.status(200).json({ status: 'success', data: booking })
-  } catch (error: any) {
-    const status = error.message.includes('not found') ? 404
-      : error.message.includes('already been') ? 409
-      : error.message.includes('must be') ? 400 : 500
+      : error.message.includes('required') ? 400 : 500
     res.status(status).json({ status: 'error', message: error.message })
   }
 }

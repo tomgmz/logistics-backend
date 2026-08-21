@@ -130,8 +130,9 @@ export const ROLE_MODULE_DEFAULTS: Record<ManagedRole, Partial<Record<ModuleKey,
     'document-management': 'read',
   },
   fleet_manager: {
-    // Read-only so fleet can open bookings and run the BLOWBAGETS vehicle-
-    // readiness check (fleet-stage actions are role-gated, not can_edit-gated).
+    // Read-only: fleet no longer approves bookings, it just sees which of its
+    // vehicles went where. BLOWBAGETS inspections are recorded against the
+    // VEHICLE, so they are governed by the vehicle-management tier below.
     'booking-management': 'read',
     'vehicle-management': 'all',
     'transit-tracking':   'manage',
