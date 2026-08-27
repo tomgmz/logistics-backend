@@ -136,3 +136,11 @@ export const gmReviewSchema = z.object({
 export const driverAvailabilitySchema = z.object({
   status: z.enum(['available', 'unavailable']),
 })
+
+// The driver's plan for one calendar month, sent whole rather than as a diff:
+// the calendar screen holds the month, so a save is "these are my days". The
+// service ignores days that have already passed.
+export const driverAvailabilityDaysSchema = z.object({
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'month must be YYYY-MM'),
+  days:  z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'days must be YYYY-MM-DD')).max(31),
+})

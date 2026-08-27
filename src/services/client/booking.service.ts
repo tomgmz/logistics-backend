@@ -365,7 +365,20 @@ export async function deleteBookingService(
     throw new Error(`Cannot delete a booking with status '${existing.status}'`)
   }
 
+  // A booking can be crewed while its own status is still 'pending' — assigning
+  // only moves ops_status — so deleting one has to hand the driver and vehicle
+  // back the way cancelling does. Read the crew BEFORE the delete: the delivery
+  // row goes with the booking, and with it any way of knowing who was on it.
+  const { driver_id, truck_id } = await crewOnBooking(bookingId)
+
   const result = await BookingModel.remove(bookingId)
+
+  // They never drove it, so the driver keeps the slot they opted into.
+  try {
+    await releaseCrew(driver_id, truck_id, 'available')
+  } catch (err) {
+    console.error('[booking] failed to release crew for deleted booking', bookingId, err)
+  }
 
   logEvent({
     user_id:     userId,

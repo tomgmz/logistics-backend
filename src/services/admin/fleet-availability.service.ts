@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { driverCalendarAllows } from '../driver/availability.service.js'
 import type { BlowbagetsItems } from '../../types/client/booking.types.js'
 
 /**
@@ -65,10 +66,16 @@ export async function assertTruckPassedInspection(truckId: string): Promise<void
  * Throws unless the driver is in the assignable pool. `currentDriverId` is the
  * driver already on this booking, who stays valid while the assignment is edited
  * (they are 'assigned', not 'available').
+ *
+ * Two gates, and both are the driver's own word: the switch says they are taking
+ * work at all, and — when `scheduleDate` is given — their calendar says they can
+ * work that particular day. A driver who never filled that month in passes the
+ * second gate, so the calendar only ever narrows a pool the driver opted into.
  */
 export async function assertDriverAssignable(
   driverId: string,
   currentDriverId?: string | null,
+  scheduleDate?: string | null,
 ): Promise<void> {
   if (driverId === currentDriverId) return
 
@@ -82,6 +89,10 @@ export async function assertDriverAssignable(
   if (!data) throw new Error(`Driver with ID ${driverId} not found`)
   if (data.status !== 'available') {
     throw new Error(`This driver is not available (status: ${data.status}) — only drivers who marked themselves available can be assigned`)
+  }
+
+  if (scheduleDate && !(await driverCalendarAllows(driverId, scheduleDate))) {
+    throw new Error(`This driver did not mark ${String(scheduleDate).slice(0, 10)} as available on their calendar`)
   }
 }
 

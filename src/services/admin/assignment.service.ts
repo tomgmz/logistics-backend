@@ -17,10 +17,11 @@ import type {
   UpdateDeliveryStatusInput,
 } from '../../types/assignment.types.js'
 
-async function assertBookingAssignable(bookingId: string): Promise<void> {
+/** Checks the booking can still be crewed, and hands back the day it runs. */
+async function assertBookingAssignable(bookingId: string): Promise<{ scheduleDate: string | null }> {
   const { data, error } = await supabase
     .from('bookings')
-    .select('booking_id, status')
+    .select('booking_id, status, schedule_date')
     .eq('booking_id', bookingId)
     .maybeSingle()
 
@@ -31,6 +32,8 @@ async function assertBookingAssignable(bookingId: string): Promise<void> {
   if (nonAssignable.includes(data.status)) {
     throw new Error(`Cannot assign a booking with status '${data.status}'`)
   }
+
+  return { scheduleDate: data.schedule_date ? String(data.schedule_date).slice(0, 10) : null }
 }
 
 async function assertDriverExists(driverId: string): Promise<void> {
@@ -75,7 +78,7 @@ export async function assignBookingService(
   userId?:   string | null,
   ip?:       string | null,
 ): Promise<AssignmentWithRelations> {
-  await assertBookingAssignable(bookingId)
+  const { scheduleDate } = await assertBookingAssignable(bookingId)
 
   // Whoever is on the booking right now — they get stood down if this call swaps
   // in a different driver/vehicle, and stay valid if they are being kept.
@@ -92,9 +95,10 @@ export async function assignBookingService(
       assertTruckExists(input.truck_id),
     ])
     // Operations may only pick from the vetted pools: a driver who marked
-    // themselves available, and a vehicle whose latest BLOWBAGETS check passed.
+    // themselves available AND ticked this booking's day on their calendar, and
+    // a vehicle whose latest BLOWBAGETS check passed.
     await Promise.all([
-      assertDriverAssignable(input.driver_id, previous.driver_id),
+      assertDriverAssignable(input.driver_id, previous.driver_id, scheduleDate),
       assertTruckPassedInspection(input.truck_id),
     ])
   }

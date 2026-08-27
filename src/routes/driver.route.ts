@@ -6,7 +6,7 @@ import { uploadSingle }            from '../middlewares/upload.middleware.js'
 import { driverStopProofSchema }   from '../schema/client/booking.schema.js'
 import * as BookingController from '../controllers/client/booking.controller.js'
 import * as AvailabilityController from '../controllers/driver/availability.controller.js'
-import { driverAvailabilitySchema } from '../schema/client/booking.schema.js'
+import { driverAvailabilitySchema, driverAvailabilityDaysSchema } from '../schema/client/booking.schema.js'
 import { uploadDeliveryProof } from '../controllers/admin/uploadImage.controller.js'
 
 const router = Router()
@@ -18,6 +18,11 @@ const isAny = authorize('admin', 'driver')
 // before /:driverId/* so 'availability' is never read as a driver id.
 router.get('/availability',   authenticate, authenticatedLimiter, isAny, AvailabilityController.getMyAvailability)
 router.patch('/availability', authenticate, authenticatedLimiter, isAny, validate(driverAvailabilitySchema), AvailabilityController.setMyAvailability)
+
+// The same driver's month-by-month plan, ticked on the calendar behind the
+// availability pill. GET defaults to the current Philippine month.
+router.get('/availability/days', authenticate, authenticatedLimiter, isAny, AvailabilityController.getMyAvailabilityDays)
+router.put('/availability/days', authenticate, authenticatedLimiter, isAny, validate(driverAvailabilityDaysSchema), AvailabilityController.setMyAvailabilityDays)
 
 router.get('/:driverId/bookings', authenticate, authenticatedLimiter, isAny, BookingController.getBookingsByDriver)
 
