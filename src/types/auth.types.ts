@@ -61,7 +61,7 @@ export interface AuthUser {
     client_id:       string
     company_name:    string | null
     billing_address: string | null
-    payment_terms:   number | null
+    billing_mode:    'weekly' | 'monthly' | null
   } | null
 
   drivers?: {

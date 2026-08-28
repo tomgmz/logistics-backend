@@ -39,7 +39,7 @@ export const authSchemas = {
           client_id:       { type: 'string', format: 'uuid', example: '550e8400-e29b-41d4-a716-446655440000' },
           company_name:    { type: 'string', nullable: true, example: 'Santos Enterprises' },
           billing_address: { type: 'string', nullable: true, example: '123 Rizal Ave, Manila' },
-          payment_terms:   { type: 'integer', nullable: true, example: 30 },
+          billing_mode:    { type: 'string', enum: ['weekly', 'monthly'], nullable: true, example: 'monthly' },
         },
       },
     },

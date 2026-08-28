@@ -411,7 +411,7 @@ export async function findUserWithClient(userId: string): Promise<AuthUser | nul
     .from('users')
     .select(`
       user_id, email, first_name, last_name, role, status, must_change_password,
-      clients (client_id, company_name, billing_address, payment_terms)
+      clients (client_id, company_name, billing_address, billing_mode)
     `)
     .eq('user_id', userId)
     .single()

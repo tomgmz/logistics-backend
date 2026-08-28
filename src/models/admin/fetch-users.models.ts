@@ -42,7 +42,7 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
         client_id,
         company_name,
         billing_address,
-        payment_terms
+        billing_mode
       ),
       drivers (
         driver_id,

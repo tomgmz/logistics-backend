@@ -7,7 +7,7 @@ export interface ClientDetails {
   client_id:       string
   company_name:    string | null
   billing_address: string | null
-  payment_terms:   number
+  billing_mode:    'weekly' | 'monthly'
 }
 
 export interface DriverDetails {
