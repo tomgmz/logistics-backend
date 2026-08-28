@@ -49,6 +49,10 @@ const isOperations = authorize('admin', 'it_admin', 'operations_manager', 'gener
 // assignment dropdowns). CRUD stays restricted to isFleet.
 const isFleetRead  = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager', 'client', 'operations_manager')
 const isFinance    = authorize('admin', 'it_admin', 'accountant', 'general_manager')
+// Releasing a driver's reservation: whoever owns the fleet plus operations, who
+// are the ones the stuck driver disappears on. Not clients — they have no
+// business moving a driver between pools.
+const isCrewRelease = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager', 'operations_manager')
 
 //Admins — admin / it_admin only
 router.get('/admins',        authenticate, isAdmin, AdminController.getAllAdmins)
@@ -71,11 +75,19 @@ router.delete('/clients/:id', authenticate, isAdmin,  ClientController.deleteCli
 // Drivers
 router.get('/drivers',                     authenticate, isFleetRead, DriverController.getAllDrivers)
 router.post('/drivers/scan-license',       authenticate, isFleet, uploadSingle, DriverOCRController.scanDriverLicense)
+// Who can be crewed onto a booking scheduled for ?date — the driver calendar
+// decides, so this cannot be answered without one. Before /:id so 'assignable'
+// is never read as a driver id.
+router.get('/drivers/assignable',          authenticate, isFleetRead, DriverController.getAssignableDrivers)
 router.get('/drivers/:id',                 authenticate, isFleetRead, DriverController.getDriverById)
 router.post('/drivers',                    authenticate, isFleet, uploadSingle, validate(createDriverSchema), DriverController.createDriver)
 router.patch('/drivers/:id',               authenticate, isFleet, validate(updateDriverSchema), DriverController.updateDriver)
 router.patch('/drivers/:id/deactivate',    authenticate, isFleet, DriverController.deactivateDriver)
 router.patch('/drivers/:id/activate',      authenticate, isFleet, DriverController.activateDriver)
+// Recovery hatch for a driver left reserved against a delivery that is gone.
+// Operations is included because they are the ones who hit the wall — the driver
+// silently drops out of the assignment dropdowns and cannot put themselves back.
+router.patch('/drivers/:id/stand-down',    authenticate, isCrewRelease, DriverController.standDownDriver)
 router.delete('/drivers/:id',              authenticate, isFleet, DriverController.deleteDriver)
 
 //Assignments

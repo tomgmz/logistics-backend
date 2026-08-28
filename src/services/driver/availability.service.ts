@@ -1,26 +1,35 @@
 import { supabase } from '../../lib/supabase.js'
 import { logEvent } from '../../lib/log-event.js'
 import { phDay } from '../../lib/ph-date.js'
+import { reconcileDriverStatus } from '../../lib/driver-reservation.js'
 
 /**
- * The driver's own on/off switch for delivery work.
+ * When a driver can be given delivery work.
  *
- * A driver account starts 'unavailable' — nobody is put in the assignable pool
- * without opting in. From the app the driver flips to 'available' when they are
- * ready to take an assignment and back to 'unavailable' when they are not.
+ * The driver's calendar is the only answer to that: they tick the days they can
+ * work, and operations may put them on a booking scheduled for a ticked day and
+ * on no other. There is no separate on/off switch — a switch and a calendar are
+ * two answers to one question, and the pair could disagree (a driver "available"
+ * with no days ticked, or the reverse). The days are the opt-in.
  *
- * 'assigned' is system-owned: it is set when operations gives them a booking and
- * cleared when the delivery finishes. The driver cannot toggle out of it — they
- * have to finish (or be re-assigned off) the delivery first.
+ * `drivers.status` no longer says anything about willingness. It records only the
+ * states that stop work regardless of any plan:
+ *   'assigned'  — out on a delivery right now. System-owned: set when operations
+ *                 crews a booking, cleared when it ends. Because it overrides the
+ *                 calendar, it is checked against a real delivery on every read
+ *                 (see `reconcileDriverStatus`).
+ *   'on_leave' /
+ *   'inactive'  — stood down by the fleet manager.
+ * Anything else means "not stopped" — including the legacy 'available' and
+ * 'unavailable' left on rows from when the switch existed.
  */
-
-export type DriverAvailability = 'available' | 'unavailable'
 
 export interface DriverAvailabilityState {
   driver_id: string
   status:    string
-  // Whether the toggle is actionable right now (false while out on a delivery).
-  can_toggle: boolean
+  // Whether the driver is out on a delivery right now. The app shows this; it is
+  // not something the driver can change from their side.
+  on_delivery: boolean
 }
 
 async function findDriverByUser(userId: string): Promise<{ driver_id: string; status: string }> {
@@ -32,47 +41,21 @@ async function findDriverByUser(userId: string): Promise<{ driver_id: string; st
 
   if (error) throw error
   if (!data) throw new Error('No driver profile found for this account')
-  return data as { driver_id: string; status: string }
+
+  // 'assigned' locks this driver out of every path below, so it has to be true
+  // before it is acted on. A reservation with no delivery behind it is cleared
+  // here rather than trapping the driver in a state only a DBA could undo.
+  const driver = data as { driver_id: string; status: string }
+  return { ...driver, status: await reconcileDriverStatus(driver.driver_id, driver.status) }
 }
 
 export async function getAvailability(userId: string): Promise<DriverAvailabilityState> {
   const driver = await findDriverByUser(userId)
   return {
-    driver_id:  driver.driver_id,
-    status:     driver.status,
-    can_toggle: driver.status !== 'assigned',
+    driver_id:   driver.driver_id,
+    status:      driver.status,
+    on_delivery: driver.status === 'assigned',
   }
-}
-
-export async function setAvailability(
-  userId: string,
-  status: DriverAvailability,
-): Promise<DriverAvailabilityState> {
-  const driver = await findDriverByUser(userId)
-
-  if (driver.status === 'assigned') {
-    throw new Error('You are on an active delivery — finish it before changing your availability')
-  }
-  if (driver.status === 'on_leave' || driver.status === 'inactive') {
-    throw new Error(`Your account is marked '${driver.status}' — contact the fleet manager to be reinstated`)
-  }
-
-  if (driver.status !== status) {
-    const { error } = await supabase
-      .from('drivers')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('driver_id', driver.driver_id)
-    if (error) throw error
-
-    logEvent({
-      user_id:     userId,
-      log_type:    'user_activity',
-      action:      status === 'available' ? 'driver_marked_available' : 'driver_marked_unavailable',
-      description: `Driver ${driver.driver_id} is now ${status} for delivery assignments`,
-    })
-  }
-
-  return { driver_id: driver.driver_id, status, can_toggle: true }
 }
 
 /* ── Per-day availability ─────────────────────────────────────────────────── */
@@ -194,19 +177,19 @@ export async function setAvailabilityDays(
   return getAvailabilityDays(userId, month)
 }
 
-/** Sunday, which the app's calendar draws as a rest day and cannot tick. */
-const REST_WEEKDAY = 0
-
 /**
  * Whether the driver's own calendar allows a delivery on `scheduleDate`.
  *
- * True when the driver ticked that day, and true in the two cases where the
- * calendar simply has nothing to say:
- *   - the month has no ticked days at all — an unanswered question, not a
- *     refusal, so drivers who never opened the calendar stay assignable exactly
- *     as before;
- *   - the day is a Sunday, which the app never offers as tickable. A constraint
- *     the driver had no way to express must not be read back as a refusal.
+ * The calendar IS the driver's opt-in: a ticked day is the whole of what they
+ * agreed to work, so a day they did not tick is a no. A driver who never opened
+ * the calendar has therefore agreed to nothing and is assignable on no day —
+ * this used to read an empty month as "no answer" and let them through, which
+ * meant the plan they filled in only ever narrowed a pool they were already in.
+ * It is now the pool itself.
+ *
+ * Sundays are the one day the calendar cannot express, so no driver can tick one
+ * — which is why a Sunday never becomes a booking in the first place (see
+ * `validateScheduleDate`). Nothing here needs to special-case it.
  */
 export async function driverCalendarAllows(
   driverId:     string,
@@ -216,21 +199,35 @@ export async function driverCalendarAllows(
     ? scheduleDate.toISOString().slice(0, 10)
     : String(scheduleDate ?? '').slice(0, 10)
 
-  // No usable date (or a booking with none) can't be judged — never block on it.
+  // A booking with no usable date can't be judged against a calendar at all —
+  // there is no day to look up, so this gate has nothing to say and abstains.
   if (!DAY_PATTERN.test(day)) return true
-  if (new Date(`${day}T00:00:00Z`).getUTCDay() === REST_WEEKDAY) return true
-
-  const { first, nextFirst } = monthRange(day.slice(0, 7))
 
   const { data, error } = await supabase
     .from('driver_availability_days')
     .select('available_on')
     .eq('driver_id', driverId)
-    .gte('available_on', first)
-    .lt('available_on', nextFirst)
+    .eq('available_on', day)
+    .maybeSingle()
 
   if (error) throw error
+  return data != null
+}
 
-  const marked = (data ?? []).map((row: any) => String(row.available_on).slice(0, 10))
-  return marked.length === 0 || marked.includes(day)
+/**
+ * The drivers who ticked `day`, as a set of driver ids.
+ *
+ * The same question as `driverCalendarAllows` asked for a whole roster at once,
+ * so building the assignment dropdown is one query rather than one per driver.
+ */
+export async function driversAvailableOn(day: string): Promise<Set<string>> {
+  if (!DAY_PATTERN.test(day)) throw new Error(`Invalid day '${day}' — expected YYYY-MM-DD`)
+
+  const { data, error } = await supabase
+    .from('driver_availability_days')
+    .select('driver_id')
+    .eq('available_on', day)
+
+  if (error) throw error
+  return new Set((data ?? []).map((row: any) => String(row.driver_id)))
 }

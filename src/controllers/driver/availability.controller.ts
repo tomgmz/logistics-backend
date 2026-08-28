@@ -16,19 +16,6 @@ export async function getMyAvailability(req: Request, res: Response) {
   }
 }
 
-export async function setMyAvailability(req: Request, res: Response) {
-  try {
-    const { userId } = getRequestMeta(req)
-    if (!userId) return res.status(401).json({ status: 'error', message: 'Not authenticated' })
-
-    const data = await AvailabilityService.setAvailability(userId, req.body.status)
-    res.status(200).json({ status: 'success', data })
-  } catch (err: any) {
-    const status = err.message?.includes('No driver profile') ? 404 : 400
-    res.status(status).json({ status: 'error', message: err.message })
-  }
-}
-
 /**
  * The driver's plan for one calendar month, defaulting to the month they are in
  * — the app opens on the current month and only asks for another when the driver

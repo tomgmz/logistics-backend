@@ -39,7 +39,7 @@ export const assignBookingSchema = z.object({
 })
 
 export const updateDeliveryStatusSchema = z.object({
-  status: z.enum(['pending', 'in_transit', 'completed', 'cancelled']),
+  status: z.enum(['pending', 'in_transit', 'delivered', 'failed']),
   pickup_time:   z.string().datetime().optional(),
   delivery_time: z.string().datetime().optional(),
 })

@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import type { GeofenceOutcome, StopProofPosition } from '../../lib/stop-geofence.js'
 import { pool } from '../../lib/database.js'
 import {
   CreateBookingInput,
@@ -47,6 +48,11 @@ const BOOKING_WITH_RELATIONS_SELECT = `
   transaction_documents,
   pickup_proof_photo_url,
   pickup_proof_at,
+  pickup_proof_latitude,
+  pickup_proof_longitude,
+  pickup_proof_accuracy_m,
+  pickup_proof_distance_m,
+  pickup_proof_override_reason,
   created_at,
   updated_at,
   clients (
@@ -71,6 +77,11 @@ const BOOKING_WITH_RELATIONS_SELECT = `
     delivered_at,
     proof_photo_url,
     proof_at,
+    proof_latitude,
+    proof_longitude,
+    proof_accuracy_m,
+    proof_distance_m,
+    proof_override_reason,
     notes,
     latitude,
     longitude,
@@ -421,7 +432,82 @@ async function markFleetRecheckSent(
   if (error) throw error
 }
 
+/**
+ * Move the booking's delivery record to the stage the booking just reached.
+ *
+ * `deliveries.status` is a second copy of where the trip is up to, and only the
+ * assignment screen used to write it — so a booking driven to completion from
+ * the app left its delivery reading 'pending' forever. That is not cosmetic: the
+ * assignment UI reads exactly this column to decide who is still out on a job,
+ * so a driver whose delivery never closed silently disappears from the pool.
+ *
+ * Timestamps are stamped once and never overwritten, so a re-run (or a booking
+ * completed twice) keeps the moment it first happened.
+ */
+async function settleDelivery(
+  bookingId: string,
+  status: 'in_transit' | 'delivered' | 'failed',
+): Promise<void> {
+  const now = new Date().toISOString()
+
+  const { data, error: findError } = await supabase
+    .from('deliveries')
+    .select('delivery_id, pickup_time, delivery_time')
+    .eq('booking_id', bookingId)
+
+  if (findError) throw findError
+  if (!data || data.length === 0) return
+
+  for (const row of data as any[]) {
+    const payload: Record<string, unknown> = { status, updated_at: now }
+    if (status === 'in_transit' && !row.pickup_time) payload.pickup_time = now
+    if (status === 'delivered'  && !row.delivery_time) payload.delivery_time = now
+
+    const { error } = await supabase
+      .from('deliveries')
+      .update(payload)
+      .eq('delivery_id', row.delivery_id)
+    if (error) throw error
+  }
+}
+
+/**
+ * Delete a booking and the delivery record hanging off it.
+ *
+ * Most children of `bookings` cascade, but `deliveries.booking_id` is ON DELETE
+ * NO ACTION, so a crewed booking could not be deleted at all — the foreign key
+ * threw first and the caller's crew release never ran, stranding the driver on
+ * 'assigned'. The delivery is cleared here, in the order the constraints need:
+ * its own nullable references are detached (they outlive the trip — an expense
+ * or an emergency alert is a record in its own right and must not be destroyed
+ * with it), then the delivery, then the booking.
+ */
 async function remove(bookingId: string): Promise<boolean> {
+  const { data: deliveries, error: findError } = await supabase
+    .from('deliveries')
+    .select('delivery_id')
+    .eq('booking_id', bookingId)
+
+  if (findError) throw findError
+
+  const deliveryIds = (deliveries ?? []).map((row: any) => row.delivery_id)
+
+  if (deliveryIds.length > 0) {
+    for (const table of ['expenses', 'emergency_alerts', 'maintenance_requests'] as const) {
+      const { error } = await supabase
+        .from(table)
+        .update({ delivery_id: null })
+        .in('delivery_id', deliveryIds)
+      if (error) throw error
+    }
+
+    const { error: deliveryError } = await supabase
+      .from('deliveries')
+      .delete()
+      .in('delivery_id', deliveryIds)
+    if (deliveryError) throw deliveryError
+  }
+
   const { error } = await supabase
     .from('bookings')
     .delete()
@@ -461,6 +547,8 @@ async function updateDestinationStatus(
   destinationId: string,
   status: string,
   proofPhotoUrl?: string | null,
+  position?: StopProofPosition | null,
+  fence?: GeofenceOutcome | null,
 ): Promise<BookingDestination> {
   const now = new Date().toISOString()
   const { data, error } = await supabase
@@ -469,8 +557,9 @@ async function updateDestinationStatus(
       status,
       delivered_at: status === 'delivered' ? now : null,
       // Only touch the proof when one is supplied — an admin correcting a status
-      // shouldn't wipe the driver's photo.
+      // shouldn't wipe the driver's photo, or the position that came with it.
       ...(proofPhotoUrl ? { proof_photo_url: proofPhotoUrl, proof_at: now } : {}),
+      ...(proofPhotoUrl ? proofPositionColumns('proof', position, fence) : {}),
     })
     .eq('destination_id', destinationId)
     .select()
@@ -481,17 +570,44 @@ async function updateDestinationStatus(
 }
 
 /** Record the driver's proof-of-pickup photo on the booking. */
-async function setPickupProof(bookingId: string, proofPhotoUrl: string): Promise<void> {
+async function setPickupProof(
+  bookingId: string,
+  proofPhotoUrl: string,
+  position?: StopProofPosition | null,
+  fence?: GeofenceOutcome | null,
+): Promise<void> {
   const { error } = await supabase
     .from('bookings')
     .update({
       pickup_proof_photo_url: proofPhotoUrl,
       pickup_proof_at:        new Date().toISOString(),
       updated_at:             new Date().toISOString(),
+      ...proofPositionColumns('pickup_proof', position, fence),
     })
     .eq('booking_id', bookingId)
 
   if (error) throw error
+}
+
+/**
+ * Where the driver stood when they confirmed a stop, as columns.
+ *
+ * `bookings` and `booking_destinations` record the same five facts under
+ * different prefixes, so the shape is built once here rather than spelled out
+ * at each call site and drifting apart.
+ */
+function proofPositionColumns(
+  prefix:   'proof' | 'pickup_proof',
+  position?: StopProofPosition | null,
+  fence?:    GeofenceOutcome | null,
+): Record<string, unknown> {
+  return {
+    [`${prefix}_latitude`]:        position?.latitude  ?? null,
+    [`${prefix}_longitude`]:       position?.longitude ?? null,
+    [`${prefix}_accuracy_m`]:      position?.accuracy_m ?? null,
+    [`${prefix}_distance_m`]:      fence?.distance_m ?? null,
+    [`${prefix}_override_reason`]: fence?.override_reason ?? null,
+  }
 }
 
 async function removeDestination(destinationId: string): Promise<boolean> {
@@ -582,6 +698,7 @@ export const BookingModel = {
   updateOpsStatus,
   markFleetRecheckSent,
   remove,
+  settleDelivery,
   setPickupProof,
   // destination mutations
   findDestinationsByBookingId,

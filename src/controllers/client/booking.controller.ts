@@ -22,6 +22,11 @@ import {
   upsertCargoItemService,
   deleteCargoItemService,
 } from '../../services/client/booking.service.js'
+import {
+  StopTooFarError,
+  STOP_PROOF_RADIUS_M,
+  type StopProofPosition,
+} from '../../lib/stop-geofence.js'
 
 export const getAllBookings = async (req: Request, res: Response) => {
   try {
@@ -201,6 +206,52 @@ function driverActor(req: Request) {
   return { userId, ip, role: req.user?.role ?? null }
 }
 
+/**
+ * The position the app captured when the driver confirmed the stop.
+ *
+ * Returns null when the phone had no fix, which the geofence treats as its own
+ * case — the driver is told the location could not be read rather than being
+ * quietly let through or shown a distance of zero.
+ */
+function stopProofPosition(req: Request): StopProofPosition | null {
+  const { latitude, longitude, accuracy_m, override_reason } = req.body ?? {}
+  const hasFix = typeof latitude === 'number' && typeof longitude === 'number'
+
+  if (!hasFix) {
+    // No coordinates, but a reason may still have been given — the geofence
+    // needs to see it, so pass a position carrying only that.
+    return override_reason
+      ? { latitude: NaN, longitude: NaN, override_reason: String(override_reason) }
+      : null
+  }
+
+  return {
+    latitude,
+    longitude,
+    accuracy_m:      typeof accuracy_m === 'number' ? accuracy_m : null,
+    override_reason: override_reason ? String(override_reason) : null,
+  }
+}
+
+/**
+ * A stop refused for being too far away answers 422: the request is well-formed
+ * and the driver is who they say they are — it is the position that is wrong,
+ * and the app has to tell them the distance rather than showing a generic error.
+ */
+function stopProofFailure(res: Response, error: any) {
+  if (error instanceof StopTooFarError) {
+    res.status(422).json({
+      status:     'error',
+      message:    error.message,
+      code:       'STOP_TOO_FAR',
+      distance_m: error.distance_m,
+      radius_m:   STOP_PROOF_RADIUS_M,
+    })
+    return
+  }
+  res.status(driverProgressStatus(error.message)).json({ status: 'error', message: error.message })
+}
+
 export const driverConfirmPickup = async (req: Request, res: Response) => {
   try {
     const booking = await driverConfirmPickupService(
@@ -208,10 +259,11 @@ export const driverConfirmPickup = async (req: Request, res: Response) => {
       req.body.proof_photo_url,
       driverActor(req),
       req.body.early_start === true,
+      stopProofPosition(req),
     )
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
-    res.status(driverProgressStatus(error.message)).json({ status: 'error', message: error.message })
+    stopProofFailure(res, error)
   }
 }
 
@@ -222,10 +274,11 @@ export const driverConfirmDelivery = async (req: Request, res: Response) => {
       param(req.params.destinationId),
       req.body.proof_photo_url,
       driverActor(req),
+      stopProofPosition(req),
     )
     res.status(200).json({ status: 'success', data: destination })
   } catch (error: any) {
-    res.status(driverProgressStatus(error.message)).json({ status: 'error', message: error.message })
+    stopProofFailure(res, error)
   }
 }
 

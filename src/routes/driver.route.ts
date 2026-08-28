@@ -6,21 +6,22 @@ import { uploadSingle }            from '../middlewares/upload.middleware.js'
 import { driverStopProofSchema }   from '../schema/client/booking.schema.js'
 import * as BookingController from '../controllers/client/booking.controller.js'
 import * as AvailabilityController from '../controllers/driver/availability.controller.js'
-import { driverAvailabilitySchema, driverAvailabilityDaysSchema } from '../schema/client/booking.schema.js'
+import { driverAvailabilityDaysSchema } from '../schema/client/booking.schema.js'
 import { uploadDeliveryProof } from '../controllers/admin/uploadImage.controller.js'
 
 const router = Router()
 
 const isAny = authorize('admin', 'driver')
 
-// The driver's own availability switch. A driver only enters the assignable pool
-// by turning this on; it is locked while they are out on a delivery. Declared
-// before /:driverId/* so 'availability' is never read as a driver id.
+// Whether the driver is out on a delivery right now — read-only. There is no
+// on/off switch: the calendar below is the driver's opt-in. Declared before
+// /:driverId/* so 'availability' is never read as a driver id.
 router.get('/availability',   authenticate, authenticatedLimiter, isAny, AvailabilityController.getMyAvailability)
-router.patch('/availability', authenticate, authenticatedLimiter, isAny, validate(driverAvailabilitySchema), AvailabilityController.setMyAvailability)
 
-// The same driver's month-by-month plan, ticked on the calendar behind the
-// availability pill. GET defaults to the current Philippine month.
+// The driver's month-by-month plan, ticked on the calendar behind the
+// availability pill. These days ARE the assignable pool: operations can put the
+// driver on a booking scheduled for a ticked day and on no other. GET defaults
+// to the current Philippine month.
 router.get('/availability/days', authenticate, authenticatedLimiter, isAny, AvailabilityController.getMyAvailabilityDays)
 router.put('/availability/days', authenticate, authenticatedLimiter, isAny, validate(driverAvailabilityDaysSchema), AvailabilityController.setMyAvailabilityDays)
 

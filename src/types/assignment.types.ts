@@ -1,4 +1,7 @@
-export type DeliveryStatus = 'pending' | 'in_transit' | 'completed' | 'cancelled'
+// The four values `deliveries_status_check` actually permits. 'completed' and
+// 'cancelled' were listed here and accepted by the API, but the database has
+// never allowed them — writing either raised a constraint violation.
+export type DeliveryStatus = 'pending' | 'in_transit' | 'delivered' | 'failed'
 
 export interface VendorSnapshot {
   is_vendor_supplied:    boolean

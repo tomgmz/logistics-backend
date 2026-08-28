@@ -94,9 +94,9 @@ export async function assignBookingService(
       assertDriverExists(input.driver_id),
       assertTruckExists(input.truck_id),
     ])
-    // Operations may only pick from the vetted pools: a driver who marked
-    // themselves available AND ticked this booking's day on their calendar, and
-    // a vehicle whose latest BLOWBAGETS check passed.
+    // Operations may only pick from the vetted pools: a driver who ticked this
+    // booking's day on their calendar and is not otherwise stopped, and a
+    // vehicle whose latest BLOWBAGETS check passed.
     await Promise.all([
       assertDriverAssignable(input.driver_id, previous.driver_id, scheduleDate),
       assertTruckPassedInspection(input.truck_id),
@@ -117,15 +117,12 @@ export async function assignBookingService(
 
   })
 
-  // Reserve the new crew and release whoever was displaced by this call. A
-  // displaced driver never drove, so they go back to 'available' — they stay in
-  // the pool they opted into rather than having to opt in again.
+  // Reserve the new crew and release whoever was displaced by this call.
   const nextDriverId = input.is_vendor_supplied ? null : input.driver_id ?? null
   const nextTruckId  = input.is_vendor_supplied ? null : input.truck_id  ?? null
   await releaseCrew(
     previous.driver_id && previous.driver_id !== nextDriverId ? previous.driver_id : null,
     previous.truck_id  && previous.truck_id  !== nextTruckId  ? previous.truck_id  : null,
-    'available',
   )
   await reserveCrew(nextDriverId, nextTruckId)
 

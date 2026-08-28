@@ -110,6 +110,20 @@ export const driverStopProofSchema = z.object({
   // ahead of its scheduled day. Only the pickup consults it; it is recorded in
   // the audit log so an early start is never silent.
   early_start: z.boolean().optional(),
+
+  // Where the driver was when they confirmed, captured on the device at that
+  // moment. It has to travel in the body rather than being read server-side:
+  // confirmations queue offline and may arrive hours later, from somewhere else
+  // entirely, so a position measured on arrival is the only one that means
+  // anything. Optional so a phone with no fix can still reach the gate and be
+  // told what is wrong, instead of failing validation with nothing to show.
+  latitude:   z.number().min(-90).max(90).optional(),
+  longitude:  z.number().min(-180).max(180).optional(),
+  accuracy_m: z.number().nonnegative().optional(),
+
+  // The driver's stated reason for confirming a stop the distance gate would
+  // have refused. Recorded on the stop and flagged to operations.
+  override_reason: z.string().trim().min(3).max(300).optional(),
 })
 
 export const updateBookingStatusSchema = z.object({
@@ -130,12 +144,6 @@ export const gmReviewSchema = z.object({
   (data) => data.gm_status !== 'rejected' || !!data.rejection_reason?.trim(),
   { message: 'Remarks explaining the rejection are required', path: ['rejection_reason'] }
 )
-
-// The driver's own availability switch from the mobile app. 'assigned' is
-// system-owned and deliberately not accepted here.
-export const driverAvailabilitySchema = z.object({
-  status: z.enum(['available', 'unavailable']),
-})
 
 // The driver's plan for one calendar month, sent whole rather than as a diff:
 // the calendar screen holds the month, so a save is "these are my days". The

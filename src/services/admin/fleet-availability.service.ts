@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { reconcileDriverStatus } from '../../lib/driver-reservation.js'
 import { driverCalendarAllows } from '../driver/availability.service.js'
 import type { BlowbagetsItems } from '../../types/client/booking.types.js'
 
@@ -63,14 +64,25 @@ export async function assertTruckPassedInspection(truckId: string): Promise<void
 }
 
 /**
- * Throws unless the driver is in the assignable pool. `currentDriverId` is the
- * driver already on this booking, who stays valid while the assignment is edited
- * (they are 'assigned', not 'available').
+ * States that stop a driver working whatever their calendar says. Everything
+ * else — including the legacy 'available'/'unavailable' left over from the old
+ * on/off switch — means "not stopped", and the calendar decides from there.
+ */
+const BLOCKING_DRIVER_STATUSES: Record<string, string> = {
+  assigned: 'is already out on another delivery',
+  on_leave: 'is on leave',
+  inactive: 'has been deactivated',
+}
+
+/**
+ * Throws unless the driver can be put on this booking. `currentDriverId` is the
+ * driver already on it, who stays valid while the assignment is edited (they
+ * read as 'assigned', which would otherwise block them).
  *
- * Two gates, and both are the driver's own word: the switch says they are taking
- * work at all, and — when `scheduleDate` is given — their calendar says they can
- * work that particular day. A driver who never filled that month in passes the
- * second gate, so the calendar only ever narrows a pool the driver opted into.
+ * Two things have to hold, and the second is the driver's own word: nothing has
+ * stopped them working at all, and they ticked this booking's day on their
+ * calendar. The tick is the whole opt-in — a driver who ticked nothing can be
+ * assigned nothing.
  */
 export async function assertDriverAssignable(
   driverId: string,
@@ -87,12 +99,18 @@ export async function assertDriverAssignable(
 
   if (error) throw error
   if (!data) throw new Error(`Driver with ID ${driverId} not found`)
-  if (data.status !== 'available') {
-    throw new Error(`This driver is not available (status: ${data.status}) — only drivers who marked themselves available can be assigned`)
-  }
 
-  if (scheduleDate && !(await driverCalendarAllows(driverId, scheduleDate))) {
-    throw new Error(`This driver did not mark ${String(scheduleDate).slice(0, 10)} as available on their calendar`)
+  // A driver still flagged 'assigned' from a delivery that no longer exists is
+  // not busy, just stuck — clear that before it reads as a refusal and quietly
+  // keeps them out of the pool for good.
+  const status  = await reconcileDriverStatus(driverId, data.status)
+  const blocked = BLOCKING_DRIVER_STATUSES[status]
+  if (blocked) throw new Error(`This driver ${blocked} and cannot be assigned`)
+
+  if (!(await driverCalendarAllows(driverId, scheduleDate))) {
+    throw new Error(
+      `This driver did not mark ${String(scheduleDate).slice(0, 10)} as a day they can work — they can only be assigned to days they ticked on their calendar`,
+    )
   }
 }
 
@@ -115,24 +133,18 @@ export async function reserveCrew(driverId: string | null, truckId: string | nul
 /**
  * Put the vehicle back in the pool and take the driver off the booking.
  *
- * Where the driver lands depends on whether they actually worked:
- *   'unavailable' — they finished a delivery. They are prompted in the app to opt
- *                   back in when they are ready for the next one, so a tired
- *                   driver is never silently re-assigned.
- *   'available'   — they were taken off the booking without driving it (the
- *                   booking was cancelled, or operations swapped them out), so
- *                   they stay in the pool they had opted into.
+ * The driver always lands back on 'available', which now means only "not
+ * reserved" — the calendar, not this column, decides what they can be given
+ * next. It used to matter whether they had actually driven: finishing a delivery
+ * dropped them to 'unavailable' so they had to flip their switch back on before
+ * being re-assigned. With the switch gone there is nothing to flip back, and
+ * leaving them 'unavailable' would just be a word nothing reads. A driver who
+ * does not want the next day's work says so by not ticking the day.
  */
-export async function releaseCrew(
-  driverId: string | null,
-  truckId: string | null,
-  driverTo: DriverAvailabilityAfterRelease = 'unavailable',
-): Promise<void> {
-  if (driverId) await setDriverStatus(driverId, driverTo)
+export async function releaseCrew(driverId: string | null, truckId: string | null): Promise<void> {
+  if (driverId) await setDriverStatus(driverId, 'available')
   if (truckId)  await setTruckStatus(truckId, 'available')
 }
-
-export type DriverAvailabilityAfterRelease = 'unavailable' | 'available'
 
 /** The driver + truck currently recorded on a booking's delivery, if any. */
 export async function crewOnBooking(bookingId: string): Promise<{ driver_id: string | null; truck_id: string | null }> {
