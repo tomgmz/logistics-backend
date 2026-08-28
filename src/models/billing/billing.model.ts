@@ -701,13 +701,16 @@ export async function findBillableClients() {
 }
 
 /**
- * How many completed deliveries fall inside each of a client's periods.
+ * How many completed deliveries fall inside each period.
  *
- * One query for the whole list rather than one per card: the billing screen
- * leads with "how much work is in this cut-off", and a period with no completed
- * deliveries is noise the client should never be shown.
+ * One query for the whole list rather than one per row: both billing screens
+ * lead with "how much work is in this cut-off", and a period covering no
+ * completed deliveries is noise neither side should be shown.
+ *
+ * `clientId` narrows it to one client for their own screen; omitted, it covers
+ * every period, which is what the staff list needs.
  */
-export async function countDeliveriesByPeriod(clientId: string): Promise<Map<string, number>> {
+export async function countDeliveriesByPeriod(clientId?: string): Promise<Map<string, number>> {
   const { rows } = await pool.query(
     `select p.period_id, count(b.booking_id)::int as n
        from billing_periods p
@@ -715,9 +718,9 @@ export async function countDeliveriesByPeriod(clientId: string): Promise<Map<str
          on b.client_id = p.client_id
         and b.status = 'completed'
         and b.schedule_date between p.period_start and p.period_end
-      where p.client_id = $1
+      where ($1::uuid is null or p.client_id = $1::uuid)
       group by p.period_id`,
-    [clientId],
+    [clientId ?? null],
   )
   return new Map(rows.map((r) => [r.period_id as string, Number(r.n)]))
 }

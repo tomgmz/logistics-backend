@@ -136,11 +136,10 @@ export async function listPeriods(
 
   const { rows, total } = await BillingModel.findPeriods(scoped)
 
-  // How much completed work each period covers, so the client's screen can lead
-  // with that and drop periods holding nothing.
-  const counts = scoped.clientId
-    ? await BillingModel.countDeliveriesByPeriod(scoped.clientId)
-    : new Map<string, number>()
+  // How much completed work each period covers. Both screens lead with this and
+  // hide periods holding nothing, so it is counted for staff listings too, not
+  // only when the query happens to be scoped to one client.
+  const counts = await BillingModel.countDeliveriesByPeriod(scoped.clientId)
 
   const visible = rows.map((row) => {
     const period = row as unknown as BillingPeriod
