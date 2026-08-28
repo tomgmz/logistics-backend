@@ -11,6 +11,11 @@ import {
 import { amountInWords, computeInvoiceTotals } from '../../lib/billing-amounts.js'
 import { BillingNotices, notifyBilling, periodLabel } from './billing-notify.service.js'
 import {
+  advancePeriodStates,
+  clientPeriodDeliveries,
+  ensurePeriodsForClient,
+} from './billing-periods.service.js'
+import {
   MONTHLY_AMOUNTS_HIDDEN_UNTIL,
   TERMINAL_BILLING_STATUSES,
   type BillingPeriod,
@@ -85,9 +90,21 @@ export function mustHideAmounts(period: BillingPeriod, viewer: Viewer): boolean 
   )
 }
 
-/** Strip every peso figure from a period a monthly client may not see yet. */
+/**
+ * Strip every peso figure from a period a monthly client may not see yet.
+ *
+ * `deliveries` survives because it is redacted at source — the client still
+ * needs to see WHICH deliveries the cut-off covers in order to bill for them,
+ * just not what 8338 priced them at.
+ */
 function redact<T extends Record<string, unknown>>(period: T): T {
-  return { ...period, total_amount: null, items: undefined, amounts_hidden: true }
+  return {
+    ...period,
+    total_amount: null,
+    items: undefined,
+    invoices: undefined,
+    amounts_hidden: true,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -105,11 +122,33 @@ export async function listPeriods(
       ? { ...filters, clientId: viewer.clientId ?? '__none__' }
       : filters
 
+  // Opening the screen generates any periods the client's completed work has
+  // earned and moves them to whatever today's date allows. Without this a newly
+  // completed delivery would be invisible until the scheduler's next tick, and
+  // the screen would be empty on a fresh deployment.
+  if (viewer.role === 'client' && viewer.clientId) {
+    const client = await BillingModel.findClientById(viewer.clientId)
+    if (client?.billing_mode) {
+      await ensurePeriodsForClient(viewer.clientId, client.billing_mode)
+      await advancePeriodStates(viewer.clientId)
+    }
+  }
+
   const { rows, total } = await BillingModel.findPeriods(scoped)
+
+  // How much completed work each period covers, so the client's screen can lead
+  // with that and drop periods holding nothing.
+  const counts = scoped.clientId
+    ? await BillingModel.countDeliveriesByPeriod(scoped.clientId)
+    : new Map<string, number>()
 
   const visible = rows.map((row) => {
     const period = row as unknown as BillingPeriod
-    return mustHideAmounts(period, viewer) ? redact(row as Record<string, unknown>) : row
+    const withCount = {
+      ...(row as Record<string, unknown>),
+      delivery_count: counts.get(period.period_id) ?? 0,
+    }
+    return mustHideAmounts(period, viewer) ? redact(withCount) : withCount
   })
 
   return { rows: visible, total }
@@ -119,15 +158,20 @@ export async function getPeriod(periodId: string, viewer: Viewer) {
   const period = await loadPeriod(periodId)
   assertOwnership(period, viewer)
 
+  const hidden = mustHideAmounts(period, viewer)
+
   // A period holds one invoice per booking, so this is a list.
-  const [items, submissions, invoices] = await Promise.all([
+  const [items, submissions, invoices, deliveries] = await Promise.all([
     BillingModel.findPeriodItems(periodId),
     BillingModel.findSubmissions(periodId),
     BillingModel.findInvoicesByPeriod(periodId),
+    // The completed deliveries this period covers. The client's screen is built
+    // on these, so it always reflects real work rather than the period total.
+    clientPeriodDeliveries(period, hidden),
   ])
 
-  const full = { ...period, items, submissions, invoices }
-  return mustHideAmounts(period, viewer) ? redact(full) : full
+  const full = { ...period, items, submissions, invoices, deliveries }
+  return hidden ? redact(full) : full
 }
 
 /**

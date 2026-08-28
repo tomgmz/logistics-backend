@@ -700,6 +700,39 @@ export async function findBillableClients() {
   return data ?? []
 }
 
+/**
+ * How many completed deliveries fall inside each of a client's periods.
+ *
+ * One query for the whole list rather than one per card: the billing screen
+ * leads with "how much work is in this cut-off", and a period with no completed
+ * deliveries is noise the client should never be shown.
+ */
+export async function countDeliveriesByPeriod(clientId: string): Promise<Map<string, number>> {
+  const { rows } = await pool.query(
+    `select p.period_id, count(b.booking_id)::int as n
+       from billing_periods p
+       left join bookings b
+         on b.client_id = p.client_id
+        and b.status = 'completed'
+        and b.schedule_date between p.period_start and p.period_end
+      where p.client_id = $1
+      group by p.period_id`,
+    [clientId],
+  )
+  return new Map(rows.map((r) => [r.period_id as string, Number(r.n)]))
+}
+
+export async function findClientById(clientId: string) {
+  const { data, error } = await supabase
+    .from('clients')
+    .select('client_id, company_name, registered_name, billing_address, tin, billing_mode')
+    .eq('client_id', clientId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data as { client_id: string; billing_mode: BillingMode | null } | null
+}
+
 export async function findHolidays(from: string, to: string): Promise<string[]> {
   const { data, error } = await supabase
     .from('ph_holidays')
