@@ -19,6 +19,7 @@ import uploadRoutes from './routes/upload.route.js'
 import { globalLimiter } from './middlewares/rateLimit.middleware.js';
 import messagingRoutes from './routes/messaging.routes.js'
 import notificationsRoutes from './routes/notifications.routes.js'
+import billingRoutes from './routes/billing.routes.js'
 import { startFleetRecheckScheduler } from './services/notification/fleet-recheck.scheduler.js'
 
 dotenv.config();
@@ -108,6 +109,10 @@ app.use('/api/admin', authenticate, moduleGuard, adminRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/messaging', messagingRoutes);
 app.use('/api/notifications', notificationsRoutes);
+// Reverse billing. Mounted outside /api/admin because it serves clients as well
+// as staff; each route carries its own gate (requireModule for staff,
+// attachClientScope for clients) rather than relying on moduleGuard's path map.
+app.use('/api/billing', billingRoutes);
 
 // HEALTH CHECK
 app.get('/api/health', (req: Request, res: Response) => {
