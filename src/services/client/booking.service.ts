@@ -1,6 +1,6 @@
 import { BookingModel } from '../../models/client/booking.model.js'
 import {
-  CreateBookingInput,
+  CreateBookingRequest,
   UpdateBookingInput,
   UpdateDestinationInput,
   BookingWithRelations,
@@ -9,6 +9,7 @@ import {
   GmReviewInput,
 } from '../../types/client/booking.types.js'
 import { optimizeDestinationsService } from '../maps/routeOptimization.service.js'
+import { invalidateEta } from '../maps/eta.service.js'
 import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 import { logEvent } from '../../lib/log-event.js'
 import { bookingRef } from '../../lib/booking-ref.js'
@@ -60,6 +61,69 @@ function validateScheduleDate(scheduleDate: string): void {
 
 const NON_DELETABLE_STATUSES = ['approved', 'assigned', 'in_transit', 'completed']
 
+/**
+ * Who is asking, resolved from the session by `attachClientScope`.
+ *
+ * `clientId` is set only for client-role callers; every other role carries null
+ * and is unaffected by the checks below. Passing this is deliberately mandatory
+ * on every function that can reach a booking: an optional viewer would let a
+ * forgotten call site silently skip the ownership check, which is the one
+ * failure mode a scoping fix must not have.
+ */
+export interface BookingViewer {
+  role:     string
+  clientId: string | null
+}
+
+const isClientViewer = (viewer: BookingViewer): boolean => viewer.role === 'client'
+
+/**
+ * A client may only ever reach their own bookings; every other role passes
+ * straight through.
+ *
+ * Reported as "not found" rather than "forbidden" so the reply never confirms
+ * that another company's booking exists — the same choice billing makes.
+ */
+function assertBookingOwnership(booking: { client_id: string }, viewer: BookingViewer): void {
+  if (!isClientViewer(viewer)) return
+  if (!viewer.clientId || booking.client_id !== viewer.clientId) {
+    throw new Error('Booking not found')
+  }
+}
+
+/**
+ * The same ownership rule, for callers that hold only a booking id and do not
+ * want the booking itself — the live-position read and the route geometry.
+ *
+ * Costs one narrow query, and only ever for a client; every other role returns
+ * before it runs. Reported as "not found" for the reason above.
+ */
+export async function assertBookingVisible(
+  bookingId: string,
+  viewer:    BookingViewer,
+): Promise<void> {
+  if (!isClientViewer(viewer)) return
+  const owner = await BookingModel.findBookingOwner(bookingId)
+  if (!owner || !viewer.clientId || owner.client_id !== viewer.clientId) {
+    throw new Error(`Booking with ID ${bookingId} not found`)
+  }
+}
+
+/**
+ * Ownership of a stop is ownership of its booking. Costs one extra query, and
+ * only ever for a client — staff and the driver app return before it runs.
+ */
+async function assertDestinationOwnership(
+  destinationId: string,
+  viewer:        BookingViewer,
+): Promise<void> {
+  if (!isClientViewer(viewer)) return
+  const owner = await BookingModel.findDestinationOwner(destinationId)
+  if (!owner || !viewer.clientId || owner.client_id !== viewer.clientId) {
+    throw new Error(`Destination with ID ${destinationId} not found`)
+  }
+}
+
 export interface PaginatedBookingsMeta {
   total:        number
   page:         number
@@ -73,13 +137,25 @@ export async function getAllBookingsPaginatedService(params: {
   limit:   number
   status?: string | null
   search?: string | null
-}): Promise<{ data: BookingWithRelations[]; meta: PaginatedBookingsMeta }> {
+}, viewer: BookingViewer): Promise<{ data: BookingWithRelations[]; meta: PaginatedBookingsMeta }> {
   const page  = Math.max(1, params.page)
   const limit = Math.min(Math.max(1, params.limit), 100)
 
+  const clientId = isClientViewer(viewer) ? viewer.clientId : null
+
+  // A client whose account resolves to no company sees nothing rather than
+  // falling through to the unscoped query. `attachClientScope` already 403s
+  // this case; belt and braces, because the cost of being wrong here is a leak.
+  if (isClientViewer(viewer) && !clientId) {
+    return {
+      data: [],
+      meta: { total: 0, page, limit, totalPages: 1, statusCounts: { all: 0 } },
+    }
+  }
+
   const [{ rows, total }, statusCounts] = await Promise.all([
-    BookingModel.findAllPaginated({ page, limit, status: params.status, search: params.search }),
-    BookingModel.countByStatus(),
+    BookingModel.findAllPaginated({ page, limit, status: params.status, search: params.search, clientId }),
+    BookingModel.countByStatus(clientId),
   ])
 
   return {
@@ -95,18 +171,35 @@ export async function getAllBookingsPaginatedService(params: {
 }
 
 
-export async function getAllBookingsService(): Promise<BookingWithRelations[]> {
+export async function getAllBookingsService(viewer: BookingViewer): Promise<BookingWithRelations[]> {
+  // Same select and ordering as findAll, so the response shape is unchanged —
+  // a client just never sees another company's rows in it.
+  if (isClientViewer(viewer)) {
+    return viewer.clientId ? (await BookingModel.findByClientId(viewer.clientId) ?? []) : []
+  }
   return await BookingModel.findAll() ?? []
 }
 
-export async function getBookingByIdService(bookingId: string): Promise<BookingWithRelations> {
+export async function getBookingByIdService(
+  bookingId: string,
+  viewer:    BookingViewer,
+): Promise<BookingWithRelations> {
   const booking = await BookingModel.findById(bookingId)
   if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
+  assertBookingOwnership(booking, viewer)
   return booking
 }
 
-export async function getBookingsByClientService(clientId: string): Promise<BookingWithRelations[]> {
-  return await BookingModel.findByClientId(clientId) ?? []
+export async function getBookingsByClientService(
+  clientId: string,
+  viewer:   BookingViewer,
+): Promise<BookingWithRelations[]> {
+  // Pinned, not rejected: a client always gets their own list whatever id the
+  // URL carries. Rejecting would turn a merely stale cached client_id in the
+  // browser into a 404, and the outcome we care about is identical.
+  const scoped = isClientViewer(viewer) ? viewer.clientId : clientId
+  if (!scoped) return []
+  return await BookingModel.findByClientId(scoped) ?? []
 }
 
 export async function getBookingsByDriverService(driverId: string): Promise<BookingWithRelations[]> {
@@ -114,10 +207,18 @@ export async function getBookingsByDriverService(driverId: string): Promise<Book
 }
 
 export async function createBookingService(
-  input: CreateBookingInput,
+  input: CreateBookingRequest,
+  viewer: BookingViewer,
   userId?: string | null,
   ip?: string | null,
 ): Promise<BookingWithRelations> {
+  // The owning company is never taken from the request body for a client: the
+  // session decides, so a client cannot file a booking against another company.
+  // A non-client caller may still name one, leaving booking-on-behalf possible
+  // without another change here.
+  const clientId = isClientViewer(viewer) ? viewer.clientId : input.client_id
+  if (!clientId) throw new Error('client_id is required')
+
   if (!input.destinations || input.destinations.length === 0) {
     throw new Error('At least one destination is required')
   }
@@ -153,7 +254,7 @@ export async function createBookingService(
     }
   }
 
-  const booking = await BookingModel.create(input)
+  const booking = await BookingModel.create({ ...input, client_id: clientId })
   if (!booking) throw new Error('Failed to create booking')
 
   logEvent({
@@ -204,11 +305,13 @@ async function routeNewBookingToGm(
 export async function updateBookingService(
   bookingId: string,
   input: UpdateBookingInput,
+  viewer: BookingViewer,
   userId?: string | null,
   ip?: string | null,
 ): Promise<BookingWithRelations> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
+  assertBookingOwnership(existing, viewer)
 
   if (input.schedule_date) {
     validateScheduleDate(input.schedule_date)
@@ -231,6 +334,7 @@ export async function updateBookingService(
 export async function updateBookingStatusService(
   bookingId: string,
   status: string,
+  viewer: BookingViewer,
   userId?: string | null,
   ip?: string | null,
   // The administrator's remarks when turning a booking down. Stored on the
@@ -239,6 +343,7 @@ export async function updateBookingStatusService(
 ): Promise<BookingWithRelations> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
+  assertBookingOwnership(existing, viewer)
 
   const statusOrder  = ['pending', 'approved', 'assigned', 'in_transit', 'completed', 'cancelled']
   const currentIndex = statusOrder.indexOf(existing.status)
@@ -370,11 +475,13 @@ export async function gmReviewService(
 
 export async function deleteBookingService(
   bookingId: string,
+  viewer: BookingViewer,
   userId?: string | null,
   ip?: string | null,
 ): Promise<boolean> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
+  assertBookingOwnership(existing, viewer)
 
   if (NON_DELETABLE_STATUSES.includes(existing.status)) {
     throw new Error(`Cannot delete a booking with status '${existing.status}'`)
@@ -405,18 +512,25 @@ export async function deleteBookingService(
   return result
 }
 
-export async function getDestinationsByBookingService(bookingId: string): Promise<BookingDestination[]> {
+export async function getDestinationsByBookingService(
+  bookingId: string,
+  viewer:    BookingViewer,
+): Promise<BookingDestination[]> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
+  assertBookingOwnership(existing, viewer)
   return await BookingModel.findDestinationsByBookingId(bookingId) ?? []
 }
 
 export async function updateDestinationService(
   destinationId: string,
   input: UpdateDestinationInput,
+  viewer: BookingViewer,
   userId?: string | null,
   ip?: string | null,
 ): Promise<BookingDestination> {
+  await assertDestinationOwnership(destinationId, viewer)
+
   const destination = await BookingModel.updateDestination(destinationId, input)
   if (!destination) throw new Error(`Destination with ID ${destinationId} not found`)
 
@@ -434,10 +548,13 @@ export async function updateDestinationService(
 export async function updateDestinationStatusService(
   destinationId: string,
   status: string,
+  viewer: BookingViewer,
   deliveredAt?: string,
   userId?: string | null,
   ip?: string | null,
 ): Promise<BookingDestination> {
+  await assertDestinationOwnership(destinationId, viewer)
+
   const destination = await BookingModel.updateDestinationStatus(destinationId, status)
   if (!destination) throw new Error(`Destination with ID ${destinationId} not found`)
 
@@ -472,7 +589,7 @@ export interface DriverActor {
   ip?:     string | null
 }
 
-async function assertDriverOnBooking(bookingId: string, actor: DriverActor): Promise<BookingWithRelations> {
+export async function assertDriverOnBooking(bookingId: string, actor: DriverActor): Promise<BookingWithRelations> {
   const booking = await BookingModel.findById(bookingId)
   if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
 
@@ -613,6 +730,12 @@ export async function driverConfirmDeliveryService(
     })
   }
 
+  // The remaining route just lost a stop, so every cached arrival time after it
+  // is wrong by however long the driver spent at this bay. Clearing the stamp
+  // makes the next position ping buy a fresh estimate. Fire-and-forget: a stale
+  // ETA is not worth failing a confirmed delivery over.
+  void invalidateEta(bookingId).catch(() => {})
+
   // The last stop closes the job. The driver used to have to tap "mark delivery
   // as done" as a separate step, so a booking whose every drop-off was confirmed
   // sat in 'in_transit' until they did — and if they closed the app first, it
@@ -687,9 +810,14 @@ export async function driverCompleteBookingService(
 
 export async function deleteDestinationService(
   destinationId: string,
+  viewer: BookingViewer,
   userId?: string | null,
   ip?: string | null,
 ): Promise<boolean> {
+  // `removeDestination` reports success even when nothing matched, so without
+  // this a client deleting a foreign stop got a silent 200. Now they get a 404.
+  await assertDestinationOwnership(destinationId, viewer)
+
   const result = await BookingModel.removeDestination(destinationId)
 
   logEvent({

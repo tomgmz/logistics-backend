@@ -16,6 +16,23 @@ export const authenticatedLimiter = rateLimit({
   keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(req.ip ?? '::1'),
 })
 
+/**
+ * Position pings, which are far too frequent for `authenticatedLimiter`.
+ *
+ * A driver approaching a stop sends one every 5 s — 180 in the window, against
+ * that limiter's ceiling of 100 for everything a session does. This budget is
+ * that worst case with room for reconnect bursts, and still low enough to stop a
+ * device stuck in a send loop. Keyed per user, so one bad handset cannot spend
+ * the fleet's allowance.
+ */
+export const trackingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 400,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(req.ip ?? '::1'),
+})
+
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,

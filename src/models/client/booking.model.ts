@@ -17,6 +17,8 @@ export interface BookingListQuery {
   limit:   number
   status?: string | null
   search?: string | null
+  /** Set for a client caller, so the page and its counts cover only their own bookings. */
+  clientId?: string | null
 }
 
 const BOOKING_WITH_RELATIONS_SELECT = `
@@ -135,9 +137,13 @@ const BOOKING_WITH_RELATIONS_SELECT = `
   )
 `
 
-async function countByStatus(): Promise<Record<string, number>> {
+async function countByStatus(clientId?: string | null): Promise<Record<string, number>> {
   const result = await pool.query<{ status: string; n: string }>(
-    `SELECT status::text AS status, COUNT(*)::int AS n FROM bookings GROUP BY status`
+    `SELECT status::text AS status, COUNT(*)::int AS n
+       FROM bookings
+       ${clientId ? 'WHERE client_id = $1' : ''}
+      GROUP BY status`,
+    clientId ? [clientId] : [],
   )
   let all = 0
   const out: Record<string, number> = {}
@@ -160,6 +166,14 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
 
   const params: unknown[] = []
   const where: string[]   = []
+
+  // A client only ever lists and counts their own bookings. Pushed first so the
+  // positional numbering below — which reads off params.length — stays correct
+  // without touching the status, search, LIMIT or OFFSET placeholders.
+  if (q.clientId) {
+    params.push(q.clientId)
+    where.push(`b.client_id = $${params.length}`)
+  }
 
   if (status !== 'all') {
     params.push(status)
@@ -517,6 +531,46 @@ async function remove(bookingId: string): Promise<boolean> {
   return true
 }
 
+/**
+ * The client a booking belongs to, and nothing else.
+ *
+ * `findById` answers this too, but it drags the whole relations join with it.
+ * The ownership checks on the light read paths — live position, route geometry —
+ * need one column, and they run often enough for the difference to matter.
+ */
+async function findBookingOwner(
+  bookingId: string,
+): Promise<{ booking_id: string; client_id: string } | null> {
+  const { rows } = await pool.query<{ booking_id: string; client_id: string }>(
+    `SELECT booking_id, client_id FROM bookings WHERE booking_id = $1`,
+    [bookingId],
+  )
+  return rows[0] ?? null
+}
+
+/**
+ * The booking a stop hangs off, and the client that booking belongs to.
+ *
+ * A stop is only ever addressed by its own id, so this is the one way to reach
+ * the owner: whoever owns the booking owns its stops.
+ */
+async function findDestinationOwner(
+  destinationId: string,
+): Promise<{ destination_id: string; booking_id: string; client_id: string } | null> {
+  const { rows } = await pool.query<{
+    destination_id: string
+    booking_id:     string
+    client_id:      string
+  }>(
+    `SELECT d.destination_id, d.booking_id, b.client_id
+       FROM booking_destinations d
+       JOIN bookings b ON b.booking_id = d.booking_id
+      WHERE d.destination_id = $1`,
+    [destinationId],
+  )
+  return rows[0] ?? null
+}
+
 async function findDestinationsByBookingId(bookingId: string): Promise<BookingDestination[]> {
   const { data, error } = await supabase
     .from('booking_destinations')
@@ -688,6 +742,8 @@ export const BookingModel = {
   findById,
   findByClientId,
   findByDriverId,
+  findBookingOwner,
+  findDestinationOwner,
   isDriverAssignedToBooking,
   // booking mutations
   create,

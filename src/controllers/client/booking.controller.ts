@@ -21,12 +21,28 @@ import {
   getCargoItemsByBookingService,
   upsertCargoItemService,
   deleteCargoItemService,
+  type BookingViewer,
 } from '../../services/client/booking.service.js'
 import {
   StopTooFarError,
   STOP_PROOF_RADIUS_M,
   type StopProofPosition,
 } from '../../lib/stop-geofence.js'
+
+/**
+ * Who is asking, for the ownership checks in the service.
+ *
+ * `clientId` is put on the request by `attachClientScope`. The role defaults to
+ * 'client' so a request that somehow arrives without a user — or a route wired
+ * without that middleware — fails closed to empty results and 404s rather than
+ * falling through as staff.
+ */
+function viewerFrom(req: Request): BookingViewer {
+  return {
+    role:     req.user?.role ?? 'client',
+    clientId: req.clientId ?? null,
+  }
+}
 
 export const getAllBookings = async (req: Request, res: Response) => {
   try {
@@ -38,11 +54,11 @@ export const getAllBookings = async (req: Request, res: Response) => {
     if (Number.isFinite(page) && Number.isFinite(limit) && limit > 0 && page > 0) {
       const status = typeof req.query.status === 'string' ? req.query.status : 'all'
       const search = typeof req.query.search === 'string' ? req.query.search : ''
-      const result = await getAllBookingsPaginatedService({ page, limit, status, search })
+      const result = await getAllBookingsPaginatedService({ page, limit, status, search }, viewerFrom(req))
       return res.status(200).json({ status: 'success', data: result.data, meta: result.meta })
     }
 
-    const bookings = await getAllBookingsService()
+    const bookings = await getAllBookingsService(viewerFrom(req))
     res.status(200).json({ status: 'success', data: bookings })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
@@ -51,7 +67,7 @@ export const getAllBookings = async (req: Request, res: Response) => {
 
 export const getBookingById = async (req: Request, res: Response) => {
   try {
-    const booking = await getBookingByIdService(param(req.params.id))
+    const booking = await getBookingByIdService(param(req.params.id), viewerFrom(req))
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
@@ -61,7 +77,7 @@ export const getBookingById = async (req: Request, res: Response) => {
 
 export const getBookingsByClient = async (req: Request, res: Response) => {
   try {
-    const bookings = await getBookingsByClientService(param(req.params.clientId))
+    const bookings = await getBookingsByClientService(param(req.params.clientId), viewerFrom(req))
     res.status(200).json({ status: 'success', data: bookings })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
@@ -82,7 +98,7 @@ export const getBookingsByDriver = async (req: Request, res: Response) => {
 export const createBooking = async (req: Request, res: Response) => {
   try {
     const { userId, ip } = getRequestMeta(req)
-    const booking = await createBookingService(req.body, userId, ip)
+    const booking = await createBookingService(req.body, viewerFrom(req), userId, ip)
     res.status(201).json({ status: 'success', data: booking })
   } catch (error: any) {
     const status = (
@@ -99,7 +115,7 @@ export const createBooking = async (req: Request, res: Response) => {
 export const updateBooking = async (req: Request, res: Response) => {
   try {
     const { userId, ip } = getRequestMeta(req)
-    const booking = await updateBookingService(param(req.params.id), req.body, userId, ip)
+    const booking = await updateBookingService(param(req.params.id), req.body, viewerFrom(req), userId, ip)
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
     const status = error.message.includes('not found')
@@ -115,7 +131,7 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
   try {
     const { userId, ip } = getRequestMeta(req)
     const booking = await updateBookingStatusService(
-      param(req.params.id), req.body.status, userId, ip, req.body.rejection_reason,
+      param(req.params.id), req.body.status, viewerFrom(req), userId, ip, req.body.rejection_reason,
     )
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
@@ -128,7 +144,7 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
 export const deleteBooking = async (req: Request, res: Response) => {
   try {
     const { userId, ip } = getRequestMeta(req)
-    await deleteBookingService(param(req.params.id), userId, ip)
+    await deleteBookingService(param(req.params.id), viewerFrom(req), userId, ip)
     res.status(200).json({ status: 'success', message: 'Booking deleted successfully' })
   } catch (error: any) {
     const isNotFound   = error.message.includes('not found')
@@ -152,7 +168,7 @@ export const gmReview = async (req: Request, res: Response) => {
 
 export const getDestinationsByBooking = async (req: Request, res: Response) => {
   try {
-    const destinations = await getDestinationsByBookingService(param(req.params.id))
+    const destinations = await getDestinationsByBookingService(param(req.params.id), viewerFrom(req))
     res.status(200).json({ status: 'success', data: destinations })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
@@ -163,7 +179,7 @@ export const getDestinationsByBooking = async (req: Request, res: Response) => {
 export const updateDestination = async (req: Request, res: Response) => {
   try {
     const { userId, ip } = getRequestMeta(req)
-    const destination = await updateDestinationService(param(req.params.destinationId), req.body, userId, ip)
+    const destination = await updateDestinationService(param(req.params.destinationId), req.body, viewerFrom(req), userId, ip)
     res.status(200).json({ status: 'success', data: destination })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
@@ -176,7 +192,7 @@ export const updateDestinationStatus = async (req: Request, res: Response) => {
     const { userId, ip } = getRequestMeta(req)
     const { status }     = req.body
     const deliveredAt    = status === 'delivered' ? new Date().toISOString() : undefined
-    const destination    = await updateDestinationStatusService(param(req.params.destinationId), status, deliveredAt, userId, ip)
+    const destination    = await updateDestinationStatusService(param(req.params.destinationId), status, viewerFrom(req), deliveredAt, userId, ip)
     res.status(200).json({ status: 'success', data: destination })
   } catch (error: any) {
     const httpStatus = error.message.includes('not found') ? 404 : 500
@@ -294,7 +310,7 @@ export const driverCompleteBooking = async (req: Request, res: Response) => {
 export const deleteDestination = async (req: Request, res: Response) => {
   try {
     const { userId, ip } = getRequestMeta(req)
-    await deleteDestinationService(param(req.params.destinationId), userId, ip)
+    await deleteDestinationService(param(req.params.destinationId), viewerFrom(req), userId, ip)
     res.status(200).json({ status: 'success', message: 'Destination deleted successfully' })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500

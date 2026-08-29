@@ -1,12 +1,13 @@
 import { Router } from 'express'
 import { authenticate, authorize } from '../middlewares/auth.middleware.js'
-import { authenticatedLimiter }    from '../middlewares/rateLimit.middleware.js'
+import { authenticatedLimiter, trackingLimiter } from '../middlewares/rateLimit.middleware.js'
 import { validate }                from '../middlewares/validate.middleware.js'
 import { uploadSingle }            from '../middlewares/upload.middleware.js'
 import { driverStopProofSchema }   from '../schema/client/booking.schema.js'
 import * as BookingController from '../controllers/client/booking.controller.js'
 import * as AvailabilityController from '../controllers/driver/availability.controller.js'
-import { driverAvailabilityDaysSchema } from '../schema/client/booking.schema.js'
+import * as TrackingController from '../controllers/driver/tracking.controller.js'
+import { driverAvailabilityDaysSchema, driverLocationPingSchema } from '../schema/client/booking.schema.js'
 import { uploadDeliveryProof } from '../controllers/admin/uploadImage.controller.js'
 
 const router = Router()
@@ -54,5 +55,12 @@ router.patch('/bookings/:bookingId/destinations/:destinationId/delivered',
   authenticate, authenticatedLimiter, isAny, validate(driverStopProofSchema), BookingController.driverConfirmDelivery)
 router.patch('/bookings/:bookingId/complete',
   authenticate, authenticatedLimiter, isAny, BookingController.driverCompleteBooking)
+
+// Live position while the booking is in transit — the highest-frequency route in
+// the system, on its own rate-limit budget because the shared one is sized for a
+// session's worth of ordinary requests, not one every five seconds. Same
+// per-booking authorization as the confirmations above.
+router.post('/bookings/:bookingId/location',
+  authenticate, trackingLimiter, isAny, validate(driverLocationPingSchema), TrackingController.recordDriverPosition)
 
 export default router

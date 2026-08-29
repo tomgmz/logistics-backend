@@ -212,6 +212,16 @@ export interface CreateBookingInput {
   cargo_items?:            CreateCargoItemInput[]
 }
 
+/**
+ * What the API accepts on POST /booking.
+ *
+ * `client_id` is optional here because for a client caller it is ignored: the
+ * owning company comes from the session, never the body. `CreateBookingInput`
+ * stays strict, so the model can never be handed an ownerless booking.
+ */
+export type CreateBookingRequest =
+  Omit<CreateBookingInput, 'client_id'> & { client_id?: string }
+
 export interface UpdateBookingInput {
   origin?:                 string
   origin_longitude?:       number | null

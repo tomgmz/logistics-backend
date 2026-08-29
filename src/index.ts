@@ -21,6 +21,7 @@ import messagingRoutes from './routes/messaging.routes.js'
 import notificationsRoutes from './routes/notifications.routes.js'
 import billingRoutes from './routes/billing.routes.js'
 import { startFleetRecheckScheduler } from './services/notification/fleet-recheck.scheduler.js'
+import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
 
 dotenv.config();
 
@@ -156,6 +157,11 @@ app.listen(PORT, '0.0.0.0', () => {
   // Reminds the fleet manager to re-run BLOWBAGETS the day before a booking
   // dispatches and again on the day itself.
   startFleetRecheckScheduler();
+
+  // Drops driver position breadcrumbs past their retention window. The live
+  // position table is one row per driver and never needs pruning; the history
+  // behind it grows with every ping.
+  startLocationPruneScheduler();
 });
 
 process.on('SIGTERM', () => process.exit(0));

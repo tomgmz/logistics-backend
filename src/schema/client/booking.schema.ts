@@ -58,7 +58,10 @@ export const updateDestinationStatusSchema = z.object({
 
 
 export const createBookingSchema = z.object({
-  client_id:             z.string().uuid(),
+  // Optional because it is ignored for the only role that can call this route:
+  // a client's booking is attributed to the company on their session, never to
+  // whatever the body claims. Still uuid-checked so garbage is refused outright.
+  client_id:             z.string().uuid().optional(),
   origin:                z.string().min(1, 'Origin is required'),
   origin_longitude:      z.number().optional(),
   origin_latitude:       z.number().optional(),
@@ -124,6 +127,25 @@ export const driverStopProofSchema = z.object({
   // The driver's stated reason for confirming a stop the distance gate would
   // have refused. Recorded on the stop and flagged to operations.
   override_reason: z.string().trim().min(3).max(300).optional(),
+})
+
+// A single position ping from the driver app while a booking is in transit.
+//
+// Unlike a stop confirmation this is disposable: the app sends these constantly,
+// never queues them, and drops any that fail. So the position is required here
+// (a ping with no coordinates is nothing) while `recorded_at` carries the
+// device's own timestamp — the service refuses fixes that are too old to be
+// worth drawing, and it can only know that if the device says when it looked.
+export const driverLocationPingSchema = z.object({
+  latitude:    z.number().min(-90).max(90),
+  longitude:   z.number().min(-180).max(180),
+  accuracy_m:  z.number().nonnegative().max(10_000).optional().nullable(),
+  // Metres per second, straight off the platform's location object. Negative is
+  // how both iOS and Android report "unknown", so it is normalised away rather
+  // than rejected — a ping is still useful without it.
+  speed_mps:   z.number().min(-1).max(90).optional().nullable(),
+  heading_deg: z.number().min(-1).max(360).optional().nullable(),
+  recorded_at: z.string().datetime({ offset: true }),
 })
 
 export const updateBookingStatusSchema = z.object({
