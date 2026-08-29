@@ -144,6 +144,27 @@ export async function recordPayment(req: Request, res: Response): Promise<void> 
   }
 }
 
+/** Payments a client has claimed but nobody has verified yet. */
+export async function listPendingPayments(req: Request, res: Response): Promise<void> {
+  try {
+    const periodId = typeof req.query.period_id === 'string' ? req.query.period_id : undefined
+    const data = await BillingService.listPendingPayments(periodId)
+    res.status(200).json({ status: 'success', data })
+  } catch (err) {
+    fail(res, err, 'listPendingPayments')
+  }
+}
+
+export async function verifyPayment(req: Request, res: Response): Promise<void> {
+  try {
+    const { userId } = getRequestMeta(req)
+    const data = await BillingService.verifyPayment(param(req.params.paymentId), req.body, userId)
+    res.status(200).json({ status: 'success', data })
+  } catch (err) {
+    fail(res, err, 'verifyPayment')
+  }
+}
+
 export async function issueReceipt(req: Request, res: Response): Promise<void> {
   try {
     const { userId } = getRequestMeta(req)
@@ -185,11 +206,36 @@ export async function reviewSummary(req: Request, res: Response): Promise<void> 
   }
 }
 
+/** The client says they have paid, and attaches evidence. */
+export async function submitPaymentProof(req: Request, res: Response): Promise<void> {
+  try {
+    const data = await BillingService.submitPaymentProof(
+      param(req.params.invoiceId),
+      req.body,
+      viewerFrom(req),
+    )
+    res.status(201).json({ status: 'success', data })
+  } catch (err) {
+    fail(res, err, 'submitPaymentProof')
+  }
+}
+
 export async function getInvoice(req: Request, res: Response): Promise<void> {
   try {
     const data = await BillingService.getInvoice(param(req.params.invoiceId), viewerFrom(req))
     res.status(200).json({ status: 'success', data })
   } catch (err) {
     fail(res, err, 'getInvoice')
+  }
+}
+
+/** Fills in a PDF that failed to render at issuance. */
+export async function regenerateInvoicePdf(req: Request, res: Response): Promise<void> {
+  try {
+    const { userId } = getRequestMeta(req)
+    const data = await BillingService.regenerateInvoicePdf(param(req.params.invoiceId), userId)
+    res.status(200).json({ status: 'success', data })
+  } catch (err) {
+    fail(res, err, 'regenerateInvoicePdf')
   }
 }

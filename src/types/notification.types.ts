@@ -35,6 +35,8 @@ export type NotificationType =
   | 'billing.invoice_issued'          // Service Invoice issued -> client
   | 'billing.payment_due'             // due Friday reached -> client
   | 'billing.payment_overdue'         // past the due Friday -> client + accountant
+  | 'billing.payment_proof_submitted' // client uploaded proof -> accountant
+  | 'billing.payment_rejected'        // proof could not be confirmed -> client
   | 'billing.payment_recorded'        // payment logged -> client
   | 'billing.receipt_issued'          // Acknowledgement Receipt issued -> client
 

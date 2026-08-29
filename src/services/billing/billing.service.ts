@@ -9,6 +9,8 @@ import {
   weekday,
 } from '../../lib/billing-calendar.js'
 import { amountInWords, computeInvoiceTotals } from '../../lib/billing-amounts.js'
+import { publishServiceInvoice } from '../../lib/pdf/service-invoice.pdf.js'
+import { publishAcknowledgementReceipt } from '../../lib/pdf/acknowledgement-receipt.pdf.js'
 import { BillingNotices, notifyBilling, periodLabel } from './billing-notify.service.js'
 import {
   advancePeriodStates,
@@ -160,14 +162,22 @@ export async function getPeriod(periodId: string, viewer: Viewer) {
   const hidden = mustHideAmounts(period, viewer)
 
   // A period holds one invoice per booking, so this is a list.
-  const [items, submissions, invoices, deliveries] = await Promise.all([
+  const [items, submissions, invoiceRows, deliveries, payments] = await Promise.all([
     BillingModel.findPeriodItems(periodId),
     BillingModel.findSubmissions(periodId),
     BillingModel.findInvoicesByPeriod(periodId),
     // The completed deliveries this period covers. The client's screen is built
     // on these, so it always reflects real work rather than the period total.
     clientPeriodDeliveries(period, hidden),
+    BillingModel.findPaymentsByPeriod(periodId),
   ])
+
+  // Both screens key off an invoice's payment state — awaiting verification,
+  // rejected, settled — so each invoice carries its own payments.
+  const invoices = invoiceRows.map((inv) => ({
+    ...inv,
+    payments: payments.filter((p) => p.invoice_id === inv.invoice_id),
+  }))
 
   const full = { ...period, items, submissions, invoices, deliveries }
   return hidden ? redact(full) : full
@@ -609,6 +619,19 @@ export async function issueServiceInvoices(
       payment_status: 'unpaid',
       issued_by: actorId,
     })
+
+    // Best effort: the serial is spent and the paper invoice exists, so a
+    // failed render leaves pdf_url null rather than unwinding the issuance.
+    invoice.pdf_url = await attachPdf(
+      `SI ${siNumber}`,
+      () => publishServiceInvoice({
+        invoice: invoice as never,
+        items: lines as never,
+        bookingRef: refByBooking.get(bookingId),
+      }),
+      (url) => BillingModel.updateInvoice(invoice.invoice_id, { pdf_url: url }),
+    )
+
     issued.push(invoice)
 
     await notifyBilling(
@@ -645,6 +668,253 @@ export async function issueServiceInvoices(
 // Payment and Acknowledgement Receipt
 // ---------------------------------------------------------------------------
 
+/**
+ * Settle an invoice once its CONFIRMED payments cover it.
+ *
+ * The `confirmedOnly` argument is the whole safeguard: a client's uploaded
+ * proof creates a pending row, and counting that here would let them mark their
+ * own invoice paid without anyone checking the money arrived. A part payment
+ * leaves the invoice open.
+ */
+async function settleIfFullyPaid(
+  invoiceId: string,
+  totalDue: number,
+  periodId: string,
+): Promise<{ settled: boolean; paidSoFar: number }> {
+  const confirmed = await BillingModel.findPaymentsByInvoice(invoiceId, true)
+  const paidSoFar = confirmed.reduce((sum, p) => sum + Number(p.amount_paid), 0)
+
+  // Half a centavo of slack, so float noise cannot leave an invoice a hair short.
+  const settled = paidSoFar >= totalDue - 0.005
+  if (!settled) return { settled, paidSoFar }
+
+  await BillingModel.updateInvoice(invoiceId, { payment_status: 'paid' })
+
+  // The period only reaches 'paid' when EVERY invoice on it is settled — a
+  // cut-off billed across four deliveries is not paid because one was.
+  const progress = await BillingModel.periodInvoiceProgress(periodId)
+  if (progress.total > 0 && progress.settled === progress.total) {
+    await BillingModel.transitionPeriod(periodId, ['invoiced'], 'paid')
+  }
+
+  return { settled, paidSoFar }
+}
+
+/** Rejects a date that is not a Friday, naming the next one. */
+function assertFriday(date: string): void {
+  // 8338 only accepts payment on Fridays. Enforced here rather than as a CHECK
+  // so a corrected historical entry stays possible via a direct fix.
+  if (weekday(date) !== 5) {
+    throw new BillingError(
+      `8338 only accepts payment on Fridays. ${date} is not a Friday — the next one is ${nextFridayOnOrAfter(date)}.`,
+      400,
+    )
+  }
+}
+
+/**
+ * The client tells 8338 they have paid, with evidence.
+ *
+ * Payment moves outside the system, so this records a claim, not a settlement.
+ * The row lands as `pending_verification` and contributes nothing to the
+ * invoice balance until an accountant confirms the money actually arrived.
+ *
+ * `client_declared_date` is when they say the transfer left their account and
+ * is deliberately NOT Friday-validated — a bank transfer lands whenever it
+ * lands. The Friday rule governs when 8338 *accepts* payment, which is the
+ * accountant's date, set at confirmation.
+ */
+export async function submitPaymentProof(
+  invoiceId: string,
+  payload: {
+    amount_paid: number
+    client_declared_date: string
+    method: PaymentMethod
+    reference_no?: string | null
+    notes?: string | null
+    proof_urls: string[]
+  },
+  viewer: Viewer,
+) {
+  const invoice = await BillingModel.findInvoiceById(invoiceId)
+  if (!invoice) throw new BillingError('Service Invoice not found.', 404)
+
+  const period = await loadPeriod(invoice.period_id)
+  assertOwnership(period, viewer)
+
+  if (invoice.payment_status === 'paid') {
+    throw new BillingError('This invoice has already been settled.', 409)
+  }
+  if (invoice.payment_status === 'cancelled') {
+    throw new BillingError('This invoice was cancelled.', 409)
+  }
+  if (!payload.proof_urls?.length) {
+    throw new BillingError('Attach proof of your payment — a deposit slip, transfer confirmation or check photo.', 400)
+  }
+
+  // One claim at a time per invoice, or the accountant is left reconciling
+  // duplicates of the same transfer.
+  const existing = await BillingModel.findPaymentsByInvoice(invoiceId)
+  if (existing.some((p) => p.status === 'pending_verification')) {
+    throw new BillingError('A payment for this invoice is already awaiting verification.', 409)
+  }
+
+  const payment = await BillingModel.createPayment({
+    invoice_id: invoiceId,
+    amount_paid: payload.amount_paid,
+    // Null until an accountant sets the Friday 8338 accepted it.
+    payment_date: null,
+    client_declared_date: payload.client_declared_date,
+    method: payload.method,
+    reference_no: payload.reference_no ?? null,
+    notes: payload.notes ?? null,
+    proof_urls: payload.proof_urls,
+    status: 'pending_verification',
+    submitted_by: viewer.userId,
+    submitted_at: new Date().toISOString(),
+  })
+
+  await notifyBilling(
+    BillingNotices.paymentProofSubmitted(period, invoice.si_number, payload.amount_paid),
+    period,
+    { invoice_id: invoiceId, payment_id: payment.payment_id },
+  )
+
+  logEvent({
+    user_id: viewer.userId,
+    log_type: 'payment',
+    action: 'payment_proof_submitted',
+    description: `Client submitted proof of ${payload.amount_paid} against ${invoice.si_number}, declared ${payload.client_declared_date}`,
+  })
+
+  return payment
+}
+
+/**
+ * 8338 confirms or rejects a client's payment claim.
+ *
+ * Confirming is the only path by which a client-submitted payment ever counts
+ * toward an invoice, and it is where the Friday rule is applied — to the date
+ * 8338 accepted the money, not the date the client transferred it.
+ */
+export async function verifyPayment(
+  paymentId: string,
+  input: { decision: 'confirm' | 'reject'; payment_date?: string; remarks?: string | null },
+  actorId: string | null,
+) {
+  const payment = await BillingModel.findPaymentById(paymentId)
+  if (!payment) throw new BillingError('Payment not found.', 404)
+  if (payment.status !== 'pending_verification') {
+    throw new BillingError(`This payment has already been ${payment.status === 'confirmed' ? 'confirmed' : 'rejected'}.`, 409)
+  }
+
+  const invoice = await BillingModel.findInvoiceById(payment.invoice_id)
+  if (!invoice) throw new BillingError('Service Invoice not found.', 404)
+
+  const confirming = input.decision === 'confirm'
+
+  if (confirming) {
+    if (!input.payment_date) {
+      throw new BillingError('Enter the Friday on which 8338 accepted this payment.', 400)
+    }
+    assertFriday(input.payment_date)
+  } else if (!input.remarks?.trim()) {
+    throw new BillingError('Tell the client why the payment could not be confirmed.', 400)
+  }
+
+  const resolved = await BillingModel.resolvePayment(paymentId, {
+    status: confirming ? 'confirmed' : 'rejected',
+    payment_date: confirming ? input.payment_date! : null,
+    rejection_reason: confirming ? null : (input.remarks ?? null),
+    verified_by: actorId,
+  })
+  if (!resolved) throw new BillingError('This payment is no longer awaiting verification.', 409)
+
+  const period = await loadPeriod(invoice.period_id)
+  let settled = false
+
+  if (confirming) {
+    ;({ settled } = await settleIfFullyPaid(
+      payment.invoice_id,
+      Number(invoice.total_amount_due),
+      invoice.period_id,
+    ))
+    await notifyBilling(BillingNotices.paymentRecorded(period, Number(payment.amount_paid)), period)
+  } else {
+    await notifyBilling(
+      BillingNotices.paymentRejected(period, invoice.si_number, input.remarks ?? null),
+      period,
+    )
+  }
+
+  logEvent({
+    user_id: actorId,
+    log_type: 'payment',
+    action: confirming ? 'payment_proof_confirmed' : 'payment_proof_rejected',
+    description: `${confirming ? 'Confirmed' : 'Rejected'} ${payment.amount_paid} against ${invoice.si_number}${confirming ? ` accepted ${input.payment_date}` : ''}`,
+  })
+
+  return { payment: resolved, settled }
+}
+
+/** Payments awaiting an accountant, optionally narrowed to one period. */
+export async function listPendingPayments(periodId?: string) {
+  return BillingModel.findPendingPayments(periodId)
+}
+
+/**
+ * Render a document's PDF and attach it, without ever failing the caller.
+ *
+ * Issuance has already consumed a BIR serial and the document legally exists on
+ * paper by that point, so a Cloudinary hiccup must not roll it back or hand the
+ * accountant an error for something that did happen. A failure leaves `pdf_url`
+ * null and is recoverable through the regenerate endpoint.
+ */
+async function attachPdf(
+  label: string,
+  render: () => Promise<string>,
+  save: (url: string) => Promise<unknown>,
+): Promise<string | null> {
+  try {
+    const url = await render()
+    await save(url)
+    return url
+  } catch (err) {
+    console.error(`[billing:pdf] ${label} —`, (err as Error).message)
+    return null
+  }
+}
+
+/**
+ * (Re)generate the PDF for an already-issued Service Invoice.
+ *
+ * Exists because issuance deliberately survives a render failure: this is how
+ * the missing soft copy gets filled in afterwards without touching the serial.
+ */
+export async function regenerateInvoicePdf(invoiceId: string, actorId: string | null) {
+  const invoice = await BillingModel.findInvoiceById(invoiceId)
+  if (!invoice) throw new BillingError('Service Invoice not found.', 404)
+
+  const items = (await BillingModel.findPeriodItems(invoice.period_id))
+    .filter((i) => i.booking_id === invoice.booking_id)
+
+  const url = await attachPdf(
+    `SI ${invoice.si_number}`,
+    () => publishServiceInvoice({ invoice: invoice as never, items: items as never }),
+    (u) => BillingModel.updateInvoice(invoiceId, { pdf_url: u }),
+  )
+  if (!url) throw new BillingError('Could not generate the invoice PDF. Check the file storage configuration.', 502)
+
+  logEvent({
+    user_id: actorId,
+    log_type: 'billing_activity',
+    action: 'service_invoice_pdf_regenerated',
+    description: `Regenerated the PDF for ${invoice.si_number}`,
+  })
+
+  return { invoice_id: invoiceId, pdf_url: url }
+}
+
 export async function recordPayment(
   invoiceId: string,
   payload: {
@@ -653,6 +923,7 @@ export async function recordPayment(
     method: PaymentMethod
     reference_no?: string | null
     notes?: string | null
+    proof_urls?: string[]
   },
   actorId: string | null,
 ) {
@@ -665,14 +936,7 @@ export async function recordPayment(
     throw new BillingError('This invoice was cancelled.', 409)
   }
 
-  // 8338 only accepts payment on Fridays. Enforced here rather than as a CHECK
-  // so a corrected historical entry stays possible via a direct fix.
-  if (weekday(payload.payment_date) !== 5) {
-    throw new BillingError(
-      `8338 only accepts payment on Fridays. ${payload.payment_date} is not a Friday — the next one is ${nextFridayOnOrAfter(payload.payment_date)}.`,
-      400,
-    )
-  }
+  assertFriday(payload.payment_date)
 
   const payment = await BillingModel.createPayment({
     invoice_id: invoiceId,
@@ -681,26 +945,20 @@ export async function recordPayment(
     method: payload.method,
     reference_no: payload.reference_no ?? null,
     notes: payload.notes ?? null,
+    proof_urls: payload.proof_urls ?? [],
+    // Recorded by a member of staff who has seen the money, so it is confirmed
+    // on creation — unlike a client's upload, which has to be verified first.
+    status: 'confirmed',
     recorded_by: actorId,
+    verified_by: actorId,
+    verified_at: new Date().toISOString(),
   })
 
-  // Only a full settlement closes the invoice; a part payment leaves it open.
-  const paidSoFar = (await BillingModel.findPaymentsByInvoice(invoiceId)).reduce(
-    (sum, p) => sum + Number(p.amount_paid),
-    0,
+  const { settled, paidSoFar } = await settleIfFullyPaid(
+    invoiceId,
+    Number(invoice.total_amount_due),
+    invoice.period_id,
   )
-  const settled = paidSoFar >= Number(invoice.total_amount_due) - 0.005
-
-  if (settled) {
-    await BillingModel.updateInvoice(invoiceId, { payment_status: 'paid' })
-
-    // The period only reaches 'paid' when EVERY invoice on it is settled —
-    // a cut-off billed across four deliveries is not paid because one was.
-    const progress = await BillingModel.periodInvoiceProgress(invoice.period_id)
-    if (progress.total > 0 && progress.settled === progress.total) {
-      await BillingModel.transitionPeriod(invoice.period_id, ['invoiced'], 'paid')
-    }
-  }
 
   const period = await loadPeriod(invoice.period_id)
   await notifyBilling(BillingNotices.paymentRecorded(period, payload.amount_paid), period)
@@ -755,6 +1013,12 @@ export async function issueReceipt(
     amount_in_words: amountInWords(Number(payment.amount_paid)),
     issued_by: actorId,
   })
+
+  receipt.pdf_url = await attachPdf(
+    `AR ${arNumber}`,
+    () => publishAcknowledgementReceipt({ receipt: receipt as never, siNumber: invoice.si_number }),
+    (url) => BillingModel.updateReceipt(receipt.ar_id, { pdf_url: url }),
+  )
 
   // The receipt closes the cycle — but only once every invoice on the period
   // has one, since a cut-off is billed across several deliveries.

@@ -629,15 +629,91 @@ export async function createPayment(row: Record<string, unknown>) {
   return data
 }
 
-export async function findPaymentsByInvoice(invoiceId: string) {
-  const { data, error } = await supabase
+/**
+ * Payments against an invoice.
+ *
+ * `confirmedOnly` is what the settlement sum must use. A client uploading proof
+ * creates a pending row, and counting that toward the balance would let them
+ * mark their own invoice paid on their say-so — the whole point of verification.
+ * Ordered by submission because a pending row has no payment_date yet.
+ */
+export async function findPaymentsByInvoice(invoiceId: string, confirmedOnly = false) {
+  let q = supabase
     .from('billing_payments')
     .select('*')
     .eq('invoice_id', invoiceId)
-    .order('payment_date', { ascending: true })
+
+  if (confirmedOnly) q = q.eq('status', 'confirmed')
+
+  const { data, error } = await q.order('recorded_at', { ascending: true })
 
   if (error) throw error
   return data ?? []
+}
+
+/**
+ * Every payment against every invoice on a period, in one query.
+ *
+ * Both screens need each invoice's payment state — is it awaiting
+ * verification, was it rejected — and asking per invoice would be a round trip
+ * per booking on a cut-off.
+ */
+export async function findPaymentsByPeriod(periodId: string) {
+  const { rows } = await pool.query(
+    `select p.*
+       from billing_payments p
+       join service_invoices i on i.invoice_id = p.invoice_id
+      where i.period_id = $1
+      order by p.recorded_at asc`,
+    [periodId],
+  )
+  return rows
+}
+
+/** Everything waiting on an accountant, newest work surfaced with its invoice. */
+export async function findPendingPayments(periodId?: string) {
+  let q = supabase
+    .from('billing_payments')
+    .select('*, service_invoices ( invoice_id, si_number, period_id, total_amount_due, due_date )')
+    .eq('status', 'pending_verification')
+    .order('submitted_at', { ascending: true })
+
+  const { data, error } = await q
+  if (error) throw error
+
+  const rows = data ?? []
+  // PostgREST cannot filter on an embedded column, so a period narrowing is
+  // applied here rather than in the query.
+  return periodId
+    ? rows.filter((r) => (r.service_invoices as { period_id?: string } | null)?.period_id === periodId)
+    : rows
+}
+
+/**
+ * Move a payment out of pending, only if it is still pending.
+ *
+ * The status guard makes a double confirmation impossible: two accountants
+ * acting at once, or a retried request, cannot settle the same invoice twice.
+ */
+export async function resolvePayment(
+  paymentId: string,
+  fields: {
+    status: 'confirmed' | 'rejected'
+    payment_date?: string | null
+    rejection_reason?: string | null
+    verified_by?: string | null
+  },
+) {
+  const { data, error } = await supabase
+    .from('billing_payments')
+    .update({ ...fields, verified_at: new Date().toISOString() })
+    .eq('payment_id', paymentId)
+    .eq('status', 'pending_verification')
+    .select()
+    .maybeSingle()
+
+  if (error) throw error
+  return data
 }
 
 export async function findPaymentById(paymentId: string) {

@@ -11,7 +11,9 @@ import {
   issueReceiptSchema,
   recordPaymentSchema,
   saveConsolidationSchema,
+  submitPaymentProofSchema,
   validateSubmissionSchema,
+  verifyPaymentSchema,
 } from '../schema/billing/billing.schema.js'
 import * as BillingController from '../controllers/billing/billing.controller.js'
 
@@ -73,6 +75,16 @@ router.get(
   '/me/invoices/:invoiceId',
   authenticate, authenticatedLimiter, isClient, attachClientScope,
   BillingController.getInvoice,
+)
+
+// Payment happens outside the system, so the client tells 8338 it happened and
+// attaches evidence. This creates a claim awaiting verification, never a
+// settlement — see submitPaymentProof in the service.
+router.post(
+  '/me/invoices/:invoiceId/proof',
+  authenticate, authenticatedLimiter, isClient, attachClientScope,
+  validate(submitPaymentProofSchema),
+  BillingController.submitPaymentProof,
 )
 
 // ---------------------------------------------------------------------------
@@ -140,6 +152,28 @@ router.post(
   authenticate, authenticatedLimiter, isBillingStaff, canReadBilling,
   validate(recordPaymentSchema),
   BillingController.recordPayment,
+)
+
+// Issuance survives a failed render, leaving pdf_url null; this fills it in
+// afterwards without touching the serial.
+router.post(
+  '/invoices/:invoiceId/pdf',
+  authenticate, authenticatedLimiter, isBillingStaff, canReadBilling,
+  BillingController.regenerateInvoicePdf,
+)
+
+// The accountant's verification queue.
+router.get(
+  '/payments/pending',
+  authenticate, authenticatedLimiter, isBillingStaff, canReadBilling,
+  BillingController.listPendingPayments,
+)
+
+router.post(
+  '/payments/:paymentId/verify',
+  authenticate, authenticatedLimiter, isBillingStaff, canReadBilling,
+  validate(verifyPaymentSchema),
+  BillingController.verifyPayment,
 )
 
 router.post(

@@ -102,6 +102,42 @@ export const issueInvoiceSchema = z.object({
   overrides: z.record(z.string().uuid(), invoiceOverrideSchema).optional(),
 })
 
+/**
+ * The client's claim that they have paid, with evidence.
+ *
+ * `client_declared_date` is deliberately NOT Friday-validated: a bank transfer
+ * lands whenever it lands. The Friday rule governs when 8338 accepts payment,
+ * which is the accountant's date at verification.
+ */
+export const submitPaymentProofSchema = z.object({
+  amount_paid: money.refine((n) => n > 0, 'Enter the amount you paid'),
+  client_declared_date: z.string().date(),
+  method: z.enum(['cash', 'check']),
+  reference_no: z.string().trim().max(60).optional().nullable(),
+  notes: z.string().trim().max(500).optional().nullable(),
+  proof_urls: z
+    .array(z.string().url('Each attachment must be an uploaded file URL'))
+    .min(1, 'Attach proof of your payment')
+    .max(3, 'At most 3 attachments'),
+})
+
+export const verifyPaymentSchema = z
+  .object({
+    decision: z.enum(['confirm', 'reject']),
+    // The Friday 8338 accepted the money. Checked in the service, which can name
+    // the next Friday in the error rather than just rejecting the shape.
+    payment_date: z.string().date().optional(),
+    remarks: z.string().trim().max(500).optional().nullable(),
+  })
+  .refine((v) => v.decision !== 'confirm' || !!v.payment_date, {
+    message: 'Enter the Friday on which 8338 accepted this payment',
+    path: ['payment_date'],
+  })
+  .refine((v) => v.decision !== 'reject' || !!v.remarks?.trim(), {
+    message: 'Tell the client why the payment could not be confirmed',
+    path: ['remarks'],
+  })
+
 export const recordPaymentSchema = z.object({
   amount_paid: money.refine((n) => n > 0, 'Payment must be greater than zero'),
   // The Friday rule is checked in the service, which can name the next Friday
@@ -110,6 +146,8 @@ export const recordPaymentSchema = z.object({
   method: z.enum(['cash', 'check']),
   reference_no: z.string().trim().max(60).optional().nullable(),
   notes: z.string().trim().max(500).optional().nullable(),
+  // An accountant taking cash at the office may still have a slip to attach.
+  proof_urls: z.array(z.string().url()).max(3).optional(),
 })
 
 export const issueReceiptSchema = z.object({

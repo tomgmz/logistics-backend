@@ -197,6 +197,20 @@ export const BillingNotices = {
     body: `Payment for ${periodLabel(p)} was due ${dueDate} and has not been recorded.`,
   }),
 
+  paymentProofSubmitted: (p: BillingPeriod, siNumber: string, amount: number): BillingNotice => ({
+    type: 'billing.payment_proof_submitted',
+    audience: 'staff',
+    title: 'Proof of payment submitted',
+    body: `A client submitted proof of ${formatPeso(amount)} against ${siNumber}. Verify it before the invoice is treated as settled.`,
+  }),
+
+  paymentRejected: (p: BillingPeriod, siNumber: string, reason?: string | null): BillingNotice => ({
+    type: 'billing.payment_rejected',
+    audience: 'client',
+    title: `Payment for ${siNumber} could not be confirmed`,
+    body: `8338 could not verify your payment for ${periodLabel(p)}.${reason ? ` ${reason}` : ''} Please check the details and upload proof again.`,
+  }),
+
   paymentRecorded: (p: BillingPeriod, amount: number): BillingNotice => ({
     type: 'billing.payment_recorded',
     audience: 'client',

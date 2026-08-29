@@ -4,9 +4,15 @@ import { getRequestMeta } from '../../lib/controller-utils.js'
 import { logEvent } from '../../lib/log-event.js'
 
 const FOLDER = 'booking_documents'
+/**
+ * Billing evidence — client summaries and proof of payment — is filed apart
+ * from booking paperwork so a finance audit does not have to sift delivery
+ * documents to find it.
+ */
+const BILLING_FOLDER = 'billing_documents'
 
-async function uploadToCloudinary(file: Express.Multer.File, bookingRef?: string) {
-  const folder = bookingRef ? `${FOLDER}/${bookingRef}` : FOLDER
+async function uploadToCloudinary(file: Express.Multer.File, ref?: string, root: string = FOLDER) {
+  const folder = ref ? `${root}/${ref}` : root
 
   const ext      = file.originalname.split('.').pop()?.toLowerCase() ?? ''
   const baseName = file.originalname
@@ -80,6 +86,49 @@ export const uploadBookingDocuments = async (req: Request, res: Response) => {
     return res.status(200).json({
       status: 'success',
       data:   { urls, files: results },
+    })
+  } catch (error: any) {
+    const isBadRequest = error.message?.match(/Only PDF|DOCX|too large|files allowed/i)
+    return res.status(isBadRequest ? 400 : 500).json({
+      status:  'error',
+      message: error.message ?? 'Upload failed',
+    })
+  }
+}
+
+/**
+ * Billing attachments: the client's own billing summary, and proof that a
+ * payment made outside the system actually happened.
+ *
+ * Same middleware and same size limits as booking documents — only the
+ * Cloudinary folder and the audit log differ.
+ */
+export const uploadBillingDocuments = async (req: Request, res: Response) => {
+  try {
+    const files = req.files as Express.Multer.File[] | undefined
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ status: 'error', message: 'No files provided' })
+    }
+
+    // Groups a client's uploads under the period or invoice they belong to.
+    const ref = typeof req.body.ref === 'string' ? req.body.ref.trim() || undefined : undefined
+
+    const results = await Promise.all(
+      files.map((f) => uploadToCloudinary(f, ref, BILLING_FOLDER)),
+    )
+
+    const { userId } = getRequestMeta(req)
+    logEvent({
+      user_id:     userId,
+      log_type:    'billing_activity',
+      action:      'billing_documents_uploaded',
+      description: `${files.length} billing document(s) uploaded${ref ? ` for ${ref}` : ''}`,
+    })
+
+    return res.status(200).json({
+      status: 'success',
+      data:   { urls: results.map((r) => r.url), files: results },
     })
   } catch (error: any) {
     const isBadRequest = error.message?.match(/Only PDF|DOCX|too large|files allowed/i)
