@@ -24,24 +24,67 @@ export const COMPANY = {
 } as const
 
 /**
- * The Authority to Print block, reproduced verbatim from the booklet.
+ * The Authority to Print block printed at the foot of every BIR document.
  *
- * This is regulatory text, not decoration: a BIR document without it is
- * incomplete. It is transcribed from the supplied booklet photographs and must
- * be re-checked whenever a new pad is printed, because the ATP number and the
- * validity dates change with it.
+ * This is regulatory text, not decoration: a document without it is incomplete,
+ * and one carrying the WRONG ATP number is worse than one carrying none — it
+ * points an examiner at a different registered booklet.
+ *
+ * It is not defined here. Each pad has its own, and pads are replaced as they
+ * run out, so the values live on the document_series row for that document type
+ * where an accountant can update them when a new booklet arrives. Hardcoding
+ * them once meant a code change and a redeploy every time 8338 bought paper.
  */
-export const ATP_FOOTER = {
-  booklets: '10 Bklts. (50x2) 001-500',
-  authority: 'BIR Authority to Print No. OCN 057AU2025000012162',
-  atpDate: 'Date of ATP: 08-06-2025',
-  printer: "DACUYA'S PRINTING SERVICES",
-  printerAddress: '158 Garcia St., San Vicente, San Pedro, Laguna',
-  printerVat: 'VAT Reg. TIN: 252-456-817-00000   Tel. No.: 847-0090',
-  accreditation: "Printer's Accreditation No. 057MP2023000000005",
-  issued: 'Date Issued: 10/11/2023',
-  expiry: 'Expiry Date: 10/10/2028',
-} as const
+export interface AtpFooter {
+  booklets: string
+  authority: string
+  atpDate: string
+  printer: string
+  printerAddress: string
+  printerVat: string
+  accreditation: string
+  issued: string
+  expiry: string
+}
+
+/** Shape of a document_series row, as far as the renderers care. */
+export interface BookletSettings {
+  atp_number: string | null
+  atp_date: string | null
+  booklet_label: string | null
+  printer_name: string | null
+  printer_address: string | null
+  printer_vat: string | null
+  printer_accreditation: string | null
+  printer_issued: string | null
+  printer_expiry: string | null
+}
+
+/**
+ * Turn a booklet row into the footer as it should read.
+ *
+ * The stored values are the bare facts ('OCN 057AU…', '08-06-2025'); the
+ * labels around them belong to the form, not to the data, so an accountant
+ * typing a new ATP number never has to reproduce the wording.
+ *
+ * A missing value prints as an empty line rather than a placeholder. A footer
+ * with a gap is visibly incomplete; one reading "N/A" or "undefined" looks
+ * deliberate and could pass review unnoticed.
+ */
+export function atpFooterFrom(settings: BookletSettings | null | undefined): AtpFooter {
+  const s = settings ?? ({} as BookletSettings)
+  return {
+    booklets: s.booklet_label ?? '',
+    authority: s.atp_number ? `BIR Authority to Print No. ${s.atp_number}` : '',
+    atpDate: s.atp_date ? `Date of ATP: ${s.atp_date}` : '',
+    printer: s.printer_name ?? '',
+    printerAddress: s.printer_address ?? '',
+    printerVat: s.printer_vat ?? '',
+    accreditation: s.printer_accreditation ?? '',
+    issued: s.printer_issued ?? '',
+    expiry: s.printer_expiry ?? '',
+  }
+}
 
 export const PAGE = {
   size: 'A4' as const,
@@ -110,18 +153,23 @@ export function labelled(doc: Doc, label: string, value: string, x: number, y: n
   return y + 26
 }
 
-/** The ATP block, pinned to the bottom of the page like the printed form. */
-export function drawAtpFooter(doc: Doc): void {
+/**
+ * The ATP block, pinned to the bottom of the page like the printed form.
+ *
+ * Takes the footer explicitly rather than defaulting to one, so a new document
+ * type cannot silently inherit another booklet's registration.
+ */
+export function drawAtpFooter(doc: Doc, atp: AtpFooter): void {
   const y = 760
   hr(doc, y - 8)
   doc.font('Helvetica').fontSize(6).fillColor(MUTED)
 
-  const left = [ATP_FOOTER.booklets, ATP_FOOTER.authority, ATP_FOOTER.atpDate]
+  const left = [atp.booklets, atp.authority, atp.atpDate]
   const right = [
-    ATP_FOOTER.printer,
-    ATP_FOOTER.printerAddress,
-    ATP_FOOTER.printerVat,
-    `${ATP_FOOTER.accreditation}   ${ATP_FOOTER.issued}   ${ATP_FOOTER.expiry}`,
+    atp.printer,
+    atp.printerAddress,
+    atp.printerVat,
+    `${atp.accreditation}   ${atp.issued}   ${atp.expiry}`,
   ]
 
   left.forEach((line, i) => doc.text(line, PAGE.margin, y + i * 8, { width: PAGE.width * 0.45 }))

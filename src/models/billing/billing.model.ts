@@ -487,6 +487,36 @@ export async function peekSeries(key: DocumentSeriesKey) {
   return data
 }
 
+/** Both booklets, for the settings screen. */
+export async function listSeries() {
+  const { data, error } = await supabase
+    .from('document_series')
+    .select('*')
+    .order('series_key', { ascending: true })
+
+  if (error) throw error
+  return data ?? []
+}
+
+/**
+ * Update a booklet's settings.
+ *
+ * `series_key` is never writable: the row IS the document type, and letting it
+ * change would silently move one pad's serial counter onto the other.
+ */
+export async function updateSeries(key: DocumentSeriesKey, fields: Record<string, unknown>) {
+  const { series_key: _ignored, ...safe } = fields
+  const { data, error } = await supabase
+    .from('document_series')
+    .update({ ...safe, updated_at: new Date().toISOString() })
+    .eq('series_key', key)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 /**
  * Move the counter past a serial the accountant typed in by hand, so the next
  * auto-assigned number follows the booklet rather than repeating what was just

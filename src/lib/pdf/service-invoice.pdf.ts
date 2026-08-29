@@ -1,4 +1,5 @@
 import {
+  atpFooterFrom,
   drawAtpFooter,
   drawHeader,
   fmtDate,
@@ -10,6 +11,7 @@ import {
   signatureLine,
   toBuffer,
   uploadPdf,
+  type BookletSettings,
   type Doc,
 } from './bir-document.js'
 import type { ServiceInvoice, BillingPeriodItem } from '../../types/billing.types.js'
@@ -137,12 +139,20 @@ export interface ServiceInvoicePdfInput {
   items: BillingPeriodItem[]
   /** Booking reference, printed so the invoice ties back to one delivery. */
   bookingRef?: string | null
+  /**
+   * The pad this was written on, from document_series. Required in practice —
+   * an invoice rendered without it has no Authority to Print block, which the
+   * caller passes rather than the renderer fetching, so the PDF layer stays
+   * free of database access.
+   */
+  booklet?: BookletSettings | null
 }
 
 export async function renderServiceInvoice({
   invoice,
   items,
   bookingRef,
+  booklet,
 }: ServiceInvoicePdfInput): Promise<Buffer> {
   const doc = newDocument()
 
@@ -190,7 +200,7 @@ export async function renderServiceInvoice({
   signatureLine(doc, 'Cashier / Authorized Representative', PAGE.margin, 720, 220)
   signatureLine(doc, 'SC/PWD/NAAC/MOV/Solo Parent — Signature', PAGE.margin + 280, 720, 220)
 
-  drawAtpFooter(doc)
+  drawAtpFooter(doc, atpFooterFrom(booklet))
 
   return toBuffer(doc)
 }

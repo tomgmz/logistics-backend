@@ -1,4 +1,5 @@
 import {
+  atpFooterFrom,
   drawAtpFooter,
   drawHeader,
   fmtDate,
@@ -10,6 +11,7 @@ import {
   signatureLine,
   toBuffer,
   uploadPdf,
+  type BookletSettings,
   type Doc,
 } from './bir-document.js'
 import type { AcknowledgementReceipt } from '../../types/billing.types.js'
@@ -65,11 +67,19 @@ export interface ReceiptPdfInput {
   receipt: AcknowledgementReceipt
   /** The invoice this settles, printed as the reference. */
   siNumber: string
+  /**
+   * The AR pad's own settings. Separate from the Service Invoice's: the two
+   * booklets are registered under different Authorities to Print, and printing
+   * one pad's ATP on the other's document points an examiner at the wrong
+   * registered booklet.
+   */
+  booklet?: BookletSettings | null
 }
 
 export async function renderAcknowledgementReceipt({
   receipt,
   siNumber,
+  booklet,
 }: ReceiptPdfInput): Promise<Buffer> {
   const doc = newDocument()
 
@@ -111,7 +121,7 @@ export async function renderAcknowledgementReceipt({
   doc.font('Helvetica-Bold').fontSize(8).fillColor('#000')
      .text(NOT_INPUT_TAX, PAGE.margin, 735, { width: PAGE.width, align: 'center' })
 
-  drawAtpFooter(doc)
+  drawAtpFooter(doc, atpFooterFrom(booklet))
 
   return toBuffer(doc)
 }

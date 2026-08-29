@@ -12,6 +12,7 @@ import {
   recordPaymentSchema,
   saveConsolidationSchema,
   submitPaymentProofSchema,
+  updateBookletSchema,
   validateSubmissionSchema,
   verifyPaymentSchema,
 } from '../schema/billing/billing.schema.js'
@@ -160,6 +161,22 @@ router.post(
   '/invoices/:invoiceId/pdf',
   authenticate, authenticatedLimiter, isBillingStaff, canReadBilling,
   BillingController.regenerateInvoicePdf,
+)
+
+// The BIR booklets in use: serial counters and Authority to Print blocks.
+// Reading needs can_view; changing a pad needs can_edit, since a wrong serial
+// or ATP number puts incorrect regulatory text on every document that follows.
+router.get(
+  '/document-series',
+  authenticate, authenticatedLimiter, isBillingStaff, canReadBilling,
+  BillingController.listBooklets,
+)
+
+router.put(
+  '/document-series/:seriesKey',
+  authenticate, authenticatedLimiter, isBillingStaff, canReadBilling,
+  validate(updateBookletSchema),
+  BillingController.updateBooklet,
 )
 
 // The accountant's verification queue.

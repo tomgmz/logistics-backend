@@ -171,3 +171,36 @@ export type SaveConsolidationInput = z.infer<typeof saveConsolidationSchema>
 export type ClientSubmitBillingInput = z.infer<typeof clientSubmitBillingSchema>
 export type IssueInvoiceInput = z.infer<typeof issueInvoiceSchema>
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>
+
+/**
+ * Booklet settings — the serial counter and the Authority to Print block on a
+ * BIR pad. Every field is optional so the form can save one change at a time.
+ */
+export const updateBookletSchema = z.object({
+  next_number: z.number().int().positive().max(9_999_999).optional(),
+  booklet_start: z.number().int().positive().nullable().optional(),
+  booklet_end: z.number().int().positive().nullable().optional(),
+  // Zero-padding on the printed serial: the AR pad prints 0015, the SI 151.
+  pad_width: z.number().int().min(1).max(10).optional(),
+
+  // Stored and printed verbatim — the point is to reproduce the pad's footer,
+  // so the date is text rather than a date, and is never reformatted.
+  atp_number: z.string().trim().max(80).nullable().optional(),
+  atp_date: z.string().trim().max(40).nullable().optional(),
+  booklet_label: z.string().trim().max(80).nullable().optional(),
+
+  printer_name: z.string().trim().max(120).nullable().optional(),
+  printer_address: z.string().trim().max(160).nullable().optional(),
+  printer_vat: z.string().trim().max(120).nullable().optional(),
+  printer_accreditation: z.string().trim().max(120).nullable().optional(),
+  printer_issued: z.string().trim().max(60).nullable().optional(),
+  printer_expiry: z.string().trim().max(60).nullable().optional(),
+
+  // Re-submitted after the accountant has read the warnings a risky serial
+  // change produces. See updateBooklet in the service.
+  acknowledge_warnings: z.boolean().optional(),
+})
+  .refine(
+    (v) => v.booklet_start == null || v.booklet_end == null || v.booklet_end >= v.booklet_start,
+    { message: 'The end of the range cannot be before its start', path: ['booklet_end'] },
+  )

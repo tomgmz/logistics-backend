@@ -4,10 +4,14 @@
  *
  *   npx tsx scripts/preview-billing-pdfs.ts [outDir]
  *
- * Renders only — nothing is uploaded and nothing touches the database.
+ * Reads the Authority to Print footers from document_series so the preview
+ * shows what would really print. Renders only — nothing is uploaded, and no
+ * row is written.
  */
+import 'dotenv/config'
 import { writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { pool } from '../src/lib/database.js'
 import { renderServiceInvoice } from '../src/lib/pdf/service-invoice.pdf.js'
 import { renderAcknowledgementReceipt } from '../src/lib/pdf/acknowledgement-receipt.pdf.js'
 import { amountInWords, computeInvoiceTotals } from '../src/lib/billing-amounts.js'
@@ -78,10 +82,16 @@ const receipt = {
   created_at: '2026-05-15T00:00:00Z',
 }
 
-const si = await renderServiceInvoice({ invoice, items, bookingRef: 'BK-2026-0041' })
+// The Authority to Print footer comes from document_series, so this previews
+// what would really print rather than a hardcoded copy of it.
+const { rows: booklets } = await pool.query('select * from document_series')
+const siBooklet = booklets.find((b) => b.series_key === 'service_invoice')
+const arBooklet = booklets.find((b) => b.series_key === 'acknowledgement_receipt')
+
+const si = await renderServiceInvoice({ invoice, items, bookingRef: 'BK-2026-0041', booklet: siBooklet })
 writeFileSync(path.join(outDir, 'preview-service-invoice.pdf'), si)
 
-const ar = await renderAcknowledgementReceipt({ receipt, siNumber: '151' })
+const ar = await renderAcknowledgementReceipt({ receipt, siNumber: '151', booklet: arBooklet })
 writeFileSync(path.join(outDir, 'preview-acknowledgement-receipt.pdf'), ar)
 
 console.log(`Service Invoice        ${si.length.toLocaleString()} bytes`)

@@ -570,6 +570,10 @@ export async function issueServiceInvoices(
   const soldToName = (client.registered_name as string) || (client.company_name as string) || 'Client'
   const invoiceDate = input.invoice_date ?? phDay()
 
+  // The pad's Authority to Print block, read once for the whole batch. It lives
+  // on the booklet row so a new pad is data entry rather than a code change.
+  const booklet = await BillingModel.peekSeries('service_invoice')
+
   const issued: Record<string, unknown>[] = []
   const skipped: string[] = []
 
@@ -628,6 +632,7 @@ export async function issueServiceInvoices(
         invoice: invoice as never,
         items: lines as never,
         bookingRef: refByBooking.get(bookingId),
+        booklet,
       }),
       (url) => BillingModel.updateInvoice(invoice.invoice_id, { pdf_url: url }),
     )
@@ -862,6 +867,96 @@ export async function listPendingPayments(periodId?: string) {
   return BillingModel.findPendingPayments(periodId)
 }
 
+// ---------------------------------------------------------------------------
+// Booklet settings
+// ---------------------------------------------------------------------------
+
+/** Both BIR booklets — serial counter and Authority to Print block. */
+export async function listBooklets() {
+  return BillingModel.listSeries()
+}
+
+export interface BookletUpdate {
+  next_number?: number
+  booklet_start?: number | null
+  booklet_end?: number | null
+  pad_width?: number
+  atp_number?: string | null
+  atp_date?: string | null
+  booklet_label?: string | null
+  printer_name?: string | null
+  printer_address?: string | null
+  printer_vat?: string | null
+  printer_accreditation?: string | null
+  printer_issued?: string | null
+  printer_expiry?: string | null
+  /** Set once the accountant has seen and accepted the warnings below. */
+  acknowledge_warnings?: boolean
+}
+
+/**
+ * Update a booklet's settings, warning before anything risky.
+ *
+ * Two changes can quietly corrupt a BIR sequence, and neither can be forbidden
+ * outright:
+ *
+ *   - Moving the serial BACKWARDS re-issues a number that may already be on a
+ *     document. But a fresh pad genuinely resets the count, so it is legitimate.
+ *   - Setting a serial OUTSIDE the pad's range means the paper and the system
+ *     disagree about which booklet is in use. Also legitimate mid-transition.
+ *
+ * So they warn rather than block: the first call returns the warnings and
+ * changes nothing; the accountant re-submits with `acknowledge_warnings` to
+ * confirm they meant it. Silence would let a typo through unnoticed.
+ */
+export async function updateBooklet(
+  key: 'service_invoice' | 'acknowledgement_receipt',
+  input: BookletUpdate,
+  actorId: string | null,
+) {
+  const current = await BillingModel.peekSeries(key)
+  if (!current) throw new BillingError('Unknown booklet.', 404)
+
+  const { acknowledge_warnings, ...fields } = input
+  const warnings: string[] = []
+
+  if (fields.next_number !== undefined) {
+    if (fields.next_number < Number(current.next_number)) {
+      warnings.push(
+        `The serial goes backwards, from ${current.next_number} to ${fields.next_number}. ` +
+        `If ${fields.next_number} has already been used on paper, issuing it again duplicates a BIR serial. ` +
+        `This is expected when starting a fresh pad.`,
+      )
+    }
+    const start = fields.booklet_start ?? current.booklet_start
+    const end = fields.booklet_end ?? current.booklet_end
+    if (start != null && end != null && (fields.next_number < start || fields.next_number > end)) {
+      warnings.push(
+        `Serial ${fields.next_number} falls outside the booklet range ${start}–${end}. ` +
+        `Update the range too if you have moved to a different pad.`,
+      )
+    }
+  }
+
+  if (warnings.length && !acknowledge_warnings) {
+    return { requires_confirmation: true, warnings, series: current }
+  }
+
+  const series = await BillingModel.updateSeries(key, { ...fields, updated_by: actorId })
+
+  logEvent({
+    user_id: actorId,
+    log_type: 'billing_activity',
+    action: 'booklet_settings_updated',
+    description:
+      `Updated ${key} booklet: next serial ${series.next_number}` +
+      (fields.atp_number ? `, ATP ${fields.atp_number}` : '') +
+      (warnings.length ? ` (confirmed: ${warnings.length} warning(s))` : ''),
+  })
+
+  return { requires_confirmation: false, warnings: [], series }
+}
+
 /**
  * Render a document's PDF and attach it, without ever failing the caller.
  *
@@ -898,9 +993,10 @@ export async function regenerateInvoicePdf(invoiceId: string, actorId: string | 
   const items = (await BillingModel.findPeriodItems(invoice.period_id))
     .filter((i) => i.booking_id === invoice.booking_id)
 
+  const booklet = await BillingModel.peekSeries('service_invoice')
   const url = await attachPdf(
     `SI ${invoice.si_number}`,
-    () => publishServiceInvoice({ invoice: invoice as never, items: items as never }),
+    () => publishServiceInvoice({ invoice: invoice as never, items: items as never, booklet }),
     (u) => BillingModel.updateInvoice(invoiceId, { pdf_url: u }),
   )
   if (!url) throw new BillingError('Could not generate the invoice PDF. Check the file storage configuration.', 502)
@@ -1014,9 +1110,14 @@ export async function issueReceipt(
     issued_by: actorId,
   })
 
+  const arBooklet = await BillingModel.peekSeries('acknowledgement_receipt')
   receipt.pdf_url = await attachPdf(
     `AR ${arNumber}`,
-    () => publishAcknowledgementReceipt({ receipt: receipt as never, siNumber: invoice.si_number }),
+    () => publishAcknowledgementReceipt({
+      receipt: receipt as never,
+      siNumber: invoice.si_number,
+      booklet: arBooklet,
+    }),
     (url) => BillingModel.updateReceipt(receipt.ar_id, { pdf_url: url }),
   )
 

@@ -239,3 +239,32 @@ export async function regenerateInvoicePdf(req: Request, res: Response): Promise
     fail(res, err, 'regenerateInvoicePdf')
   }
 }
+
+/** Both BIR booklets: serial counters and Authority to Print blocks. */
+export async function listBooklets(req: Request, res: Response): Promise<void> {
+  try {
+    const data = await BillingService.listBooklets()
+    res.status(200).json({ status: 'success', data })
+  } catch (err) {
+    fail(res, err, 'listBooklets')
+  }
+}
+
+/**
+ * Update one booklet. A risky serial change comes back with
+ * `requires_confirmation` and warnings instead of being applied.
+ */
+export async function updateBooklet(req: Request, res: Response): Promise<void> {
+  try {
+    const { userId } = getRequestMeta(req)
+    const key = param(req.params.seriesKey)
+    if (key !== 'service_invoice' && key !== 'acknowledgement_receipt') {
+      res.status(404).json({ status: 'error', message: 'Unknown booklet.' })
+      return
+    }
+    const data = await BillingService.updateBooklet(key, req.body, userId)
+    res.status(200).json({ status: 'success', data })
+  } catch (err) {
+    fail(res, err, 'updateBooklet')
+  }
+}
