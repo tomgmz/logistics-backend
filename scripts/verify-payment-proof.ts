@@ -44,7 +44,11 @@ const P_END   = '2099-06-15'
 
 let periodId: string | null = null
 let bookingId: string | null = null
+let createdBooking = false
 let seriesBefore: number | null = null
+
+/** Marks the throwaway booking so teardown can find it even after a crash. */
+const SEED_MARKER = '[verify-payment-proof]'
 
 try {
   const { rows: clients } = await pool.query(
@@ -55,19 +59,22 @@ try {
   if (!clients.length) throw new Error('no billable client to test against')
   const client = clients[0]
 
-  const { rows: bookings } = await pool.query(
-    `select b.booking_id, b.reference_number
-       from bookings b
-       left join billing_booking_claims k on k.booking_id = b.booking_id
-      where b.client_id = $1 and b.status = 'completed' and k.booking_id is null
-      limit 1`,
-    [client.client_id],
+  // Create the booking rather than borrowing one. Every completed booking gets
+  // claimed by a period the moment it is consolidated, so a harness that hunts
+  // for a spare one stops working as soon as the system is actually used — which
+  // is precisely when these guarantees matter most. Removed in teardown.
+  const { rows: made } = await pool.query(
+    `insert into bookings
+       (client_id, origin, truck_type_needed, schedule_date, call_time, status, payment_terms)
+     values ($1, $2, 'Hino Wing Van', '2099-06-05'::date, '08:00'::time, 'completed', '30')
+     returning booking_id, reference_number`,
+    [client.client_id, `${SEED_MARKER} verification fixture`],
   )
-  if (!bookings.length) throw new Error('no unclaimed completed booking to test against')
-  bookingId = bookings[0].booking_id
+  bookingId = made[0].booking_id
+  createdBooking = true
 
   console.log(`\nclient  ${client.company_name}`)
-  console.log(`booking ${bookings[0].reference_number}\n`)
+  console.log(`booking ${made[0].reference_number} (created for this run)\n`)
 
   const { rows: series } = await pool.query(
     `select next_number from document_series where series_key = 'service_invoice'`,
@@ -220,9 +227,14 @@ try {
     await pool.query('delete from billing_period_items where period_id = $1', [periodId])
     await pool.query('delete from billing_periods where period_id = $1', [periodId])
   }
-  if (bookingId) {
+  if (bookingId && createdBooking) {
+    await pool.query('delete from booking_destinations where booking_id = $1', [bookingId])
+    await pool.query('delete from bookings where booking_id = $1', [bookingId])
+  } else if (bookingId) {
     await pool.query('update bookings set total_cost = null where booking_id = $1', [bookingId])
   }
+  // Sweep any fixture left by an earlier crashed run.
+  await pool.query('delete from bookings where origin like $1', [`${SEED_MARKER}%`])
   if (seriesBefore !== null) {
     // Put the booklet counter back; a test must not burn BIR serials.
     await pool.query(

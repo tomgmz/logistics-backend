@@ -61,15 +61,26 @@ try {
   if (!clients.length) throw new Error('no clients in the database to test against')
   const clientId = clients[0].client_id
 
+  // UNCLAIMED bookings only. A booking already claimed by a real period would
+  // collide on billing_booking_claims_pkey and fail a test that is checking
+  // something else entirely — which is exactly what happened once every seeded
+  // booking had been consolidated.
+  const unclaimed = `select b.booking_id
+       from bookings b
+       left join billing_booking_claims k on k.booking_id = b.booking_id
+      where k.booking_id is null`
+
   const { rows: bookings } = await db.query(
-    'select booking_id from bookings where client_id = $1 limit 2',
-    [clientId],
-  )
-  // Fall back to any bookings if this client has none; the FKs are what matter.
+    `${unclaimed} and b.client_id = $1 limit 2`, [clientId])
+  // Fall back to any client's unclaimed bookings; the FKs are what matter here.
   const { rows: anyBookings } = bookings.length >= 2
     ? { rows: bookings }
-    : await db.query('select booking_id from bookings limit 2')
-  if (anyBookings.length < 2) throw new Error('need at least 2 bookings in the database')
+    : await db.query(`${unclaimed} limit 2`)
+  if (anyBookings.length < 2) {
+    throw new Error(
+      'need 2 bookings not already claimed by a billing period — ' +
+      'release a period or add bookings before re-running')
+  }
   const [b1, b2] = anyBookings.map((b) => b.booking_id)
 
   console.log(`\nusing client ${clientId}`)
