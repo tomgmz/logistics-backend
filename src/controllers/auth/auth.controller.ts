@@ -27,7 +27,14 @@ function clearAuthCookies(res: Response) {
   res.clearCookie('refresh_token', COOKIE_OPTIONS)
 }
 
-export function getCsrfToken(req: Request, res: Response) {
+/**
+ * Issue the double-submit CSRF cookie.
+ *
+ * Deliberately NOT httpOnly: the point of the pattern is that the page can read
+ * this value and echo it in a header, which an attacker on another origin cannot
+ * do. The paired check lives in `verifyCsrfToken`.
+ */
+function issueCsrfCookie(res: Response): void {
   const token = crypto.randomBytes(32).toString('hex')
   res.cookie('csrf_token', token, {
     httpOnly: false,
@@ -36,6 +43,10 @@ export function getCsrfToken(req: Request, res: Response) {
     maxAge: 24 * 60 * 60 * 1000,
     path: '/',
   })
+}
+
+export function getCsrfToken(req: Request, res: Response) {
+  issueCsrfCookie(res)
   res.status(200).json({ status: 'success' })
 }
 
@@ -89,6 +100,7 @@ export async function verifyOtp(req: Request, res: Response) {
 
     const isMobile = req.body.platform === 'mobile'
     if (!isMobile) {
+      issueCsrfCookie(res)
       res.cookie('access_token',  data.accessToken,  ACCESS_COOKIE_OPTIONS)
       res.cookie('refresh_token', data.refreshToken, REFRESH_COOKIE_OPTIONS)
     }
@@ -116,6 +128,7 @@ export async function loginWithPassword(req: Request, res: Response) {
 
     const isMobile = req.body.platform === 'mobile'
     if (!isMobile) {
+      issueCsrfCookie(res)
       res.cookie('access_token',  data.accessToken,  ACCESS_COOKIE_OPTIONS)
       res.cookie('refresh_token', data.refreshToken, REFRESH_COOKIE_OPTIONS)
     }
@@ -148,6 +161,7 @@ export async function refreshToken(req: Request, res: Response) {
 
     const isMobile = !!req.body.refreshToken && !req.cookies.refresh_token
     if (!isMobile) {
+      issueCsrfCookie(res)
       res.cookie('access_token', data.accessToken, ACCESS_COOKIE_OPTIONS)
     }
 

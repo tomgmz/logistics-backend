@@ -21,7 +21,10 @@ export interface BookingListQuery {
   clientId?: string | null
 }
 
-const BOOKING_WITH_RELATIONS_SELECT = `
+// Exported so the transaction-history model hydrates rows with exactly the same
+// shape. The admin history renders the client's own detail components, so any
+// column dropped here would blank a field on both pages at once.
+export const BOOKING_WITH_RELATIONS_SELECT = `
   booking_id,
   client_id,
   origin,
@@ -45,7 +48,10 @@ const BOOKING_WITH_RELATIONS_SELECT = `
   required_volume_cbm,
   required_weight_kg,
   required_length_cm,
+  required_net_weight_kg,
   stackable_required,
+  non_stackable_cargo,
+  cargo_density_kg_cbm,
   payment_terms,
   transaction_documents,
   pickup_proof_photo_url,
@@ -92,6 +98,7 @@ const BOOKING_WITH_RELATIONS_SELECT = `
   booking_cargo_items (
     item_id,
     booking_id,
+    destination_id,
     product_id,
     commodity_id,
     shc_id,
@@ -301,54 +308,182 @@ async function isDriverAssignedToBooking(bookingId: string, userId: string): Pro
   return (data ?? []).length > 0
 }
 
+/**
+ * Columns `POST /booking` is allowed to write, and the order they are bound in.
+ *
+ * Spelled out rather than derived from the input object: the request body has
+ * already been stripped by zod, but an explicit list means a new column can
+ * never be written by accident just because someone added a field to a schema.
+ */
+const BOOKING_INSERT_COLUMNS = [
+  'client_id',
+  'origin',
+  'origin_longitude',
+  'origin_latitude',
+  'truck_type_needed',
+  'schedule_date',
+  'call_time',
+  'required_volume_cbm',
+  'required_weight_kg',
+  'required_length_cm',
+  'required_net_weight_kg',
+  'stackable_required',
+  'non_stackable_cargo',
+  'payment_terms',
+  'transaction_documents',
+  'idempotency_key',
+] as const
+
+const DESTINATION_INSERT_COLUMNS = [
+  'booking_id',
+  'address',
+  'sequence_order',
+  'notes',
+  'latitude',
+  'longitude',
+] as const
+
+const CARGO_INSERT_COLUMNS = [
+  'booking_id',
+  'destination_id',
+  'commodity_id',
+  'commodity_text',
+  'product_id',
+  'product_text',
+  'shc_id',
+  'shc_text',
+  'ashc_id',
+  'ashc_text',
+  'quantity',
+  'weight_kg',
+  'volume_cbm',
+  'length_cm',
+  'width_cm',
+  'height_cm',
+  'notes',
+] as const
+
+/**
+ * Build a multi-row `INSERT ... VALUES` placeholder list, e.g. two rows of three
+ * columns become `($1,$2,$3),($4,$5,$6)`, alongside the flat parameter array.
+ */
+function bulkValues<T extends Record<string, unknown>>(
+  rows:    T[],
+  columns: readonly string[],
+  start = 0,
+): { sql: string; params: unknown[] } {
+  const params: unknown[] = []
+  const tuples = rows.map((row) => {
+    const placeholders = columns.map((col) => {
+      params.push(row[col] ?? null)
+      return `$${start + params.length}`
+    })
+    return `(${placeholders.join(', ')})`
+  })
+  return { sql: tuples.join(', '), params }
+}
+
+/**
+ * Create a booking, its drop-offs and its cargo as ONE transaction.
+ *
+ * This used to be three separate PostgREST calls. Nothing tied them together,
+ * so a failure on the second or third — a constraint, a dropped connection —
+ * left a committed `bookings` row with no destinations behind it: invisible to
+ * the client, but sitting in the general manager's approval queue and counted in
+ * the status tallies, with no way to action it and nothing downstream to catch
+ * it. There is deliberately no DB-level "at least one destination" check to back
+ * this up; inside one transaction the half-written state cannot exist in the
+ * first place, and a deferred constraint trigger for it would only repeat the
+ * work the transaction already does.
+ *
+ * It is also markedly faster: three PostgREST round trips collapse into one
+ * transaction on the pooled connection.
+ */
 async function create(input: CreateBookingInput): Promise<BookingWithRelations | null> {
   const { destinations, cargo_items, ...bookingData } = input
 
-  const { data: booking, error: bookingError } = await supabase
-    .from('bookings')
-    .insert(bookingData)
-    .select()
-    .single()
+  const client = await pool.connect()
+  let bookingId: string
 
-  if (bookingError) throw bookingError
+  try {
+    await client.query('BEGIN')
 
-  if (destinations.length > 0) {
-    const destinationRows = destinations.map((d) => ({
-      ...d,
-      booking_id: booking.booking_id,
-    }))
-    const { error: destError } = await supabase
-      .from('booking_destinations')
-      .insert(destinationRows)
-    if (destError) throw destError
+    const bookingParams = BOOKING_INSERT_COLUMNS.map(
+      (col) => (bookingData as Record<string, unknown>)[col] ?? null,
+    )
+    const bookingResult = await client.query<{ booking_id: string }>(
+      `INSERT INTO bookings (${BOOKING_INSERT_COLUMNS.join(', ')})
+       VALUES (${BOOKING_INSERT_COLUMNS.map((_, i) => `$${i + 1}`).join(', ')})
+       ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+       RETURNING booking_id`,
+      bookingParams,
+    )
+    // No row back means this key has already created a booking: the caller is
+    // retrying an attempt that in fact succeeded. Hand back the original rather
+    // than a duplicate, and let the transaction close without writing children.
+    if (bookingResult.rows.length === 0) {
+      await client.query('ROLLBACK')
+      const existing = await pool.query<{ booking_id: string }>(
+        `SELECT booking_id FROM bookings WHERE idempotency_key = $1`,
+        [(bookingData as Record<string, unknown>).idempotency_key],
+      )
+      return existing.rows[0] ? findById(existing.rows[0].booking_id) : null
+    }
+
+    bookingId = bookingResult.rows[0].booking_id
+
+    // Drop-off id by the position the client gave it, so each cargo line can be
+    // tied to the stop it is actually for. Keyed on `sequence_order` rather than
+    // on the order rows come back in, which nothing guarantees.
+    const destinationIdByOrder = new Map<number, string>()
+
+    if (destinations.length > 0) {
+      const rows = destinations.map((d) => ({ ...d, booking_id: bookingId }))
+      const { sql, params } = bulkValues(rows, DESTINATION_INSERT_COLUMNS)
+      const inserted = await client.query<{ destination_id: string; sequence_order: number }>(
+        `INSERT INTO booking_destinations (${DESTINATION_INSERT_COLUMNS.join(', ')})
+         VALUES ${sql}
+         RETURNING destination_id, sequence_order`,
+        params,
+      )
+      for (const row of inserted.rows) {
+        destinationIdByOrder.set(Number(row.sequence_order), row.destination_id)
+      }
+    }
+
+    if (cargo_items && cargo_items.length > 0) {
+      const rows = cargo_items.map((item) => {
+        const { dropoff_sequence_order, ...rest } = item as typeof item & {
+          dropoff_sequence_order?: number
+        }
+        return {
+          ...rest,
+          booking_id:     bookingId,
+          // Unmatched (or unspecified) simply stays against the booking as a
+          // whole, which is how every cargo line behaved before this existed.
+          destination_id: dropoff_sequence_order != null
+            ? destinationIdByOrder.get(dropoff_sequence_order) ?? null
+            : null,
+        }
+      })
+      const { sql, params } = bulkValues(rows, CARGO_INSERT_COLUMNS)
+      await client.query(
+        `INSERT INTO booking_cargo_items (${CARGO_INSERT_COLUMNS.join(', ')}) VALUES ${sql}`,
+        params,
+      )
+    }
+
+    // The deferred `trg_max_destinations_per_booking` trigger fires here, inside
+    // the transaction, so a booking over the drop-off cap rolls back whole.
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
   }
 
-  if (cargo_items && cargo_items.length > 0) {
-    const cargoRows = cargo_items.map((item) => ({
-      booking_id:     booking.booking_id,
-      commodity_id:   item.commodity_id   ?? null,
-      commodity_text: item.commodity_text ?? null,
-      product_id:     item.product_id     ?? null,
-      product_text:   item.product_text   ?? null,
-      shc_id:         item.shc_id         ?? null,
-      shc_text:       item.shc_text       ?? null,
-      ashc_id:        item.ashc_id        ?? null,
-      ashc_text:      item.ashc_text      ?? null,
-      quantity:       item.quantity       ?? null,
-      weight_kg:      item.weight_kg      ?? null,
-      volume_cbm:     item.volume_cbm     ?? null,
-      length_cm:      item.length_cm      ?? null,
-      width_cm:       item.width_cm       ?? null,
-      height_cm:      item.height_cm      ?? null,
-      notes:          item.notes          ?? null,
-    }))
-    const { error: cargoError } = await supabase
-      .from('booking_cargo_items')
-      .insert(cargoRows)
-    if (cargoError) throw cargoError
-  }
-
-  return findById(booking.booking_id)
+  return findById(bookingId)
 }
 
 async function update(bookingId: string, input: UpdateBookingInput): Promise<BookingWithRelations | null> {
@@ -414,6 +549,27 @@ async function updateGmStatus(
 
   if (error) throw error
   return findById(bookingId)
+}
+
+/**
+ * Set the GM stage without reading the booking back.
+ *
+ * `updateGmStatus` returns the whole booking with its ten embedded relations —
+ * a select measured at ~210 ms — and two of its three callers discard that
+ * entirely: they only need the stage recorded before they move on. This is the
+ * same write without the read.
+ */
+async function setGmStatus(bookingId: string, input: GmReviewInput): Promise<void> {
+  const { error } = await supabase
+    .from('bookings')
+    .update({
+      gm_status:        input.gm_status,
+      rejection_reason: input.gm_status === 'rejected' ? input.rejection_reason : null,
+      updated_at:       new Date().toISOString(),
+    })
+    .eq('booking_id', bookingId)
+
+  if (error) throw error
 }
 
 async function updateOpsStatus(
@@ -569,6 +725,57 @@ async function findDestinationOwner(
     [destinationId],
   )
   return rows[0] ?? null
+}
+
+/**
+ * Write a new stop order for one booking, as a single atomic permutation.
+ *
+ * Route optimisation runs after the booking exists now, so applying its result
+ * means renumbering stops that already have numbers — and a permutation passes
+ * through transiently duplicated positions (swapping 1 and 2 sets one of them to
+ * a value the other still holds). `uq_booking_destination_sequence` is
+ * DEFERRABLE for exactly this reason: the check is pushed to COMMIT, where it
+ * sees the finished order rather than the half-applied one.
+ *
+ * Returns false if the booking's stops changed underneath us — an admin editing
+ * the route while the optimiser was thinking — so the stale result is dropped
+ * rather than overwriting a human's decision.
+ */
+async function resequenceDestinations(
+  bookingId: string,
+  order:     Array<{ destination_id: string; sequence_order: number }>,
+): Promise<boolean> {
+  if (order.length === 0) return false
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query('SET CONSTRAINTS uq_booking_destination_sequence DEFERRED')
+
+    let touched = 0
+    for (const { destination_id, sequence_order } of order) {
+      const res = await client.query(
+        `UPDATE booking_destinations
+            SET sequence_order = $1
+          WHERE destination_id = $2 AND booking_id = $3`,
+        [sequence_order, destination_id, bookingId],
+      )
+      touched += res.rowCount ?? 0
+    }
+
+    if (touched !== order.length) {
+      await client.query('ROLLBACK')
+      return false
+    }
+
+    await client.query('COMMIT')
+    return true
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 async function findDestinationsByBookingId(bookingId: string): Promise<BookingDestination[]> {
@@ -751,6 +958,7 @@ export const BookingModel = {
   updateStatus,
   cancelBooking,
   updateGmStatus,
+  setGmStatus,
   updateOpsStatus,
   markFleetRecheckSent,
   remove,
@@ -758,6 +966,7 @@ export const BookingModel = {
   setPickupProof,
   // destination mutations
   findDestinationsByBookingId,
+  resequenceDestinations,
   updateDestination,
   updateDestinationStatus,
   removeDestination,

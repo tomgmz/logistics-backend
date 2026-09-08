@@ -8,7 +8,7 @@ import swaggerUi from 'swagger-ui-express';
 import basicAuth from 'express-basic-auth';
 import { swaggerSpec } from './swagger/swagger.config.js';
 import adminRoutes from './routes/admin.route.js';
-import { authenticate } from './middlewares/auth.middleware.js';
+import { authenticate, verifyCsrfToken } from './middlewares/auth.middleware.js';
 import { moduleGuard } from './middlewares/moduleAccess.middleware.js';
 import clientRoutes from './routes/client.routes.js';
 import routeOptimizationRoutes from './routes/routeOptimization.route.js';
@@ -20,6 +20,7 @@ import { globalLimiter } from './middlewares/rateLimit.middleware.js';
 import messagingRoutes from './routes/messaging.routes.js'
 import notificationsRoutes from './routes/notifications.routes.js'
 import billingRoutes from './routes/billing.routes.js'
+import transactionHistoryRoutes from './routes/transaction-history.routes.js'
 import { startFleetRecheckScheduler } from './services/notification/fleet-recheck.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
 
@@ -100,8 +101,21 @@ app.use(
 );
 
 // ROUTES
+
+// CSRF, at last actually enforced. `verifyCsrfToken` had been written and
+// exported months ago and mounted precisely nowhere, so the web app's careful
+// token dance protected nothing. It is mounted here, ahead of everything that
+// writes, rather than route by route where the next new route would forget it.
+//
+// /api/auth is excluded: login and the token endpoint are how a session — and
+// its CSRF cookie — come into existence in the first place. The middleware also
+// waves through Bearer-authenticated callers (the driver app) and all safe
+// methods, so this only ever applies to a cookie-carrying browser write.
 app.use('/api/auth/csrf', authRoutes)
 app.use('/api/auth', authRoutes);
+
+app.use('/api', verifyCsrfToken);
+
 app.use('/api/booking', clientRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
 app.use('/api/directions', directionsRouter);
@@ -114,6 +128,10 @@ app.use('/api/notifications', notificationsRoutes);
 // as staff; each route carries its own gate (requireModule for staff,
 // attachClientScope for clients) rather than relying on moduleGuard's path map.
 app.use('/api/billing', billingRoutes);
+
+// Staff transaction history. Separate from /api/booking so it answers to the
+// transaction-history module rather than booking-management.
+app.use('/api/transaction-history', transactionHistoryRoutes);
 
 // HEALTH CHECK
 app.get('/api/health', (req: Request, res: Response) => {

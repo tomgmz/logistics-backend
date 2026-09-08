@@ -1,4 +1,5 @@
 import { AssignmentModel } from '../../models/admin/assignment.model.js'
+import { checkTruckCapacity, type CapacityWarning } from '../../lib/cargo-capacity.js'
 import { BookingModel } from '../../models/client/booking.model.js'
 import { supabase } from '../../lib/supabase.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -77,7 +78,7 @@ export async function assignBookingService(
   input:     AssignBookingInput,
   userId?:   string | null,
   ip?:       string | null,
-): Promise<AssignmentWithRelations> {
+): Promise<AssignmentWithRelations & { capacity_warning: CapacityWarning | null }> {
   const { scheduleDate } = await assertBookingAssignable(bookingId)
 
   // Whoever is on the booking right now — they get stood down if this call swaps
@@ -103,8 +104,31 @@ export async function assignBookingService(
     ])
   }
 
+  // Does the chosen vehicle actually fit the load? Advisory, not a gate — see
+  // lib/cargo-capacity. Runs before the write so the warning describes the
+  // vehicle being assigned, and never blocks it.
+  const capacityWarning = input.is_vendor_supplied || !input.truck_id
+    ? null
+    : await checkTruckCapacity(bookingId, input.truck_id).catch((err) => {
+        console.warn('[assignment] capacity check failed', bookingId, err)
+        return null
+      })
+
   const assignment = await AssignmentModel.assign(bookingId, input, userId ?? null)
   if (!assignment) throw new Error('Failed to create assignment')
+
+  // An overloaded assignment is a real decision someone made; put it on the
+  // record rather than leaving it as a toast the operator can dismiss.
+  if (capacityWarning) {
+    logEvent({
+      user_id:     userId,
+      log_type:    'booking',
+      action:      'assignment_capacity_warning',
+      description:
+        `Booking ${await bookingRefById(bookingId)} assigned to a vehicle that may not fit the load — ` +
+        capacityWarning.reasons.join(' '),
+    })
+  }
 
   const crewDescription = input.is_vendor_supplied
     ? `vendor driver ${input.vendor_driver_name} with vehicle ${input.vendor_vehicle_plate}`
@@ -138,7 +162,7 @@ export async function assignBookingService(
     void notifyStage('vehicle_assigned', booking, { vehicleLabel: label })
   }
 
-  return assignment
+  return { ...assignment, capacity_warning: capacityWarning }
 }
 
 export async function getAssignmentByBookingService(

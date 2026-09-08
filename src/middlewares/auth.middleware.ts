@@ -122,9 +122,28 @@ export const authorizeAny = authorize
 
 //CSRF
 
+/**
+ * Double-submit CSRF check for COOKIE-authenticated requests.
+ *
+ * This was written, exported, and then never mounted on a single route — the web
+ * app dutifully fetched a token and sent the header, and nothing on this side
+ * ever looked at it. It is not the only thing standing between the API and a
+ * cross-site request (the auth cookies are `sameSite: 'strict'`, so a browser
+ * will not attach them to one in the first place), but a defence that exists
+ * only in a file nobody calls is not a defence.
+ *
+ * It applies only where the risk exists. A request authenticated with a Bearer
+ * token — the driver app, and any API client — cannot be forged cross-site,
+ * because no browser attaches that header on someone else's behalf. Enforcing it
+ * there would lock the mobile app out of every write it makes.
+ */
 export function verifyCsrfToken(req: Request, res: Response, next: NextFunction) {
   // Safe methods don't need CSRF protection
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next()
+
+  // Bearer-authenticated callers are not cookie-driven and carry no CSRF risk.
+  const usesCookieAuth = !!req.cookies?.access_token
+  if (!usesCookieAuth) return next()
 
   const tokenFromCookie = req.cookies?.csrf_token
   const tokenFromHeader = req.headers['x-csrf-token'] as string

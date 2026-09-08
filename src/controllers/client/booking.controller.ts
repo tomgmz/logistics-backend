@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
+import { statusOf } from '../../lib/http-error.js'
 import {
   getAllBookingsService,
   getAllBookingsPaginatedService,
@@ -101,14 +102,8 @@ export const createBooking = async (req: Request, res: Response) => {
     const booking = await createBookingService(req.body, viewerFrom(req), userId, ip)
     res.status(201).json({ status: 'success', data: booking })
   } catch (error: any) {
-    const status = (
-      error.message.includes('required') ||
-      error.message.includes('at most') ||
-      error.message.includes('scheduled at least') ||
-      error.message.includes('more than 1 year') ||
-      error.message.includes('unique')
-    ) ? 400 : 500
-    res.status(status).json({ status: 'error', message: error.message })
+    // The service says what each rule is worth; anything untyped is a real fault.
+    res.status(statusOf(error)).json({ status: 'error', message: error.message })
   }
 }
 

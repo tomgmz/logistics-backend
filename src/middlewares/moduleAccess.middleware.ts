@@ -8,6 +8,7 @@ import {
   moduleForPath,
   requiredFlagForMethod,
   ModuleKey,
+  ModulePermissionFlags,
 } from '../constants/modules.js'
 
 // Small per-user TTL cache so we don't hit the DB on every admin request.
@@ -70,11 +71,14 @@ export async function moduleGuard(req: Request, res: Response, next: NextFunctio
   }
 }
 
-// Pin module enforcement to a fixed module, for operational routes that live
-// outside /api/admin (e.g. booking approve/reject on /api/booking) and so aren't
-// covered by moduleForPath. Same bypass/managed/protected rules as moduleGuard;
-// the HTTP method still selects the required flag (PATCH/PUT -> can_edit, etc.).
-export function requireModule(moduleKey: ModuleKey) {
+// The shared body behind requireModule and requireModuleFlag. `resolveFlag`
+// decides which permission the request needs: normally that follows from the
+// HTTP method, but can_export has no method of its own and has to be named.
+// Returning null from it means "nothing to enforce here", same as before.
+function moduleFlagGate(
+  moduleKey: ModuleKey,
+  resolveFlag: (req: Request) => keyof ModulePermissionFlags | null,
+) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = req.user
@@ -87,7 +91,7 @@ export function requireModule(moduleKey: ModuleKey) {
       const rows = await getUserPermissions(user.sub)
       if (rows.length === 0) return next() // no custom permissions -> role default
 
-      const requiredFlag = requiredFlagForMethod(req.method)
+      const requiredFlag = resolveFlag(req)
       if (!requiredFlag) return next()
 
       const row = rows.find((r) => r.module_name === moduleKey)
@@ -105,4 +109,24 @@ export function requireModule(moduleKey: ModuleKey) {
       res.status(500).json({ status: 'error', message: 'Authorization error' })
     }
   }
+}
+
+// Pin module enforcement to a fixed module, for operational routes that live
+// outside /api/admin (e.g. booking approve/reject on /api/booking) and so aren't
+// covered by moduleForPath. Same bypass/managed/protected rules as moduleGuard;
+// the HTTP method still selects the required flag (PATCH/PUT -> can_edit, etc.).
+export function requireModule(moduleKey: ModuleKey) {
+  return moduleFlagGate(moduleKey, (req) => requiredFlagForMethod(req.method))
+}
+
+// Enforce one named flag regardless of method. `can_export` is the reason this
+// exists: an export is a GET, and requiredFlagForMethod maps every GET to
+// can_view, so the export flag the IT Admin sets in the permission matrix was
+// never actually checked anywhere. Use this on any route whose required
+// permission does not follow from its verb.
+export function requireModuleFlag(
+  moduleKey: ModuleKey,
+  flag: keyof ModulePermissionFlags,
+) {
+  return moduleFlagGate(moduleKey, () => flag)
 }

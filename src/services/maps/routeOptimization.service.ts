@@ -19,15 +19,47 @@ const GOOGLE_API_KEY    = process.env.GOOGLE_MAPS_API_KEY!
 const GOOGLE_PROJECT_ID = process.env.GOOGLE_PROJECT_ID!
 const GEOCODING_URL     = 'https://maps.googleapis.com/maps/api/geocode/json'
 
+/**
+ * How long we are prepared to wait on Google, in milliseconds.
+ *
+ * Axios has NO default timeout: without this a hung Google request hangs the
+ * caller with it, forever. Optimisation improves stop order — it is never a
+ * precondition for booking — so it is better to give up quickly and keep the
+ * client's own ordering than to wait indefinitely for a better one.
+ */
+const GOOGLE_TIMEOUT_MS = 8_000
+
+/**
+ * One auth client for the process, not one per booking.
+ *
+ * This used to build a fresh `GoogleAuth` on every call, throwing away the
+ * library's own token cache each time and paying for a JWT exchange per booking
+ * (measured at ~400 ms cold, ~55 ms warm, all of it avoidable). The client
+ * refreshes its own token, so it is built once, lazily.
+ */
+let authClientPromise: Promise<Awaited<ReturnType<GoogleAuth['getClient']>>> | null = null
+
+function googleAuthClient() {
+  if (!authClientPromise) {
+    const auth = new GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL!,
+        private_key:  process.env.GOOGLE_PRIVATE_KEY!.replace(/\n/g, '\n'),
+      },
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    })
+    // A failed build must not stay cached, or the process never recovers from a
+    // transient credential error.
+    authClientPromise = auth.getClient().catch((err) => {
+      authClientPromise = null
+      throw err
+    })
+  }
+  return authClientPromise
+}
+
 async function getAccessToken(): Promise<string> {
-  const auth = new GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL!,
-      private_key:  process.env.GOOGLE_PRIVATE_KEY!.replace(/\\n/g, '\n'),
-    },
-    scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-  })
-  const client        = await auth.getClient()
+  const client        = await googleAuthClient()
   const tokenResponse = await client.getAccessToken()
   if (!tokenResponse.token) throw new Error('Failed to get Google access token')
   return tokenResponse.token
@@ -41,6 +73,7 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult> {
       region:     'PH',
       components: 'country:PH',
     },
+    timeout: GOOGLE_TIMEOUT_MS,
   })
   const results = response.data.results
   if (!results || results.length === 0) {
@@ -104,6 +137,7 @@ async function callOptimizationAPI(
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
+        timeout: GOOGLE_TIMEOUT_MS,
       })
 
     const drivingBody = {
@@ -156,11 +190,30 @@ async function callOptimizationAPI(
     }
   }
 
+  // Google can decline to route a shipment (`skippedShipments` — an unreachable
+  // point, an infeasible window). Those used to fall out of the returned list
+  // entirely, so the caller silently lost a drop-off, or that stop kept its
+  // original number and collided with one that had been renumbered. Visited
+  // stops take the optimised order; anything skipped is appended in its original
+  // relative order, so every stop comes back exactly once.
+  const visited = visits
+    .map((visit) => parseInt(visit.shipmentLabel.replace('shipment_', ''), 10))
+    .filter((i) => Number.isInteger(i) && i >= 0 && i < destinations.length)
+
+  const seen    = new Set(visited)
+  const skipped = destinations.map((_, i) => i).filter((i) => !seen.has(i))
+
+  if (skipped.length > 0) {
+    console.warn(
+      `[callOptimizationAPI] ${skipped.length} shipment(s) not routed by Google; ` +
+      'appending them in their original order.',
+    )
+  }
+
   return {
     wasOptimized: true,
-    stops: visits.map((visit, index) => {
-      const shipmentIndex = parseInt(visit.shipmentLabel.replace('shipment_', ''))
-      const destination   = destinations[shipmentIndex]
+    stops: [...visited, ...skipped].map((destinationIndex, index) => {
+      const destination = destinations[destinationIndex]
       return {
         destination_id:           destination.destination_id,
         address:                  destination.address,
@@ -174,6 +227,17 @@ async function callOptimizationAPI(
   }
 }
 
+/**
+ * Optimised stop order for a list of destinations, keyed by their POSITION in
+ * the list the caller passed in.
+ *
+ * It used to answer with the stop's address, and the caller matched results back
+ * by string. Two drop-offs at the same address — one warehouse, two deliveries,
+ * entirely normal for FMCG — then matched the same result and collapsed onto a
+ * single position, and a stop Google had skipped matched nothing at all and kept
+ * a number that had since been handed to another stop. The index is the only
+ * identifier here that is guaranteed unique, so it is what comes back.
+ */
 export async function optimizeDestinationsService(
   origin: { latitude: number; longitude: number },
   destinations: Array<{
@@ -184,7 +248,7 @@ export async function optimizeDestinationsService(
   }>,
   scheduleDate: string,
   callTime: string,
-): Promise<Array<{ address: string; optimized_sequence_order: number }>> {
+): Promise<Array<{ index: number; optimized_sequence_order: number }>> {
   const input: OptimizationDestination[] = destinations.map((d, i) => ({
     destination_id: String(i),
     address:        d.address,
@@ -194,10 +258,12 @@ export async function optimizeDestinationsService(
 
   const { stops: optimizedStops } = await callOptimizationAPI(origin, input, scheduleDate, callTime)
 
-  return optimizedStops.map((stop) => ({
-    address:                  stop.address,
-    optimized_sequence_order: stop.optimized_sequence_order,
-  }))
+  return optimizedStops
+    .map((stop) => ({
+      index:                    parseInt(stop.destination_id, 10),
+      optimized_sequence_order: stop.optimized_sequence_order,
+    }))
+    .filter((s) => Number.isInteger(s.index) && s.index >= 0 && s.index < destinations.length)
 }
 
 export async function optimizeBookingRouteService(

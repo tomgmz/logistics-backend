@@ -17,6 +17,10 @@ export const createCargoItemSchema = z.object({
   width_cm:       z.number().min(0).optional(),
   height_cm:      z.number().min(0).optional(),
   notes:          z.string().optional(),
+  // Which drop-off this line is for, by the `sequence_order` the caller gave
+  // that destination in this same request. Optional: a booking may still record
+  // cargo against the trip as a whole.
+  dropoff_sequence_order: z.number().int().positive().optional(),
 }).refine(
   (d) => !(d.commodity_id && d.commodity_text),
   { message: 'Provide either commodity_id or commodity_text, not both' }
@@ -62,6 +66,10 @@ export const createBookingSchema = z.object({
   // a client's booking is attributed to the company on their session, never to
   // whatever the body claims. Still uuid-checked so garbage is refused outright.
   client_id:             z.string().uuid().optional(),
+  // One booking attempt, minted by the client and reused across its retries. A
+  // repeat of the same attempt returns the booking that was already created
+  // instead of a second copy of the same trip.
+  idempotency_key:       z.string().uuid().optional(),
   origin:                z.string().min(1, 'Origin is required'),
   origin_longitude:      z.number().optional(),
   origin_latitude:       z.number().optional(),
@@ -71,7 +79,11 @@ export const createBookingSchema = z.object({
   required_volume_cbm:   z.number().min(0).optional(),
   required_weight_kg:    z.number().min(0).optional(),
   required_length_cm:    z.number().min(0).optional(),
+  required_net_weight_kg: z.number().min(0).optional(),
   stackable_required:    z.boolean().optional(),
+  // Whether anything in the load must NOT be stacked — the constraint that
+  // actually limits how a truck is loaded.
+  non_stackable_cargo:   z.boolean().optional(),
   payment_terms:         z.string().optional(),
   transaction_documents: z.array(z.string().url()).min(1, 'At least one transaction document is required').max(3),
   // One to three drop-offs per booking: a single trip carries at most three, and

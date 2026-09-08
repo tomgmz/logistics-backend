@@ -12,6 +12,7 @@ import { optimizeDestinationsService } from '../maps/routeOptimization.service.j
 import { invalidateEta } from '../maps/eta.service.js'
 import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 import { logEvent } from '../../lib/log-event.js'
+import { badRequest } from '../../lib/http-error.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay, phDay } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers } from '../notification/notification.service.js'
@@ -44,18 +45,18 @@ function validateScheduleDate(scheduleDate: string): void {
   // would sit in the queue with an empty driver list and no way to explain why.
   // Refuse it at the door instead.
   if (new Date(`${scheduled}T00:00:00Z`).getUTCDay() === REST_WEEKDAY) {
-    throw new Error('Deliveries are not scheduled on Sundays — please pick another day')
+    throw badRequest('Deliveries are not scheduled on Sundays — please pick another day')
   }
 
   const earliest = phDay(Date.now() + DAY_MS)
   if (scheduled < earliest) {
-    throw new Error(`Booking must be scheduled at least a day ahead (earliest: ${earliest})`)
+    throw badRequest(`Booking must be scheduled at least a day ahead (earliest: ${earliest})`)
   }
 
   const oneYearOut = new Date()
   oneYearOut.setFullYear(oneYearOut.getFullYear() + 1)
   if (scheduled > phDay(oneYearOut)) {
-    throw new Error('Booking cannot be scheduled more than 1 year in advance')
+    throw badRequest('Booking cannot be scheduled more than 1 year in advance')
   }
 }
 
@@ -217,41 +218,20 @@ export async function createBookingService(
   // A non-client caller may still name one, leaving booking-on-behalf possible
   // without another change here.
   const clientId = isClientViewer(viewer) ? viewer.clientId : input.client_id
-  if (!clientId) throw new Error('client_id is required')
+  if (!clientId) throw badRequest('client_id is required')
 
   if (!input.destinations || input.destinations.length === 0) {
-    throw new Error('At least one destination is required')
+    throw badRequest('At least one destination is required')
   }
   if (input.destinations.length > MAX_DESTINATIONS_PER_BOOKING) {
-    throw new Error(`A booking can have at most ${MAX_DESTINATIONS_PER_BOOKING} drop-offs`)
+    throw badRequest(`A booking can have at most ${MAX_DESTINATIONS_PER_BOOKING} drop-offs`)
   }
 
   validateScheduleDate(input.schedule_date)
 
   const orders = input.destinations.map((d) => d.sequence_order)
   if (new Set(orders).size !== orders.length) {
-    throw new Error('sequence_order must be unique per destination')
-  }
-
-  // Route optimisation — only when all coords are present
-  const allHaveCoords   = input.destinations.every((d) => d.latitude != null && d.longitude != null)
-  const originHasCoords = input.origin_latitude != null && input.origin_longitude != null
-
-  if (allHaveCoords && originHasCoords) {
-    try {
-      const optimizedOrder = await optimizeDestinationsService(
-        { latitude: input.origin_latitude!, longitude: input.origin_longitude! },
-        input.destinations as Array<{ address: string; latitude: number; longitude: number; sequence_order: number }>,
-        input.schedule_date,
-        input.call_time,
-      )
-      input.destinations = input.destinations.map((dest) => {
-        const match = optimizedOrder.find((o) => o.address === dest.address)
-        return match ? { ...dest, sequence_order: match.optimized_sequence_order } : dest
-      })
-    } catch (err) {
-      console.warn('Pre-creation route optimization failed, using original order:', err)
-    }
+    throw badRequest('sequence_order must be unique per destination')
   }
 
   const booking = await BookingModel.create({ ...input, client_id: clientId })
@@ -270,7 +250,74 @@ export async function createBookingService(
   // operations so a new booking is never stranded.
   void routeNewBookingToGm(booking, userId)
 
+  // Put the stops in driving order — AFTER the reply, never before it.
+  void reoptimizeBookingStops(booking)
+
   return booking
+}
+
+/**
+ * Reorder a booking's drop-offs into Google's suggested driving order.
+ *
+ * This used to run inline, before the insert, and it was the single slowest
+ * thing about creating a booking: an OAuth exchange plus a call to a
+ * vehicle-routing solver, occasionally twice when the first attempt came back
+ * with no visits — none of it with a timeout, so a hung Google request hung the
+ * client's "Book Transit" spinner with it, indefinitely.
+ *
+ * None of that needs to happen before the client is told their booking exists.
+ * Stop order matters to the driver, who sees it at assignment time at the
+ * earliest, and a booking with the client's own ordering is perfectly usable
+ * until then. So the booking is committed and acknowledged first and the order
+ * is improved a moment later; if Google is slow, broken, or refuses the route,
+ * the booking simply keeps the order the client entered.
+ */
+async function reoptimizeBookingStops(booking: BookingWithRelations): Promise<void> {
+  try {
+    const stops = booking.booking_destinations ?? []
+    // One stop has no order to optimise.
+    if (stops.length < 2) return
+
+    const originHasCoords = booking.origin_latitude != null && booking.origin_longitude != null
+    const allHaveCoords   = stops.every((d) => d.latitude != null && d.longitude != null)
+    if (!originHasCoords || !allHaveCoords) return
+
+    const ordered = [...stops].sort((a, b) => a.sequence_order - b.sequence_order)
+
+    const optimized = await optimizeDestinationsService(
+      { latitude: Number(booking.origin_latitude), longitude: Number(booking.origin_longitude) },
+      ordered.map((d) => ({
+        address:        d.address,
+        latitude:       Number(d.latitude),
+        longitude:      Number(d.longitude),
+        sequence_order: d.sequence_order,
+      })),
+      booking.schedule_date,
+      booking.call_time,
+    )
+
+    // Results come back keyed by position in the list above, so a repeated
+    // address cannot pull two stops onto the same number.
+    const order = optimized.map((o) => ({
+      destination_id: ordered[o.index].destination_id,
+      sequence_order: o.optimized_sequence_order,
+    }))
+
+    // Every stop must be accounted for, or the write would leave a gap.
+    if (order.length !== ordered.length) return
+
+    const unchanged = order.every(
+      (o, i) => o.destination_id === ordered[i].destination_id && o.sequence_order === ordered[i].sequence_order,
+    )
+    if (unchanged) return
+
+    const applied = await BookingModel.resequenceDestinations(booking.booking_id, order)
+    if (!applied) {
+      console.warn('[booking] stop order changed while optimising; keeping the current order', booking.booking_id)
+    }
+  } catch (err) {
+    console.warn('[booking] route optimisation failed; keeping the order the client entered', booking.booking_id, err)
+  }
 }
 
 /**
@@ -288,7 +335,7 @@ async function routeNewBookingToGm(
       return
     }
 
-    await BookingModel.updateGmStatus(booking.booking_id, { gm_status: 'approved' })
+    await BookingModel.setGmStatus(booking.booking_id, { gm_status: 'approved' })
     const advanced = await BookingModel.updateStatus(booking.booking_id, 'approved')
     logEvent({
       user_id:     userId,
@@ -378,7 +425,7 @@ export async function updateBookingStatusService(
   // notify the operations manager to select a vehicle and driver.
   if (status === 'approved' && existing.status !== 'approved' && existing.ops_status !== 'assigned') {
     if (existing.gm_status === 'pending') {
-      await BookingModel.updateGmStatus(bookingId, { gm_status: 'approved' })
+      await BookingModel.setGmStatus(bookingId, { gm_status: 'approved' })
     }
     const advanced = await BookingModel.findById(bookingId)
     logEvent({
