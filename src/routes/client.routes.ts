@@ -3,7 +3,7 @@ import { validate }                from '../middlewares/validate.middleware.js'
 import { authenticate, authorize } from '../middlewares/auth.middleware.js'
 import { authenticatedLimiter, trackingLimiter } from '../middlewares/rateLimit.middleware.js'
 import { requireModule }           from '../middlewares/moduleAccess.middleware.js'
-import { attachClientScope }       from '../middlewares/clientScope.middleware.js'
+import { attachClientScope, attachDriverScope }       from '../middlewares/clientScope.middleware.js'
 import {
   createBookingSchema,
   updateBookingSchema,
@@ -49,7 +49,10 @@ const canManageBooking = requireModule('booking-management')
 // a managed role, so requireModule waves it straight through.
 router.get('/',                 authenticate, authenticatedLimiter, canViewBookings, attachClientScope, BookingController.getAllBookings)
 router.get('/client/:clientId', authenticate, authenticatedLimiter, isAny,    attachClientScope, BookingController.getBookingsByClient)
-router.get('/driver/:driverId', authenticate, authenticatedLimiter,           BookingController.getBookingsByDriver)
+// A driver is pinned to their own id by attachDriverScope; staff may read any
+// driver's day. Previously this had no role gate at all, so any authenticated
+// user could read any driver's run sheet by changing the uuid.
+router.get('/driver/:driverId', authenticate, authenticatedLimiter, canViewBookings, attachDriverScope, BookingController.getBookingsByDriver)
 
 router.get('/:id',              authenticate, authenticatedLimiter, canViewBookings, attachClientScope, BookingController.getBookingById)
 router.get('/:id/destinations', authenticate, authenticatedLimiter, canViewBookings, attachClientScope, BookingController.getDestinationsByBooking)

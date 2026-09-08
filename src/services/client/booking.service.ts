@@ -74,9 +74,12 @@ const NON_DELETABLE_STATUSES = ['approved', 'assigned', 'in_transit', 'completed
 export interface BookingViewer {
   role:     string
   clientId: string | null
+  /** The caller's own driver row, when they are a driver. */
+  driverId?: string | null
 }
 
 const isClientViewer = (viewer: BookingViewer): boolean => viewer.role === 'client'
+const isDriverViewer = (viewer: BookingViewer): boolean => viewer.role === 'driver'
 
 /**
  * A client may only ever reach their own bookings; every other role passes
@@ -203,8 +206,25 @@ export async function getBookingsByClientService(
   return await BookingModel.findByClientId(scoped) ?? []
 }
 
-export async function getBookingsByDriverService(driverId: string): Promise<BookingWithRelations[]> {
-  return await BookingModel.findByDriverId(driverId) ?? []
+/**
+ * A driver's bookings.
+ *
+ * Pinned to the caller's own driver id for a driver, exactly as the client list
+ * is: the route takes `:driverId` from the URL, and trusting it let any driver
+ * read another's whole run sheet — client company, origins, drop-offs, cargo and
+ * schedule. Operations and admins still pass whatever the URL carries, because
+ * dispatch legitimately reads any driver's day.
+ *
+ * A driver whose row could not be resolved scopes to nothing rather than
+ * falling back to the URL, so a lookup failure cannot widen access.
+ */
+export async function getBookingsByDriverService(
+  driverId: string,
+  viewer:   BookingViewer,
+): Promise<BookingWithRelations[]> {
+  const scoped = isDriverViewer(viewer) ? viewer.driverId : driverId
+  if (!scoped) return []
+  return await BookingModel.findByDriverId(scoped) ?? []
 }
 
 export async function createBookingService(

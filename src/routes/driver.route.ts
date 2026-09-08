@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { authenticate, authorize } from '../middlewares/auth.middleware.js'
 import { authenticatedLimiter, trackingLimiter } from '../middlewares/rateLimit.middleware.js'
 import { validate }                from '../middlewares/validate.middleware.js'
+import { attachDriverScope }       from '../middlewares/clientScope.middleware.js'
 import { uploadSingle }            from '../middlewares/upload.middleware.js'
 import { driverStopProofSchema }   from '../schema/client/booking.schema.js'
 import * as BookingController from '../controllers/client/booking.controller.js'
@@ -26,7 +27,9 @@ router.get('/availability',   authenticate, authenticatedLimiter, isAny, Availab
 router.get('/availability/days', authenticate, authenticatedLimiter, isAny, AvailabilityController.getMyAvailabilityDays)
 router.put('/availability/days', authenticate, authenticatedLimiter, isAny, validate(driverAvailabilityDaysSchema), AvailabilityController.setMyAvailabilityDays)
 
-router.get('/:driverId/bookings', authenticate, authenticatedLimiter, isAny, BookingController.getBookingsByDriver)
+// Scoped, not just role-gated: isAny admits every driver, so without this one
+// driver could read another's bookings.
+router.get('/:driverId/bookings', authenticate, authenticatedLimiter, isAny, attachDriverScope, BookingController.getBookingsByDriver)
 
 // Proof-of-pickup / proof-of-delivery photo (multipart, field `image`). Returns
 // the hosted URL, which the app then sends with the stop confirmation below.

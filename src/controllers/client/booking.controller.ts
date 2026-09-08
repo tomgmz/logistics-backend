@@ -88,7 +88,7 @@ export const getBookingsByClient = async (req: Request, res: Response) => {
 
 export const getBookingsByDriver = async (req: Request, res: Response) => {
   try {
-    const bookings = await getBookingsByDriverService(param(req.params.driverId))
+    const bookings = await getBookingsByDriverService(param(req.params.driverId), viewerFrom(req))
     res.status(200).json({ status: 'success', data: bookings })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
