@@ -175,8 +175,9 @@ export async function getPeriod(periodId: string, viewer: Viewer) {
 
   // Both screens key off an invoice's payment state — awaiting verification,
   // rejected, settled — so each invoice carries its own payments, and its
-  // receipt once one has been issued. Without the receipt here, an AR could be
-  // generated and stored with no screen anywhere able to show it.
+  // receipt once one has been issued. Without the receipt here, an
+  // Acknowledgement Receipt could be generated and stored with no screen
+  // anywhere able to show it.
   const invoices = invoiceRows.map((inv) => ({
     ...inv,
     payments: payments.filter((p) => p.invoice_id === inv.invoice_id),
@@ -631,7 +632,7 @@ export async function issueServiceInvoices(
     // Best effort: the serial is spent and the paper invoice exists, so a
     // failed render leaves pdf_url null rather than unwinding the issuance.
     invoice.pdf_url = await attachPdf(
-      `SI ${siNumber}`,
+      `Service Invoice ${siNumber}`,
       () => publishServiceInvoice({
         invoice: invoice as never,
         items: lines as never,
@@ -999,7 +1000,7 @@ export async function regenerateInvoicePdf(invoiceId: string, actorId: string | 
 
   const booklet = await BillingModel.peekSeries('service_invoice')
   const url = await attachPdf(
-    `SI ${invoice.si_number}`,
+    `Service Invoice ${invoice.si_number}`,
     () => publishServiceInvoice({ invoice: invoice as never, items: items as never, booklet }),
     (u) => BillingModel.updateInvoice(invoiceId, { pdf_url: u }),
   )
@@ -1116,7 +1117,7 @@ export async function issueReceipt(
 
   const arBooklet = await BillingModel.peekSeries('acknowledgement_receipt')
   receipt.pdf_url = await attachPdf(
-    `AR ${arNumber}`,
+    `Acknowledgement Receipt ${arNumber}`,
     () => publishAcknowledgementReceipt({
       receipt: receipt as never,
       siNumber: invoice.si_number,
