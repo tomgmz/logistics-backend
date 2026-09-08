@@ -768,6 +768,25 @@ export async function createReceipt(row: Record<string, unknown>) {
   return data
 }
 
+/**
+ * Every Acknowledgement Receipt issued against a period's invoices.
+ *
+ * Fetched per period rather than per invoice for the same reason as the
+ * payments: a cut-off billed across four deliveries would otherwise be four
+ * round trips to answer "has this one been receipted".
+ */
+export async function findReceiptsByPeriod(periodId: string) {
+  const { rows } = await pool.query(
+    `select r.*
+       from acknowledgement_receipts r
+       join service_invoices i on i.invoice_id = r.invoice_id
+      where i.period_id = $1
+      order by r.issued_at asc`,
+    [periodId],
+  )
+  return rows
+}
+
 export async function findReceiptByPayment(paymentId: string) {
   const { data, error } = await supabase
     .from('acknowledgement_receipts')

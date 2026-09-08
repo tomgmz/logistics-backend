@@ -162,7 +162,7 @@ export async function getPeriod(periodId: string, viewer: Viewer) {
   const hidden = mustHideAmounts(period, viewer)
 
   // A period holds one invoice per booking, so this is a list.
-  const [items, submissions, invoiceRows, deliveries, payments] = await Promise.all([
+  const [items, submissions, invoiceRows, deliveries, payments, receipts] = await Promise.all([
     BillingModel.findPeriodItems(periodId),
     BillingModel.findSubmissions(periodId),
     BillingModel.findInvoicesByPeriod(periodId),
@@ -170,13 +170,17 @@ export async function getPeriod(periodId: string, viewer: Viewer) {
     // on these, so it always reflects real work rather than the period total.
     clientPeriodDeliveries(period, hidden),
     BillingModel.findPaymentsByPeriod(periodId),
+    BillingModel.findReceiptsByPeriod(periodId),
   ])
 
   // Both screens key off an invoice's payment state — awaiting verification,
-  // rejected, settled — so each invoice carries its own payments.
+  // rejected, settled — so each invoice carries its own payments, and its
+  // receipt once one has been issued. Without the receipt here, an AR could be
+  // generated and stored with no screen anywhere able to show it.
   const invoices = invoiceRows.map((inv) => ({
     ...inv,
     payments: payments.filter((p) => p.invoice_id === inv.invoice_id),
+    receipt: receipts.find((r) => r.invoice_id === inv.invoice_id) ?? null,
   }))
 
   const full = { ...period, items, submissions, invoices, deliveries }
