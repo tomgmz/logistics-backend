@@ -39,6 +39,11 @@ export type NotificationType =
   | 'billing.payment_rejected'        // proof could not be confirmed -> client
   | 'billing.payment_recorded'        // payment logged -> client
   | 'billing.receipt_issued'          // Acknowledgement Receipt issued -> client
+  // Raised by a driver from the road, not by a workflow step. These carry
+  // `report_id` in `data`; `booking_id` is set only when the driver was on a
+  // delivery at the time, so a report raised in the yard leaves it null.
+  | 'driver.emergency'                // quick alert or a report that stops the trip -> ops + fleet + admins
+  | 'driver.report'                   // detailed report the trip survives -> ops + fleet + admins
 
 export interface NotificationRow {
   notification_id: string

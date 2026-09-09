@@ -23,6 +23,10 @@ import * as FleetAdminController      from '../controllers/admin/fleet_admin.con
 import * as OperationsAdminController from '../controllers/admin/operations_admin.controller.js'
 import * as ITAdminController from '../controllers/admin/it-admin.controller.js'
 import * as AssignmentController from '../controllers/admin/assignment.controller.js'
+import * as TripController from '../controllers/client/trip.controller.js'
+import * as ReportController from '../controllers/driver/report.controller.js'
+import { setTripPlanSchema } from '../schema/client/trip.schema.js'
+import { setReportStatusSchema } from '../schema/driver/report.schema.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as AuditLogController from '../controllers/admin/audit-logs.controller.js'
 import * as PermissionsController from '../controllers/admin/permissions.controller.js'
@@ -96,6 +100,24 @@ router.get('/assignments/:bookingId',         authenticate, isOperations, Assign
 router.get('/assignments/:bookingId/history', authenticate, isOperations, AssignmentController.getAssignmentHistory)
 router.post('/assignments/:bookingId',        authenticate, isOperations, validate(assignBookingSchema), AssignmentController.assignBooking)
 router.patch('/assignments/:bookingId/status', authenticate, isOperations, validate(updateDeliveryStatusSchema), AssignmentController.updateDeliveryStatus)
+
+// How many runs the assigned vehicle makes, and which drop-offs each run serves.
+// One truck that shuttles, not several trucks — see the booking_trips migration.
+// GET creates the default plan (one run over every drop-off) if none was set, so
+// a booking assigned before this existed still opens in the driver app.
+//
+// Staff-only, NOT isOperations: that list admits 'client', and these routes have
+// no per-client scoping — a client on it could read and re-plan any booking in
+// the system, not merely their own. isCrewRelease is the crewing audience
+// (admin, IT, fleet, GM, operations) and nobody else.
+router.get('/assignments/:bookingId/trips',  authenticate, isCrewRelease, TripController.getTrips)
+router.put('/assignments/:bookingId/trips',  authenticate, isCrewRelease, validate(setTripPlanSchema), TripController.setTripPlan)
+
+// Incidents raised by drivers from the road. Fleet own the vehicle and
+// operations own the delivery, so both read this queue.
+router.get('/driver-reports',                 authenticate, isFleetRead, ReportController.listAllReports)
+router.get('/driver-reports/:reportId',       authenticate, isFleetRead, ReportController.getReport)
+router.patch('/driver-reports/:reportId/status', authenticate, isCrewRelease, validate(setReportStatusSchema), ReportController.setReportStatus)
 
 // Trucks
 router.get('/trucks',        authenticate, isFleetRead, TruckController.getAllTrucks)
