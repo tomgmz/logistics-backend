@@ -24,6 +24,9 @@ export const updateTruckSchema = z.object({
     .optional(),
   model_id:  z.string().uuid().optional().nullable(),
   status:    z.enum(['available', 'in_use', 'under_maintenance', 'inactive', 'archived']).optional(),
+  // The vehicle's regular driver. Explicitly nullable: sending null is how the
+  // fleet manager unpairs a truck.
+  assigned_driver_id: z.string().uuid().optional().nullable(),
 })
 
 // The fleet manager's BLOWBAGETS inspection of a vehicle. Every item must be

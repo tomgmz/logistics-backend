@@ -5,6 +5,7 @@ import { CreateDriverDTO, UpdateDriverDTO } from '../../types/driver.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import { driversAvailableOn } from '../driver/availability.service.js'
+import { unreturnedVehiclesFor } from '../../lib/driver-reservation.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 
@@ -15,11 +16,12 @@ export async function getAllDrivers() {
 /**
  * The drivers operations can put on a booking scheduled for `day`.
  *
- * Two filters, matching `assertDriverAssignable` exactly so the dropdown never
+ * Three filters, matching `assertDriverAssignable` exactly so the dropdown never
  * offers a driver the assignment call would then refuse: they ticked that day on
- * their calendar, and nothing has stopped them working. `currentDriverId` is the
- * driver already on the booking being edited — they are 'assigned' and so would
- * filter themselves out of their own assignment.
+ * their calendar, nothing has stopped them working, and they are not still
+ * holding a vehicle from a booking they finished but never brought back.
+ * `currentDriverId` is the driver already on the booking being edited — they are
+ * 'assigned' and so would filter themselves out of their own assignment.
  */
 export async function getAssignableDrivers(day: string, currentDriverId?: string | null) {
   const [drivers, ticked] = await Promise.all([
@@ -27,12 +29,22 @@ export async function getAssignableDrivers(day: string, currentDriverId?: string
     driversAvailableOn(day),
   ])
 
+  const driverIds = (drivers ?? [])
+    .map((user: any) => (Array.isArray(user.drivers) ? user.drivers[0] : user.drivers)?.driver_id)
+    .filter(Boolean) as string[]
+
+  // One query for the roster rather than one per driver — this runs on every
+  // booking the operator opens.
+  const unreturned = await unreturnedVehiclesFor(driverIds)
+
   return (drivers ?? []).filter((user: any) => {
     const profile = Array.isArray(user.drivers) ? user.drivers[0] : user.drivers
     if (!profile?.driver_id) return false
     if (profile.driver_id === currentDriverId) return true
 
-    return ticked.has(profile.driver_id) && !BLOCKING_DRIVER_STATUSES.includes(profile.status)
+    return ticked.has(profile.driver_id)
+      && !BLOCKING_DRIVER_STATUSES.includes(profile.status)
+      && !unreturned.has(profile.driver_id)
   })
 }
 

@@ -1,14 +1,26 @@
 import { pool } from '../../lib/database.js'
 import { CreateTruckInput, UpdateTruckInput } from '../../types/truck.types.js'
 
+// `assigned_driver` is the vehicle's regular driver, flattened to the few fields
+// the fleet list shows. Joined here rather than fetched per row because the
+// vehicle table renders the name in every row.
 const SELECT_TRUCK = `
   SELECT
     t.*,
     tm.vehicle_type,
     tm.name AS model_name,
-    row_to_json(tm.*) AS truck_model
+    row_to_json(tm.*) AS truck_model,
+    CASE WHEN ad.driver_id IS NULL THEN NULL ELSE json_build_object(
+      'driver_id',      ad.driver_id,
+      'license_number', ad.license_number,
+      'status',         ad.status,
+      'first_name',     au.first_name,
+      'last_name',      au.last_name
+    ) END AS assigned_driver
   FROM trucks t
   LEFT JOIN truck_models tm ON tm.model_id = t.model_id
+  LEFT JOIN drivers ad      ON ad.driver_id = t.assigned_driver_id
+  LEFT JOIN users au        ON au.user_id   = ad.user_id
 `
 
 export interface TruckListQuery {
@@ -87,6 +99,15 @@ async function findById(truckId: string) {
   return result.rows[0] ?? null
 }
 
+/** The vehicle this driver is the regular driver of, if any. */
+async function findByAssignedDriver(driverId: string) {
+  const result = await pool.query(
+    `${SELECT_TRUCK} WHERE t.assigned_driver_id = $1 AND t.status != 'archived'`,
+    [driverId],
+  )
+  return result.rows[0] ?? null
+}
+
 async function create(input: CreateTruckInput) {
   const result = await pool.query(
     `INSERT INTO trucks (plate_number, model_id)
@@ -108,6 +129,12 @@ async function update(truckId: string, input: UpdateTruckInput) {
   if (input.plate_number !== undefined) { fields.push(`plate_number = $${index++}`); values.push(input.plate_number) }
   if (input.model_id     !== undefined) { fields.push(`model_id = $${index++}`);     values.push(input.model_id) }
   if (input.status       !== undefined) { fields.push(`status = $${index++}`);       values.push(input.status) }
+  // Explicit null clears the pairing — "this truck has no regular driver" is a
+  // real answer, so undefined (absent) and null must not mean the same thing.
+  if (input.assigned_driver_id !== undefined) {
+    fields.push(`assigned_driver_id = $${index++}`)
+    values.push(input.assigned_driver_id)
+  }
 
   if (fields.length === 0) return findById(truckId)
 
@@ -130,4 +157,4 @@ async function remove(truckId: string) {
   return true
 }
 
-export { findAll, findAllPaginated, findById, create, update, remove }
+export { findAll, findAllPaginated, findById, findByAssignedDriver, create, update, remove }

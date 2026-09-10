@@ -49,6 +49,7 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
     status,
     schedule_date,
     truck_type_needed,
+    fleet_return_at,
     clients (
       company_name
     )

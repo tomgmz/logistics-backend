@@ -1,5 +1,10 @@
 import { supabase } from '../../lib/supabase.js'
-import { reconcileDriverStatus } from '../../lib/driver-reservation.js'
+import {
+  reconcileDriverStatus,
+  awaitingFleetReturn,
+  truckAwaitingFleetReturn,
+  lastFleetReturnFor,
+} from '../../lib/driver-reservation.js'
 import { driverCalendarAllows } from '../driver/availability.service.js'
 import type { BlowbagetsItems } from '../../types/client/booking.types.js'
 
@@ -9,9 +14,12 @@ import type { BlowbagetsItems } from '../../types/client/booking.types.js'
  * Two pools gate what operations can pick:
  *   - drivers  — only those who have switched themselves to 'available' in the
  *                mobile app. A new driver starts 'unavailable' and opts in.
- *   - vehicles — only those whose MOST RECENT BLOWBAGETS inspection passed. The
- *                fleet manager records inspections in Vehicle Management; a pass
- *                holds until a newer inspection replaces it.
+ *   - vehicles — only those whose MOST RECENT BLOWBAGETS inspection passed AND
+ *                was recorded since the vehicle last came home. The fleet
+ *                manager records inspections in Vehicle Management, and a pass
+ *                clears the vehicle for one job: it expires the moment the
+ *                truck returns to the yard, so every booking is preceded by a
+ *                fresh check.
  *
  * Assigning reserves both (driver -> 'assigned', truck -> 'in_use'); finishing or
  * cancelling the booking releases them (driver -> 'unavailable' so they must opt
@@ -64,6 +72,63 @@ export async function assertTruckPassedInspection(truckId: string): Promise<void
 }
 
 /**
+ * Throws unless the vehicle can be put on this booking. `currentTruckId` is the
+ * vehicle already on it, which stays valid while the assignment is edited.
+ *
+ * The mirror of `assertDriverAssignable`, and it exists for the same reason: a
+ * booking is completed when the cargo is off, but the truck is still at the last
+ * drop-off until someone confirms it is back in the 8338 lot. `trucks.status` is
+ * no help — `releaseCrew` set it to 'available' at completion, and no assignment
+ * path reads it anyway. Without this a vehicle that is physically out gets
+ * offered to the next booking.
+ */
+export async function assertTruckAssignable(
+  truckId: string,
+  currentTruckId?: string | null,
+): Promise<void> {
+  await assertTruckPassedInspection(truckId)
+
+  if (truckId === currentTruckId) return
+
+  const unreturned = await truckAwaitingFleetReturn(truckId)
+  if (unreturned) {
+    throw new Error(
+      `This vehicle has not been confirmed back in the 8338 parking lot for booking ` +
+      `${unreturned.reference_number ?? unreturned.booking_id} — it cannot be assigned until it is returned`,
+    )
+  }
+
+  await assertInspectedSinceLastReturn(truckId)
+}
+
+/**
+ * Throws unless the vehicle has passed a BLOWBAGETS check since it last came
+ * home.
+ *
+ * A pass is not permanent. It clears the vehicle for the job in front of it, and
+ * a truck that has just done a run has been loaded, driven and unloaded since
+ * anyone last looked at its brakes. So the clearance expires on return, and the
+ * fleet manager inspects it again before it goes out.
+ *
+ * A vehicle that has never been out is unaffected — there is no return to be
+ * newer than, so its first passing inspection stands.
+ */
+async function assertInspectedSinceLastReturn(truckId: string): Promise<void> {
+  const lastReturn = await lastFleetReturnFor(truckId)
+  if (!lastReturn) return
+
+  const latest = await latestInspectionFor(truckId)
+  // `assertTruckPassedInspection` has already established there is a passing
+  // one; this only asks whether it is recent enough.
+  if (latest && latest.inspected_at > lastReturn) return
+
+  throw new Error(
+    'This vehicle has been back in the yard since its last BLOWBAGETS check — ' +
+    'the fleet manager must inspect it again before it can be assigned',
+  )
+}
+
+/**
  * States that stop a driver working whatever their calendar says. Everything
  * else — including the legacy 'available'/'unavailable' left over from the old
  * on/off switch — means "not stopped", and the calendar decides from there.
@@ -79,10 +144,11 @@ const BLOCKING_DRIVER_STATUSES: Record<string, string> = {
  * driver already on it, who stays valid while the assignment is edited (they
  * read as 'assigned', which would otherwise block them).
  *
- * Two things have to hold, and the second is the driver's own word: nothing has
- * stopped them working at all, and they ticked this booking's day on their
- * calendar. The tick is the whole opt-in — a driver who ticked nothing can be
- * assigned nothing.
+ * Three things have to hold, and the last is the driver's own word: nothing has
+ * stopped them working at all, they are not still holding a vehicle from a
+ * finished booking, and they ticked this booking's day on their calendar. The
+ * tick is the whole opt-in — a driver who ticked nothing can be assigned
+ * nothing.
  */
 export async function assertDriverAssignable(
   driverId: string,
@@ -106,6 +172,18 @@ export async function assertDriverAssignable(
   const status  = await reconcileDriverStatus(driverId, data.status)
   const blocked = BLOCKING_DRIVER_STATUSES[status]
   if (blocked) throw new Error(`This driver ${blocked} and cannot be assigned`)
+
+  // Checked before the calendar: a driver who finished a delivery but has not
+  // brought the vehicle back is holding it, and their status says 'available'
+  // because completion released the crew. Ticking today changes nothing while
+  // the truck is still out — one driver, one booking, until it is home.
+  const unreturned = await awaitingFleetReturn(driverId)
+  if (unreturned) {
+    throw new Error(
+      `This driver has not confirmed the vehicle's return to the 8338 parking lot for booking ` +
+      `${unreturned.reference_number ?? unreturned.booking_id} — they cannot take another booking until it is back`,
+    )
+  }
 
   if (!(await driverCalendarAllows(driverId, scheduleDate))) {
     throw new Error(

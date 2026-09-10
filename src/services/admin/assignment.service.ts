@@ -7,7 +7,7 @@ import { notifyStage } from '../notification/notification.service.js'
 import { bookingRefById } from '../../lib/booking-ref.js'
 import {
   assertDriverAssignable,
-  assertTruckPassedInspection,
+  assertTruckAssignable,
   crewOnBooking,
   releaseCrew,
   reserveCrew,
@@ -100,7 +100,7 @@ export async function assignBookingService(
     // vehicle whose latest BLOWBAGETS check passed.
     await Promise.all([
       assertDriverAssignable(input.driver_id, previous.driver_id, scheduleDate),
-      assertTruckPassedInspection(input.truck_id),
+      assertTruckAssignable(input.truck_id, previous.truck_id),
     ])
   }
 
