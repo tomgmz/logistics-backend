@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase.js'
 import { logEvent } from '../../lib/log-event.js'
 import { phDay } from '../../lib/ph-date.js'
 import { reconcileDriverStatus } from '../../lib/driver-reservation.js'
+import { broadcast } from '../../lib/realtime.js'
 
 /**
  * When a driver can be given delivery work.
@@ -173,6 +174,20 @@ export async function setAvailabilityDays(
     action:      'driver_set_availability_days',
     description: `Driver ${driver.driver_id} marked ${toInsert.length} day(s) available in ${month}`,
   })
+
+  // The assignable pool for a booking is exactly the set of drivers who ticked
+  // its day, so a driver confirming their calendar changes what operations may
+  // pick right now. Pushed rather than polled, and pushed as a signal rather
+  // than as data: the browser re-asks the API (which also applies the vehicle
+  // and status gates) instead of trying to recompute the pool from this payload.
+  //
+  // `month` is on it because a write only ever rewrites one month, so a booking
+  // scheduled in another month cannot be affected and need not refetch.
+  void broadcast('fleet:availability', 'driver_availability_changed', {
+    driver_id: driver.driver_id,
+    month,
+    days:      toInsert,
+  }).catch((e) => console.warn('[availability] broadcast failed:', e?.message))
 
   return getAvailabilityDays(userId, month)
 }
