@@ -33,15 +33,20 @@ import {
 /**
  * Who is asking, for the ownership checks in the service.
  *
- * `clientId` is put on the request by `attachClientScope`. The role defaults to
- * 'client' so a request that somehow arrives without a user — or a route wired
- * without that middleware — fails closed to empty results and 404s rather than
- * falling through as staff.
+ * `clientId` is put on the request by `attachClientScope`, `driverId` by
+ * `attachDriverScope`. The role defaults to 'client' so a request that somehow
+ * arrives without a user — or a route wired without that middleware — fails
+ * closed to empty results and 404s rather than falling through as staff.
+ *
+ * `driverId` must be carried here: `getBookingsByDriverService` pins a driver
+ * to their own id and refuses to fall back to the URL, so leaving it off the
+ * viewer scoped every driver to nothing and returned an empty run sheet.
  */
 function viewerFrom(req: Request): BookingViewer {
   return {
     role:     req.user?.role ?? 'client',
     clientId: req.clientId ?? null,
+    driverId: req.driverId ?? null,
   }
 }
 

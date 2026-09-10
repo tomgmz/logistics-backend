@@ -24,6 +24,14 @@ export interface BookingListQuery {
 // Exported so the transaction-history model hydrates rows with exactly the same
 // shape. The admin history renders the client's own detail components, so any
 // column dropped here would blank a field on both pages at once.
+//
+// `fleet_return_at` is one of those: the driver app decides between "confirm the
+// vehicle is back" and "delivery complete" from that column alone, and while it
+// was missing here the screen re-read a null on every visit and offered the
+// button again to a driver who had already pressed it.
+//
+// NOTE: this is a PostgREST select string, not SQL. It takes no comments —
+// anything that is not a field name is parsed as one and the whole query fails.
 export const BOOKING_WITH_RELATIONS_SELECT = `
   booking_id,
   client_id,
@@ -61,6 +69,7 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   pickup_proof_accuracy_m,
   pickup_proof_distance_m,
   pickup_proof_override_reason,
+  fleet_return_at,
   created_at,
   updated_at,
   clients (
