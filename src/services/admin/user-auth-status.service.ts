@@ -82,9 +82,20 @@ export async function activateUserWithUnban(
   if (!existing) throw new Error(`${entityLabel} not found`)
   if (existing.status === 'active') throw new Error(`${entityLabel} is already active`)
 
+  // Reactivating has to clear the lockout counters too, not just the status.
+  // This used to set `status` alone, which meant a user reactivated out of
+  // `permanently_locked` came back still carrying lockup_count = 3 and was
+  // permanently re-locked by their very next wrong password — the reactivation
+  // looked like it worked and then silently didn't. The reset path clears the
+  // same four fields, so both ways back in now behave identically.
   const { data, error } = await supabase
     .from('users')
-    .update({ status: 'active' })
+    .update({
+      status:                'active',
+      locked_until:          null,
+      failed_login_attempts: 0,
+      lockup_count:          0,
+    })
     .eq('user_id', userId)
     .eq('role', role)
     .neq('status', 'archived')

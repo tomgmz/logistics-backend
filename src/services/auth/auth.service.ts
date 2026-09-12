@@ -274,7 +274,7 @@ export async function verifyOtp(
       attempt_status: 'failed_permanently_locked',
       failure_reason: 'Account permanently locked',
     })
-    throw new Error('Account permanently locked. Please contact an administrator.')
+    throw new Error('Account permanently locked. Request a password reset to regain access.')
   }
 
   if (user.status !== 'active') {
@@ -314,7 +314,7 @@ export async function verifyOtp(
         attempt_status: 'failed_permanently_locked',
         failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
       })
-      throw new Error('Account permanently locked. Please contact an administrator.')
+      throw new Error('Account permanently locked. Request a password reset to regain access.')
     }
 
     const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
@@ -368,7 +368,7 @@ export async function verifyOtp(
         attempt_status: 'failed_permanently_locked',
         failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
       })
-      throw new Error('Account permanently locked. Please contact an administrator.')
+      throw new Error('Account permanently locked. Request a password reset to regain access.')
     }
 
     const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
@@ -450,7 +450,7 @@ export async function loginWithPassword(
       attempt_status: 'failed_permanently_locked',
       failure_reason: 'Account permanently locked',
     })
-    throw new Error('Account permanently locked. Please contact an administrator.')
+    throw new Error('Account permanently locked. Request a password reset to regain access.')
   }
 
   if (user.status !== 'active') {
@@ -504,7 +504,7 @@ export async function loginWithPassword(
         attempt_status: 'failed_permanently_locked',
         failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
       })
-      throw new Error('Account permanently locked. Please contact an administrator.')
+      throw new Error('Account permanently locked. Request a password reset to regain access.')
     }
 
     const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)

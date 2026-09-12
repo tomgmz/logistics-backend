@@ -44,6 +44,12 @@ export type NotificationType =
   // delivery at the time, so a report raised in the yard leaves it null.
   | 'driver.emergency'                // quick alert or a report that stops the trip -> ops + fleet + admins
   | 'driver.report'                   // detailed report the trip survives -> ops + fleet + admins
+  // Password resets. Scoped to a reset REQUEST, not a booking, so they carry
+  // `request_id` in `data` and leave `booking_id` null. Routed to exactly one
+  // admin group: driver/client requests to `admin` (Company Admin), staff
+  // requests to `it_admin` — never both.
+  | 'auth.password_reset_requested'   // user is locked out / forgot -> the owning admin group
+  | 'auth.password_reset_completed'   // user set a new password -> the admin who sent the link
 
 export interface NotificationRow {
   notification_id: string

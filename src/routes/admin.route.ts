@@ -28,6 +28,7 @@ import * as ReportController from '../controllers/driver/report.controller.js'
 import { setTripPlanSchema } from '../schema/client/trip.schema.js'
 import { setReportStatusSchema } from '../schema/driver/report.schema.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
+import * as PasswordResetController from '../controllers/admin/password-reset.controller.js'
 import * as AuditLogController from '../controllers/admin/audit-logs.controller.js'
 import * as PermissionsController from '../controllers/admin/permissions.controller.js'
 import { replacePermissionsSchema } from '../schema/admin/permissions.schema.js'
@@ -189,6 +190,13 @@ router.delete('/it-admins/:id', authenticate, isAdmin, ITAdminController.deleteI
 //Fetch all users
 router.get('/users',       authenticate, isAdmin, UserController.getUsers)
 router.get('/users/stats', authenticate, isAdmin, UserController.getUserStats)
+
+// Password reset queues. Both admin roles reach these routes; which REQUESTS each
+// one may act on is enforced in the service (admin handles drivers + clients,
+// it_admin handles staff), because authorize() cannot express that split.
+router.get('/password-resets',             authenticate, isAdmin, PasswordResetController.listRequests)
+router.post('/password-resets/:id/send',   authenticate, isAdmin, PasswordResetController.sendLink)
+router.patch('/password-resets/:id/cancel', authenticate, isAdmin, PasswordResetController.cancelRequest)
 
 //Module permissions (RBAC) — managed by admin / it_admin
 router.get('/users/:id/permissions', authenticate, isAdmin, PermissionsController.getUserPermissions)

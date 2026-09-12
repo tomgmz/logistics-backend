@@ -181,6 +181,10 @@ const MODULE_ROUTE_MAP: { prefix: string; module: ModuleKey }[] = [
   { prefix: '/fleet-admins',      module: 'user-management' },
   { prefix: '/operations-admins', module: 'user-management' },
   { prefix: '/it-admins',         module: 'user-management' },
+  // Password reset queues ride the user-management tier: reading the queue needs
+  // can_view, sending a link needs can_create, dismissing one needs can_edit.
+  // it_admin bypasses module gating entirely, so this governs the Company Admin.
+  { prefix: '/password-resets',   module: 'user-management' },
   { prefix: '/users',             module: 'user-management' },
   { prefix: '/audit-logs',        module: 'audit-logs' },
 ]

@@ -23,6 +23,7 @@ import billingRoutes from './routes/billing.routes.js'
 import transactionHistoryRoutes from './routes/transaction-history.routes.js'
 import { startFleetRecheckScheduler } from './services/notification/fleet-recheck.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
+import { reportEmailLinkBaseUrl } from './lib/brevo-mailer.js'
 
 dotenv.config();
 
@@ -171,6 +172,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Backend running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Allowed origins:`, allowedOrigins);
+  reportEmailLinkBaseUrl();
 
   // Reminds the fleet manager to re-run BLOWBAGETS the day before a booking
   // dispatches and again on the day itself.
