@@ -1,7 +1,10 @@
 import { Router } from 'express'
 import { validate }     from '../middlewares/validate.middleware.js'
 import { authenticate } from '../middlewares/auth.middleware.js'
-import { authenticatedLimiter, authLimiter } from '../middlewares/rateLimit.middleware.js'
+import {
+  authenticatedLimiter, authLimiter,
+  passwordResetLimiter, resetRequestIpLimiter,
+} from '../middlewares/rateLimit.middleware.js'
 import {
   requestOtpSchema,
   verifyOtpSchema,
@@ -29,12 +32,14 @@ router.get('/csrf',         AuthController.getCsrfToken)
 router.post('/change-password', authenticate, authenticatedLimiter, validate(changePasswordSchema), AuthController.changePassword)
 
 // Password reset — public by necessity: whoever needs these cannot sign in.
-// `authLimiter` keys on the email in the body, which is what we want to throttle
-// here. Completing a reset is keyed the same way because an attacker guessing
-// tokens has no email to spend, so the limiter falls back to their IP.
-router.post('/forgot-password',       authLimiter, validate(requestPasswordResetSchema), PasswordResetController.requestReset)
-router.post('/reset-password/verify', authLimiter, validate(verifyResetTokenSchema),     PasswordResetController.verifyToken)
-router.post('/reset-password',        authLimiter, validate(completeResetSchema),        PasswordResetController.completeReset)
+// Raising a request is throttled twice: per email by authLimiter, and per IP by
+// resetRequestIpLimiter so one address cannot work through a list of accounts.
+router.post('/forgot-password',       resetRequestIpLimiter, authLimiter, validate(requestPasswordResetSchema), PasswordResetController.requestReset)
+// The link endpoints are throttled per TOKEN, not per IP — see passwordResetLimiter.
+// authLimiter must not be used here: these bodies carry no email, so it would key
+// them by IP and pool every reset behind a shared address into one small budget.
+router.post('/reset-password/verify', passwordResetLimiter, validate(verifyResetTokenSchema),     PasswordResetController.verifyToken)
+router.post('/reset-password',        passwordResetLimiter, validate(completeResetSchema),        PasswordResetController.completeReset)
 
 // Protected
 router.post('/logout',     authenticate, authenticatedLimiter, AuthController.logout)

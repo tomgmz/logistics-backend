@@ -201,13 +201,28 @@ export async function getOtpAttemptsSince(
 
 // SESSIONS
 
+/**
+ * Expire every session a user has.
+ *
+ * There used to be a `.gt('refresh_expires_at', now)` filter here, on the
+ * assumption that a session whose refresh had lapsed was already dead. It is
+ * not: `findActiveSession` authenticates on `expires_at` alone, and
+ * `refreshAccessToken` extends `expires_at` without touching
+ * `refresh_expires_at`. A refresh in the last quarter-hour of the 7-day window
+ * therefore leaves a session that still authenticates but no longer matched the
+ * filter — so it survived logout-all, survived the revoke-others on login, and
+ * survived a password reset, which is precisely when the point is to cut off
+ * whoever caused the lockout.
+ *
+ * No filter now: every row for the user is expired. Rewriting rows that were
+ * already dead costs nothing and cannot leave one behind.
+ */
 export async function revokeAllUserSessions(userId: string): Promise<void> {
   const now = new Date().toISOString()
   const { error } = await supabase
     .from('active_sessions')
     .update({ expires_at: now, refresh_expires_at: now })
     .eq('user_id', userId)
-    .gt('refresh_expires_at', now)
 
   if (error) throw error
 }

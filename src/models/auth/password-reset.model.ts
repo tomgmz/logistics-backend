@@ -8,6 +8,14 @@ import {
 
 const OPEN_STATUSES: ResetRequestStatus[] = ['pending', 'sent']
 
+// Statuses an admin may still issue a link for. 'expired' is included so a link
+// that timed out unused can be re-sent from the queue, rather than the admin
+// staring at a dead row while the locked-out user is told to start again.
+const SENDABLE_STATUSES: ResetRequestStatus[] = ['pending', 'expired']
+
+// An admin can dismiss anything not already finished.
+const CANCELLABLE_STATUSES: ResetRequestStatus[] = ['pending', 'sent', 'expired']
+
 /** The one open request for a user, if any — enforced unique by the DB index. */
 export async function findOpenByUser(userId: string): Promise<PasswordResetRequestRow | null> {
   const { data, error } = await supabase
@@ -68,8 +76,10 @@ export async function touchNotifiedAt(requestId: string): Promise<void> {
 /**
  * Move a pending request to 'sent' with its token.
  *
- * Guarded on `status = 'pending'` so two admins clicking Send at the same moment
- * cannot both issue a link — the second update matches no row and comes back null.
+ * Guarded on the sendable statuses so two admins clicking Send at the same moment
+ * cannot both issue a link — the second update matches no row and comes back
+ * null. Re-sending an expired request mints a fresh token, which also orphans
+ * the old one, since only the stored hash can be matched.
  */
 export async function markSent(
   requestId:      string,
@@ -89,12 +99,38 @@ export async function markSent(
       updated_at:       nowIso,
     })
     .eq('request_id', requestId)
-    .eq('status', 'pending')
+    .in('status', SENDABLE_STATUSES)
     .select()
     .maybeSingle()
 
   if (error) throw error
   return (data ?? null) as PasswordResetRequestRow | null
+}
+
+/**
+ * Undo a markSent that could not be delivered.
+ *
+ * Puts the row back to 'pending' and drops the token, so the admin sees an
+ * actionable request again. Cancelling instead would close it and force the
+ * locked-out user to start over, which is the opposite of what a failed send
+ * should cost them.
+ */
+export async function revertToPending(requestId: string): Promise<void> {
+  const nowIso = new Date().toISOString()
+  const { error } = await supabase
+    .from('password_reset_requests')
+    .update({
+      status:           'pending',
+      token_hash:       null,
+      token_expires_at: null,
+      sent_by:          null,
+      sent_at:          null,
+      updated_at:       nowIso,
+    })
+    .eq('request_id', requestId)
+    .eq('status', 'sent')
+
+  if (error) throw error
 }
 
 /** A live (sent, unexpired) request for this token hash. */
@@ -142,7 +178,7 @@ export async function cancel(requestId: string): Promise<PasswordResetRequestRow
     .from('password_reset_requests')
     .update({ status: 'cancelled', token_hash: null, updated_at: nowIso })
     .eq('request_id', requestId)
-    .in('status', OPEN_STATUSES)
+    .in('status', CANCELLABLE_STATUSES)
     .select()
     .maybeSingle()
 

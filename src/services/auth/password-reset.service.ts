@@ -161,6 +161,15 @@ export async function requestPasswordReset(input: {
   } catch (err) {
     // Swallowed on purpose: a failure here must not turn into a different
     // response than the success path, or the difference becomes the oracle.
+    //
+    // 23505 on the one-open-request index is the expected outcome of two clicks
+    // landing together — the row the loser wanted already exists, which is the
+    // result it wanted anyway. Logging it as an error taught people to ignore
+    // real reset errors, so it is noted quietly instead.
+    if ((err as { code?: string })?.code === '23505') {
+      console.info('[password-reset] concurrent request for', email, '— existing row kept')
+      return
+    }
     console.error('[password-reset] requestPasswordReset failed for', email, err)
   }
 }
@@ -168,7 +177,10 @@ export async function requestPasswordReset(input: {
 /** The queue for whichever group this admin staffs. */
 export async function listRequestsForActor(
   actor:    ResetActor,
-  statuses: ResetRequestStatus[] = ['pending', 'sent'],
+  // 'expired' is in the default view because it is still actionable — someone is
+  // locked out with a link that timed out, and hiding the row would leave the
+  // admin unaware anyone was waiting.
+  statuses: ResetRequestStatus[] = ['pending', 'sent', 'expired'],
 ): Promise<PasswordResetQueueItem[]> {
   const group = groupForActorRole(actor.role)
   if (!group) return []
@@ -195,7 +207,10 @@ export async function sendResetLink(
 
   assertOwnsRequest(request, actor)
 
-  if (request.status !== 'pending') {
+  // 'expired' is sendable: the previous link timed out unused, and re-issuing is
+  // exactly what the admin is there to do. Minting a fresh token also orphans the
+  // old one, since only the stored hash can ever be matched.
+  if (request.status !== 'pending' && request.status !== 'expired') {
     throw new Error(
       request.status === 'sent'
         ? 'A reset link has already been sent for this request.'
@@ -226,9 +241,11 @@ export async function sendResetLink(
       expiresInMinutes: TOKEN_TTL_MINS,
     })
   } catch (err) {
-    // The row says 'sent' but no email left the building. Put it back so the
-    // admin can try again instead of staring at a request they cannot re-send.
-    await ResetModel.cancel(requestId).catch(() => {})
+    // The row says 'sent' but no email left the building. Put it back to pending
+    // so the admin can press Send again. This used to cancel the request, which
+    // closed it outright and made the locked-out user start over because our
+    // mail provider had a bad minute.
+    await ResetModel.revertToPending(requestId).catch(() => {})
     throw err
   }
 
