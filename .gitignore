@@ -16,6 +16,9 @@ out/
 .env.local
 .env.*.local
 
+# Production row snapshots taken before a destructive script runs
+backups/
+
 # OS files
 .DS_Store
 Thumbs.db
