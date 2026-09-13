@@ -192,12 +192,24 @@ export interface PasswordResetEmailParams {
 /**
  * Build the absolute reset link for a token.
  *
+ * Always an https link to the web page, whoever it is for. An email client
+ * cannot be relied on to follow a custom scheme, and the phone reading the mail
+ * may not have the app installed, so the web page is the one destination that
+ * always resolves.
+ *
+ * For a driver it carries `?app=1`, which tells that page to hand off to the
+ * mobile app rather than ask for the password itself. Drivers never touch the
+ * web app otherwise — they are handed a phone and that is the whole of their
+ * software — so finishing the reset in a browser was the odd step out. The flag
+ * is a routing hint and nothing more: it grants nothing, and the token is still
+ * the only credential involved.
+ *
  * Throws when no app base URL is configured. That is deliberate: a reset email
  * whose only purpose is a link must never go out with a broken one, because the
  * admin is then told "link sent", the request is marked as handled, and the
  * locked-out user waits on an email that leads nowhere.
  */
-export function buildResetUrl(token: string): string {
+export function buildResetUrl(token: string, role?: string | null): string {
   const base = appBaseUrl()
   if (!base) {
     throw new Error(
@@ -205,7 +217,8 @@ export function buildResetUrl(token: string): string {
       'to the web app origin, e.g. https://your-app.example.com',
     )
   }
-  return `${base}/reset-password?token=${encodeURIComponent(token)}`
+  const appHandoff = role === 'driver' ? '&app=1' : ''
+  return `${base}/reset-password?token=${encodeURIComponent(token)}${appHandoff}`
 }
 
 /**

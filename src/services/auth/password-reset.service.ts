@@ -225,7 +225,7 @@ export async function sendResetLink(
   // configured this throws, and it has to throw while the row is still 'pending'
   // — otherwise the admin is told "link sent", the request is closed, and the
   // locked-out user waits on an email pointing nowhere.
-  const resetUrl = buildResetUrl(token)
+  const resetUrl = buildResetUrl(token, request.requested_role)
 
   const sent = await ResetModel.markSent(requestId, hashToken(token), expiresAt, actor.user_id)
   // Lost a race with another admin pressing Send on the same row.
