@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase.js'
 import { logEvent } from '../../lib/log-event.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { bookingRefById } from '../../lib/booking-ref.js'
+import { provisionExternalDriver, issueInvite } from '../auth/driver-enrollment.service.js'
 import {
   assertDriverAssignable,
   assertTruckAssignable,
@@ -114,7 +115,22 @@ export async function assignBookingService(
         return null
       })
 
-  const assignment = await AssignmentModel.assign(bookingId, input, userId ?? null)
+  // Provision app access for the vendor's driver before the assignment is
+  // written, not after. If provisioning fails — a typo'd address already held by
+  // a staff account, a clashing licence number — the operator gets the error with
+  // the booking still uncrewed, rather than a committed assignment plus a
+  // half-made account they have to reason about.
+  const external = input.is_vendor_supplied && input.vendor_driver_email
+    ? await provisionExternalDriver({
+        email:   input.vendor_driver_email,
+        name:    input.vendor_driver_name ?? 'Driver',
+        license: input.vendor_driver_license ?? null,
+        phone:   input.vendor_driver_phone ?? null,
+        actorId: userId ?? null,
+      })
+    : null
+
+  const assignment = await AssignmentModel.assign(bookingId, input, userId ?? null, external)
   if (!assignment) throw new Error('Failed to create assignment')
 
   // An overloaded assignment is a real decision someone made; put it on the
@@ -149,6 +165,23 @@ export async function assignBookingService(
     previous.truck_id  && previous.truck_id  !== nextTruckId  ? previous.truck_id  : null,
   )
   await reserveCrew(nextDriverId, nextTruckId)
+
+  // A newly provisioned vendor driver needs a way in. Fire-and-forget, like the
+  // welcome email on driver creation: the assignment is already committed and
+  // correct, and a Brevo outage must not undo it. If the email fails the invite
+  // is re-sendable from the booking's assignment card.
+  if (external?.created && input.vendor_driver_email) {
+    void issueInvite({
+      userId:     external.userId,
+      email:      input.vendor_driver_email,
+      bookingId,
+      bookingRef: await bookingRefById(bookingId),
+      firstName:  input.vendor_driver_name?.split(/\s+/)[0] ?? null,
+      actorId:    userId ?? null,
+    }).catch((err) => {
+      console.error('[assignment] failed to send driver enrollment invite', bookingId, err)
+    })
+  }
 
   // The booking is now crewed: tell the driver they have a delivery, and tell the
   // fleet manager one of their vehicles has been taken.

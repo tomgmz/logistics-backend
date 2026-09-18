@@ -12,6 +12,13 @@ export interface VendorSnapshot {
   vendor_driver_phone:   string | null
   vendor_vehicle_plate:  string | null
   vendor_vehicle_type:   string | null
+
+  // Optional app access for the vendor's driver. When ops supplies an email we
+  // provision a minimal account and the driver enrols a passkey on their own
+  // phone; without one the assignment behaves exactly as it always has and the
+  // snapshot above is the whole record.
+  vendor_driver_email:   string | null
+  vendor_driver_user_id: string | null
 }
 
 export interface Delivery extends VendorSnapshot {
@@ -98,6 +105,7 @@ export interface AssignBookingInput {
   vendor_driver_phone?:  string
   vendor_vehicle_plate?: string
   vendor_vehicle_type?:  string
+  vendor_driver_email?:  string
 }
 
 export interface UpdateDeliveryStatusInput {

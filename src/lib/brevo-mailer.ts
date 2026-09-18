@@ -261,7 +261,91 @@ export async function sendPasswordResetEmail(
   }
 }
 
-function generateOtpEmailHtml(name: string, code: string): string {
+/**
+ * What a code is for, in the words the email uses.
+ *
+ * The OTP templates were written for sign-in and said so in five places. A reset
+ * code is the same object with a different reason and a different life, so the
+ * reason and the life became parameters rather than a second copy of the layout
+ * that would drift from this one the first time the footer changed.
+ */
+interface OtpCopy {
+  // Subject-line and title noun, e.g. 'login code' / 'password reset code'.
+  noun:    string
+  // The sentence above the digits.
+  intro:   string
+  // Why this email is transactional, for the footer.
+  because: string
+  minutes: number
+}
+
+const LOGIN_OTP_COPY: OtpCopy = {
+  noun:    'login code',
+  intro:   'Here is your one-time login code',
+  because: 'a login was requested for your account',
+  minutes: 5,
+}
+
+export interface PasswordResetOtpEmailParams {
+  to:               string
+  firstName:        string | null
+  code:             string
+  expiresInMinutes: number
+}
+
+/**
+ * The reset code an IT Admin sends themselves.
+ *
+ * There is no link in here, and there is no password in here. The code proves the
+ * person asking for the reset is reading the registered mailbox; the password is
+ * chosen afterwards on a page this code opens, so nothing reusable is ever left
+ * sitting in an inbox.
+ *
+ * Unlike sendPasswordResetEmail, this one needs no app base URL and so cannot be
+ * defeated by a missing FRONTEND_URL - the recipient is already on the page that
+ * will ask for the code.
+ */
+export async function sendPasswordResetOtpEmail(
+  params: PasswordResetOtpEmailParams,
+): Promise<void> {
+  if (!process.env.BREVO_API_KEY) {
+    throw new Error('Brevo is not configured. Please set BREVO_API_KEY.')
+  }
+  if (!process.env.BREVO_SENDER_EMAIL) {
+    throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
+  }
+
+  const { to, firstName, code, expiresInMinutes } = params
+  const name = firstName ?? 'there'
+
+  const copy: OtpCopy = {
+    noun:    'password reset code',
+    intro:   'Here is your one-time password reset code',
+    because: 'a password reset was requested for your administrator account',
+    minutes: expiresInMinutes,
+  }
+
+  try {
+    const brevo = getBrevoClient()
+    await brevo.transactionalEmails.sendTransacEmail({
+      subject:     `${code} is your ${APP_NAME} password reset code`,
+      htmlContent: generateOtpEmailHtml(name, code, copy),
+      textContent: generateOtpEmailText(name, code, copy),
+      sender:      { name: FROM_NAME, email: FROM_EMAIL },
+      to:          [{ email: to, name: firstName ?? undefined }],
+    })
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('BREVO PASSWORD RESET OTP EMAIL ERROR:', {
+      error,
+      recipient: to,
+      timestamp: new Date().toISOString(),
+    })
+    throw new Error(`Failed to send password reset code email: ${error}`)
+  }
+}
+
+function generateOtpEmailHtml(name: string, code: string, copy: OtpCopy = LOGIN_OTP_COPY): string {
   const year = new Date().getFullYear()
 
   return `
@@ -270,12 +354,12 @@ function generateOtpEmailHtml(name: string, code: string): string {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Your ${APP_NAME} login code</title>
+      <title>Your ${APP_NAME} ${copy.noun}</title>
     </head>
     <body style="margin:0;padding:0;background-color:#f6f6f6;">
 
       <div style="display:none;font-size:1px;color:#f6f6f6;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
-        Your one-time login code for ${APP_NAME} — expires in 5 minutes.
+        Your one-time ${copy.noun} for ${APP_NAME} — expires in ${copy.minutes} minutes.
       </div>
 
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
@@ -304,8 +388,8 @@ function generateOtpEmailHtml(name: string, code: string): string {
                     Hi ${name},
                   </p>
                   <p style="margin:0 0 24px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
-                    Here is your one-time login code for <strong>${APP_NAME}</strong>.
-                    It expires in <strong>5 minutes</strong>.
+                    ${copy.intro} for <strong>${APP_NAME}</strong>.
+                    It expires in <strong>${copy.minutes} minutes</strong>.
                   </p>
                 </td>
               </tr>
@@ -364,7 +448,7 @@ function generateOtpEmailHtml(name: string, code: string): string {
                     ${PHYSICAL_ADDRESS}
                   </p>
                   <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    This is a transactional email sent because a login was requested for your account.
+                    This is a transactional email sent because ${copy.because}.
                   </p>
                 </td>
               </tr>
@@ -379,17 +463,17 @@ function generateOtpEmailHtml(name: string, code: string): string {
   `
 }
 
-function generateOtpEmailText(name: string, code: string): string {
+function generateOtpEmailText(name: string, code: string, copy: OtpCopy = LOGIN_OTP_COPY): string {
   const year = new Date().getFullYear()
 
   return `
 Hi ${name},
 
-Your ${APP_NAME} login code is:
+Your ${APP_NAME} ${copy.noun} is:
 
 ${code}
 
-This code expires in 5 minutes.
+This code expires in ${copy.minutes} minutes.
 
 NEVER share this code with anyone. ${APP_NAME} will never ask for your code by phone or email.
 
@@ -761,5 +845,233 @@ Link expired? Request another reset from the sign-in screen, or reach us at ${AP
 © ${year} ${APP_NAME}. All rights reserved.
 ${PHYSICAL_ADDRESS}
 This is a transactional email sent because a password reset was approved for your account.
+  `.trim()
+}
+
+// ---------------------------------------------------------------------------
+// Passkey enrolment, for outside-vendor drivers.
+
+/**
+ * The setup link a vendor driver is sent when ops gives them app access.
+ *
+ * Points at the web app first and hands off to the mobile app from there, exactly
+ * as the driver password-reset link does. That indirection is what makes the link
+ * work from a desktop mailbox and from a phone that has not installed the app
+ * yet — a bare app-scheme URL in an email is a dead end in both cases.
+ *
+ * Throws on a missing base URL for the same reason buildResetUrl does: this email
+ * is nothing but the link, and a broken one strands a driver who has no other way
+ * into the app at all.
+ */
+export function buildDriverSetupUrl(token: string): string {
+  const base = appBaseUrl()
+  if (!base) {
+    throw new Error(
+      'Cannot build a driver setup link: set FRONTEND_URL (or NEXT_PUBLIC_APP_URL) ' +
+      'to the web app origin, e.g. https://your-app.example.com',
+    )
+  }
+  return `${base}/driver-setup?token=${encodeURIComponent(token)}&app=1`
+}
+
+export interface DriverEnrollmentEmailParams {
+  to:             string
+  firstName:      string | null
+  setupUrl:       string
+  expiresInHours: number
+  bookingRef?:    string | null
+}
+
+/**
+ * The enrolment invite.
+ *
+ * Note what is NOT in here, and note that the copy says so: no password, ever.
+ * This account has none. The link lets the driver create a passkey on their own
+ * phone, and the private half never leaves that handset — so a forwarded copy is
+ * useless to anyone not holding the phone, and the email says plainly that
+ * forwarding it is not a thing anyone should be doing.
+ */
+export async function sendDriverEnrollmentEmail(
+  params: DriverEnrollmentEmailParams,
+): Promise<void> {
+  if (!process.env.BREVO_API_KEY) {
+    throw new Error('Brevo is not configured. Please set BREVO_API_KEY.')
+  }
+  if (!process.env.BREVO_SENDER_EMAIL) {
+    throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
+  }
+
+  const { to, firstName, setupUrl, expiresInHours, bookingRef } = params
+  const name = firstName ?? 'there'
+
+  try {
+    const brevo = getBrevoClient()
+    await brevo.transactionalEmails.sendTransacEmail({
+      subject:     `Set up your ${APP_NAME} driver sign-in`,
+      htmlContent: generateDriverEnrollmentEmailHtml(name, setupUrl, expiresInHours, bookingRef ?? null),
+      textContent: generateDriverEnrollmentEmailText(name, setupUrl, expiresInHours, bookingRef ?? null),
+      sender:      { name: FROM_NAME, email: FROM_EMAIL },
+      to:          [{ email: to, name: firstName ?? undefined }],
+    })
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('BREVO DRIVER ENROLLMENT EMAIL ERROR:', {
+      error,
+      recipient: to,
+      timestamp: new Date().toISOString(),
+    })
+    throw new Error(`Failed to send driver enrollment email: ${error}`)
+  }
+}
+
+function generateDriverEnrollmentEmailHtml(
+  name:       string,
+  setupUrl:   string,
+  hours:      number,
+  bookingRef: string | null,
+): string {
+  const year = new Date().getFullYear()
+  const forBooking = bookingRef
+    ? `You have been assigned to booking <strong>${bookingRef}</strong>.`
+    : 'You have been assigned a delivery.'
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Set up your ${APP_NAME} driver sign-in</title>
+    </head>
+    <body style="margin:0;padding:0;background-color:#f6f6f6;">
+
+      <div style="display:none;font-size:1px;color:#f6f6f6;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+        Set up sign-in for the ${APP_NAME} driver app &mdash; this link expires in ${hours} hours.
+      </div>
+
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
+        <tr>
+          <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0"
+              style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+
+              <!-- Header -->
+              <tr>
+                <td style="background-color:#0a0a0a;padding:32px 40px;">
+                  <h1 style="margin:0;font-family:Arial,sans-serif;font-size:22px;color:#ffffff;font-weight:700;letter-spacing:0.05em;">
+                    ${APP_NAME}
+                  </h1>
+                  <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:12px;color:#818181;letter-spacing:0.12em;text-transform:uppercase;">
+                    Driver App Setup
+                  </p>
+                </td>
+              </tr>
+
+              <!-- Body -->
+              <tr>
+                <td style="padding:32px 40px 0 40px;">
+                  <p style="margin:0 0 12px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
+                    Hi ${name},
+                  </p>
+                  <p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
+                    ${forBooking} Set up sign-in on your phone to see your stops, get directions,
+                    and record proof of delivery.
+                  </p>
+                  <p style="margin:0 0 24px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
+                    <strong>There is no password.</strong> You will unlock the app with your
+                    fingerprint, face, or phone PIN. That unlock stays on your phone and is never
+                    sent to us.
+                  </p>
+                </td>
+              </tr>
+
+              <!-- Call to action -->
+              <tr>
+                <td align="center" style="padding:0 40px 28px 40px;">
+                  <a href="${setupUrl}"
+                     style="display:inline-block;background-color:#0a0a0a;color:#ffffff;font-family:Arial,sans-serif;font-size:16px;font-weight:700;text-decoration:none;padding:14px 32px;border-radius:6px;">
+                    Set up sign-in
+                  </a>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="padding:0 40px 28px 40px;">
+                  <p style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:14px;color:#666666;line-height:1.6;">
+                    This link works once and expires in ${hours} hours. Open it on the phone you
+                    will use for deliveries.
+                  </p>
+                  <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#666666;line-height:1.6;">
+                    <strong>Do not forward this email.</strong> If you were not expecting it,
+                    ignore it and tell your dispatcher.
+                  </p>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="padding:0 40px 32px 40px;border-top:1px solid #eeeeee;">
+                  <p style="margin:16px 0 0 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;line-height:1.6;">
+                    Link expired or not working? Ask your dispatcher to send a new one, or reach us
+                    at ${APP_SUPPORT_EMAIL}.
+                  </p>
+                </td>
+              </tr>
+
+              <!-- Footer -->
+              <tr>
+                <td style="background-color:#fafafa;padding:20px 40px;">
+                  <p style="margin:0;font-family:Arial,sans-serif;font-size:11px;color:#999999;line-height:1.6;">
+                    &copy; ${year} ${APP_NAME}. All rights reserved.<br>
+                    ${PHYSICAL_ADDRESS}<br>
+                    This is a transactional email sent because you were assigned a delivery.
+                  </p>
+                </td>
+              </tr>
+
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `.trim()
+}
+
+function generateDriverEnrollmentEmailText(
+  name:       string,
+  setupUrl:   string,
+  hours:      number,
+  bookingRef: string | null,
+): string {
+  const year = new Date().getFullYear()
+  const forBooking = bookingRef
+    ? `You have been assigned to booking ${bookingRef}.`
+    : 'You have been assigned a delivery.'
+
+  return `
+Hi ${name},
+
+${forBooking} Set up sign-in on your phone to see your stops, get directions, and
+record proof of delivery.
+
+THERE IS NO PASSWORD. You will unlock the app with your fingerprint, face, or phone
+PIN. That unlock stays on your phone and is never sent to us.
+
+Open this link on the phone you will use for deliveries:
+
+${setupUrl}
+
+This link works ONCE and expires in ${hours} hours.
+
+DO NOT FORWARD THIS EMAIL. If you were not expecting it, ignore it and tell your
+dispatcher.
+
+Link expired or not working? Ask your dispatcher to send a new one, or reach us at
+${APP_SUPPORT_EMAIL}.
+
+---
+© ${year} ${APP_NAME}. All rights reserved.
+${PHYSICAL_ADDRESS}
+This is a transactional email sent because you were assigned a delivery.
   `.trim()
 }

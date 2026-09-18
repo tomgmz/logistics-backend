@@ -159,12 +159,20 @@ export async function assertDriverAssignable(
 
   const { data, error } = await supabase
     .from('drivers')
-    .select('status')
+    .select('status, is_external')
     .eq('driver_id', driverId)
     .maybeSingle()
 
   if (error) throw error
   if (!data) throw new Error(`Driver with ID ${driverId} not found`)
+
+  // An external driver belongs to a vendor, not the fleet. They are filtered out
+  // of the picker already, but this is the gate that a hand-crafted driver_id
+  // has to get past — and the company path's guarantees (a vetted licence, a
+  // ticked calendar, BLOWBAGETS on the paired vehicle) do not apply to them.
+  if (data.is_external) {
+    throw new Error('This is a vendor-supplied driver and cannot be assigned as company crew')
+  }
 
   // A driver still flagged 'assigned' from a delivery that no longer exists is
   // not busy, just stuck — clear that before it reads as a refusal and quietly

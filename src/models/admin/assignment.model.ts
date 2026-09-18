@@ -24,6 +24,8 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
   vendor_driver_phone,
   vendor_vehicle_plate,
   vendor_vehicle_type,
+  vendor_driver_email,
+  vendor_driver_user_id,
   drivers (
     driver_id,
     license_number,
@@ -94,11 +96,20 @@ async function assign(
   bookingId:  string,
   input:      AssignBookingInput,
   assignedBy: string | null,
+  // Set when the vendor's driver was given app access: the drivers row and the
+  // users row provisioned for them. Kept out of `deliveries.driver_id` on
+  // purpose — see the comment on the driver_assignments write below.
+  external?:  { driverId: string; userId: string } | null,
 ): Promise<AssignmentWithRelations | null> {
   const now           = new Date().toISOString()
   const isVendor       = input.is_vendor_supplied === true
   const driverId       = isVendor ? null : input.driver_id ?? null
   const truckId        = isVendor ? null : input.truck_id ?? null
+
+  // Which drivers row, if any, this booking should be visible to. On the company
+  // path that is the assigned driver; on the vendor path it is the provisioned
+  // external driver, when there is one.
+  const crewDriverId   = isVendor ? external?.driverId ?? null : driverId
 
   // Vendor-supplied crew is snapshotted onto the delivery; company crew clears the
   // snapshot so re-assigning between paths never leaves stale details behind.
@@ -113,6 +124,8 @@ async function assign(
     vendor_driver_phone:   isVendor ? input.vendor_driver_phone   ?? null : null,
     vendor_vehicle_plate:  isVendor ? input.vendor_vehicle_plate  ?? null : null,
     vendor_vehicle_type:   isVendor ? input.vendor_vehicle_type   ?? null : null,
+    vendor_driver_email:   isVendor ? input.vendor_driver_email   ?? null : null,
+    vendor_driver_user_id: isVendor ? external?.userId            ?? null : null,
   }
 
   const { data: existing } = await supabase
@@ -140,8 +153,21 @@ async function assign(
     if (insertErr) throw insertErr
   }
 
-  // History tables reference registered fleet rows (NOT NULL FKs), so they only
-  // apply to the company path. Always clear prior rows first.
+  // truck_assignments references a registered fleet row (NOT NULL FK), so it
+  // stays company-only — there is no trucks row for a vendor vehicle.
+  //
+  // driver_assignments is different: it is not just history, it is the table the
+  // whole driver-facing side reads. findByDriverId lists a driver's work from it,
+  // isDriverAssignedToBooking authorises every trip and proof write from it, and
+  // resolveDriverUserIds picks notification recipients from it. So when a vendor
+  // driver has been provisioned an account, they get a real row here — otherwise
+  // they would sign in successfully and find an empty screen.
+  //
+  // deliveries.driver_id still stays NULL on the vendor path. That column is what
+  // crewOnBooking reads to drive reserveCrew/releaseCrew, and a subcontractor has
+  // no business in the company fleet-reservation state machine.
+  //
+  // Always clear prior rows first.
   const { error: delDriverErr } = await supabase
     .from('driver_assignments')
     .delete()
@@ -154,17 +180,19 @@ async function assign(
     .eq('booking_id', bookingId)
   if (delTruckErr) throw delTruckErr
 
-  if (!isVendor) {
+  if (crewDriverId) {
     const { error: insDriverErr } = await supabase
       .from('driver_assignments')
       .insert({
         booking_id:  bookingId,
-        driver_id:   driverId,
+        driver_id:   crewDriverId,
         assigned_at: now,
         assigned_by: assignedBy,
       })
     if (insDriverErr) throw insDriverErr
+  }
 
+  if (!isVendor) {
     const { error: insTruckErr } = await supabase
       .from('truck_assignments')
       .insert({

@@ -2,6 +2,22 @@ import { supabase } from '../../lib/supabase.js'
 import { createUserWithProfile } from '../../lib/user-provisioning.js'
 import { CreateDriverDTO, UpdateDriverDTO } from '../../types/driver.types.js'
 
+/** The drivers row off a users record, whether Supabase embedded it as an object or an array. */
+function profileOf(user: any) {
+  return Array.isArray(user?.drivers) ? user.drivers[0] : user?.drivers
+}
+
+/**
+ * The company driver roster.
+ *
+ * External (vendor-supplied) drivers share role='driver' but are not staff, so
+ * they are filtered out here rather than accumulating in Driver Management —
+ * every subcontractor ever given app access would otherwise pile up in it.
+ *
+ * Filtered in JS rather than with an inner join on drivers.is_external, because
+ * an inner join would also silently drop any driver whose detail row is missing,
+ * turning a data problem into an invisible one.
+ */
 async function findAll() {
   const { data, error } = await supabase
     .from('users')
@@ -11,7 +27,20 @@ async function findAll() {
     .order('last_name', { ascending: true })
 
   if (error) throw error
-  return data
+  return (data ?? []).filter((user: any) => profileOf(user)?.is_external !== true)
+}
+
+/** The external-driver roster — the complement of findAll, for the admin panel. */
+async function findAllExternal() {
+  const { data, error } = await supabase
+    .from('users')
+    .select(`*, drivers(*)`)
+    .eq('role', 'driver')
+    .neq('status', 'archived')
+    .order('last_name', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []).filter((user: any) => profileOf(user)?.is_external === true)
 }
 
 async function findById(userId: string) {
@@ -110,4 +139,4 @@ async function remove(userId: string) {
   return true
 }
 
-export { findAll, findById, create, update, remove }
+export { findAll, findAllExternal, findById, create, update, remove }

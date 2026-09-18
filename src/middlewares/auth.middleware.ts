@@ -120,6 +120,32 @@ export function authorize(...roles: string[]) {
 // Aliassame behaviour as authorize()
 export const authorizeAny = authorize
 
+/**
+ * Restrict a route to the root administrator — the earliest-created `admin`
+ * account, which protected-admin.ts already treats as the one that can never be
+ * permission-restricted.
+ *
+ * Reserved for actions where "any Company Admin" is too wide a blast radius. The
+ * IT Admin handover is the first: it retires a privileged account and installs
+ * its replacement, and it is deliberately NOT something the outgoing IT Admin can
+ * run on themselves.
+ *
+ * Stack it after authorize('admin') — this checks WHICH admin, not whether the
+ * caller is one.
+ */
+export async function isRootAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const { isProtectedAdmin } = await import('../lib/protected-admin.js')
+
+  if (!req.user || !(await isProtectedAdmin(req.user.sub))) {
+    res.status(403).json({
+      status:  'error',
+      message: 'Only the primary administrator account can perform this action.',
+    })
+    return
+  }
+  next()
+}
+
 //CSRF
 
 /**

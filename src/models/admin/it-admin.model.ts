@@ -30,6 +30,39 @@ async function findById(userId: string) {
   return data
 }
 
+/**
+ * Every ACTIVE IT Admin. Normally zero or one — `users_one_active_it_admin`
+ * makes more than one impossible — but it returns a list rather than a single
+ * row so a caller can tell "none" from "one" without a not-found error, and so a
+ * pre-migration database with duplicates reads honestly instead of throwing.
+ *
+ * Deliberately not filtered through findAll(): that one hides archived rows and
+ * excludes the caller, both of which would make it useless for counting.
+ */
+async function findActive() {
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id, email, first_name, last_name, status')
+    .eq('role', 'it_admin')
+    .eq('status', 'active')
+
+  if (error) throw error
+  return data ?? []
+}
+
+/** Active IT Admins other than this one — "would anyone be left?" */
+async function countOtherActive(excludeUserId: string) {
+  const { count, error } = await supabase
+    .from('users')
+    .select('user_id', { count: 'exact', head: true })
+    .eq('role', 'it_admin')
+    .eq('status', 'active')
+    .neq('user_id', excludeUserId)
+
+  if (error) throw error
+  return count ?? 0
+}
+
 async function create(userId: string, input: CreateITAdminInput) {
   await createUserWithProfile(userId, 'it_admin', {
     email:                input.email,
@@ -73,4 +106,4 @@ async function remove(userId: string) {
   return true
 }
 
-export { findAll, findById, create, update, remove }
+export { findAll, findById, findActive, countOtherActive, create, update, remove }

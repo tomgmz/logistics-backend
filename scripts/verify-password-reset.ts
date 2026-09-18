@@ -21,6 +21,7 @@
  */
 import 'dotenv/config'
 import crypto from 'crypto'
+import bcrypt from 'bcrypt'
 import { supabase } from '../src/lib/supabase.js'
 import * as ResetService from '../src/services/auth/password-reset.service.js'
 import * as ResetModel from '../src/models/auth/password-reset.model.js'
@@ -186,7 +187,137 @@ async function main() {
     ? ok('expireStale() retires the stale row and clears its token hash')
     : bad(`stale row is ${afterSweep?.status}, hash=${afterSweep?.token_hash}`)
 
-  console.log('\n9. Cancelling is gated the same way as sending')
+  console.log('\n9. The IT Admin resets themselves by code')
+
+  ;[['it_admin', true], ['admin', false], ['general_manager', false], ['driver', false]]
+    .forEach(([role, expected]) => {
+      ResetService.canSelfResetByOtp(role as string) === expected
+        ? ok(`canSelfResetByOtp(${role}) -> ${expected}`)
+        : bad(`canSelfResetByOtp(${role}) -> ${!expected}, expected ${expected}`)
+    })
+
+  const { data: itAdminUser } = await supabase.from('users')
+    .select('user_id, email').eq('user_id', itAdmin.user_id).single()
+
+  // Seeded directly with a known hash, so the whole path is exercised without
+  // asking Brevo to send a real IT Admin a real code.
+  const CODE = '135790'
+  const otpReq = await ResetModel.createOtpRequest({
+    user_id:        itAdminUser!.user_id,
+    email:          itAdminUser!.email,
+    requested_role: 'it_admin',
+    otp_hash:       await bcrypt.hash(CODE, 12),
+    otp_expires_at: new Date(Date.now() + 10 * 60 * 1000),
+  })
+  createdRequestIds.push(otpReq.request_id)
+
+  otpReq.delivery_method === 'otp' && otpReq.status === 'pending' && otpReq.token_hash === null
+    ? ok('an OTP request opens pending, with no token minted yet')
+    : bad(`OTP request opened as ${otpReq.delivery_method}/${otpReq.status}`)
+
+  // The row is open and in the it_admin group, but it is self-served — putting it
+  // in the queue would offer a Send button for a request already being handled.
+  const queueWithOtp = await ResetService.listRequestsForActor(itAdmin)
+  queueWithOtp.every((r) => r.request_id !== otpReq.request_id)
+    ? ok('an OTP request never appears in the admin queue')
+    : bad('the OTP request is sitting in the it_admin queue')
+
+  try {
+    await ResetService.sendResetLink(otpReq.request_id, itAdmin)
+    bad('an OTP request was allowed to send a link')
+  } catch (e: any) {
+    ok(`sendResetLink refuses an OTP request: "${e.message}"`)
+  }
+
+  try {
+    await ResetService.verifyItAdminOtp({ email: itAdminUser!.email, code: '000000' })
+    bad('a wrong code was accepted')
+  } catch (e: any) {
+    e.code === 'RESET_OTP_INCORRECT'
+      ? ok(`a wrong code is refused: "${e.message}"`)
+      : bad(`refused, but with an unexpected error: ${e.code} ${e.message}`)
+  }
+  const afterWrong = await ResetModel.findById(otpReq.request_id)
+  afterWrong?.otp_attempts === 1
+    ? ok('a wrong code is counted against the attempt budget')
+    : bad(`attempts is ${afterWrong?.otp_attempts}, expected 1`)
+
+  const verified = await ResetService.verifyItAdminOtp({ email: itAdminUser!.email, code: CODE })
+  const afterVerify = await ResetModel.findById(otpReq.request_id)
+  afterVerify?.status === 'sent' && afterVerify.otp_hash === null
+    ? ok('a correct code spends itself and mints a token')
+    : bad(`after verify the row is ${afterVerify?.status}, hash=${afterVerify?.otp_hash}`)
+  afterVerify?.sent_by === itAdminUser!.user_id
+    ? ok('the IT Admin is recorded as their own sender')
+    : bad(`sent_by is ${afterVerify?.sent_by}`)
+
+  const otpToken = await ResetService.verifyResetToken(verified.token)
+  otpToken.valid
+    ? ok('the minted token verifies on the ordinary reset path')
+    : bad('the token from a verified code does not verify')
+
+  try {
+    await ResetService.verifyItAdminOtp({ email: itAdminUser!.email, code: CODE })
+    bad('a spent code was accepted a second time')
+  } catch (e: any) {
+    e.code === 'RESET_OTP_INVALID'
+      ? ok('a spent code cannot be replayed')
+      : bad(`refused, but with an unexpected error: ${e.code} ${e.message}`)
+  }
+
+  // The verified request above is still 'sent' and therefore still OPEN, and
+  // password_reset_one_open_per_user allows exactly one of those per user. Close
+  // it before opening the next fixture, or the insert below trips the index.
+  await ResetModel.cancel(otpReq.request_id)
+
+  // Exhaustion: a row already at the ceiling is torn down rather than guessed at.
+  const spent = await ResetModel.createOtpRequest({
+    user_id:        itAdminUser!.user_id,
+    email:          itAdminUser!.email,
+    requested_role: 'it_admin',
+    otp_hash:       await bcrypt.hash(CODE, 12),
+    otp_expires_at: new Date(Date.now() + 10 * 60 * 1000),
+  })
+  createdRequestIds.push(spent.request_id)
+  await supabase.from('password_reset_requests')
+    .update({ otp_attempts: 5 }).eq('request_id', spent.request_id)
+  try {
+    await ResetService.verifyItAdminOtp({ email: itAdminUser!.email, code: CODE })
+    bad('a request out of attempts still accepted the correct code')
+  } catch (e: any) {
+    ok(`a request out of attempts is refused: "${e.message}"`)
+  }
+  const exhausted = await ResetModel.findById(spent.request_id)
+  exhausted?.status === 'cancelled'
+    ? ok('an exhausted request is torn down, so the odds cannot accumulate')
+    : bad(`exhausted request left as ${exhausted?.status}`)
+
+  // An abandoned code must not hold the one-open-request slot forever.
+  const stale = await ResetModel.createOtpRequest({
+    user_id:        itAdminUser!.user_id,
+    email:          itAdminUser!.email,
+    requested_role: 'it_admin',
+    otp_hash:       await bcrypt.hash(CODE, 12),
+    otp_expires_at: new Date(Date.now() - 1000),
+  })
+  createdRequestIds.push(stale.request_id)
+  await ResetModel.expireStaleOtps()
+  const sweptOtp = await ResetModel.findById(stale.request_id)
+  sweptOtp?.status === 'expired' && sweptOtp.otp_hash === null
+    ? ok('expireStaleOtps() retires an abandoned code and clears its hash')
+    : bad(`abandoned OTP row is ${sweptOtp?.status}, hash=${sweptOtp?.otp_hash}`)
+
+  // Enumeration, again: nothing about a non-IT-Admin address may differ. This
+  // returns before any email is attempted, so no mail leaves the building.
+  const beforeOtp = (await supabase.from('password_reset_requests').select('request_id')).data!.length
+  await ResetService.requestItAdminOtp({ email: clientUser!.email })
+  await ResetService.requestItAdminOtp({ email: 'no-such-account-xyz@example.com' })
+  const afterOtp = (await supabase.from('password_reset_requests').select('request_id')).data!.length
+  afterOtp === beforeOtp
+    ? ok('a non-IT-Admin address raises no OTP request')
+    : bad(`OTP rows changed ${beforeOtp} -> ${afterOtp} for accounts that may not self-reset`)
+
+  console.log('\n10. Cancelling is gated the same way as sending')
   try {
     await ResetService.cancelRequest(clientReq.request_id, itAdmin)
     bad('it_admin was allowed to cancel a CLIENT request')
@@ -204,7 +335,7 @@ async function main() {
 }
 
 async function finish() {
-  console.log('\n10. Teardown')
+  console.log('\n11. Teardown')
   if (createdRequestIds.length) {
     await supabase.from('password_reset_requests').delete().in('request_id', createdRequestIds)
   }

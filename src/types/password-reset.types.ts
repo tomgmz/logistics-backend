@@ -6,6 +6,15 @@
 
 export type ResetHandlerGroup = 'company_admin' | 'it_admin'
 
+// How the request reaches the user.
+//   'link' — an admin sends a one-time link from their queue. Everyone but the
+//            IT Admin resets this way.
+//   'otp'  — the IT Admin proves control of their mailbox with a 6-digit code and
+//            serves themselves, because their own queue is the one they staff.
+// Frozen on the row at request time, like handler_group, so the send path and the
+// queue listing cannot disagree about which kind of request they are looking at.
+export type ResetDeliveryMethod = 'link' | 'otp'
+
 export type ResetRequestStatus =
   | 'pending'    // raised by the user, waiting on an admin
   | 'sent'       // admin sent the link; token is live until token_expires_at
@@ -19,6 +28,7 @@ export interface PasswordResetRequestRow {
   email:            string
   requested_role:   string
   handler_group:    ResetHandlerGroup
+  delivery_method:  ResetDeliveryMethod
   status:           ResetRequestStatus
   token_hash:       string | null
   token_expires_at: string | null
@@ -27,6 +37,12 @@ export interface PasswordResetRequestRow {
   completed_at:     string | null
   requested_ip:     string | null
   last_notified_at: string | null
+  // OTP path only; null on every 'link' row. otp_sent_at outlives the code being
+  // spent or expiring, because it is what the resend cooldown is measured from.
+  otp_hash:         string | null
+  otp_expires_at:   string | null
+  otp_attempts:     number
+  otp_sent_at:      string | null
   created_at:       string
   updated_at:       string
 }

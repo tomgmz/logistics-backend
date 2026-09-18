@@ -160,6 +160,41 @@ async function createTokensAndSession(
   return { accessToken, refreshToken, accessExpiresAt, refreshExpiresAt }
 }
 
+/**
+ * Mint a session for a user who has already been authenticated by some other
+ * means, and shape it into the response every login path returns.
+ *
+ * This exists so the passkey flow does not grow its own copy of the token
+ * logic. createTokensAndSession is where the single-active-session invariant
+ * lives (it revokes every prior session before creating one), where token
+ * hashing with the pepper happens, and where active_sessions rows come from.
+ * A second implementation would drift from all three silently.
+ *
+ * The caller is responsible for having actually verified the user. Nothing here
+ * checks a credential.
+ */
+export async function issueVerifiedSession(
+  user: {
+    user_id: string
+    email: string
+    first_name: string | null
+    last_name: string | null
+    role: UserRole
+    status: string
+    must_change_password?: boolean
+  },
+  deviceInfo?: string,
+): Promise<AuthResponse> {
+  const tokens = await createTokensAndSession(user, deviceInfo)
+  return buildAuthResponse(
+    user,
+    tokens.accessToken,
+    tokens.refreshToken,
+    tokens.accessExpiresAt,
+    tokens.refreshExpiresAt,
+  )
+}
+
 export async function getAuthStatus(email: string): Promise<AuthStatusResponse> {
   const normalizedEmail = email.trim().toLowerCase()
   const user = await AuthModel.findUserByEmail(normalizedEmail)
@@ -474,6 +509,20 @@ export async function loginWithPassword(
     throw new Error(`Account temporarily locked. Please try again in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''}.`)
   }
 
+  // An outside-vendor driver has a password in auth.users only because Supabase
+  // requires one; it is random, was never shown to anyone, and their way in is
+  // the passkey on their phone. Refuse before reaching signInWithPassword so
+  // this stays a closed door rather than an unguessable one.
+  if (await AuthModel.isExternalDriver(user.user_id)) {
+    await AuthModel.createLoginHistory({
+      user_id: user.user_id, email,
+      device_info: input.device_info, user_agent: userAgent,
+      attempt_status: 'failed_inactive',
+      failure_reason: 'External driver attempted password login',
+    })
+    throw new Error('This account signs in with a passkey. Open the app and use "Sign in with a passkey".')
+  }
+
   const { error: authError } = await supabaseAnon.auth.signInWithPassword({
     email,
     password: input.password,
@@ -591,14 +640,20 @@ export async function getMe(userId: string) {
     case 'client':
       return AuthModel.findUserWithClient(userId)
     default: {
+      // Travels with the session so the web app can hide actions reserved for the
+      // root administrator — the IT Admin handover being the first of them. The
+      // API enforces this independently via the isRootAdmin middleware; this flag
+      // only spares the user a button that would 403.
+      const is_root_admin = await isProtectedAdmin(userId)
+
       // Attach per-module permissions so the web app can gate UI for managed
       // staff. The root administrator is never restricted, so leave their
       // session with no permission matrix (full role-default access).
-      if (isManagedRole(user.role) && !(await isProtectedAdmin(userId))) {
+      if (isManagedRole(user.role) && !is_root_admin) {
         const module_permissions = await getSessionPermissions(userId)
-        return { ...user, module_permissions }
+        return { ...user, is_root_admin, module_permissions }
       }
-      return user
+      return { ...user, is_root_admin }
     }
   }
 }

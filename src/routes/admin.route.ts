@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { validate }                  from '../middlewares/validate.middleware.js'
-import { authenticate, authorize }   from '../middlewares/auth.middleware.js'
+import { authenticate, authorize, isRootAdmin }   from '../middlewares/auth.middleware.js'
 import { createAdminSchema, updateAdminSchema }                       from '../schema/admin/admin.schema.js'
 import { createClientSchema, updateClientSchema }                     from '../schema/admin/client.schema.js'
 import { createDriverSchema, updateDriverSchema }                     from '../schema/admin/driver.schema.js'
@@ -10,7 +10,7 @@ import { createAccountantSchema, updateAccountantSchema, setGmProxySchema } from
 import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../schema/admin/general_manager.schema.js'
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
-import { createITAdminSchema, updateITAdminSchema }   from '../schema/admin/it-admin.schema.js'
+import { createITAdminSchema, updateITAdminSchema, transitionITAdminSchema }   from '../schema/admin/it-admin.schema.js'
 import { assignBookingSchema, updateDeliveryStatusSchema } from '../schema/admin/assignment.schema.js'
 import * as AdminController           from '../controllers/admin/admin.controller.js'
 import * as ClientController          from '../controllers/admin/client.controller.js'
@@ -29,6 +29,7 @@ import { setTripPlanSchema } from '../schema/client/trip.schema.js'
 import { setReportStatusSchema } from '../schema/driver/report.schema.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as PasswordResetController from '../controllers/admin/password-reset.controller.js'
+import * as ExternalDriverController from '../controllers/admin/external-driver.controller.js'
 import * as AuditLogController from '../controllers/admin/audit-logs.controller.js'
 import * as PermissionsController from '../controllers/admin/permissions.controller.js'
 import { replacePermissionsSchema } from '../schema/admin/permissions.schema.js'
@@ -182,6 +183,10 @@ router.delete('/operations-admins/:id', authenticate, isAdmin,  OperationsAdminC
 router.get('/it-admins',        authenticate, isAdmin, ITAdminController.getAllITAdmins)
 router.get('/it-admins/:id',    authenticate, isAdmin, ITAdminController.getITAdminById)
 router.post('/it-admins',       authenticate, isAdmin, validate(createITAdminSchema), ITAdminController.createITAdmin)
+// Handing the role to a successor is narrower than the rest of this group: only
+// the root admin, never an IT Admin. A resigning office-holder must not be able
+// to appoint their own replacement, and `isAdmin` above would let them.
+router.post('/it-admins/transition', authenticate, authorize('admin'), isRootAdmin, validate(transitionITAdminSchema), ITAdminController.transitionITAdmin)
 router.patch('/it-admins/:id',  authenticate, isAdmin, validate(updateITAdminSchema), ITAdminController.updateITAdmin)
 router.patch('/it-admins/:id/deactivate', authenticate, isAdmin, ITAdminController.deactivateITAdmin)
 router.patch('/it-admins/:id/activate',   authenticate, isAdmin, ITAdminController.activateITAdmin)
@@ -197,6 +202,17 @@ router.get('/users/stats', authenticate, isAdmin, UserController.getUserStats)
 router.get('/password-resets',             authenticate, isAdmin, PasswordResetController.listRequests)
 router.post('/password-resets/:id/send',   authenticate, isAdmin, PasswordResetController.sendLink)
 router.patch('/password-resets/:id/cancel', authenticate, isAdmin, PasswordResetController.cancelRequest)
+
+// App access for vendor-supplied drivers.
+//
+// Operations sits alongside the admin roles here because ops is who assigns the
+// driver in the first place, and a subcontractor whose phone died mid-run needs
+// a new setup link from the person looking at the booking, not an escalation.
+// Revocation is the same group: the fastest offboarding is the one the
+// dispatcher can do the moment a vendor is stood down.
+router.get('/external-drivers/:userId/access',   authenticate, isCrewRelease, ExternalDriverController.getAccessStatus)
+router.post('/external-drivers/:userId/reinvite', authenticate, isCrewRelease, ExternalDriverController.reinvite)
+router.post('/external-drivers/:userId/revoke',   authenticate, isCrewRelease, ExternalDriverController.revoke)
 
 //Module permissions (RBAC) — managed by admin / it_admin
 router.get('/users/:id/permissions', authenticate, isAdmin, PermissionsController.getUserPermissions)

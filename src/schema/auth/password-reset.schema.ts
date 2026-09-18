@@ -20,3 +20,15 @@ export const completeResetSchema = z.object({
   // one the login path will accept too.
   password: passwordField(),
 })
+
+// The IT Admin's self-service path. Same email shape as the mediated request, so
+// a malformed address is rejected identically and the two endpoints cannot be
+// told apart by their validation errors.
+export const requestResetOtpSchema = z.object({
+  email: z.string().email('Invalid email address'),
+})
+
+export const verifyResetOtpSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  code:  z.string().length(6, 'Code must be exactly 6 digits').regex(/^\d{6}$/, 'Code must be numeric'),
+})

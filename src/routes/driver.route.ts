@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authenticate, authorize } from '../middlewares/auth.middleware.js'
-import { authenticatedLimiter, trackingLimiter } from '../middlewares/rateLimit.middleware.js'
+import { authenticatedLimiter, emergencyLimiter, trackingLimiter } from '../middlewares/rateLimit.middleware.js'
 import { validate }                from '../middlewares/validate.middleware.js'
 import { attachDriverScope }       from '../middlewares/clientScope.middleware.js'
 import { uploadSingle }            from '../middlewares/upload.middleware.js'
@@ -105,7 +105,10 @@ router.patch('/bookings/:bookingId/fleet-return',
 // any of these URLs.
 router.get('/reports',              authenticate, authenticatedLimiter, isAny, ReportController.listMyReports)
 router.get('/reports/:reportId',    authenticate, authenticatedLimiter, isAny, ReportController.getReport)
-router.post('/reports',             authenticate, authenticatedLimiter, isAny, validate(createDriverReportSchema), ReportController.createReport)
+// On its own budget, not the shared one: an SOS must not be refused because the
+// driver spent the session's allowance reading their own bookings. See
+// emergencyLimiter.
+router.post('/reports',             authenticate, emergencyLimiter, isAny, validate(createDriverReportSchema), ReportController.createReport)
 // Filling in a quick alert after the fact, so the one-tap signal grows into a
 // full report instead of the driver filing a second, duplicate one.
 router.patch('/reports/:reportId',  authenticate, authenticatedLimiter, isAny, validate(enrichDriverReportSchema), ReportController.enrichReport)

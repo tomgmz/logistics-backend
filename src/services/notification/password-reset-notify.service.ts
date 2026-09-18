@@ -126,16 +126,29 @@ export async function notifyResetRequested(
 /**
  * Close the loop for the admin who sent the link, so they can see the reset
  * landed without going back to the queue to check.
+ *
+ * Addressed to the individual who sent it, with a fall back to whoever staffs
+ * that queue now. The sender may have left — an IT Admin handover deactivates the
+ * outgoing account, and `sent_by` keeps pointing at them — and a notification
+ * delivered to an account nobody can sign into is the same as no notification at
+ * all. The fallback is also what covers a self-served OTP reset, where `sent_by`
+ * is the requester themselves.
  */
 export async function notifyResetCompleted(
   request:       PasswordResetRequestRow,
   requesterName: string | null,
 ): Promise<void> {
   try {
-    if (!request.sent_by) return
+    // One lookup, two uses: it answers both "is the original sender still active?"
+    // and "who staffs this queue now?".
+    const active = await notificationModel.resolveRecipientsByRoles([GROUP_ROLE[request.handler_group]])
+    const sender = active.filter((r) => r.user_id === request.sent_by)
+    const recipients = sender.length ? sender : active
+
+    if (recipients.length === 0) return
 
     await fanOut(
-      [{ user_id: request.sent_by }],
+      recipients,
       'auth.password_reset_completed',
       'Password reset completed',
       `${requesterLabel(request, requesterName)} set a new password and can sign in again.`,
