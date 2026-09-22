@@ -274,10 +274,26 @@ export async function createSession(params: {
   return data
 }
 
+/**
+ * Resolve a live session AND its owner's current entitlement in one query.
+ *
+ * The join is why deactivating a user takes effect immediately. Previously this
+ * matched on the token hash and expires_at alone, so a deactivated account kept
+ * working until its access token ran out — up to 15 minutes of full access
+ * after an admin had revoked it, because nothing in the request path ever
+ * re-read users.status.
+ *
+ * It costs no extra round trip: this query already ran on every authenticated
+ * request, and active_sessions.user_id has a foreign key to users, so status
+ * and role come back as an embed on the row we were fetching anyway.
+ *
+ * !inner so that a session whose user row has gone stops authenticating rather
+ * than silently passing with no entitlement attached.
+ */
 export async function findActiveSession(tokenHash: string): Promise<UserSession | null> {
   const { data, error } = await supabase
     .from('active_sessions')
-    .select('*')
+    .select('*, users!inner(status, role)')
     .eq('token', tokenHash)
     .gt('expires_at', new Date().toISOString())
     .single()

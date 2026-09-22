@@ -69,10 +69,37 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       return
     }
 
+    // Entitlement comes from the users row joined onto the session, never from
+    // the JWT. A deactivated account stops here on its very next request
+    // instead of running out the remaining minutes of its access token, and it
+    // holds for every code path that can deactivate someone — including ones
+    // that forget to revoke sessions, which is how this gap appeared.
+    //
+    // A distinct code so the client can say "your access changed, sign in
+    // again" rather than showing the generic session-expired bounce.
+    if (session.users && session.users.status !== 'active') {
+      logEvent({
+        user_id:     payload.sub,
+        log_type:    'access_control',
+        action:      'inactive_account_blocked',
+        description: `Request refused: account status is '${session.users.status}'`,
+      })
+      res.status(401).json({
+        status:  'error',
+        code:    'ACCOUNT_INACTIVE',
+        message: 'Your account is no longer active. Please contact your administrator.',
+      })
+      return
+    }
+
     // Fire and forget don't block the request
     AuthModel.refreshSessionLastSeen(session.id).catch(() => {})
 
-    req.user = payload
+    // Same reasoning for the role: a demotion must not keep granting the old
+    // role until the token expires, so the database wins over the claim.
+    req.user = session.users?.role
+      ? { ...payload, role: session.users.role }
+      : payload
     req.sessionId = session.id
     // Hand the actor to the ambient request store so logEvent() can attribute
     // rows written deep in a service without every signature carrying a userId.
@@ -105,8 +132,13 @@ export async function optionalAuth(req: Request, res: Response, next: NextFuncti
       const tokenHash = hashToken(token)
       const session = await AuthModel.findActiveSession(tokenHash)
 
-      if (session) {
-        req.user = payload
+      // Same entitlement rules as authenticate(); an inactive account is
+      // simply treated as anonymous here rather than rejected, since these
+      // routes work without a user at all.
+      if (session && session.users?.status === 'active') {
+        req.user = session.users.role
+          ? { ...payload, role: session.users.role }
+          : payload
         req.sessionId = session.id
         AuthModel.refreshSessionLastSeen(session.id).catch(() => {})
       }

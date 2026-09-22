@@ -40,6 +40,15 @@ export interface UserSession {
   expires_at: Date
   refresh_expires_at?: Date
   token_version?: number
+
+  /**
+   * The owning user's live entitlement, joined in by findActiveSession.
+   *
+   * Authentication reads status and role from here rather than from the JWT,
+   * so a deactivation or a demotion takes effect on the next request instead
+   * of at the end of the current access token's 15 minutes.
+   */
+  users?: { status: string; role: string } | null
 }
 
 export interface AuthUser {
