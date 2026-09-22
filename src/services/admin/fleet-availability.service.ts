@@ -7,6 +7,7 @@ import {
 } from '../../lib/driver-reservation.js'
 import { driverCalendarAllows } from '../driver/availability.service.js'
 import type { BlowbagetsItems } from '../../types/client/booking.types.js'
+import { logEvent } from '../../lib/log-event.js'
 
 /**
  * Availability rules shared by the assignment flow and the booking lifecycle.
@@ -214,6 +215,14 @@ async function setTruckStatus(truckId: string, status: string): Promise<void> {
 export async function reserveCrew(driverId: string | null, truckId: string | null): Promise<void> {
   if (driverId) await setDriverStatus(driverId, 'assigned')
   if (truckId)  await setTruckStatus(truckId, 'in_use')
+
+  // These silently change who is available. When a booking cannot be staffed,
+  // this pair of events is the trail that explains why.
+  logEvent({
+    log_type:    'vehicle_activity',
+    action:      'crew_reserved',
+    description: `Reserved driver ${driverId ?? '—'} / vehicle ${truckId ?? '—'}`,
+  })
 }
 
 /**
@@ -230,6 +239,12 @@ export async function reserveCrew(driverId: string | null, truckId: string | nul
 export async function releaseCrew(driverId: string | null, truckId: string | null): Promise<void> {
   if (driverId) await setDriverStatus(driverId, 'available')
   if (truckId)  await setTruckStatus(truckId, 'available')
+
+  logEvent({
+    log_type:    'vehicle_activity',
+    action:      'crew_released',
+    description: `Released driver ${driverId ?? '—'} / vehicle ${truckId ?? '—'}`,
+  })
 }
 
 /** The driver + truck currently recorded on a booking's delivery, if any. */

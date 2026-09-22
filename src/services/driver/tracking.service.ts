@@ -7,6 +7,7 @@ import {
   type BookingViewer,
 } from '../client/booking.service.js'
 import { maybeRefreshEta, type StopEta } from '../maps/eta.service.js'
+import { logSystem, logSystemError } from '../../lib/log-system.js'
 
 /**
  * Live driver position, from the phone to the client's map.
@@ -266,8 +267,22 @@ export function startLocationPruneScheduler(): void {
 
   const tick = () => {
     pruneLocationHistory()
-      .then((n) => { if (n > 0) console.log(`[tracking] pruned ${n} location rows`) })
-      .catch((err) => console.error('[tracking] prune failed', err))
+      .then((n) => {
+        if (n > 0) console.log(`[tracking] pruned ${n} location rows`)
+        // Heartbeat, so a prune that stops running is visible before the
+        // history table becomes the largest thing in the database.
+        logSystem({
+          log_level:  'info',
+          event_type: 'cron_job',
+          source:     'tracking.pruneLocationHistory',
+          message:    `Location history prune completed: ${n} row(s) removed`,
+          metadata:   { removed: n, retention_days: LOCATION_RETENTION_DAYS },
+        })
+      })
+      .catch((err) => {
+        console.error('[tracking] prune failed', err)
+        logSystemError('tracking.pruneLocationHistory', 'cron_job', err)
+      })
   }
 
   pruneTimer = setInterval(tick, PRUNE_TICK_MS)

@@ -121,7 +121,6 @@ function maskEmail(email: string): string {
  */
 export async function requestPasswordReset(input: {
   email: string
-  ip?:   string | null
 }): Promise<void> {
   const email = input.email.trim().toLowerCase()
 
@@ -205,12 +204,11 @@ export async function requestPasswordReset(input: {
       email,
       requested_role: user.role,
       handler_group:  handlerGroupFor(user.role),
-      requested_ip:   input.ip ?? null,
     })
 
     logEvent({
       user_id:     user.user_id,
-      log_type:    'user_activity',
+      log_type:    'auth',
       action:      'password_reset_requested',
       description: `Password reset requested for ${email} (${user.role}) -> ${request.handler_group} queue`,
     })
@@ -315,7 +313,7 @@ export async function sendResetLink(
 
   logEvent({
     user_id:     actor.user_id,
-    log_type:    'user_activity',
+    log_type:    'auth',
     action:      'password_reset_link_sent',
     description: `Reset link sent to ${request.email} (${request.requested_role}), request ${requestId}`,
   })
@@ -395,7 +393,7 @@ export async function completeReset(token: string, newPassword: string): Promise
 
   logEvent({
     user_id:     request.user_id,
-    log_type:    'user_activity',
+    log_type:    'auth',
     action:      'password_reset_completed',
     description: `Password reset completed for ${request.email}, request ${request.request_id}`,
   })
@@ -446,7 +444,6 @@ function generateOtp(): string {
  */
 export async function requestItAdminOtp(input: {
   email: string
-  ip?:   string | null
 }): Promise<void> {
   const email = input.email.trim().toLowerCase()
 
@@ -523,7 +520,6 @@ export async function requestItAdminOtp(input: {
           requested_role: user.role,
           otp_hash:       codeHash,
           otp_expires_at: expiresAt,
-          requested_ip:   input.ip ?? null,
         })
 
     // refreshOtp comes back null when the row moved on under us - verified or
@@ -546,7 +542,7 @@ export async function requestItAdminOtp(input: {
 
     logEvent({
       user_id:     user.user_id,
-      log_type:    'user_activity',
+      log_type:    'auth',
       action:      'password_reset_otp_sent',
       description: `Self-service reset code sent to IT Admin ${email}, request ${request.request_id}`,
     })
@@ -647,7 +643,7 @@ export async function verifyItAdminOtp(input: {
 
   logEvent({
     user_id:     user.user_id,
-    log_type:    'user_activity',
+    log_type:    'auth',
     action:      'password_reset_otp_verified',
     description: `IT Admin ${email} verified a self-service reset code, request ${request.request_id}`,
   })
@@ -670,7 +666,7 @@ export async function cancelRequest(
 
   logEvent({
     user_id:     actor.user_id,
-    log_type:    'user_activity',
+    log_type:    'auth',
     action:      'password_reset_cancelled',
     description: `Reset request ${requestId} for ${request.email} cancelled`,
   })

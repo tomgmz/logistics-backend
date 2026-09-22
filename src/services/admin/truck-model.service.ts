@@ -12,7 +12,7 @@ export async function getTruckModelById(modelId: string) {
   return model
 }
 
-export async function createTruckModel(input: CreateTruckModelInput, actorId?: string | null, ip?: string | null) {
+export async function createTruckModel(input: CreateTruckModelInput, actorId?: string | null) {
   const result = await TruckModelModel.create(input)
 
   logEvent({
@@ -26,7 +26,7 @@ export async function createTruckModel(input: CreateTruckModelInput, actorId?: s
   return result
 }
 
-export async function updateTruckModel(modelId: string, input: UpdateTruckModelInput, actorId?: string | null, ip?: string | null) {
+export async function updateTruckModel(modelId: string, input: UpdateTruckModelInput, actorId?: string | null) {
   const existing = await TruckModelModel.findById(modelId)
   if (!existing) throw new Error('Truck model not found')
 
@@ -43,7 +43,7 @@ export async function updateTruckModel(modelId: string, input: UpdateTruckModelI
   return result
 }
 
-export async function deleteTruckModel(modelId: string, actorId?: string | null, ip?: string | null) {
+export async function deleteTruckModel(modelId: string, actorId?: string | null) {
   const existing = await TruckModelModel.findById(modelId)
   if (!existing) throw new Error('Truck model not found')
 

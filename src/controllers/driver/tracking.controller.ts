@@ -14,8 +14,8 @@ import {
  */
 
 function driverActor(req: Request) {
-  const { userId, ip } = getRequestMeta(req)
-  return { userId, ip, role: req.user?.role ?? null }
+  const { userId } = getRequestMeta(req)
+  return { userId, role: req.user?.role ?? null }
 }
 
 export const recordDriverPosition = async (req: Request, res: Response) => {

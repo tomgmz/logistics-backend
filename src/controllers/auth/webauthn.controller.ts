@@ -28,7 +28,7 @@ export async function verifyInvite(req: Request, res: Response) {
 
 export async function enrollOptions(req: Request, res: Response) {
   try {
-    const options = await WebauthnService.startRegistration(req.body.token, req.ip)
+    const options = await WebauthnService.startRegistration(req.body.token)
     res.status(200).json({ status: 'success', data: options })
   } catch (err: any) {
     // A server with no RP ID configured is not the driver's problem and is not a
@@ -86,7 +86,7 @@ export async function enrollVerify(req: Request, res: Response) {
 
 export async function authOptions(req: Request, res: Response) {
   try {
-    const options = await WebauthnService.startAuthentication(req.ip)
+    const options = await WebauthnService.startAuthentication()
     res.status(200).json({ status: 'success', data: options })
   } catch (err: unknown) {
     console.error('PASSKEY AUTH OPTIONS ERROR:', err)

@@ -78,7 +78,6 @@ export async function assignBookingService(
   bookingId: string,
   input:     AssignBookingInput,
   userId?:   string | null,
-  ip?:       string | null,
 ): Promise<AssignmentWithRelations & { capacity_warning: CapacityWarning | null }> {
   const { scheduleDate } = await assertBookingAssignable(bookingId)
 
@@ -224,7 +223,6 @@ export async function updateDeliveryStatusService(
   bookingId: string,
   input:     UpdateDeliveryStatusInput,
   userId?:   string | null,
-  ip?:       string | null,
 ): Promise<AssignmentWithRelations> {
   const existing = await AssignmentModel.findByBookingId(bookingId)
   if (!existing) throw new Error(`No delivery found for booking ${bookingId}`)

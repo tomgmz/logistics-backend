@@ -23,8 +23,8 @@ export async function getOperationsAdminById(req: Request, res: Response) {
 
 export async function createOperationsAdmin(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await OperationsAdminService.createOperationsAdmin(req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await OperationsAdminService.createOperationsAdmin(req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
@@ -33,8 +33,8 @@ export async function createOperationsAdmin(req: Request, res: Response) {
 
 export async function updateOperationsAdmin(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await OperationsAdminService.updateOperationsAdmin(param(req.params.id), req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await OperationsAdminService.updateOperationsAdmin(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
@@ -43,8 +43,8 @@ export async function updateOperationsAdmin(req: Request, res: Response) {
 
 export async function deleteOperationsAdmin(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    await OperationsAdminService.deleteOperationsAdmin(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    await OperationsAdminService.deleteOperationsAdmin(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Operations Admin deleted successfully' })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
@@ -53,8 +53,8 @@ export async function deleteOperationsAdmin(req: Request, res: Response) {
 
 export async function deactivateOperationsAdmin(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await OperationsAdminService.deactivateOperationsAdmin(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await OperationsAdminService.deactivateOperationsAdmin(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Operations Admin deactivated', data })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404
@@ -66,8 +66,8 @@ export async function deactivateOperationsAdmin(req: Request, res: Response) {
 
 export async function activateOperationsAdmin(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await OperationsAdminService.activateOperationsAdmin(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await OperationsAdminService.activateOperationsAdmin(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Operations Admin activated', data })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404

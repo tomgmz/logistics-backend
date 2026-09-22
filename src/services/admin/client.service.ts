@@ -19,7 +19,6 @@ export async function getClientById(userId: string) {
 export async function createClient(
   input:   CreateClientInput,
   actorId?: string | null,
-  ip?:      string | null,
 ) {
   const password = generateSecurePassword()
 
@@ -52,7 +51,7 @@ export async function createClient(
 
     logEvent({
       user_id:     actorId,
-      log_type:    'user_activity',
+      log_type:    'user_management',
       action:      'client_created',
       description: `Client ${input.email} created (user: ${userId})`,
   
@@ -74,7 +73,6 @@ export async function updateClient(
   userId:   string,
   input:    UpdateClientInput,
   actorId?: string | null,
-  ip?:      string | null,
 ) {
   if (input.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
@@ -87,7 +85,7 @@ export async function updateClient(
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'client_updated',
     description: `Client ${userId} updated`,
 
@@ -99,13 +97,12 @@ export async function updateClient(
 export async function deleteClient(
   userId:   string,
   actorId?: string | null,
-  ip?:      string | null,
 ) {
   const result = await ClientModel.remove(userId)
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'client_deleted',
     description: `Client ${userId} deleted`,
 
@@ -117,15 +114,13 @@ export async function deleteClient(
 export async function deactivateClient(
   userId:   string,
   actorId?: string | null,
-  ip?:      string | null,
 ) {
-  return deactivateUserWithBan(userId, 'client', 'client_deactivated', 'Client', actorId, ip)
+  return deactivateUserWithBan(userId, 'client', 'client_deactivated', 'Client', actorId)
 }
 
 export async function activateClient(
   userId:   string,
   actorId?: string | null,
-  ip?:      string | null,
 ) {
-  return activateUserWithUnban(userId, 'client', 'client_activated', 'Client', actorId, ip)
+  return activateUserWithUnban(userId, 'client', 'client_activated', 'Client', actorId)
 }

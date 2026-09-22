@@ -35,7 +35,6 @@ export interface PasswordResetRequestRow {
   sent_by:          string | null
   sent_at:          string | null
   completed_at:     string | null
-  requested_ip:     string | null
   last_notified_at: string | null
   // OTP path only; null on every 'link' row. otp_sent_at outlives the code being
   // spent or expiring, because it is what the resend cooldown is measured from.

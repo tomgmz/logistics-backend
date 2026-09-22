@@ -19,7 +19,6 @@ export async function requestReset(req: Request, res: Response) {
   // distinguished from a success by the caller.
   await ResetService.requestPasswordReset({
     email: req.body.email,
-    ip:    req.ip ?? null,
   })
 
   res.status(200).json({ status: 'success', message: NEUTRAL_REQUEST_MESSAGE })
@@ -70,7 +69,6 @@ export async function requestOtp(req: Request, res: Response) {
   // Never throws, for the same reason requestReset's service never throws.
   await ResetService.requestItAdminOtp({
     email: req.body.email,
-    ip:    req.ip ?? null,
   })
 
   res.status(200).json({ status: 'success', message: NEUTRAL_OTP_MESSAGE })

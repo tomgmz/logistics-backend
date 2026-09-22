@@ -47,8 +47,8 @@ function statusForError(err: any): number {
 
 export async function createITAdmin(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await ITAdminService.createITAdmin(req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await ITAdminService.createITAdmin(req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (err: any) {
     res.status(statusForError(err)).json({ status: 'error', code: err.code, message: err.message })
@@ -64,8 +64,8 @@ export async function createITAdmin(req: Request, res: Response) {
  */
 export async function transitionITAdmin(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await ITAdminService.transitionITAdmin(req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await ITAdminService.transitionITAdmin(req.body, userId)
     res.status(201).json({
       status:  'success',
       message: 'IT Admin role transitioned. The outgoing account has been deactivated.',
@@ -79,8 +79,8 @@ export async function transitionITAdmin(req: Request, res: Response) {
 
 export async function updateITAdmin(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await ITAdminService.updateITAdmin(param(req.params.id), req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await ITAdminService.updateITAdmin(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -89,8 +89,8 @@ export async function updateITAdmin(req: Request, res: Response) {
 
 export async function deleteITAdmin(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    await ITAdminService.deleteITAdmin(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    await ITAdminService.deleteITAdmin(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'IT Admin deleted successfully' })
   } catch (err: any) {
     res.status(statusForError(err)).json({ status: 'error', code: err.code, message: err.message })
@@ -99,8 +99,8 @@ export async function deleteITAdmin(req: Request, res: Response) {
 
 export async function deactivateITAdmin(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await ITAdminService.deactivateITAdmin(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await ITAdminService.deactivateITAdmin(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'IT Admin deactivated', data })
   } catch (err: any) {
     const status = err.message.includes('not found') ? 404
@@ -112,8 +112,8 @@ export async function deactivateITAdmin(req: Request, res: Response) {
 
 export async function activateITAdmin(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await ITAdminService.activateITAdmin(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await ITAdminService.activateITAdmin(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'IT Admin activated', data })
   } catch (err: any) {
     const status = err.message.includes('not found') ? 404

@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { BookingModel } from '../../models/client/booking.model.js'
 import { notifyStage } from './notification.service.js'
+import { logSystem, logSystemError } from '../../lib/log-system.js'
 
 /**
  * Nudges the fleet manager to re-run the BLOWBAGETS check on a booking's vehicle
@@ -123,8 +124,20 @@ export async function runFleetRecheckTick(now = new Date()): Promise<number> {
       }
     } catch (err) {
       console.error('[fleet-recheck] reminder failed for booking', row.booking_id, err)
+      logSystemError('fleet-recheck.scheduler', 'cron_job', err, { booking_id: row.booking_id })
     }
   }
+
+  // A heartbeat on SUCCESS, not just on failure. A scheduler that silently
+  // stops firing is invisible if you only log errors, and this one stopping
+  // means the fleet re-check reminders quietly never go out again.
+  logSystem({
+    log_level:  'info',
+    event_type: 'cron_job',
+    source:     'fleet-recheck.scheduler',
+    message:    `Fleet re-check tick completed: ${sent} reminder(s) sent`,
+    metadata:   { candidates: candidates.length, sent },
+  })
 
   return sent
 }
@@ -140,7 +153,10 @@ export function startFleetRecheckScheduler(): void {
   if (timer) return
 
   const tick = () => {
-    runFleetRecheckTick().catch((err) => console.error('[fleet-recheck] tick failed', err))
+    runFleetRecheckTick().catch((err) => {
+      console.error('[fleet-recheck] tick failed', err)
+      logSystemError('fleet-recheck.scheduler', 'cron_job', err)
+    })
   }
 
   timer = setInterval(tick, TICK_MS)

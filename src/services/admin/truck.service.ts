@@ -77,7 +77,7 @@ export async function getTruckById(truckId: string) {
   return withInspection
 }
 
-export async function createTruck(input: CreateTruckInput, actorId?: string | null, ip?: string | null) {
+export async function createTruck(input: CreateTruckInput, actorId?: string | null) {
   const result = await TruckModel.create(input)
 
   logEvent({
@@ -109,7 +109,7 @@ async function assertDriverNotAlreadyPaired(truckId: string, driverId: string): 
   }
 }
 
-export async function updateTruck(truckId: string, input: UpdateTruckInput, actorId?: string | null, ip?: string | null) {
+export async function updateTruck(truckId: string, input: UpdateTruckInput, actorId?: string | null) {
   if (input.assigned_driver_id) {
     await assertDriverNotAlreadyPaired(truckId, input.assigned_driver_id)
   }
@@ -140,7 +140,7 @@ export async function updateTruck(truckId: string, input: UpdateTruckInput, acto
   return result
 }
 
-export async function deleteTruck(truckId: string, actorId?: string | null, ip?: string | null) {
+export async function deleteTruck(truckId: string, actorId?: string | null) {
   const result = await TruckModel.remove(truckId)
 
   logEvent({

@@ -231,7 +231,6 @@ export async function createBookingService(
   input: CreateBookingRequest,
   viewer: BookingViewer,
   userId?: string | null,
-  ip?: string | null,
 ): Promise<BookingWithRelations> {
   // The owning company is never taken from the request body for a client: the
   // session decides, so a client cannot file a booking against another company.
@@ -374,7 +373,6 @@ export async function updateBookingService(
   input: UpdateBookingInput,
   viewer: BookingViewer,
   userId?: string | null,
-  ip?: string | null,
 ): Promise<BookingWithRelations> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
@@ -403,7 +401,6 @@ export async function updateBookingStatusService(
   status: string,
   viewer: BookingViewer,
   userId?: string | null,
-  ip?: string | null,
   // The administrator's remarks when turning a booking down. Stored on the
   // booking and sent to the client with the rejection notification.
   rejectionReason?: string | null,
@@ -503,7 +500,6 @@ export async function gmReviewService(
   bookingId: string,
   input: GmReviewInput,
   userId?: string | null,
-  ip?: string | null,
 ): Promise<BookingWithRelations> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
@@ -544,7 +540,6 @@ export async function deleteBookingService(
   bookingId: string,
   viewer: BookingViewer,
   userId?: string | null,
-  ip?: string | null,
 ): Promise<boolean> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
@@ -594,7 +589,6 @@ export async function updateDestinationService(
   input: UpdateDestinationInput,
   viewer: BookingViewer,
   userId?: string | null,
-  ip?: string | null,
 ): Promise<BookingDestination> {
   await assertDestinationOwnership(destinationId, viewer)
 
@@ -618,7 +612,6 @@ export async function updateDestinationStatusService(
   viewer: BookingViewer,
   deliveredAt?: string,
   userId?: string | null,
-  ip?: string | null,
 ): Promise<BookingDestination> {
   await assertDestinationOwnership(destinationId, viewer)
 
@@ -653,7 +646,6 @@ export async function updateDestinationStatusService(
 export interface DriverActor {
   userId?: string | null
   role?:   string | null
-  ip?:     string | null
 }
 
 export async function assertDriverOnBooking(bookingId: string, actor: DriverActor): Promise<BookingWithRelations> {
@@ -879,7 +871,6 @@ export async function deleteDestinationService(
   destinationId: string,
   viewer: BookingViewer,
   userId?: string | null,
-  ip?: string | null,
 ): Promise<boolean> {
   // `removeDestination` reports success even when nothing matched, so without
   // this a client deleting a foreign stop got a silent 200. Now they get a 404.
@@ -908,7 +899,6 @@ export async function upsertCargoItemService(
   bookingId: string,
   item: Partial<BookingCargoItem> & { item_id?: string },
   userId?: string | null,
-  ip?: string | null,
 ): Promise<BookingCargoItem> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
@@ -929,7 +919,6 @@ export async function upsertCargoItemService(
 export async function deleteCargoItemService(
   itemId: string,
   userId?: string | null,
-  ip?: string | null,
 ): Promise<boolean> {
   const result = await BookingModel.removeCargoItem(itemId)
 

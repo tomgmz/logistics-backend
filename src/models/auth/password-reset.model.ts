@@ -34,7 +34,6 @@ export async function create(params: {
   email:          string
   requested_role: string
   handler_group:  ResetHandlerGroup
-  requested_ip?:  string | null
 }): Promise<PasswordResetRequestRow> {
   const { data, error } = await supabase
     .from('password_reset_requests')
@@ -46,7 +45,6 @@ export async function create(params: {
       // Spelled out rather than left to the column default: this is the mediated
       // path, and the OTP path below is the only other one.
       delivery_method: 'link',
-      requested_ip:   params.requested_ip ?? null,
       last_notified_at: new Date().toISOString(),
     })
     .select()
@@ -324,7 +322,6 @@ export async function createOtpRequest(params: {
   requested_role: string
   otp_hash:       string
   otp_expires_at: Date
-  requested_ip?:  string | null
 }): Promise<PasswordResetRequestRow> {
   const nowIso = new Date().toISOString()
   const { data, error } = await supabase
@@ -338,7 +335,6 @@ export async function createOtpRequest(params: {
       // exactly the event you want a record of.
       handler_group:   'it_admin',
       delivery_method: 'otp',
-      requested_ip:    params.requested_ip ?? null,
       otp_hash:        params.otp_hash,
       otp_expires_at:  params.otp_expires_at.toISOString(),
       otp_attempts:    0,

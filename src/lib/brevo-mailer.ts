@@ -1,5 +1,6 @@
 import { BrevoClient, BrevoEnvironment } from '@getbrevo/brevo'
 import crypto from 'crypto'
+import { logSystem } from './log-system.js'
 
 const APP_NAME          = process.env.APP_NAME             || 'Logistics'
 const PHYSICAL_ADDRESS  = process.env.APP_PHYSICAL_ADDRESS || 'Blk. 6 Lot 8 Lynville Enclave, Mamatid, City of Cabuyao, Laguna'
@@ -139,6 +140,12 @@ export async function sendOtpEmail(
       recipient: to,
       timestamp: new Date().toISOString(),
     })
+    logSystem({
+      log_level:  'error',
+      event_type: 'email_event',
+      source:     'brevo-mailer',
+      message:    `Failed to send OTP email: ${error}`,
+    })
     throw new Error(`Failed to send OTP email: ${error}`)
   }
 }
@@ -177,6 +184,12 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams): Promise<void
       error,
       recipient: to,
       timestamp: new Date().toISOString(),
+    })
+    logSystem({
+      log_level:  'error',
+      event_type: 'email_event',
+      source:     'brevo-mailer',
+      message:    `Failed to send welcome email: ${error}`,
     })
     throw new Error(`Failed to send welcome email: ${error}`)
   }
@@ -256,6 +269,12 @@ export async function sendPasswordResetEmail(
       error,
       recipient: to,
       timestamp: new Date().toISOString(),
+    })
+    logSystem({
+      log_level:  'error',
+      event_type: 'email_event',
+      source:     'brevo-mailer',
+      message:    `Failed to send password reset email: ${error}`,
     })
     throw new Error(`Failed to send password reset email: ${error}`)
   }
@@ -340,6 +359,12 @@ export async function sendPasswordResetOtpEmail(
       error,
       recipient: to,
       timestamp: new Date().toISOString(),
+    })
+    logSystem({
+      log_level:  'error',
+      event_type: 'email_event',
+      source:     'brevo-mailer',
+      message:    `Failed to send password reset code email: ${error}`,
     })
     throw new Error(`Failed to send password reset code email: ${error}`)
   }
@@ -919,6 +944,12 @@ export async function sendDriverEnrollmentEmail(
       error,
       recipient: to,
       timestamp: new Date().toISOString(),
+    })
+    logSystem({
+      log_level:  'error',
+      event_type: 'email_event',
+      source:     'brevo-mailer',
+      message:    `Failed to send driver enrollment email: ${error}`,
     })
     throw new Error(`Failed to send driver enrollment email: ${error}`)
   }

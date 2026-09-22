@@ -2,6 +2,7 @@ import * as model from '../../models/messaging/messaging.model.js'
 import * as push from './push.service.js'
 import { createClient } from '@supabase/supabase-js'
 import type { ConversationWithDetails, MessageRow, MessagableUser } from '../../types/messaging.types.js'
+import { logEvent } from '../../lib/log-event.js'
 
 const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
@@ -168,6 +169,15 @@ export async function deleteMessage(messageId: string, userId: string): Promise<
   const isReceiver = msg.receiver_id === userId
   if (!isSender && !isReceiver) throw Object.assign(new Error('Access denied'), { statusCode: 403 })
   await model.softDeleteMessage(messageId, userId, isSender)
+
+  // Sends, reads and reactions are volume with no dispute value and stay out
+  // of the trail. A deletion is different: someone removed a record.
+  logEvent({
+    user_id:     userId,
+    log_type:    'admin_activity',
+    action:      'message_deleted',
+    description: `Deleted message ${messageId} (as ${isSender ? 'sender' : 'receiver'})`,
+  })
 }
 
 export async function toggleReaction(

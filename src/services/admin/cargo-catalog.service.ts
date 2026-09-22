@@ -19,7 +19,7 @@ export async function getHandlingCodeById(id: string) {
   return hc
 }
 
-export async function createHandlingCode(input: CreateHandlingCodeInput, actorId?: string | null, ip?: string | null) {
+export async function createHandlingCode(input: CreateHandlingCodeInput, actorId?: string | null) {
   const result = await CargoCatalogModel.createHandlingCode(input)
 
   logEvent({
@@ -33,7 +33,7 @@ export async function createHandlingCode(input: CreateHandlingCodeInput, actorId
   return result
 }
 
-export async function updateHandlingCode(id: string, input: UpdateHandlingCodeInput, actorId?: string | null, ip?: string | null) {
+export async function updateHandlingCode(id: string, input: UpdateHandlingCodeInput, actorId?: string | null) {
   await getHandlingCodeById(id)
   const result = await CargoCatalogModel.updateHandlingCode(id, input)
 
@@ -48,7 +48,7 @@ export async function updateHandlingCode(id: string, input: UpdateHandlingCodeIn
   return result
 }
 
-export async function deleteHandlingCode(id: string, actorId?: string | null, ip?: string | null) {
+export async function deleteHandlingCode(id: string, actorId?: string | null) {
   await getHandlingCodeById(id)
   await CargoCatalogModel.removeHandlingCode(id)
 
@@ -73,7 +73,7 @@ export async function getCommodityById(id: string) {
   return commodity
 }
 
-export async function createCommodity(input: CreateCommodityInput, actorId?: string | null, ip?: string | null) {
+export async function createCommodity(input: CreateCommodityInput, actorId?: string | null) {
   const result = await CargoCatalogModel.createCommodity(input)
 
   logEvent({
@@ -87,7 +87,7 @@ export async function createCommodity(input: CreateCommodityInput, actorId?: str
   return result
 }
 
-export async function updateCommodity(id: string, input: UpdateCommodityInput, actorId?: string | null, ip?: string | null) {
+export async function updateCommodity(id: string, input: UpdateCommodityInput, actorId?: string | null) {
   await getCommodityById(id)
   const result = await CargoCatalogModel.updateCommodity(id, input)
 
@@ -102,7 +102,7 @@ export async function updateCommodity(id: string, input: UpdateCommodityInput, a
   return result
 }
 
-export async function deleteCommodity(id: string, actorId?: string | null, ip?: string | null) {
+export async function deleteCommodity(id: string, actorId?: string | null) {
   await getCommodityById(id)
   await CargoCatalogModel.removeCommodity(id)
 
@@ -127,7 +127,7 @@ export async function getProductById(id: string) {
   return product
 }
 
-export async function createProduct(input: CreateProductInput, actorId?: string | null, ip?: string | null) {
+export async function createProduct(input: CreateProductInput, actorId?: string | null) {
   const result = await CargoCatalogModel.createProduct(input)
 
   logEvent({
@@ -141,7 +141,7 @@ export async function createProduct(input: CreateProductInput, actorId?: string 
   return result
 }
 
-export async function updateProduct(id: string, input: UpdateProductInput, actorId?: string | null, ip?: string | null) {
+export async function updateProduct(id: string, input: UpdateProductInput, actorId?: string | null) {
   await getProductById(id)
   const result = await CargoCatalogModel.updateProduct(id, input)
 
@@ -156,7 +156,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, actor
   return result
 }
 
-export async function deleteProduct(id: string, actorId?: string | null, ip?: string | null) {
+export async function deleteProduct(id: string, actorId?: string | null) {
   await getProductById(id)
   await CargoCatalogModel.removeProduct(id)
 

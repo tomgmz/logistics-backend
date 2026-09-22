@@ -8,6 +8,8 @@ import { supabase, supabaseAnon } from '../../lib/supabase.js'
 import { isManagedRole } from '../../constants/modules.js'
 import { getSessionPermissions } from '../admin/permissions.service.js'
 import { isProtectedAdmin } from '../../lib/protected-admin.js'
+import { logEvent } from '../../lib/log-event.js'
+import { logSystem } from '../../lib/log-system.js'
 import {
   RequestOtpInput,
   VerifyOtpInput,
@@ -123,6 +125,14 @@ export async function changePassword(
   })
   if (error) throw new Error(`Failed to update password: ${error.message}`)
   await AuthModel.clearMustChangePassword(userId)
+
+  logEvent({
+    user_id:  userId,
+    log_type: 'auth',
+    action:   'password_changed',
+    // No password material, obviously — only that it happened and to whom.
+    description: 'Account password changed',
+  })
 }
 
 async function createTokensAndSession(
@@ -463,6 +473,16 @@ export async function verifyOtp(
     attempt_status: 'success',
   })
 
+  // login_history above is the detailed record, but nothing surfaces it in
+  // either log UI — and passkey sign-ins were already writing to the audit
+  // trail, so password sign-ins were the only ones invisible there.
+  logEvent({
+    user_id:     user.user_id,
+    log_type:    'auth',
+    action:      'login_succeeded',
+    description: `Password sign-in for ${email} (${requestedPlatform})`,
+  })
+
   return buildAuthResponse(user, accessToken, refreshToken, accessExpiresAt, refreshExpiresAt)
 }
 
@@ -539,6 +559,16 @@ export async function loginWithPassword(
       failure_reason: `Wrong password (${remainingAttempts} attempts left)`,
     })
 
+    // Failure diagnostics, not a business record: the Company Admin does not
+    // need every fat-fingered password, the IT Admin needs the pattern.
+    logSystem({
+      log_level:  'warn',
+      event_type: 'auth_event',
+      source:     'auth.service',
+      message:    `Failed password login for ${email}`,
+      metadata:   { failed_count: newFailedCount, remaining_attempts: remainingAttempts },
+    })
+
     if (remainingAttempts > 0) {
       throw new Error(`Incorrect password. ${remainingAttempts} attempt${remainingAttempts > 1 ? 's' : ''} remaining.`)
     }
@@ -553,11 +583,40 @@ export async function loginWithPassword(
         attempt_status: 'failed_permanently_locked',
         failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
       })
+      // A lockout is one of the cases that legitimately belongs in BOTH feeds:
+      // that the account is now locked is a business fact someone will have to
+      // undo; how it got there is diagnostics.
+      logEvent({
+        user_id:     user.user_id,
+        log_type:    'auth',
+        action:      'account_permanently_locked',
+        description: `${email} permanently locked after ${MAX_LOCKUPS} lockout cycles`,
+      })
+      logSystem({
+        log_level:  'critical',
+        event_type: 'auth_event',
+        source:     'auth.service',
+        message:    `Account permanently locked: ${email}`,
+        metadata:   { lockup_count: newLockupCount, max_lockups: MAX_LOCKUPS },
+      })
       throw new Error('Account permanently locked. Request a password reset to regain access.')
     }
 
     const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
     await AuthModel.lockUserAccount(user.user_id, lockUntil)
+    logEvent({
+      user_id:     user.user_id,
+      log_type:    'auth',
+      action:      'account_locked',
+      description: `${email} locked until ${lockUntil.toISOString()} (lockout ${newLockupCount}/${MAX_LOCKUPS})`,
+    })
+    logSystem({
+      log_level:  'warn',
+      event_type: 'auth_event',
+      source:     'auth.service',
+      message:    `Account temporarily locked: ${email}`,
+      metadata:   { lockup_count: newLockupCount, lock_until: lockUntil.toISOString() },
+    })
     throw new Error(`Account locked due to too many failed attempts. (${newLockupCount}/${MAX_LOCKUPS} lockouts used)`)
   }
 
@@ -600,7 +659,18 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
 
   const refreshTokenHash = hashToken(refreshToken)
   const session = await AuthModel.findActiveSessionByRefreshToken(refreshTokenHash)
-  if (!session) throw new Error('Session expired or revoked')
+  if (!session) {
+    // A structurally valid refresh token with no live session means it was
+    // already rotated or revoked — replay, not a routine expiry.
+    logSystem({
+      log_level:  'critical',
+      event_type: 'auth_event',
+      source:     'auth.service',
+      message:    'Refresh token presented for a revoked or rotated session',
+      metadata:   { subject: payload?.sub ?? null },
+    })
+    throw new Error('Session expired or revoked')
+  }
 
   const user = await AuthModel.findUserById(payload.sub)
   if (!user || user.status !== 'active') throw new Error('User not found or inactive')
@@ -621,10 +691,19 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
 
 export async function logout(tokenHash: string): Promise<void> {
   await AuthModel.revokeSession(tokenHash)
+  // user_id comes from the ambient request context — logout runs while the
+  // caller is still authenticated.
+  logEvent({ log_type: 'auth', action: 'logout', description: 'Session ended' })
 }
 
 export async function logoutAll(userId: string): Promise<void> {
   await AuthModel.revokeAllUserSessions(userId)
+  logEvent({
+    user_id:     userId,
+    log_type:    'auth',
+    action:      'all_sessions_revoked',
+    description: 'All sessions revoked for this account',
+  })
 }
 
 export async function getMe(userId: string) {

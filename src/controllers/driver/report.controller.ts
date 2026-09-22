@@ -21,8 +21,8 @@ import type { ReportStatus } from '../../types/driver/report.types.js'
  */
 
 function reportActor(req: Request) {
-  const { userId, ip } = getRequestMeta(req)
-  return { userId, ip, role: req.user?.role ?? null }
+  const { userId } = getRequestMeta(req)
+  return { userId, role: req.user?.role ?? null }
 }
 
 /** The signed-in user's own driver_id, or null when they aren't a driver. */

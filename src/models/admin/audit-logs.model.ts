@@ -57,18 +57,24 @@ export async function getStats() {
 
   const counts: Record<string, number> = {
     total:                0,
-    user_activity:        0,
+    auth:                 0,
+    user_management:      0,
+    access_control:       0,
+    document_activity:    0,
+    data_export:          0,
     admin_activity:       0,
     vehicle_creation:     0,
     vehicle_activity:     0,
     booking:              0,
     payment:              0,
-    system_error:         0,
     driver_activity:      0,
     billing_activity:     0,
     delivery_activity:    0,
     maintenance_activity: 0,
-    auth:                 0,
+    // Kept so pre-split rows still count toward a bucket rather than silently
+    // vanishing from the stat tiles.
+    user_activity:        0,
+    system_error:         0,
   }
 
   for (const row of data ?? []) {

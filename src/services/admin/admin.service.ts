@@ -16,7 +16,7 @@ export async function getAdminById(userId: string) {
   return admin
 }
 
-export async function createAdmin(input: CreateAdminInput, actorId?: string | null, ip?: string | null) {
+export async function createAdmin(input: CreateAdminInput, actorId?: string | null) {
   const e164Phone = input.phone ? '+63' + input.phone.slice(1) : undefined
   const password  = generateSecurePassword()
 
@@ -47,7 +47,7 @@ export async function createAdmin(input: CreateAdminInput, actorId?: string | nu
 
     logEvent({
       user_id:     actorId,
-      log_type:    'user_activity',
+      log_type:    'user_management',
       action:      'admin_created',
       description: `Admin ${input.email} created (user: ${userId})`,
 
@@ -62,7 +62,7 @@ export async function createAdmin(input: CreateAdminInput, actorId?: string | nu
   }
 }
 
-export async function updateAdmin(userId: string, input: UpdateAdminInput, actorId?: string | null, ip?: string | null) {
+export async function updateAdmin(userId: string, input: UpdateAdminInput, actorId?: string | null) {
   if (input.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: input.email })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)
@@ -72,7 +72,7 @@ export async function updateAdmin(userId: string, input: UpdateAdminInput, actor
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'admin_updated',
     description: `Admin ${userId} updated`,
 
@@ -81,12 +81,12 @@ export async function updateAdmin(userId: string, input: UpdateAdminInput, actor
   return result
 }
 
-export async function deleteAdmin(userId: string, actorId?: string | null, ip?: string | null) {
+export async function deleteAdmin(userId: string, actorId?: string | null) {
   const result = await AdminModel.remove(userId)
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'admin_deleted',
     description: `Admin ${userId} deleted`,
 
@@ -95,10 +95,10 @@ export async function deleteAdmin(userId: string, actorId?: string | null, ip?: 
   return result
 }
 
-export async function deactivateAdmin(userId: string, actorId?: string | null, ip?: string | null) {
-  return deactivateUserWithBan(userId, 'admin', 'admin_deactivated', 'Admin', actorId, ip)
+export async function deactivateAdmin(userId: string, actorId?: string | null) {
+  return deactivateUserWithBan(userId, 'admin', 'admin_deactivated', 'Admin', actorId)
 }
 
-export async function activateAdmin(userId: string, actorId?: string | null, ip?: string | null) {
-  return activateUserWithUnban(userId, 'admin', 'admin_activated', 'Admin', actorId, ip)
+export async function activateAdmin(userId: string, actorId?: string | null) {
+  return activateUserWithUnban(userId, 'admin', 'admin_activated', 'Admin', actorId)
 }

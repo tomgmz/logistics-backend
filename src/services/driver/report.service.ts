@@ -45,7 +45,6 @@ function incidentLabel(type: IncidentType | null): string {
 export interface ReportActor {
   userId?: string | null
   role?:   string | null
-  ip?:     string | null
 }
 
 /**

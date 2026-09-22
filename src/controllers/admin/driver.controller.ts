@@ -63,12 +63,11 @@ export async function createDriver(req: Request, res: Response) {
       res.status(400).json({ status: 'error', message: 'License image is required' })
       return
     }
-    const { userId, ip }    = getRequestMeta(req)
+    const { userId }         = getRequestMeta(req)
     const license_image_url = await uploadToCloudinary(req.file.buffer)
     const data              = await DriverService.createDriver(
       { ...req.body, license_image_url },
       userId,
-      ip,
     )
     res.status(201).json({ status: 'success', data })
   } catch (error: any) {
@@ -78,8 +77,8 @@ export async function createDriver(req: Request, res: Response) {
 
 export async function updateDriver(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await DriverService.updateDriver(param(req.params.id), req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await DriverService.updateDriver(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
@@ -88,8 +87,8 @@ export async function updateDriver(req: Request, res: Response) {
 
 export async function deleteDriver(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    await DriverService.deleteDriver(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    await DriverService.deleteDriver(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Driver deleted successfully' })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
@@ -98,8 +97,8 @@ export async function deleteDriver(req: Request, res: Response) {
 
 export async function deactivateDriver(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await DriverService.deactivateDriver(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await DriverService.deactivateDriver(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Driver deactivated', data })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404
@@ -111,8 +110,8 @@ export async function deactivateDriver(req: Request, res: Response) {
 
 export async function standDownDriver(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await DriverService.standDownDriver(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await DriverService.standDownDriver(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Driver returned to the available pool', data })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404
@@ -127,8 +126,8 @@ export async function standDownDriver(req: Request, res: Response) {
 
 export async function activateDriver(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await DriverService.activateDriver(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await DriverService.activateDriver(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Driver activated', data })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404

@@ -25,7 +25,7 @@ export async function getGeneralManagerById(userId: string) {
   return gm
 }
 
-export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string | null, ip?: string | null) {
+export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string | null) {
   const password = generateSecurePassword()
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
 
@@ -56,7 +56,7 @@ export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string 
 
     logEvent({
       user_id:     actorId,
-      log_type:    'user_activity',
+      log_type:    'user_management',
       action:      'general_manager_created',
       description: `General Manager ${dto.email} created (user: ${userId})`,
   
@@ -73,7 +73,7 @@ export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string 
   }
 }
 
-export async function updateGeneralManager(userId: string, dto: UpdateGeneralManagerDTO, actorId?: string | null, ip?: string | null) {
+export async function updateGeneralManager(userId: string, dto: UpdateGeneralManagerDTO, actorId?: string | null) {
   if (dto.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: dto.email })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)
@@ -83,7 +83,7 @@ export async function updateGeneralManager(userId: string, dto: UpdateGeneralMan
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'general_manager_updated',
     description: `General Manager ${userId} updated`,
 
@@ -92,12 +92,12 @@ export async function updateGeneralManager(userId: string, dto: UpdateGeneralMan
   return result
 }
 
-export async function deleteGeneralManager(userId: string, actorId?: string | null, ip?: string | null) {
+export async function deleteGeneralManager(userId: string, actorId?: string | null) {
   const result = await GeneralManagerModel.remove(userId)
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'general_manager_deleted',
     description: `General Manager ${userId} deleted`,
 
@@ -106,10 +106,10 @@ export async function deleteGeneralManager(userId: string, actorId?: string | nu
   return result
 }
 
-export async function deactivateGeneralManager(userId: string, actorId?: string | null, ip?: string | null) {
-  return deactivateUserWithBan(userId, 'general_manager', 'general_manager_deactivated', 'General Manager', actorId, ip)
+export async function deactivateGeneralManager(userId: string, actorId?: string | null) {
+  return deactivateUserWithBan(userId, 'general_manager', 'general_manager_deactivated', 'General Manager', actorId)
 }
 
-export async function activateGeneralManager(userId: string, actorId?: string | null, ip?: string | null) {
-  return activateUserWithUnban(userId, 'general_manager', 'general_manager_activated', 'General Manager', actorId, ip)
+export async function activateGeneralManager(userId: string, actorId?: string | null) {
+  return activateUserWithUnban(userId, 'general_manager', 'general_manager_activated', 'General Manager', actorId)
 }

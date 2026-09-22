@@ -6,6 +6,7 @@ import {
   type ExportRow,
 } from '../../models/admin/transaction-history.model.js'
 import type { BookingWithRelations } from '../../types/client/booking.types.js'
+import { logEvent } from '../../lib/log-event.js'
 
 /**
  * Staff transaction history. Thin over the model: clamps, derived ratios, and
@@ -108,5 +109,16 @@ export async function exportTransactionsService(
   // Ask for one past the cap so a full page tells us there was more behind it.
   const rows = await TransactionHistoryModel.findForExport(filters, EXPORT_ROW_CAP + 1)
   const truncated = rows.length > EXPORT_ROW_CAP
+  const exported  = truncated ? EXPORT_ROW_CAP : rows.length
+
+  // Thousands of rows of financial history leaving the system in one click is
+  // exactly what an audit trail is for, and it was previously invisible. The
+  // actor comes from the ambient request context.
+  logEvent({
+    log_type:    'data_export',
+    action:      'transactions_exported',
+    description: `Exported ${exported} transaction row(s)${truncated ? ` (capped at ${EXPORT_ROW_CAP})` : ''}; filters: ${JSON.stringify(filters)}`,
+  })
+
   return { rows: truncated ? rows.slice(0, EXPORT_ROW_CAP) : rows, truncated }
 }

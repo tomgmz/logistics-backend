@@ -69,7 +69,7 @@ export async function setUserPermissions(
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'access_control',
     action:      'module_permissions_updated',
     description: `Module permissions updated for user ${userId} (${target.role})`,
   })

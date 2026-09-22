@@ -75,7 +75,7 @@ export const uploadBookingDocuments = async (req: Request, res: Response) => {
     )
     const urls = results.map((r) => r.url)
 
-    const { userId, ip } = getRequestMeta(req)
+    const { userId } = getRequestMeta(req)
     logEvent({
       user_id:     userId,
       log_type:    'booking',

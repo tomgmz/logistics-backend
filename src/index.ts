@@ -25,6 +25,8 @@ import { startFleetRecheckScheduler } from './services/notification/fleet-rechec
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
 import { reportEmailLinkBaseUrl } from './lib/brevo-mailer.js'
 import { reportWebauthnConfig } from './lib/webauthn-config.js'
+import { requestContext } from './lib/request-context.js'
+import { logSystem } from './lib/log-system.js'
 
 dotenv.config();
 
@@ -76,6 +78,11 @@ app.use(cors({
 
 // MIDDLEWARE
 app.use(cookieParser(process.env.COOKIE_SECRET));
+
+// Opens the per-request store the loggers read from (request id, path,
+// method, and the user id once authenticate() resolves it). Carries no IP or
+// other network identifier — see lib/request-context.ts.
+app.use(requestContext);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -155,12 +162,24 @@ app.use((req: Request, res: Response) => {
 });
 
 // GLOBAL ERROR HANDLER
+// Every unhandled throw in the app lands here. It used to console.error and
+// nothing else, so on Render the entire crash history vanished at the next
+// restart and the IT Admin had no way to see that anything had failed. It now
+// also lands in system_logs, which is what makes that page show anything.
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('GLOBAL ERROR:', {
     message: err.message,
     stack: err.stack,
     path: req.path,
     method: req.method,
+  });
+
+  logSystem({
+    log_level:  'error',
+    event_type: 'server_error',
+    source:     'global-error-handler',
+    message:    err.message || 'Unhandled error',
+    metadata:   { stack: err.stack, name: err.name },
   });
 
   res.status(500).json({

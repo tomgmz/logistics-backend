@@ -31,6 +31,7 @@ import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as PasswordResetController from '../controllers/admin/password-reset.controller.js'
 import * as ExternalDriverController from '../controllers/admin/external-driver.controller.js'
 import * as AuditLogController from '../controllers/admin/audit-logs.controller.js'
+import * as SystemLogController from '../controllers/admin/system-logs.controller.js'
 import * as PermissionsController from '../controllers/admin/permissions.controller.js'
 import { replacePermissionsSchema } from '../schema/admin/permissions.schema.js'
 import { uploadSingle }    from '../middlewares/upload.middleware.js'
@@ -49,6 +50,8 @@ const router = Router()
 
 // Role groups
 const isAdmin = authorize('admin', 'it_admin')
+// System logs are IT Admin's alone — deliberately narrower than isAdmin.
+const isItAdmin = authorize('it_admin')
 const isFleet      = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager', 'client')
 const isOperations = authorize('admin', 'it_admin', 'operations_manager', 'general_manager', 'client')
 // Read-only view of drivers/trucks for operations (needed to populate the
@@ -218,10 +221,20 @@ router.post('/external-drivers/:userId/revoke',   authenticate, isCrewRelease, E
 router.get('/users/:id/permissions', authenticate, isAdmin, PermissionsController.getUserPermissions)
 router.put('/users/:id/permissions', authenticate, isAdmin, validate(replacePermissionsSchema), PermissionsController.setUserPermissions)
 
-// Audit logs
+// Audit logs — the business trail. Company Admin and IT Admin can both READ it
+// (IT Admin is who investigates), and neither can write or delete: rows are
+// only ever inserted by logEvent().
 router.get('/audit-logs',        authenticate, isAdmin, AuditLogController.getAllLogs)
 router.get('/audit-logs/stats',  authenticate, isAdmin, AuditLogController.getLogStats)
 router.get('/audit-logs/:id',    authenticate, isAdmin, AuditLogController.getLogById)
+
+// System logs — the technical trail. IT Admin ONLY. Stack traces, provider
+// error codes and internals are not the Company Admin's to read, which is why
+// these do not sit behind isAdmin like the audit routes above.
+router.get('/system-logs',              authenticate, isItAdmin, SystemLogController.getAllLogs)
+router.get('/system-logs/stats',        authenticate, isItAdmin, SystemLogController.getLogStats)
+router.get('/system-logs/:id',          authenticate, isItAdmin, SystemLogController.getLogById)
+router.patch('/system-logs/:id/resolve', authenticate, isItAdmin, SystemLogController.setResolved)
 
 //upload
 router.post('/upload/image', authenticate, isFleet, uploadSingle, UploadController.uploadImage)

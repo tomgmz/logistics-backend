@@ -1,5 +1,30 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import { createHash } from 'crypto'
+import { logSystem } from '../lib/log-system.js'
+
+/**
+ * Shared handler for every limiter below.
+ *
+ * A tripped limit is a system event, not an audit one: nobody did anything to a
+ * business record, but a burst against the auth or reset endpoints is the
+ * earliest signal of an attack and it previously left no trace at all. The
+ * limiter's own `message` is still what the client receives — this only adds
+ * the durable record beside it.
+ */
+function limitTripped(source: string, level: 'warn' | 'error' = 'warn') {
+  return (req: any, res: any, _next: any, options: any) => {
+    logSystem({
+      log_level:  level,
+      event_type: 'auth_event',
+      source:     `rate-limit.${source}`,
+      message:    `Rate limit tripped on ${req.method} ${req.originalUrl}`,
+      metadata:   { limit: options?.limit ?? options?.max ?? null },
+    })
+    res.status(options?.statusCode ?? 429).json(
+      typeof options?.message === 'string' ? { status: 'error', message: options.message } : options?.message,
+    )
+  }
+}
 
 /**
  * Every limiter answers in the app's error shape, never the library's default.
@@ -13,6 +38,7 @@ import { createHash } from 'crypto'
 const limitMessage = (message: string) => ({ status: 'error', message })
 
 export const globalLimiter = rateLimit({
+  handler: limitTripped('globalLimiter', 'warn'),
   windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
@@ -39,6 +65,7 @@ export const globalLimiter = rateLimit({
  * limiter below, sized for that specific risk.
  */
 export const authenticatedLimiter = rateLimit({
+  handler: limitTripped('authenticatedLimiter', 'warn'),
   windowMs: 15 * 60 * 1000,
   max: 1000,
   standardHeaders: true,
@@ -57,6 +84,7 @@ export const authenticatedLimiter = rateLimit({
  * the fleet's allowance.
  */
 export const trackingLimiter = rateLimit({
+  handler: limitTripped('trackingLimiter', 'warn'),
   windowMs: 15 * 60 * 1000,
   max: 400,
   standardHeaders: true,
@@ -81,6 +109,7 @@ export const trackingLimiter = rateLimit({
  * user, so one device cannot spend the fleet's allowance.
  */
 export const emergencyLimiter = rateLimit({
+  handler: limitTripped('emergencyLimiter', 'warn'),
   windowMs: 15 * 60 * 1000,
   max: 30,
   standardHeaders: true,
@@ -90,6 +119,7 @@ export const emergencyLimiter = rateLimit({
 })
 
 export const authLimiter = rateLimit({
+  handler: limitTripped('authLimiter', 'error'),
   windowMs: 15 * 60 * 1000,
   max: 10,
   standardHeaders: true,
@@ -120,6 +150,7 @@ export const authLimiter = rateLimit({
  * limiter's in-memory store as a lookup key.
  */
 export const passwordResetLimiter = rateLimit({
+  handler: limitTripped('passwordResetLimiter', 'error'),
   windowMs: 15 * 60 * 1000,
   max: 30,
   standardHeaders: true,
@@ -146,6 +177,7 @@ export const passwordResetLimiter = rateLimit({
  * office where several people are locked out at once.
  */
 export const resetRequestIpLimiter = rateLimit({
+  handler: limitTripped('resetRequestIpLimiter', 'error'),
   windowMs: 15 * 60 * 1000,
   max: 20,
   standardHeaders: true,
@@ -167,6 +199,7 @@ export const resetRequestIpLimiter = rateLimit({
  * fumbles the biometric prompt will repeat the last two.
  */
 export const passkeyEnrollLimiter = rateLimit({
+  handler: limitTripped('passkeyEnrollLimiter', 'error'),
   windowMs: 60 * 60 * 1000,
   max: 30,
   standardHeaders: true,
@@ -191,6 +224,7 @@ export const passkeyEnrollLimiter = rateLimit({
  * the start of a shift.
  */
 export const passkeyAuthLimiter = rateLimit({
+  handler: limitTripped('passkeyAuthLimiter', 'error'),
   windowMs: 15 * 60 * 1000,
   max: 30,
   standardHeaders: true,

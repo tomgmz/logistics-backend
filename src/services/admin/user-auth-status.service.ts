@@ -20,7 +20,6 @@ export async function deactivateUserWithBan(
   logAction: string,
   entityLabel: string,
   actorId?: string | null,
-  ip?: string | null,
 ): Promise<{ user_id: string; status: string }> {
   const { data: existing, error: selErr } = await supabase
     .from('users')
@@ -53,7 +52,7 @@ export async function deactivateUserWithBan(
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      logAction,
     description: `${entityLabel} ${userId} deactivated`,
 
@@ -68,7 +67,6 @@ export async function activateUserWithUnban(
   logAction: string,
   entityLabel: string,
   actorId?: string | null,
-  ip?: string | null,
 ): Promise<{ user_id: string; status: string }> {
   const { data: existing, error: selErr } = await supabase
     .from('users')
@@ -112,7 +110,7 @@ export async function activateUserWithUnban(
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      logAction,
     description: `${entityLabel} ${userId} reactivated`,
 

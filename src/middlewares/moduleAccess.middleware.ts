@@ -10,6 +10,8 @@ import {
   ModuleKey,
   ModulePermissionFlags,
 } from '../constants/modules.js'
+import { logEvent } from '../lib/log-event.js'
+import { logSystem } from '../lib/log-system.js'
 
 // Small per-user TTL cache so we don't hit the DB on every admin request.
 const CACHE_TTL_MS = 30 * 1000
@@ -57,6 +59,13 @@ export async function moduleGuard(req: Request, res: Response, next: NextFunctio
 
     const row = rows.find((r) => r.module_name === moduleKey)
     if (!row || !row[requiredFlag]) {
+      // Audit, not system: who was refused which module is a governance fact.
+      logEvent({
+        user_id:     user.sub,
+        log_type:    'access_control',
+        action:      'module_access_denied',
+        description: `${user.role} denied ${requiredFlag} on ${moduleKey} (${req.method} ${req.originalUrl})`,
+      })
       res.status(403).json({
         status:  'error',
         message: 'You do not have permission to perform this action on this module.',
@@ -67,6 +76,13 @@ export async function moduleGuard(req: Request, res: Response, next: NextFunctio
     next()
   } catch (err) {
     console.error('MODULE GUARD ERROR:', err)
+    logSystem({
+      log_level:  'error',
+      event_type: 'server_error',
+      source:     'moduleAccess.moduleGuard',
+      message:    (err as Error)?.message ?? 'Authorization check failed',
+      metadata:   { stack: (err as Error)?.stack },
+    })
     res.status(500).json({ status: 'error', message: 'Authorization error' })
   }
 }
@@ -96,6 +112,12 @@ function moduleFlagGate(
 
       const row = rows.find((r) => r.module_name === moduleKey)
       if (!row || !row[requiredFlag]) {
+        logEvent({
+          user_id:     user.sub,
+          log_type:    'access_control',
+          action:      'module_access_denied',
+          description: `${user.role} denied ${requiredFlag} on ${moduleKey} (${req.method} ${req.originalUrl})`,
+        })
         res.status(403).json({
           status:  'error',
           message: 'You do not have permission to perform this action on this module.',
@@ -106,6 +128,13 @@ function moduleFlagGate(
       next()
     } catch (err) {
       console.error('REQUIRE MODULE ERROR:', err)
+    logSystem({
+      log_level:  'error',
+      event_type: 'server_error',
+      source:     'moduleAccess.requireModule',
+      message:    (err as Error)?.message ?? 'Authorization check failed',
+      metadata:   { stack: (err as Error)?.stack },
+    })
       res.status(500).json({ status: 'error', message: 'Authorization error' })
     }
   }

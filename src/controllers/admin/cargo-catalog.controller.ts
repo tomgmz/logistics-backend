@@ -24,8 +24,8 @@ export async function getHandlingCodeById(req: Request, res: Response) {
 
 export async function createHandlingCode(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await CargoCatalogService.createHandlingCode(req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await CargoCatalogService.createHandlingCode(req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
@@ -34,8 +34,8 @@ export async function createHandlingCode(req: Request, res: Response) {
 
 export async function updateHandlingCode(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await CargoCatalogService.updateHandlingCode(param(req.params.id), req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await CargoCatalogService.updateHandlingCode(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
     const status = error.message === 'Handling code not found' ? 404 : 500
@@ -45,8 +45,8 @@ export async function updateHandlingCode(req: Request, res: Response) {
 
 export async function deleteHandlingCode(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    await CargoCatalogService.deleteHandlingCode(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    await CargoCatalogService.deleteHandlingCode(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Handling code deleted successfully' })
   } catch (error: any) {
     const status = error.message === 'Handling code not found' ? 404 : 500
@@ -75,8 +75,8 @@ export async function getCommodityById(req: Request, res: Response) {
 
 export async function createCommodity(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await CargoCatalogService.createCommodity(req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await CargoCatalogService.createCommodity(req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
@@ -85,8 +85,8 @@ export async function createCommodity(req: Request, res: Response) {
 
 export async function updateCommodity(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await CargoCatalogService.updateCommodity(param(req.params.id), req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await CargoCatalogService.updateCommodity(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
     const status = error.message === 'Commodity not found' ? 404 : 500
@@ -96,8 +96,8 @@ export async function updateCommodity(req: Request, res: Response) {
 
 export async function deleteCommodity(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    await CargoCatalogService.deleteCommodity(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    await CargoCatalogService.deleteCommodity(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Commodity deleted successfully' })
   } catch (error: any) {
     const status = error.message === 'Commodity not found' ? 404 : 500
@@ -127,8 +127,8 @@ export async function getProductById(req: Request, res: Response) {
 
 export async function createProduct(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await CargoCatalogService.createProduct(req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await CargoCatalogService.createProduct(req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
@@ -137,8 +137,8 @@ export async function createProduct(req: Request, res: Response) {
 
 export async function updateProduct(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await CargoCatalogService.updateProduct(param(req.params.id), req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await CargoCatalogService.updateProduct(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
     const status = error.message === 'Product not found' ? 404 : 500
@@ -148,8 +148,8 @@ export async function updateProduct(req: Request, res: Response) {
 
 export async function deleteProduct(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    await CargoCatalogService.deleteProduct(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    await CargoCatalogService.deleteProduct(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Product deleted successfully' })
   } catch (error: any) {
     const status = error.message === 'Product not found' ? 404 : 500

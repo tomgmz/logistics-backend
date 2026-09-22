@@ -57,7 +57,7 @@ export async function getDriverById(userId: string) {
   return driver
 }
 
-export async function createDriver(dto: CreateDriverDTO, actorId?: string | null, ip?: string | null) {
+export async function createDriver(dto: CreateDriverDTO, actorId?: string | null) {
   const password  = generateSecurePassword()
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
 
@@ -87,7 +87,7 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
 
     logEvent({
       user_id:     actorId,
-      log_type:    'user_activity',
+      log_type:    'user_management',
       action:      'driver_created',
       description: `Driver ${dto.email} created (user: ${userId})`,
     })
@@ -101,7 +101,7 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
   }
 }
 
-export async function updateDriver(userId: string, dto: UpdateDriverDTO, actorId?: string | null, ip?: string | null) {
+export async function updateDriver(userId: string, dto: UpdateDriverDTO, actorId?: string | null) {
   if (dto.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: dto.email })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)
@@ -111,7 +111,7 @@ export async function updateDriver(userId: string, dto: UpdateDriverDTO, actorId
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'driver_updated',
     description: `Driver ${userId} updated`,
   })
@@ -119,12 +119,12 @@ export async function updateDriver(userId: string, dto: UpdateDriverDTO, actorId
   return result
 }
 
-export async function deleteDriver(userId: string, actorId?: string | null, ip?: string | null) {
+export async function deleteDriver(userId: string, actorId?: string | null) {
   const result = await DriverModel.remove(userId)
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'driver_deleted',
     description: `Driver ${userId} deleted`,
   })
@@ -145,7 +145,7 @@ export async function deleteDriver(userId: string, actorId?: string | null, ip?:
  * live work is still to finish or cancel that booking. They land on 'available'
  * because they never drove.
  */
-export async function standDownDriver(userId: string, actorId?: string | null, ip?: string | null) {
+export async function standDownDriver(userId: string, actorId?: string | null) {
   const driver = await DriverModel.findById(userId)
   if (!driver) throw new Error('Driver not found')
 
@@ -173,7 +173,7 @@ export async function standDownDriver(userId: string, actorId?: string | null, i
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'driver_stood_down',
     description: `Driver ${record.driver_id} released from a stale 'assigned' reservation and returned to the available pool`,
   })
@@ -199,10 +199,10 @@ async function liveDeliveryFor(driverId: string): Promise<{ reference: string } 
   return null
 }
 
-export async function deactivateDriver(userId: string, actorId?: string | null, ip?: string | null) {
-  return deactivateUserWithBan(userId, 'driver', 'driver_deactivated', 'Driver', actorId, ip)
+export async function deactivateDriver(userId: string, actorId?: string | null) {
+  return deactivateUserWithBan(userId, 'driver', 'driver_deactivated', 'Driver', actorId)
 }
 
-export async function activateDriver(userId: string, actorId?: string | null, ip?: string | null) {
-  return activateUserWithUnban(userId, 'driver', 'driver_activated', 'Driver', actorId, ip)
+export async function activateDriver(userId: string, actorId?: string | null) {
+  return activateUserWithUnban(userId, 'driver', 'driver_activated', 'Driver', actorId)
 }

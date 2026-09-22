@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js'
-import { logEvent } from './log-event.js'
+import { logSystem } from './log-system.js'
 
 async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -32,11 +32,14 @@ export async function deleteAuthUserSafely(userId: string, attempts = 3, delayMs
 
   // Every attempt failed: the auth identity is now orphaned (no profile row).
   // Record it durably so it can be found and cleaned up out of band.
-  logEvent({
-    user_id:     null,
-    log_type:    'user_activity',
-    action:      'auth_rollback_failed',
-    description: `Failed to delete orphaned Supabase Auth user after ${attempts} attempts (user: ${userId})`,
+  // Was an audit row, but no person did this: it is the software failing to
+  // clean up after itself, and the only useful reader is whoever fixes it.
+  logSystem({
+    log_level:  'error',
+    event_type: 'db_event',
+    source:     'auth-helpers.deleteAuthUserSafely',
+    message:    `Failed to delete orphaned Supabase Auth user after ${attempts} attempts`,
+    metadata:   { orphaned_auth_user: userId, attempts },
   })
   return false
 }

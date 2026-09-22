@@ -103,8 +103,8 @@ export const getBookingsByDriver = async (req: Request, res: Response) => {
 
 export const createBooking = async (req: Request, res: Response) => {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const booking = await createBookingService(req.body, viewerFrom(req), userId, ip)
+    const { userId } = getRequestMeta(req)
+    const booking = await createBookingService(req.body, viewerFrom(req), userId)
     res.status(201).json({ status: 'success', data: booking })
   } catch (error: any) {
     // The service says what each rule is worth; anything untyped is a real fault.
@@ -114,8 +114,8 @@ export const createBooking = async (req: Request, res: Response) => {
 
 export const updateBooking = async (req: Request, res: Response) => {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const booking = await updateBookingService(param(req.params.id), req.body, viewerFrom(req), userId, ip)
+    const { userId } = getRequestMeta(req)
+    const booking = await updateBookingService(param(req.params.id), req.body, viewerFrom(req), userId)
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
     const status = error.message.includes('not found')
@@ -129,9 +129,9 @@ export const updateBooking = async (req: Request, res: Response) => {
 
 export const updateBookingStatus = async (req: Request, res: Response) => {
   try {
-    const { userId, ip } = getRequestMeta(req)
+    const { userId } = getRequestMeta(req)
     const booking = await updateBookingStatusService(
-      param(req.params.id), req.body.status, viewerFrom(req), userId, ip, req.body.rejection_reason,
+      param(req.params.id), req.body.status, viewerFrom(req), userId, req.body.rejection_reason,
     )
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
@@ -143,8 +143,8 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
 
 export const deleteBooking = async (req: Request, res: Response) => {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    await deleteBookingService(param(req.params.id), viewerFrom(req), userId, ip)
+    const { userId } = getRequestMeta(req)
+    await deleteBookingService(param(req.params.id), viewerFrom(req), userId)
     res.status(200).json({ status: 'success', message: 'Booking deleted successfully' })
   } catch (error: any) {
     const isNotFound   = error.message.includes('not found')
@@ -155,8 +155,8 @@ export const deleteBooking = async (req: Request, res: Response) => {
 
 export const gmReview = async (req: Request, res: Response) => {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const booking = await gmReviewService(param(req.params.id), req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const booking = await gmReviewService(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404
@@ -178,8 +178,8 @@ export const getDestinationsByBooking = async (req: Request, res: Response) => {
 
 export const updateDestination = async (req: Request, res: Response) => {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const destination = await updateDestinationService(param(req.params.destinationId), req.body, viewerFrom(req), userId, ip)
+    const { userId } = getRequestMeta(req)
+    const destination = await updateDestinationService(param(req.params.destinationId), req.body, viewerFrom(req), userId)
     res.status(200).json({ status: 'success', data: destination })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
@@ -189,10 +189,10 @@ export const updateDestination = async (req: Request, res: Response) => {
 
 export const updateDestinationStatus = async (req: Request, res: Response) => {
   try {
-    const { userId, ip } = getRequestMeta(req)
+    const { userId } = getRequestMeta(req)
     const { status }     = req.body
     const deliveredAt    = status === 'delivered' ? new Date().toISOString() : undefined
-    const destination    = await updateDestinationStatusService(param(req.params.destinationId), status, viewerFrom(req), deliveredAt, userId, ip)
+    const destination    = await updateDestinationStatusService(param(req.params.destinationId), status, viewerFrom(req), deliveredAt, userId)
     res.status(200).json({ status: 'success', data: destination })
   } catch (error: any) {
     const httpStatus = error.message.includes('not found') ? 404 : 500
@@ -218,8 +218,8 @@ function driverProgressStatus(message: string): number {
 }
 
 function driverActor(req: Request) {
-  const { userId, ip } = getRequestMeta(req)
-  return { userId, ip, role: req.user?.role ?? null }
+  const { userId } = getRequestMeta(req)
+  return { userId, role: req.user?.role ?? null }
 }
 
 /**
@@ -309,8 +309,8 @@ export const driverCompleteBooking = async (req: Request, res: Response) => {
 
 export const deleteDestination = async (req: Request, res: Response) => {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    await deleteDestinationService(param(req.params.destinationId), viewerFrom(req), userId, ip)
+    const { userId } = getRequestMeta(req)
+    await deleteDestinationService(param(req.params.destinationId), viewerFrom(req), userId)
     res.status(200).json({ status: 'success', message: 'Destination deleted successfully' })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
@@ -330,8 +330,8 @@ export const getCargoItemsByBooking = async (req: Request, res: Response) => {
 
 export const upsertCargoItem = async (req: Request, res: Response) => {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const item = await upsertCargoItemService(param(req.params.id), req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const item = await upsertCargoItemService(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data: item })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
@@ -341,8 +341,8 @@ export const upsertCargoItem = async (req: Request, res: Response) => {
 
 export const deleteCargoItem = async (req: Request, res: Response) => {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    await deleteCargoItemService(param(req.params.itemId), userId, ip)
+    const { userId } = getRequestMeta(req)
+    await deleteCargoItemService(param(req.params.itemId), userId)
     res.status(200).json({ status: 'success', message: 'Cargo item deleted successfully' })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500

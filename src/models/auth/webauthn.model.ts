@@ -88,14 +88,12 @@ export async function createChallenge(params: {
   purpose:       'registration' | 'authentication'
   userId?:       string | null
   expiresAt:     Date
-  ip?:           string | null
 }): Promise<void> {
   const { error } = await supabase.from('webauthn_challenges').insert({
     challenge_hash: params.challengeHash,
     purpose:        params.purpose,
     user_id:        params.userId ?? null,
     expires_at:     params.expiresAt.toISOString(),
-    created_ip:     params.ip ?? null,
   })
   if (error) throw error
 }

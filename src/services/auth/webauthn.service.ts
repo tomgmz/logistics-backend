@@ -7,6 +7,7 @@ import {
 } from '@simplewebauthn/server'
 import { supabase } from '../../lib/supabase.js'
 import { logEvent } from '../../lib/log-event.js'
+import { logSystem } from '../../lib/log-system.js'
 import {
   RP_ID,
   RP_NAME,
@@ -85,7 +86,7 @@ export async function verifyInvite(token: string): Promise<InvitePreview> {
   }
 }
 
-export async function startRegistration(token: string, ip?: string | null) {
+export async function startRegistration(token: string) {
   assertPasskeyConfigured()
 
   const invite = await InviteModel.findLiveByTokenHash(hashToken(token))
@@ -134,7 +135,6 @@ export async function startRegistration(token: string, ip?: string | null) {
     purpose:       'registration',
     userId:        user.user_id,
     expiresAt:     new Date(Date.now() + CHALLENGE_TTL_MS),
-    ip,
   })
 
   return options
@@ -200,7 +200,7 @@ export async function finishRegistration(
 
   logEvent({
     user_id:     user.user_id,
-    log_type:    'user_activity',
+    log_type:    'auth',
     action:      'passkey_registered',
     description: `Passkey enrolled for ${user.email}${deviceLabel ? ` on ${deviceLabel}` : ''}`,
   })
@@ -214,7 +214,7 @@ export async function finishRegistration(
 // ---------------------------------------------------------------------------
 // Authentication
 
-export async function startAuthentication(ip?: string | null) {
+export async function startAuthentication() {
   assertPasskeyConfigured()
 
   const options = await generateAuthenticationOptions({
@@ -232,7 +232,6 @@ export async function startAuthentication(ip?: string | null) {
     purpose:       'authentication',
     userId:        null,
     expiresAt:     new Date(Date.now() + CHALLENGE_TTL_MS),
-    ip,
   })
 
   return options
@@ -259,11 +258,13 @@ export async function finishAuthentication(
   if (!credential) throw failed()
 
   if (credential.revoked_at) {
-    logEvent({
-      user_id:     credential.user_id,
-      log_type:    'user_activity',
-      action:      'passkey_auth_failed',
-      description: `Revoked passkey presented (credential ${credential.credential_id.slice(0, 12)}…)`,
+    logSystem({
+      log_level:  'warn',
+      event_type: 'auth_event',
+      source:     'webauthn.service',
+      message:    'Revoked passkey presented',
+      user_id:    credential.user_id,
+      metadata:   { credential_id: credential.credential_id.slice(0, 12) },
     })
     throw new Error('This passkey has been revoked. Ask your dispatcher to send a new setup link.')
   }
@@ -289,11 +290,15 @@ export async function finishAuthentication(
   })
 
   if (!verification.verified) {
-    logEvent({
-      user_id:     user.user_id,
-      log_type:    'user_activity',
-      action:      'passkey_auth_failed',
-      description: `Passkey assertion failed verification for ${user.email}`,
+    // Failure diagnostics. The successful sign-in below stays in the audit
+    // trail; why a signature did not verify is the IT Admin's problem, and it
+    // is what makes an enrolment failure debuggable at all.
+    logSystem({
+      log_level:  'warn',
+      event_type: 'auth_event',
+      source:     'webauthn.service',
+      message:    `Passkey assertion failed verification for ${user.email}`,
+      user_id:    user.user_id,
     })
     throw failed()
   }
@@ -317,13 +322,21 @@ export async function finishAuthentication(
       null,
       'Signature counter regression — possible cloned authenticator',
     )
+    // Both feeds: the credential being revoked is a business fact the driver
+    // will ask about, while the cloned-authenticator signal is for IT.
     logEvent({
       user_id:     user.user_id,
-      log_type:    'user_activity',
-      action:      'passkey_counter_regression',
-      description:
-        `Counter regression for ${user.email}: stored ${stored}, presented ${newCounter}. ` +
-        `Credential revoked.`,
+      log_type:    'auth',
+      action:      'passkey_revoked_counter_regression',
+      description: `Passkey revoked for ${user.email} after a signature counter regression`,
+    })
+    logSystem({
+      log_level:  'critical',
+      event_type: 'auth_event',
+      source:     'webauthn.service',
+      message:    `Signature counter regression for ${user.email} — possible cloned authenticator`,
+      user_id:    user.user_id,
+      metadata:   { stored_counter: stored, presented_counter: newCounter },
     })
     throw new Error('This passkey could not be trusted and has been disabled. Contact your dispatcher.')
   }
@@ -336,7 +349,7 @@ export async function finishAuthentication(
 
   logEvent({
     user_id:     user.user_id,
-    log_type:    'user_activity',
+    log_type:    'auth',
     action:      'passkey_auth_success',
     description: `Passkey sign-in for ${user.email}`,
   })

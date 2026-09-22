@@ -210,7 +210,7 @@ export async function provisionExternalDriver(
 
   logEvent({
     user_id:     input.actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'external_driver_provisioned',
     description: `Provisioned app access for vendor driver ${input.name} (${email})`,
   })
@@ -266,7 +266,7 @@ export async function issueInvite(params: {
 
   logEvent({
     user_id:     params.actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'external_driver_invited',
     description: `Passkey setup link sent to ${params.email}`,
   })
@@ -336,7 +336,7 @@ export async function revokeExternalDriver(
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'external_driver_revoked',
     description: `Revoked app access for ${data.email} (${credentialsRevoked} passkey(s)) — ${reason}`,
   })

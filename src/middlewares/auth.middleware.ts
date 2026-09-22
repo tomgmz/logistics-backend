@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import * as AuthModel from '../models/auth/auth.model.js'
+import { setContextUser } from '../lib/request-context.js'
+import { logEvent } from '../lib/log-event.js'
+import { logSystem } from '../lib/log-system.js'
 import { hashToken } from '../services/auth/auth.service.js'
 
 const JWT_SECRET = process.env.JWT_SECRET!
@@ -71,9 +74,19 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
 
     req.user = payload
     req.sessionId = session.id
+    // Hand the actor to the ambient request store so logEvent() can attribute
+    // rows written deep in a service without every signature carrying a userId.
+    setContextUser(payload.sub)
     next()
   } catch (err) {
     console.error('AUTH MIDDLEWARE ERROR:', err)
+    logSystem({
+      log_level:  'error',
+      event_type: 'server_error',
+      source:     'auth.middleware',
+      message:    (err as Error)?.message ?? 'Authentication middleware failed',
+      metadata:   { stack: (err as Error)?.stack },
+    })
     res.status(500).json({ status: 'error', message: 'Authentication error' })
   }
 }
@@ -110,6 +123,19 @@ export async function optionalAuth(req: Request, res: Response, next: NextFuncti
 export function authorize(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user || !roles.includes(req.user.role)) {
+      // An attempt to reach something you are not entitled to is a business
+      // fact, not a technical one, so it belongs in the audit trail: "did
+      // anyone try to open billing before we granted it?" is a question the
+      // Company Admin asks. Only logged when we know who asked — an
+      // unauthenticated caller never got past authenticate().
+      if (req.user) {
+        logEvent({
+          user_id:     req.user.sub,
+          log_type:    'access_control',
+          action:      'permission_denied',
+          description: `${req.user.role} denied ${req.method} ${req.originalUrl} (requires: ${roles.join(', ')})`,
+        })
+      }
       res.status(403).json({ status: 'error', message: 'Insufficient permissions' })
       return
     }

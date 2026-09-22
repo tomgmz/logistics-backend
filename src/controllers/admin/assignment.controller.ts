@@ -4,8 +4,8 @@ import * as AssignmentService from '../../services/admin/assignment.service.js'
 
 export async function assignBooking(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await AssignmentService.assignBookingService(param(req.params.bookingId), req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await AssignmentService.assignBookingService(param(req.params.bookingId), req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (error: any) {
     const status = /not found/i.test(error.message) ? 404 : 500
@@ -34,8 +34,8 @@ export async function getAllAssignments(_req: Request, res: Response) {
 
 export async function updateDeliveryStatus(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await AssignmentService.updateDeliveryStatusService(param(req.params.bookingId), req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await AssignmentService.updateDeliveryStatusService(param(req.params.bookingId), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
     const status = /not found|no delivery/i.test(error.message) ? 404 : 500

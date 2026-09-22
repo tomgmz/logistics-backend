@@ -36,8 +36,8 @@ export async function getTruckById(req: Request, res: Response) {
 
 export async function createTruck(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await TruckService.createTruck(req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await TruckService.createTruck(req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -46,8 +46,8 @@ export async function createTruck(req: Request, res: Response) {
 
 export async function updateTruck(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    const data = await TruckService.updateTruck(param(req.params.id), req.body, userId, ip)
+    const { userId } = getRequestMeta(req)
+    const data = await TruckService.updateTruck(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })
@@ -78,8 +78,8 @@ export async function getTruckInspections(req: Request, res: Response) {
 
 export async function deleteTruck(req: Request, res: Response) {
   try {
-    const { userId, ip } = getRequestMeta(req)
-    await TruckService.deleteTruck(param(req.params.id), userId, ip)
+    const { userId } = getRequestMeta(req)
+    await TruckService.deleteTruck(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Truck deleted successfully' })
   } catch (err: any) {
     const status = err.message.includes('No truck found') ? 404 : 500

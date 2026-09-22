@@ -25,7 +25,7 @@ export async function getFleetAdminById(userId: string) {
   return fleetAdmin
 }
 
-export async function createFleetAdmin(dto: BaseCreateDTO, actorId?: string | null, ip?: string | null) {
+export async function createFleetAdmin(dto: BaseCreateDTO, actorId?: string | null) {
   const password = generateSecurePassword()
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
 
@@ -56,7 +56,7 @@ export async function createFleetAdmin(dto: BaseCreateDTO, actorId?: string | nu
 
     logEvent({
       user_id:     actorId,
-      log_type:    'user_activity',
+      log_type:    'user_management',
       action:      'fleet_admin_created',
       description: `Fleet Admin ${dto.email} created (user: ${userId})`,
   
@@ -73,7 +73,7 @@ export async function createFleetAdmin(dto: BaseCreateDTO, actorId?: string | nu
   }
 }
 
-export async function updateFleetAdmin(userId: string, dto: UpdateFleetAdminDTO, actorId?: string | null, ip?: string | null) {
+export async function updateFleetAdmin(userId: string, dto: UpdateFleetAdminDTO, actorId?: string | null) {
   if (dto.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: dto.email })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)
@@ -83,7 +83,7 @@ export async function updateFleetAdmin(userId: string, dto: UpdateFleetAdminDTO,
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'fleet_admin_updated',
     description: `Fleet Admin ${userId} updated`,
 
@@ -92,12 +92,12 @@ export async function updateFleetAdmin(userId: string, dto: UpdateFleetAdminDTO,
   return result
 }
 
-export async function deleteFleetAdmin(userId: string, actorId?: string | null, ip?: string | null) {
+export async function deleteFleetAdmin(userId: string, actorId?: string | null) {
   const result = await FleetAdminModel.remove(userId)
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'fleet_admin_deleted',
     description: `Fleet Admin ${userId} deleted`,
 
@@ -106,10 +106,10 @@ export async function deleteFleetAdmin(userId: string, actorId?: string | null, 
   return result
 }
 
-export async function deactivateFleetAdmin(userId: string, actorId?: string | null, ip?: string | null) {
-  return deactivateUserWithBan(userId, 'fleet_manager', 'fleet_admin_deactivated', 'Fleet Admin', actorId, ip)
+export async function deactivateFleetAdmin(userId: string, actorId?: string | null) {
+  return deactivateUserWithBan(userId, 'fleet_manager', 'fleet_admin_deactivated', 'Fleet Admin', actorId)
 }
 
-export async function activateFleetAdmin(userId: string, actorId?: string | null, ip?: string | null) {
-  return activateUserWithUnban(userId, 'fleet_manager', 'fleet_admin_activated', 'Fleet Admin', actorId, ip)
+export async function activateFleetAdmin(userId: string, actorId?: string | null) {
+  return activateUserWithUnban(userId, 'fleet_manager', 'fleet_admin_activated', 'Fleet Admin', actorId)
 }

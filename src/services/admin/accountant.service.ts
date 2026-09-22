@@ -47,7 +47,7 @@ export async function setGmProxy(
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      isProxy ? 'gm_proxy_appointed' : 'gm_proxy_revoked',
     description: isProxy
       ? `Accountant ${accountant.email} appointed as GM approval proxy`
@@ -57,7 +57,7 @@ export async function setGmProxy(
   return AccountantModel.findById(userId)
 }
 
-export async function createAccountant(dto: BaseCreateDTO, actorId?: string | null, ip?: string | null) {
+export async function createAccountant(dto: BaseCreateDTO, actorId?: string | null) {
   const password = generateSecurePassword()
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
 
@@ -88,7 +88,7 @@ export async function createAccountant(dto: BaseCreateDTO, actorId?: string | nu
 
     logEvent({
       user_id:     actorId,
-      log_type:    'user_activity',
+      log_type:    'user_management',
       action:      'accountant_created',
       description: `Accountant ${dto.email} created (user: ${userId})`,
   
@@ -105,7 +105,7 @@ export async function createAccountant(dto: BaseCreateDTO, actorId?: string | nu
   }
 }
 
-export async function updateAccountant(userId: string, dto: UpdateAccountantDTO, actorId?: string | null, ip?: string | null) {
+export async function updateAccountant(userId: string, dto: UpdateAccountantDTO, actorId?: string | null) {
   if (dto.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
       email: dto.email,
@@ -117,7 +117,7 @@ export async function updateAccountant(userId: string, dto: UpdateAccountantDTO,
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'accountant_updated',
     description: `Accountant ${userId} updated`,
 
@@ -126,12 +126,12 @@ export async function updateAccountant(userId: string, dto: UpdateAccountantDTO,
   return result
 }
 
-export async function deleteAccountant(userId: string, actorId?: string | null, ip?: string | null) {
+export async function deleteAccountant(userId: string, actorId?: string | null) {
   const result = await AccountantModel.remove(userId)
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'accountant_deleted',
     description: `Accountant ${userId} archived`,
 
@@ -140,10 +140,10 @@ export async function deleteAccountant(userId: string, actorId?: string | null, 
   return result
 }
 
-export async function deactivateAccountant(userId: string, actorId?: string | null, ip?: string | null) {
-  return deactivateUserWithBan(userId, 'accountant', 'accountant_deactivated', 'Accountant', actorId, ip)
+export async function deactivateAccountant(userId: string, actorId?: string | null) {
+  return deactivateUserWithBan(userId, 'accountant', 'accountant_deactivated', 'Accountant', actorId)
 }
 
-export async function activateAccountant(userId: string, actorId?: string | null, ip?: string | null) {
-  return activateUserWithUnban(userId, 'accountant', 'accountant_activated', 'Accountant', actorId, ip)
+export async function activateAccountant(userId: string, actorId?: string | null) {
+  return activateUserWithUnban(userId, 'accountant', 'accountant_activated', 'Accountant', actorId)
 }

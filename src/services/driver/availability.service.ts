@@ -170,7 +170,7 @@ export async function setAvailabilityDays(
 
   logEvent({
     user_id:     userId,
-    log_type:    'user_activity',
+    log_type:    'driver_activity',
     action:      'driver_set_availability_days',
     description: `Driver ${driver.driver_id} marked ${toInsert.length} day(s) available in ${month}`,
   })

@@ -73,7 +73,6 @@ export async function getITAdminById(userId: string) {
 export async function createITAdmin(
   input:    CreateITAdminInput,
   actorId?: string | null,
-  ip?:      string | null,
 ) {
   // Checked before touching Supabase Auth. `users_one_active_it_admin` is the
   // race-proof backstop, but letting it be the only guard would mean creating an
@@ -116,7 +115,7 @@ export async function createITAdmin(
 
     logEvent({
       user_id:     actorId,
-      log_type:    'user_activity',
+      log_type:    'user_management',
       action:      'it_admin_created',
       description: `IT Admin ${input.email} created (user: ${userId})`,
     })
@@ -136,7 +135,6 @@ export async function updateITAdmin(
   userId:   string,
   input:    UpdateITAdminInput,
   actorId?: string | null,
-  ip?:      string | null,
 ) {
   if (input.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
@@ -149,7 +147,7 @@ export async function updateITAdmin(
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'it_admin_updated',
     description: `IT Admin ${userId} updated`,
   })
@@ -160,7 +158,6 @@ export async function updateITAdmin(
 export async function deleteITAdmin(
   userId:   string,
   actorId?: string | null,
-  ip?:      string | null,
 ) {
   assertNotSelf(userId, actorId)
   await assertNotLastActive(userId)
@@ -169,7 +166,7 @@ export async function deleteITAdmin(
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'it_admin_deleted',
     description: `IT Admin ${userId} deleted`,
   })
@@ -180,12 +177,11 @@ export async function deleteITAdmin(
 export async function deactivateITAdmin(
   userId:   string,
   actorId?: string | null,
-  ip?:      string | null,
 ) {
   assertNotSelf(userId, actorId)
   await assertNotLastActive(userId)
 
-  const result = await deactivateUserWithBan(userId, 'it_admin', 'it_admin_deactivated', 'IT Admin', actorId, ip)
+  const result = await deactivateUserWithBan(userId, 'it_admin', 'it_admin_deactivated', 'IT Admin', actorId)
 
   // deactivateUserWithBan flips the status and bans the Supabase Auth identity,
   // but this app issues its own JWTs and `authenticate` only checks the session
@@ -202,9 +198,8 @@ export async function deactivateITAdmin(
 export async function activateITAdmin(
   userId:   string,
   actorId?: string | null,
-  ip?:      string | null,
 ) {
-  return activateUserWithUnban(userId, 'it_admin', 'it_admin_activated', 'IT Admin', actorId, ip)
+  return activateUserWithUnban(userId, 'it_admin', 'it_admin_activated', 'IT Admin', actorId)
 }
 
 /**
@@ -224,7 +219,6 @@ export async function activateITAdmin(
 export async function transitionITAdmin(
   input:    TransitionITAdminInput,
   actorId?: string | null,
-  ip?:      string | null,
 ) {
   const active = await ITAdminModel.findActive()
   if (active.length === 0) {
@@ -320,7 +314,7 @@ export async function transitionITAdmin(
 
   logEvent({
     user_id:     actorId,
-    log_type:    'user_activity',
+    log_type:    'user_management',
     action:      'it_admin_transitioned',
     description:
       `IT Admin role transitioned from ${outgoing.email} (${outgoing.user_id}, now deactivated) ` +
