@@ -12,7 +12,6 @@ export async function findAll(query: GetLogsQuery = {}) {
       log_type,
       action,
       description,
-      ip_address,
       timestamp,
       users ( role, first_name, last_name )
     `)
@@ -37,7 +36,6 @@ export async function findById(logId: string) {
       log_type,
       action,
       description,
-      ip_address,
       timestamp,
       users ( role, first_name, last_name )
     `)
