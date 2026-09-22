@@ -15,6 +15,12 @@ out/
 .env
 .env.local
 .env.*.local
+# Backup copies of .env. One of these (.env.bak-frontend-url) was swept into a
+# commit by `git add -A` and caught by GitHub push protection; the old patterns
+# matched .env and .env.*.local but not .env.bak-*.
+.env.*
+!.env.example
+*.bak
 
 # Production row snapshots taken before a destructive script runs
 backups/
