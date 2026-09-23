@@ -39,7 +39,9 @@ export async function verifyToken(req: Request, res: Response) {
 export async function completeReset(req: Request, res: Response) {
   try {
     const { token, password } = req.body
-    await ResetService.completeReset(token, password)
+    // Passed through for the confirmation email and nothing else — the service
+    // does not persist it. See completeReset's parameter docs.
+    await ResetService.completeReset(token, password, req.ip ?? null)
     res.status(200).json({
       status:  'success',
       message: 'Your password has been reset. You can now sign in.',

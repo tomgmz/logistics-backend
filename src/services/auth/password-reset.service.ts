@@ -366,7 +366,20 @@ export async function verifyResetToken(
  * what actually lets the user back in. Sessions go last: any session still alive
  * on this account belongs to whoever caused the lockout.
  */
-export async function completeReset(token: string, newPassword: string): Promise<void> {
+export async function completeReset(
+  token:       string,
+  newPassword: string,
+  /**
+   * The caller's address, for the confirmation email ONLY.
+   *
+   * It is handed to the mailer and then goes out of scope. Nothing on this path
+   * writes it down -- not the audit event below, not the request row, not a log
+   * line. A user's IP is not recorded; showing someone their own, once, in a
+   * notice addressed to them, is the single agreed exception and it needs no
+   * storage to work.
+   */
+  ip?:         string | null,
+): Promise<void> {
   const tokenHash = hashToken(token)
   const request   = await ResetModel.findLiveByTokenHash(tokenHash)
 
@@ -435,6 +448,7 @@ export async function completeReset(token: string, newPassword: string): Promise
     to:        user?.email ?? request.email,
     firstName: user?.first_name ?? null,
     changedAt: formatChangedAt(completed.completed_at),
+    ipAddress: ip ?? null,
   }).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[password-reset] confirmation email failed for ${request.email}:`, msg)

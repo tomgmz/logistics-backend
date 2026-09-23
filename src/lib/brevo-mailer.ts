@@ -712,6 +712,35 @@ export interface PasswordChangedEmailParams {
   firstName: string | null
   /** When the change landed, already formatted for the recipient to read. */
   changedAt: string
+  /**
+   * The address the change came from, shown so the reader can recognise it as
+   * theirs or not.
+   *
+   * It is passed in, rendered, and dropped. It is never written anywhere: not to
+   * the audit log, not to the request row, not to a console line. Company policy
+   * is that a user's IP is not recorded, and the one exception agreed here is
+   * telling the account holder their own -- which requires no storage at all.
+   * If you are about to persist this value, that is the policy you are changing.
+   */
+  ipAddress?: string | null
+}
+
+/**
+ * Addresses not worth showing anyone.
+ *
+ * A loopback or an empty value means the request never crossed a network we can
+ * describe (local development, a health check, a proxy we could not see past).
+ * Printing "::1" in a security email teaches the reader to ignore the line;
+ * omitting it keeps the line meaningful every time it does appear.
+ */
+function displayableIp(ip?: string | null): string | null {
+  if (!ip) return null
+  const trimmed = ip.trim()
+  if (!trimmed) return null
+  // Express reports IPv4 through an IPv6 stack as ::ffff:127.0.0.1
+  const bare = trimmed.replace(/^::ffff:/i, '')
+  if (bare === '::1' || bare === '127.0.0.1' || bare === 'localhost') return null
+  return bare
 }
 
 /**
@@ -742,15 +771,16 @@ export async function sendPasswordChangedEmail(
     throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
   }
 
-  const { to, firstName, changedAt } = params
+  const { to, firstName, changedAt, ipAddress } = params
   const name = firstName ?? 'there'
+  const ip   = displayableIp(ipAddress)
 
   try {
     const brevo = getBrevoClient()
     await brevo.transactionalEmails.sendTransacEmail({
       subject:     `Your ${APP_NAME} password was changed`,
-      htmlContent: generatePasswordChangedEmailHtml(name, changedAt),
-      textContent: generatePasswordChangedEmailText(name, changedAt),
+      htmlContent: generatePasswordChangedEmailHtml(name, changedAt, ip),
+      textContent: generatePasswordChangedEmailText(name, changedAt, ip),
       sender:      { name: FROM_NAME, email: FROM_EMAIL },
       to:          [{ email: to, name: firstName ?? undefined }],
     })
@@ -765,8 +795,20 @@ export async function sendPasswordChangedEmail(
   }
 }
 
-function generatePasswordChangedEmailHtml(name: string, changedAt: string): string {
+function generatePasswordChangedEmailHtml(
+  name:      string,
+  changedAt: string,
+  ip:        string | null,
+): string {
   const year = new Date().getFullYear()
+
+  // Only rendered when we actually have something to show — see displayableIp.
+  const ipRow = ip
+    ? `
+                        <p style="margin:8px 0 0 0;font-family:Arial,sans-serif;font-size:14px;color:#115e59;line-height:1.6;">
+                          Request came from IP address <strong style="font-family:'Courier New',Courier,monospace;">${ip}</strong>.
+                        </p>`
+    : ''
 
   return `
     <!DOCTYPE html>
@@ -825,7 +867,7 @@ function generatePasswordChangedEmailHtml(name: string, changedAt: string): stri
                         <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#115e59;line-height:1.6;">
                           Any devices that were signed in to your account have been signed out,
                           and any lock on your account has been lifted.
-                        </p>
+                        </p>${ipRow}
                       </td>
                     </tr>
                   </table>
@@ -875,8 +917,13 @@ function generatePasswordChangedEmailHtml(name: string, changedAt: string): stri
   `
 }
 
-function generatePasswordChangedEmailText(name: string, changedAt: string): string {
+function generatePasswordChangedEmailText(
+  name:      string,
+  changedAt: string,
+  ip:        string | null,
+): string {
   const year = new Date().getFullYear()
+  const ipLine = ip ? `\nRequest came from IP address ${ip}.` : ''
 
   return `
 Hi ${name},
@@ -884,7 +931,7 @@ Hi ${name},
 Your ${APP_NAME} password was changed on ${changedAt}. You can now sign in with your new password.
 
 WHAT THIS MEANS
-Any devices that were signed in to your account have been signed out, and any lock on your account has been lifted.
+Any devices that were signed in to your account have been signed out, and any lock on your account has been lifted.${ipLine}
 
 IF YOU DID NOT DO THIS
 Your account may be at risk. Contact us straight away at ${APP_SUPPORT_EMAIL} so we can secure it.
