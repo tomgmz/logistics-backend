@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
-import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
+import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } from './user-auth-status.service.js'
 import * as FleetAdminModel from '../../models/admin/fleet_admin.models.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -94,6 +94,7 @@ export async function updateFleetAdmin(userId: string, dto: UpdateFleetAdminDTO,
 
 export async function deleteFleetAdmin(userId: string, actorId?: string | null) {
   const result = await FleetAdminModel.remove(userId)
+  await banArchivedAuthUser(userId)
 
   logEvent({
     user_id:     actorId,

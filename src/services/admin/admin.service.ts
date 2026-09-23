@@ -1,7 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import * as AdminModel from '../../models/admin/admin.model.js'
-import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
+import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } from './user-auth-status.service.js'
 import { CreateAdminInput, UpdateAdminInput } from '../../types/admin.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
@@ -83,6 +83,7 @@ export async function updateAdmin(userId: string, input: UpdateAdminInput, actor
 
 export async function deleteAdmin(userId: string, actorId?: string | null) {
   const result = await AdminModel.remove(userId)
+  await banArchivedAuthUser(userId)
 
   logEvent({
     user_id:     actorId,

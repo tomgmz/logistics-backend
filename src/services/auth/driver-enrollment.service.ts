@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import { supabase } from '../../lib/supabase.js'
 import { createUserWithProfile } from '../../lib/user-provisioning.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
+import { unbanAuthUser } from '../admin/user-auth-status.service.js'
 import { logEvent } from '../../lib/log-event.js'
 import { buildDriverSetupUrl, sendDriverEnrollmentEmail } from '../../lib/brevo-mailer.js'
 import { INVITE_TTL_MS } from '../../lib/webauthn-config.js'
@@ -113,13 +114,15 @@ export async function provisionExternalDriver(
     }
 
     // An archived account is reactivated rather than duplicated: same person,
-    // same passkeys, back on the road.
+    // same passkeys, back on the road. Archiving banned the auth identity, so
+    // the ban has to come off too or the passkey sign-in can't mint a session.
     if (existing.status !== 'active') {
       const { error } = await supabase
         .from('users')
         .update({ status: 'active' })
         .eq('user_id', existing.user_id)
       if (error) throw error
+      await unbanAuthUser(existing.user_id)
     }
 
     return { userId: existing.user_id, driverId: profile.driver_id, created: false }

@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
-import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
+import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } from './user-auth-status.service.js'
 import * as DriverModel from '../../models/admin/driver.model.js'
 import { CreateDriverDTO, UpdateDriverDTO } from '../../types/driver.types.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -121,6 +121,7 @@ export async function updateDriver(userId: string, dto: UpdateDriverDTO, actorId
 
 export async function deleteDriver(userId: string, actorId?: string | null) {
   const result = await DriverModel.remove(userId)
+  await banArchivedAuthUser(userId)
 
   logEvent({
     user_id:     actorId,

@@ -14,6 +14,31 @@ export type BanManagedUserRole =
   | 'operations_manager'
   | 'it_admin'
 
+/**
+ * Lock the Supabase Auth identity of an archived ("deleted") user.
+ *
+ * Delete is a soft archive: the profile row has to outlive the person because
+ * audit_logs, messages, notifications and the rest point at it, and deleting
+ * the auth user would cascade into it. Without the ban, though, the auth user
+ * stays fully live — it can still mint and refresh tokens straight against
+ * Supabase — so archiving must close it the same way deactivation does.
+ * Throws: a delete that leaves a usable login behind is not a delete.
+ */
+export async function banArchivedAuthUser(userId: string) {
+  const { error } = await supabase.auth.admin.updateUserById(userId, {
+    ban_duration: BAN_DURATION,
+  })
+  if (error) throw new Error(`User archived, but locking their login failed: ${error.message}`)
+}
+
+/** Undo banArchivedAuthUser when an archived account is brought back. */
+export async function unbanAuthUser(userId: string) {
+  const { error } = await supabase.auth.admin.updateUserById(userId, {
+    ban_duration: 'none',
+  })
+  if (error) throw error
+}
+
 export async function deactivateUserWithBan(
   userId: string,
   role: BanManagedUserRole,

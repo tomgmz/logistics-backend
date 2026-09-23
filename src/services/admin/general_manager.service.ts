@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
-import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
+import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } from './user-auth-status.service.js'
 import * as GeneralManagerModel from '../../models/admin/general_manager.model.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -94,6 +94,7 @@ export async function updateGeneralManager(userId: string, dto: UpdateGeneralMan
 
 export async function deleteGeneralManager(userId: string, actorId?: string | null) {
   const result = await GeneralManagerModel.remove(userId)
+  await banArchivedAuthUser(userId)
 
   logEvent({
     user_id:     actorId,

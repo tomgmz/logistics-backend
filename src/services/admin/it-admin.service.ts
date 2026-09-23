@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import * as ITAdminModel from '../../models/admin/it-admin.model.js'
-import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
+import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } from './user-auth-status.service.js'
 import { CreateITAdminInput, TransitionITAdminInput, UpdateITAdminInput } from '../../types/it-admin.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
@@ -163,6 +163,7 @@ export async function deleteITAdmin(
   await assertNotLastActive(userId)
 
   const result = await ITAdminModel.remove(userId)
+  await banArchivedAuthUser(userId)
 
   logEvent({
     user_id:     actorId,

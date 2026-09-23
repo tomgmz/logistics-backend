@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import * as AccountantModel from '../../models/admin/accountant.model.js'
-import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
+import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } from './user-auth-status.service.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
@@ -128,6 +128,7 @@ export async function updateAccountant(userId: string, dto: UpdateAccountantDTO,
 
 export async function deleteAccountant(userId: string, actorId?: string | null) {
   const result = await AccountantModel.remove(userId)
+  await banArchivedAuthUser(userId)
 
   logEvent({
     user_id:     actorId,

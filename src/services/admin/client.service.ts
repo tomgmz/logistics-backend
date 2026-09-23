@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import * as ClientModel from '../../models/admin/client.model.js'
-import { activateUserWithUnban, deactivateUserWithBan } from './user-auth-status.service.js'
+import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } from './user-auth-status.service.js'
 import { CreateClientInput, UpdateClientInput } from '../../types/client.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
@@ -99,6 +99,7 @@ export async function deleteClient(
   actorId?: string | null,
 ) {
   const result = await ClientModel.remove(userId)
+  await banArchivedAuthUser(userId)
 
   logEvent({
     user_id:     actorId,
