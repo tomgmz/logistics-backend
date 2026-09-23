@@ -33,10 +33,18 @@ export function invalidateUserPermissions(userId: string): void {
 
 // Enforces per-module access on the /api/admin router. Runs AFTER authenticate,
 // so req.user is populated. Bypass + managed-role logic per the RBAC plan:
-//   - admin / it_admin            -> never restricted
-//   - non-managed roles           -> left to existing role gates
+//   - it_admin                    -> never restricted (BYPASS_ROLES); it runs the
+//                                    permission panel, so it must not be lockable
+//   - root administrator          -> never restricted, whatever its rows say
+//   - other non-managed roles     -> left to existing role gates
 //   - managed role, no rows       -> keep role-default access
 //   - managed role, has rows      -> enforce the matrix (missing/insufficient = 403)
+//
+// `admin` IS a managed role — see MANAGED_ROLES in constants/modules.ts. This
+// comment used to pair it with it_admin as "never restricted", which is wrong
+// and is the sort of thing someone reads when deciding whether a permission
+// actually bites. Only the root administrator is exempt among admins, via the
+// isProtectedAdmin check below.
 export async function moduleGuard(req: Request, res: Response, next: NextFunction) {
   try {
     const user = req.user
