@@ -6,6 +6,7 @@ import { hashToken } from './auth.service.js'
 import { supabase } from '../../lib/supabase.js'
 import {
   buildResetUrl,
+  sendPasswordChangedEmail,
   sendPasswordResetEmail,
   sendPasswordResetOtpEmail,
 } from '../../lib/brevo-mailer.js'
@@ -100,6 +101,23 @@ function assertOwnsRequest(request: PasswordResetRequestRow, actor: ResetActor):
     ;(err as any).code = 'RESET_WRONG_HANDLER'
     throw err
   }
+}
+
+/**
+ * The moment of the change, in the timezone the reader lives in.
+ *
+ * Manila because that is where the business and its people are — a security
+ * notice whose whole job is "was this you, at this time?" is useless if the
+ * reader has to convert from UTC to answer it. Matches the Asia/Manila the
+ * transaction-history queries already report in.
+ */
+function formatChangedAt(iso: string | null): string {
+  const when = iso ? new Date(iso) : new Date()
+  return new Intl.DateTimeFormat('en-PH', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+    timeZone:  'Asia/Manila',
+  }).format(when) + ' (PHT)'
 }
 
 /** Show enough of an address to recognise it, not enough to harvest it. */
@@ -402,6 +420,25 @@ export async function completeReset(token: string, newPassword: string): Promise
   const fullName = user
     ? [user.first_name, user.last_name].filter(Boolean).join(' ') || null
     : null
+
+  // Tell the account holder, not just the admin queue.
+  //
+  // Addressed to the account's CURRENT email rather than request.email, which is
+  // a snapshot taken when the reset was raised — if the address changed in
+  // between, the snapshot is exactly the wrong place to send a security notice.
+  //
+  // Fire-and-forget on purpose. The password is already changed, the sessions are
+  // already cut and the request is already closed; letting a mail failure reject
+  // this call would tell someone their reset had failed when it plainly had not,
+  // and they would try again with a token that is now spent.
+  sendPasswordChangedEmail({
+    to:        user?.email ?? request.email,
+    firstName: user?.first_name ?? null,
+    changedAt: formatChangedAt(completed.completed_at),
+  }).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[password-reset] confirmation email failed for ${request.email}:`, msg)
+  })
 
   await notifyResetCompleted(completed, fullName)
 }

@@ -707,6 +707,195 @@ This email was sent because an administrator created an account for you.
   `.trim()
 }
 
+export interface PasswordChangedEmailParams {
+  to:        string
+  firstName: string | null
+  /** When the change landed, already formatted for the recipient to read. */
+  changedAt: string
+}
+
+/**
+ * Tell someone their password was just changed.
+ *
+ * This is a security notification, not a courtesy: the person who most needs it
+ * is the one who did NOT do it. If an account is taken over, the takeover ends
+ * with a password change, and this mail is the only thing that reaches the real
+ * owner afterwards -- every session was revoked, so nothing in the app can warn
+ * them any more.
+ *
+ * That is why it goes out even though the reset itself already told the person
+ * on screen, and why it is addressed to the account's CURRENT email rather than
+ * the address the reset was requested from.
+ *
+ * Deliberately absent: the new password (it is never ours to repeat), a reset
+ * link (this mail grants nothing, so a leaked copy is worthless), and any IP
+ * address or location -- company policy is that a user's IP is never recorded,
+ * and putting it in an email is a worse version of recording it.
+ */
+export async function sendPasswordChangedEmail(
+  params: PasswordChangedEmailParams,
+): Promise<void> {
+  if (!process.env.BREVO_API_KEY) {
+    throw new Error('Brevo is not configured. Please set BREVO_API_KEY.')
+  }
+  if (!process.env.BREVO_SENDER_EMAIL) {
+    throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
+  }
+
+  const { to, firstName, changedAt } = params
+  const name = firstName ?? 'there'
+
+  try {
+    const brevo = getBrevoClient()
+    await brevo.transactionalEmails.sendTransacEmail({
+      subject:     `Your ${APP_NAME} password was changed`,
+      htmlContent: generatePasswordChangedEmailHtml(name, changedAt),
+      textContent: generatePasswordChangedEmailText(name, changedAt),
+      sender:      { name: FROM_NAME, email: FROM_EMAIL },
+      to:          [{ email: to, name: firstName ?? undefined }],
+    })
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('BREVO PASSWORD CHANGED EMAIL ERROR:', {
+      error,
+      recipient: to,
+      timestamp: new Date().toISOString(),
+    })
+    throw new Error(`Failed to send password changed email: ${error}`)
+  }
+}
+
+function generatePasswordChangedEmailHtml(name: string, changedAt: string): string {
+  const year = new Date().getFullYear()
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Your ${APP_NAME} password was changed</title>
+    </head>
+    <body style="margin:0;padding:0;background-color:#f6f6f6;">
+
+      <div style="display:none;font-size:1px;color:#f6f6f6;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+        Your ${APP_NAME} password was changed on ${changedAt}. If this was not you, contact us immediately.
+      </div>
+
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
+        <tr>
+          <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0"
+              style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+
+              <!-- Header -->
+              <tr>
+                <td style="background-color:#0a0a0a;padding:32px 40px;">
+                  <h1 style="margin:0;font-family:Arial,sans-serif;font-size:22px;color:#ffffff;font-weight:700;letter-spacing:0.05em;">
+                    ${APP_NAME}
+                  </h1>
+                  <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:12px;color:#818181;letter-spacing:0.12em;text-transform:uppercase;">
+                    Password Changed
+                  </p>
+                </td>
+              </tr>
+
+              <!-- Body -->
+              <tr>
+                <td style="padding:36px 40px 8px 40px;">
+                  <p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
+                    Hi ${name},
+                  </p>
+                  <p style="margin:0 0 24px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
+                    Your ${APP_NAME} password was changed on <strong>${changedAt}</strong>.
+                    You can now sign in with your new password.
+                  </p>
+                </td>
+              </tr>
+
+              <!-- Confirmation panel -->
+              <tr>
+                <td style="padding:0 40px 28px 40px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td style="background-color:#f0fdfa;border-left:4px solid #0d9488;border-radius:4px;padding:16px 18px;">
+                        <p style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:14px;color:#115e59;line-height:1.6;font-weight:bold;">
+                          What this means
+                        </p>
+                        <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#115e59;line-height:1.6;">
+                          Any devices that were signed in to your account have been signed out,
+                          and any lock on your account has been lifted.
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              <!-- The part that matters -->
+              <tr>
+                <td style="padding:0 40px 30px 40px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td style="background-color:#fff8f0;border-left:4px solid #f59e0b;border-radius:4px;padding:16px 18px;">
+                        <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.6;">
+                          <strong>If you did not do this,</strong> your account may be at risk.
+                          Contact us straight away at
+                          <a href="mailto:${APP_SUPPORT_EMAIL}" style="color:#92400e;text-decoration:underline;">${APP_SUPPORT_EMAIL}</a>
+                          so we can secure it.
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              <!-- Footer -->
+              <tr>
+                <td style="background-color:#f9f9f9;padding:20px 40px;border-top:1px solid #eeeeee;">
+                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
+                    &copy; ${year} ${APP_NAME}. All rights reserved.
+                  </p>
+                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
+                    ${PHYSICAL_ADDRESS}
+                  </p>
+                  <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
+                    This is a security notification sent because your password changed. It cannot be turned off.
+                  </p>
+                </td>
+              </tr>
+
+            </table>
+          </td>
+        </tr>
+      </table>
+
+    </body>
+    </html>
+  `
+}
+
+function generatePasswordChangedEmailText(name: string, changedAt: string): string {
+  const year = new Date().getFullYear()
+
+  return `
+Hi ${name},
+
+Your ${APP_NAME} password was changed on ${changedAt}. You can now sign in with your new password.
+
+WHAT THIS MEANS
+Any devices that were signed in to your account have been signed out, and any lock on your account has been lifted.
+
+IF YOU DID NOT DO THIS
+Your account may be at risk. Contact us straight away at ${APP_SUPPORT_EMAIL} so we can secure it.
+
+---
+(c) ${year} ${APP_NAME}. All rights reserved.
+${PHYSICAL_ADDRESS}
+This is a security notification sent because your password changed. It cannot be turned off.
+  `.trim()
+}
+
 function generatePasswordResetEmailHtml(
   name:     string,
   resetUrl: string,
