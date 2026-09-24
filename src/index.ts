@@ -20,6 +20,7 @@ import { globalLimiter } from './middlewares/rateLimit.middleware.js';
 import messagingRoutes from './routes/messaging.routes.js'
 import notificationsRoutes from './routes/notifications.routes.js'
 import transactionHistoryRoutes from './routes/transaction-history.routes.js'
+import lockRoutes from './routes/locks.routes.js'
 import { startFleetRecheckScheduler } from './services/notification/fleet-recheck.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
 import { reportEmailLinkBaseUrl } from './lib/brevo-mailer.js'
@@ -132,6 +133,10 @@ app.use('/api/admin', authenticate, moduleGuard, adminRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/messaging', messagingRoutes);
 app.use('/api/notifications', notificationsRoutes);
+
+// Record locks: who is editing what, so two staff never edit one record at once.
+// The write guard on each mutating route is the real gate — see lib/record-lock.
+app.use('/api/locks', lockRoutes);
 
 // Staff transaction history. Separate from /api/booking so it answers to the
 // transaction-history module rather than booking-management.

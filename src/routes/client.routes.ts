@@ -15,6 +15,7 @@ import {
 import * as BookingController from '../controllers/client/booking.controller.js'
 import * as TrackingController from '../controllers/driver/tracking.controller.js'
 import { requireGmApprover } from '../middlewares/gmApprover.middleware.js'
+import { lockGuard, fromParam, bookingOfDestination } from '../lib/record-lock.js'
 
 const router = Router()
 
@@ -64,21 +65,21 @@ router.get('/:id/destinations', authenticate, authenticatedLimiter, canViewBooki
 router.get('/:id/live-position', authenticate, trackingLimiter, canViewBookings, attachClientScope, TrackingController.getLivePosition)
 
 router.post('/',                authenticate, authenticatedLimiter, isClient, attachClientScope, validate(createBookingSchema),       BookingController.createBooking)
-router.patch('/:id',            authenticate, authenticatedLimiter, isClient, attachClientScope, validate(updateBookingSchema),       BookingController.updateBooking)
-router.patch('/:id/status',     authenticate, authenticatedLimiter, isAdmin,  attachClientScope, canManageBooking, validate(updateBookingStatusSchema), BookingController.updateBookingStatus)
-router.delete('/:id',           authenticate, authenticatedLimiter, isClient, attachClientScope, BookingController.deleteBooking)
+router.patch('/:id',            authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), validate(updateBookingSchema),       BookingController.updateBooking)
+router.patch('/:id/status',     authenticate, authenticatedLimiter, isAdmin,  attachClientScope, canManageBooking, lockGuard('booking', fromParam('id')), validate(updateBookingStatusSchema), BookingController.updateBookingStatus)
+router.delete('/:id',           authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), BookingController.deleteBooking)
 
 // Approval workflow: the GM is the only gate. Once approved, operations picks a
 // vehicle and driver through POST /admin/assignments/:bookingId, which notifies
 // the driver and the fleet manager — there is no separate fleet approval step.
 //
 // `requireGmApprover` admits the general manager, admins, and any user the IT
-router.patch('/:id/gm-review', authenticate, authenticatedLimiter, requireGmApprover, validate(gmReviewSchema), BookingController.gmReview)
+router.patch('/:id/gm-review', authenticate, authenticatedLimiter, requireGmApprover, lockGuard('booking', fromParam('id')), validate(gmReviewSchema), BookingController.gmReview)
 
 // Same story one level down: `isAdmin` admits clients, so these need the stop's
 // parent booking checked against the caller's own company too.
-router.patch('/destinations/:destinationId',        authenticate, authenticatedLimiter, isAdmin, attachClientScope, canManageBooking, validate(updateDestinationSchema),       BookingController.updateDestination)
-router.patch('/destinations/:destinationId/status', authenticate, authenticatedLimiter, isAdmin, attachClientScope, canManageBooking, validate(updateDestinationStatusSchema), BookingController.updateDestinationStatus)
-router.delete('/destinations/:destinationId',       authenticate, authenticatedLimiter, isAdmin, attachClientScope, canManageBooking, BookingController.deleteDestination)
+router.patch('/destinations/:destinationId',        authenticate, authenticatedLimiter, isAdmin, attachClientScope, canManageBooking, lockGuard('booking', bookingOfDestination('destinationId')), validate(updateDestinationSchema),       BookingController.updateDestination)
+router.patch('/destinations/:destinationId/status', authenticate, authenticatedLimiter, isAdmin, attachClientScope, canManageBooking, lockGuard('booking', bookingOfDestination('destinationId')), validate(updateDestinationStatusSchema), BookingController.updateDestinationStatus)
+router.delete('/destinations/:destinationId',       authenticate, authenticatedLimiter, isAdmin, attachClientScope, canManageBooking, lockGuard('booking', bookingOfDestination('destinationId')), BookingController.deleteDestination)
 
 export default router
