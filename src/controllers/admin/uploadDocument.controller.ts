@@ -4,11 +4,6 @@ import { getRequestMeta } from '../../lib/controller-utils.js'
 import { logEvent } from '../../lib/log-event.js'
 
 const FOLDER = 'booking_documents'
-/**
- * Billing evidence — client summaries and proof of payment — is filed apart
- * from booking paperwork so a finance audit does not have to sift delivery
- * documents to find it.
- */
 
 async function uploadToCloudinary(file: Express.Multer.File, ref?: string, root: string = FOLDER) {
   const folder = ref ? `${root}/${ref}` : root
