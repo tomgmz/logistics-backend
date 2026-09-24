@@ -489,8 +489,6 @@ async function releaseBookingCrew(bookingId: string): Promise<void> {
 
 /**
  * The general manager's decision — the only approval gate on a booking. An
- * appointed GM proxy (an accountant the IT admin nominated) may act here too;
- * the route guard decides who gets in.
  *
  * A rejection carries the GM's remarks and cancels the booking, so it drops out
  * of the queue instead of sitting there un-actionable. The remarks are stored on

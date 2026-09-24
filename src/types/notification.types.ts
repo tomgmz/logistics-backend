@@ -19,26 +19,6 @@ export type NotificationType =
   | 'booking.rejected_accounting'
   | 'booking.fleet_pending'
   | 'booking.fleet_rejected'
-  // Reverse billing. These are scoped to a billing PERIOD, not a booking, so
-  // they carry `period_id` in `data` and leave `booking_id` null. The CHECK
-  // constraint on notifications.type was dropped in the create migration, so no
-  // schema change is needed to add values here.
-  | 'billing.summary_sent'            // weekly: 8338 sent the summary -> client
-  | 'billing.summary_approved'        // weekly: client approved -> accountant + admins
-  | 'billing.summary_rejected'        // weekly: client rejected -> accountant + admins
-  | 'billing.review_lapsed'           // weekly: 3-day window passed -> accountant + admins
-  | 'billing.submission_window_open'  // monthly: window opened -> client
-  | 'billing.submitted'               // monthly: client submitted -> accountant + admins
-  | 'billing.submission_accepted'     // monthly: 8338 validated -> client
-  | 'billing.submission_rejected'     // monthly: figures disagreed -> client, resubmit
-  | 'billing.rolled_over'             // monthly: window missed -> client + accountant
-  | 'billing.invoice_issued'          // Service Invoice issued -> client
-  | 'billing.payment_due'             // due Friday reached -> client
-  | 'billing.payment_overdue'         // past the due Friday -> client + accountant
-  | 'billing.payment_proof_submitted' // client uploaded proof -> accountant
-  | 'billing.payment_rejected'        // proof could not be confirmed -> client
-  | 'billing.payment_recorded'        // payment logged -> client
-  | 'billing.receipt_issued'          // Acknowledgement Receipt issued -> client
   // Raised by a driver from the road, not by a workflow step. These carry
   // `report_id` in `data`; `booking_id` is set only when the driver was on a
   // delivery at the time, so a report raised in the yard leaves it null.

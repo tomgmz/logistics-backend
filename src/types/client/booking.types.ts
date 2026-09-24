@@ -147,7 +147,6 @@ export interface Booking {
   cargo_density_kg_cbm?:  number | null
   total_cost?:            number | null
   estimated_delivery?:    string | null
-  payment_terms?:         string | null
 
   transaction_documents?: string[] | null
 
@@ -168,7 +167,6 @@ export interface BookingWithRelations extends Booking {
     client_id:        string
     company_name?:    string | null
     billing_address?: string | null
-    payment_terms?:   number
     users?: {
       first_name: string
       last_name:  string
@@ -216,7 +214,6 @@ export interface CreateBookingInput {
   required_net_weight_kg?: number
   stackable_required?:     boolean
   non_stackable_cargo?:    boolean
-  payment_terms?:          string
   transaction_documents?:  string[]
   destinations:            CreateDestinationInput[]
   cargo_items?:            CreateCargoItemInput[]
@@ -243,7 +240,6 @@ export interface UpdateBookingInput {
   required_weight_kg?:     number | null
   required_length_cm?:     number | null
   stackable_required?:     boolean | null
-  payment_terms?:          string | null
   transaction_documents?:  string[] | null
 }
 

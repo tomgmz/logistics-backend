@@ -112,7 +112,6 @@ export const bookingSchemas = {
           client_id:       { type: 'string', format: 'uuid', example: '550e8400-e29b-41d4-a716-446655440000' },
           company_name:    { type: 'string', nullable: true,  example: 'Acme Corp' },
           billing_address: { type: 'string', nullable: true,  example: '123 Main St, Manila' },
-          payment_terms:   { type: 'integer',                 example: 30 },
           users: {
             type: 'object',
             properties: {

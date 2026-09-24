@@ -9,7 +9,6 @@ import { truckModelSchemas }        from './schemas/truck-model.schema.js'
 import { bookingSchemas }           from './schemas/client/booking.schemas.js'
 import { routeOptimizationSchemas } from './schemas/maps/routeOptimization.schema.js'
 import { authSchemas } from './schemas/auth/auth.schema.js'
-import { accountantSchemas }        from './schemas/accountant.schemas.js'
 import { generalManagerSchemas }    from './schemas/general_manager.schemas.js'
 
 
@@ -22,7 +21,6 @@ import { truckModelPaths }        from './docs/truck-model.docs.js'
 import { bookingPaths }           from './docs/client/booking.docs.js'
 import { routeOptimizationPaths } from './docs/maps/routeOptimization.docs.js'
 import { authPaths } from './docs/auth/auth.docs.js'
-import { accountantPaths }        from './docs/accountant.docs.js'
 import { generalManagerPaths }    from './docs/general_manager.docs.js'
 
 const options: swaggerJsdoc.Options = {
@@ -55,7 +53,6 @@ const options: swaggerJsdoc.Options = {
       ...driverPaths,
       ...truckPaths,
       ...truckModelPaths,
-      ...accountantPaths,
       ...generalManagerPaths,
       ...bookingPaths,
       ...routeOptimizationPaths,
@@ -75,7 +72,6 @@ const options: swaggerJsdoc.Options = {
         ...driverSchemas,
         ...truckSchemas,
         ...truckModelSchemas,
-        ...accountantSchemas,
         ...generalManagerSchemas,
         ...bookingSchemas,
         ...routeOptimizationSchemas,

@@ -6,7 +6,6 @@ import { createClientSchema, updateClientSchema }                     from '../s
 import { createDriverSchema, updateDriverSchema }                     from '../schema/admin/driver.schema.js'
 import { createTruckSchema, updateTruckSchema, recordTruckInspectionSchema } from '../schema/admin/truck.schema.js'
 import { createTruckModelSchema, updateTruckModelSchema }             from '../schema/admin/truck-model.schema.js'
-import { createAccountantSchema, updateAccountantSchema, setGmProxySchema } from '../schema/admin/accountant.schema.js'
 import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../schema/admin/general_manager.schema.js'
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
@@ -17,7 +16,6 @@ import * as ClientController          from '../controllers/admin/client.controll
 import * as DriverController          from '../controllers/admin/driver.controller.js'
 import * as TruckController           from '../controllers/admin/truck.controller.js'
 import * as TruckModelController      from '../controllers/admin/truck-model.controller.js'
-import * as AccountantController      from '../controllers/admin/accountant.controller.js'
 import * as GeneralManagerController  from '../controllers/admin/general_manager.controller.js'
 import * as FleetAdminController      from '../controllers/admin/fleet_admin.controller.js'
 import * as OperationsAdminController from '../controllers/admin/operations_admin.controller.js'
@@ -57,7 +55,6 @@ const isOperations = authorize('admin', 'it_admin', 'operations_manager', 'gener
 // Read-only view of drivers/trucks for operations (needed to populate the
 // assignment dropdowns). CRUD stays restricted to isFleet.
 const isFleetRead  = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager', 'client', 'operations_manager')
-const isFinance    = authorize('admin', 'it_admin', 'accountant', 'general_manager')
 // Releasing a driver's reservation: whoever owns the fleet plus operations, who
 // are the ones the stuck driver disappears on. Not clients — they have no
 // business moving a driver between pools.
@@ -144,16 +141,6 @@ router.post('/truck-models',       authenticate, isFleet, validate(createTruckMo
 router.patch('/truck-models/:id',  authenticate, isFleet, validate(updateTruckModelSchema), TruckModelController.updateTruckModel)
 router.delete('/truck-models/:id', authenticate, isFleet, TruckModelController.deleteTruckModel)
 
-//Accountants
-router.get('/accountants',        authenticate, isFinance,    AccountantController.getAllAccountants)
-router.get('/accountants/:id',    authenticate, isFinance,    AccountantController.getAccountantById)
-router.post('/accountants',       authenticate, isAdmin, validate(createAccountantSchema), AccountantController.createAccountant)
-router.patch('/accountants/:id',  authenticate, isAdmin, validate(updateAccountantSchema), AccountantController.updateAccountant)
-router.delete('/accountants/:id', authenticate, isAdmin, AccountantController.deleteAccountant)
-router.patch('/accountants/:id/deactivate', authenticate, isAdmin, AccountantController.deactivateAccountant)
-router.patch('/accountants/:id/activate',   authenticate, isAdmin, AccountantController.activateAccountant)
-// Appoint an accountant to stand in for the general manager on booking approvals.
-router.patch('/accountants/:id/gm-proxy',   authenticate, isAdmin, validate(setGmProxySchema), AccountantController.setAccountantGmProxy)
 
 //General Managers
 router.get('/general-managers',        authenticate, isAdmin, GeneralManagerController.getAllGeneralManagers)

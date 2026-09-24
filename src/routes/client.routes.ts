@@ -26,12 +26,12 @@ const isAny    = authorize('admin', 'client', 'driver')
 // itself filters what each role sees (e.g. ops sees approved, fleet sees assigned).
 const canViewBookings = authorize(
   'admin', 'client', 'driver',
-  'accountant', 'general_manager', 'operations_manager', 'fleet_manager',
+  'general_manager', 'operations_manager', 'fleet_manager',
 )
 
 // Approval-stage gates: stage authority is inherent to the ROLE (not the
-// booking-management module tier — accountant is read-only and fleet has no
-// booking-management at all), so these are gated by role only.
+// booking-management module tier — fleet has no booking-management at all),
+// so these are gated by role only.
 
 // Booking write actions are governed by the booking-management module tier for
 // managed staff (clients/drivers bypass; it_admin bypasses). Method picks the
@@ -44,7 +44,7 @@ const canManageBooking = requireModule('booking-management')
 // passes, and nothing downstream looked at ownership. `attachClientScope` pins
 // the caller's own client_id from their session (never from the URL or body),
 // and the service asserts against it. It returns immediately for every
-// non-client role, so admin, GM, ops, fleet, accountant and the driver app are
+// non-client role, so admin, GM, ops, fleet and the driver app are
 // unaffected. Note that `canManageBooking` does NOT cover this: `client` is not
 // a managed role, so requireModule waves it straight through.
 router.get('/',                 authenticate, authenticatedLimiter, canViewBookings, attachClientScope, BookingController.getAllBookings)
@@ -73,8 +73,6 @@ router.delete('/:id',           authenticate, authenticatedLimiter, isClient, at
 // the driver and the fleet manager — there is no separate fleet approval step.
 //
 // `requireGmApprover` admits the general manager, admins, and any user the IT
-// admin has appointed as a GM proxy (an accountant standing in while the GM is
-// unavailable), so it can't be a plain role check.
 router.patch('/:id/gm-review', authenticate, authenticatedLimiter, requireGmApprover, validate(gmReviewSchema), BookingController.gmReview)
 
 // Same story one level down: `isAdmin` admits clients, so these need the stop's

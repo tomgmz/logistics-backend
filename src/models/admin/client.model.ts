@@ -44,7 +44,6 @@ async function create(userId: string, input: CreateClientInput) {
       {
         company_name:    input.company_name ?? null,
         billing_address: input.billing_address ?? null,
-        billing_mode:    input.billing_mode ?? 'monthly',
         landline:        input.landline ?? null,
       },
     )
@@ -74,7 +73,6 @@ async function update(userId: string, input: UpdateClientInput) {
 
   if ('company_name' in input) clientFields.company_name = input.company_name
   if ('billing_address' in input) clientFields.billing_address = input.billing_address
-  if ('billing_mode' in input) clientFields.billing_mode = input.billing_mode
   if ('landline' in input) clientFields.landline = input.landline
 
   if (Object.keys(clientFields).length > 0) {

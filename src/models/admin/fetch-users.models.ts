@@ -10,7 +10,6 @@ import {
 const ROLE_MAP: Record<string, string> = {
   'clients':           'client',
   'drivers':           'driver',
-  'accountants':       'accountant',
   'general-managers':  'general_manager',
   'fleet-admins':      'fleet_manager',
   'operations-admins': 'operations_manager',
@@ -35,14 +34,12 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
       phone,
       role,
       status,
-      is_gm_proxy,
       created_at,
       updated_at,
       clients (
         client_id,
         company_name,
-        billing_address,
-        billing_mode
+        billing_address
       ),
       drivers (
         driver_id,

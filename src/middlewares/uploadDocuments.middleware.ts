@@ -1,7 +1,7 @@
 import multer from 'multer'
 
 /**
- * Uploads for client-supplied paperwork: booking documents, billing summaries,
+ * Uploads for client-supplied paperwork: booking documents
  * and proof of payment.
  *
  * Images are accepted alongside office formats because most of what clients

@@ -8,9 +8,9 @@ import type { BookingWithRelations } from '../../types/client/booking.types.js'
  * transactions.
  *
  * The client portal's "Transaction History" is a booking history, so this is the
- * same data widened past a single client rather than a separate ledger. The
- * money documents (service invoices, payments, receipts) stay in the billing
- * module; nothing here reads them.
+ * same data widened past a single client rather than a separate ledger. There
+ * are no money documents behind it: `bookings.total_cost` is the only figure,
+ * and since reverse billing was removed nothing writes that column.
  *
  * Everything below filters through one `buildWhere`. That is deliberate: the
  * page shows a totals strip and a per-company rollup above the rows, and if the
@@ -63,7 +63,7 @@ const FROM_SQL = `
 `
 
 // `registered_name` is the BIR-registered entity and takes precedence over the
-// trading name, matching how the billing pages label a client.
+// trading name: the BIR-registered entity is the one a company is invoiced as.
 const COMPANY_NAME_SQL = `COALESCE(NULLIF(c.registered_name, ''), NULLIF(c.company_name, ''), 'Unknown client')`
 
 // The moment a booking actually finished: its last delivered stop. `bookings`
@@ -338,7 +338,6 @@ export interface ExportRow {
   origin:           string | null
   destinations:     string | null
   truck_type:       string | null
-  payment_terms:    string | null
   total_cost:       number | null
 }
 
@@ -359,7 +358,6 @@ async function findForExport(f: TransactionFilters, cap: number): Promise<Export
                WHERE d.booking_id = b.booking_id
             )                                                            AS destinations,
             b.truck_type_needed                                          AS truck_type,
-            b.payment_terms,
             b.total_cost
      ${FROM_SQL}
      ${whereSql}

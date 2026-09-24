@@ -84,7 +84,6 @@ export const createBookingSchema = z.object({
   // Whether anything in the load must NOT be stacked — the constraint that
   // actually limits how a truck is loaded.
   non_stackable_cargo:   z.boolean().optional(),
-  payment_terms:         z.string().optional(),
   transaction_documents: z.array(z.string().url()).min(1, 'At least one transaction document is required').max(3),
   // One to three drop-offs per booking: a single trip carries at most three, and
   // the driver app's stop flow (pickup -> drop-offs -> done) is built to that.
@@ -113,7 +112,6 @@ export const updateBookingSchema = z.object({
   required_weight_kg:    z.number().min(0).optional().nullable(),
   required_length_cm:    z.number().min(0).optional().nullable(),
   stackable_required:    z.boolean().optional().nullable(),
-  payment_terms:         z.string().optional().nullable(),
   transaction_documents: z.array(z.string().url()).min(1).max(3).optional().nullable(),
 })
 

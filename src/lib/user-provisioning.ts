@@ -8,7 +8,6 @@ export type ProvisionRole =
   | 'driver'
   | 'it_admin'
   | 'operations_manager'
-  | 'accountant'
   | 'general_manager'
   | 'fleet_manager'
 

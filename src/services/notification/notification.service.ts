@@ -71,7 +71,6 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
 
 // Route map per role so a notification tap lands on the right dashboard page.
 const ROLE_PATHS: Record<string, string> = {
-  accountant:       '/accountant/booking-management',
   general_manager:  '/general_manager/booking-management',
   operations_manager: '/operations_admin/booking-management',
   fleet_manager:      '/fleet_admin/booking-management',

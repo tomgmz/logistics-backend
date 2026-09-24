@@ -1,5 +1,5 @@
 export type UserRole =
-  | 'client' | 'driver' | 'accountant'
+  | 'client' | 'driver'
   | 'general_manager' | 'fleet_manager'
   | 'operations_manager' | 'it_admin' | 'admin'
 

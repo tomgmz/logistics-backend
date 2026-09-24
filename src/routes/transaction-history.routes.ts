@@ -9,7 +9,7 @@ import * as TransactionHistoryController from '../controllers/admin/transaction-
  *
  * Deliberately separate from GET /api/booking, which is gated by the
  * booking-management module. An IT Admin can legitimately take
- * booking-management away from an accountant while leaving transaction-history
+ * booking-management away from a role while leaving transaction-history
  * granted; sharing the booking route would 403 this page in that
  * configuration.
  *
@@ -19,7 +19,7 @@ import * as TransactionHistoryController from '../controllers/admin/transaction-
 
 const router = Router()
 
-const isHistoryStaff = authorize('admin', 'it_admin', 'accountant')
+const isHistoryStaff = authorize('admin', 'it_admin')
 const canReadHistory = requireModule('transaction-history')
 // An export is a GET, and requiredFlagForMethod maps every GET to can_view, so
 // the flag has to be named explicitly or the export tier means nothing.
@@ -37,9 +37,8 @@ router.get(
   TransactionHistoryController.summary,
 )
 
-// Options for the company filter. This exists rather than reusing
-// GET /api/admin/clients because that route's role gate omits accountant, who
-// is one of the two roles this module is granted to.
+// Options for the company filter. Kept separate from GET /api/admin/clients so
+// this module's role gate stays independent of the client CRUD gate.
 router.get(
   '/companies',
   authenticate, authenticatedLimiter, isHistoryStaff, canReadHistory,

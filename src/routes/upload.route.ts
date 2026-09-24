@@ -2,7 +2,7 @@ import { Router }                   from 'express'
 import { authenticate, authorize }  from '../middlewares/auth.middleware.js'
 import { authenticatedLimiter }     from '../middlewares/rateLimit.middleware.js'
 import { uploadDocuments }          from '../middlewares/uploadDocuments.middleware.js'
-import { uploadBookingDocuments, uploadBillingDocuments } from '../controllers/admin/uploadDocument.controller.js'
+import { uploadBookingDocuments } from '../controllers/admin/uploadDocument.controller.js'
 
 const router = Router()
 
@@ -26,15 +26,5 @@ router.post(
   uploadBookingDocuments,
 )
 
-// Billing summaries and proof of payment. Staff can attach here too — an
-// accountant recording a walk-in payment has the deposit slip in hand.
-router.post(
-  '/billing-documents',
-  authenticate,
-  authenticatedLimiter,
-  authorize('client', 'admin', 'it_admin', 'accountant', 'general_manager'),
-  handleUpload,
-  uploadBillingDocuments,
-)
 
 export default router

@@ -90,36 +90,31 @@ export async function hasActiveUsersWithRoles(roles: string[]): Promise<boolean>
   return (count ?? 0) > 0
 }
 
-// Anyone who may act on the GM approval stage: the general manager(s) plus any
-// user the IT admin has appointed as a GM proxy (an accountant standing in while
-// the GM is unavailable). Used both for recipient resolution and for the
-// staffing check that decides whether the stage can be auto-cleared.
+// Anyone who may act on the GM approval stage. The proxy appointment was
+// retired with the accountant role, so this is the active general manager(s).
+// Used both for recipient resolution and for the staffing check that decides
+// whether the stage can be auto-cleared.
 export async function resolveGmApprovers(): Promise<{ user_id: string; role: string }[]> {
-  const [gms, proxies] = await Promise.all([
-    supabase.from('users').select('user_id, role').eq('role', 'general_manager').eq('status', 'active'),
-    supabase.from('users').select('user_id, role').eq('is_gm_proxy', true).eq('status', 'active'),
-  ])
-  if (gms.error)     throw gms.error
-  if (proxies.error) throw proxies.error
-
-  const byId = new Map<string, { user_id: string; role: string }>()
-  for (const row of [...(gms.data ?? []), ...(proxies.data ?? [])] as { user_id: string; role: string }[]) {
-    byId.set(row.user_id, row)
-  }
-  return [...byId.values()]
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id, role')
+    .eq('role', 'general_manager')
+    .eq('status', 'active')
+  if (error) throw error
+  return (data ?? []) as { user_id: string; role: string }[]
 }
 
 // Whether a given user is allowed to act on the GM approval stage — the GM
-// themselves, an admin, or an appointed proxy.
+// themselves, or an admin.
 export async function isGmApprover(userId: string): Promise<boolean> {
   const { data, error } = await supabase
     .from('users')
-    .select('role, status, is_gm_proxy')
+    .select('role, status')
     .eq('user_id', userId)
     .maybeSingle()
   if (error) throw error
   if (!data || data.status !== 'active') return false
-  return data.role === 'general_manager' || data.role === 'admin' || data.is_gm_proxy === true
+  return data.role === 'general_manager' || data.role === 'admin'
 }
 
 // Active users whose role is in the given set. `admin` is always included by the

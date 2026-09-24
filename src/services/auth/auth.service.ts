@@ -39,7 +39,6 @@ const PLATFORM_RESTRICTIONS: Record<UserRole, Platform[]> = {
   admin:            ['web'],
   driver:           ['mobile'],
   general_manager:  ['web'],
-  accountant:       ['web'],
   fleet_manager:      ['web'],
   operations_manager: ['web'],
   it_admin:         ['web'],
@@ -54,7 +53,6 @@ function isRoleAllowedOnPlatform(role: string, platform: Platform): boolean {
 const ROLE_PORTAL: Record<UserRole, string> = {
   admin:            '/portal/admin',
   general_manager:  '/portal/general_manager',
-  accountant:       '/portal/accountant',
   fleet_manager:      '/portal/fleet_admin',
   operations_manager: '/portal/operations_admin',
   it_admin:         '/portal/it_admin',

@@ -4,11 +4,10 @@ import { isGmApprover } from '../services/notification/notification.service.js'
 /**
  * Gate for the GM approval stage.
  *
- * Authority here is not a plain role check: besides the general manager and
- * admins, the IT admin can appoint an accountant as a GM PROXY to keep bookings
- * moving while the GM is unavailable. That appointment lives on the user record
- * (`users.is_gm_proxy`), not in the JWT, so it is read per request — revoking a
- * proxy takes effect immediately instead of waiting for the token to expire.
+ * The general manager owns this stage, with admins as the standing fallback so
+ * approvals never stall when the GM is away. Authority is read per request
+ * rather than from the JWT, so a change in role or status takes effect
+ * immediately instead of waiting for the token to expire.
  */
 export async function requireGmApprover(req: Request, res: Response, next: NextFunction) {
   try {
@@ -25,7 +24,7 @@ export async function requireGmApprover(req: Request, res: Response, next: NextF
 
     res.status(403).json({
       status:  'error',
-      message: 'Only the general manager or an appointed proxy can approve bookings',
+      message: 'Only the general manager can approve bookings',
     })
   } catch (err) {
     console.error('GM APPROVER MIDDLEWARE ERROR:', err)

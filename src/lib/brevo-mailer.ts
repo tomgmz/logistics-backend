@@ -69,7 +69,6 @@ const ROLE_LABELS: Record<string, string> = {
   general_manager:  'General Manager',
   fleet_manager:      'Fleet Manager',
   operations_manager: 'Operations Manager',
-  accountant:       'Accountant',
   driver:           'Driver',
   client:           'Client',
 }

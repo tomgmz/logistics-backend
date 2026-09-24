@@ -18,9 +18,7 @@ export type LogType =
   | 'vehicle_creation'
   | 'vehicle_activity'
   | 'booking'
-  | 'payment'
   | 'driver_activity'
-  | 'billing_activity'
   | 'delivery_activity'
   | 'maintenance_activity'
   /**

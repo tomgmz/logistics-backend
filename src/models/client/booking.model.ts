@@ -60,7 +60,6 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   stackable_required,
   non_stackable_cargo,
   cargo_density_kg_cbm,
-  payment_terms,
   transaction_documents,
   pickup_proof_photo_url,
   pickup_proof_at,
@@ -76,7 +75,6 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
     client_id,
     company_name,
     billing_address,
-    payment_terms,
     users (
       first_name,
       last_name,
@@ -338,7 +336,6 @@ const BOOKING_INSERT_COLUMNS = [
   'required_net_weight_kg',
   'stackable_required',
   'non_stackable_cargo',
-  'payment_terms',
   'transaction_documents',
   'idempotency_key',
 ] as const

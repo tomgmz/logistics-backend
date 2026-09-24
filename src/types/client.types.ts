@@ -1,4 +1,3 @@
-import type { BillingMode } from './billing.types.js'
 
 export interface Client {
   user_id:         string
@@ -17,7 +16,6 @@ export interface Client {
   client_id:        string
   company_name?:    string | null
   billing_address?: string | null
-  billing_mode?:    BillingMode
   landline?:        string | null
 }
 
@@ -32,7 +30,6 @@ export interface CreateClientInput {
 
   company_name?:    string
   billing_address?: string
-  billing_mode:     BillingMode
   landline?:        string | null
 }
 
@@ -46,6 +43,5 @@ export interface UpdateClientInput {
 
   company_name?:    string
   billing_address?: string
-  billing_mode?:    BillingMode
   landline?:        string | null
 }

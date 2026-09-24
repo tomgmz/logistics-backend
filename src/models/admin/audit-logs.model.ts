@@ -64,9 +64,7 @@ export async function getStats() {
     vehicle_creation:     0,
     vehicle_activity:     0,
     booking:              0,
-    payment:              0,
     driver_activity:      0,
-    billing_activity:     0,
     delivery_activity:    0,
     maintenance_activity: 0,
     // Kept so pre-split rows still count toward a bucket rather than silently

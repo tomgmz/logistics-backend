@@ -16,7 +16,7 @@ import type {
  * Staff transaction history.
  *
  * The `validate` middleware only ever reads req.body, so query strings are
- * parsed here instead — same as the billing list controller does.
+ * parsed here instead.
  */
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/
