@@ -6,6 +6,7 @@ import { hashToken } from './auth.service.js'
 import { supabase } from '../../lib/supabase.js'
 import {
   buildResetUrl,
+  formatManilaTimestamp,
   sendPasswordChangedEmail,
   sendPasswordResetAlertEmail,
   sendPasswordResetEmail,
@@ -112,15 +113,6 @@ function assertOwnsRequest(request: PasswordResetRequestRow, actor: ResetActor):
  * reader has to convert from UTC to answer it. Matches the Asia/Manila the
  * transaction-history queries already report in.
  */
-function formatChangedAt(iso: string | null): string {
-  const when = iso ? new Date(iso) : new Date()
-  return new Intl.DateTimeFormat('en-PH', {
-    dateStyle: 'long',
-    timeStyle: 'short',
-    timeZone:  'Asia/Manila',
-  }).format(when) + ' (PHT)'
-}
-
 /** Show enough of an address to recognise it, not enough to harvest it. */
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@')
@@ -448,7 +440,7 @@ export async function completeReset(
   sendPasswordChangedEmail({
     to:        user?.email ?? request.email,
     firstName: user?.first_name ?? null,
-    changedAt: formatChangedAt(completed.completed_at),
+    changedAt: formatManilaTimestamp(completed.completed_at),
     ipAddress: ip ?? null,
   }).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
@@ -460,7 +452,7 @@ export async function completeReset(
     userEmail: user?.email ?? request.email,
     fullName,
     role:      user?.role ?? null,
-    changedAt: formatChangedAt(completed.completed_at),
+    changedAt: formatManilaTimestamp(completed.completed_at),
   }).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[password-reset] company alert email failed for ${request.email}:`, msg)

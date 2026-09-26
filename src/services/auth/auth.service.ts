@@ -3,7 +3,12 @@ import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import type { SignOptions } from 'jsonwebtoken'
 import * as AuthModel from '../../models/auth/auth.model.js'
-import { sendOtpEmail } from '../../lib/brevo-mailer.js'
+import {
+  formatManilaTimestamp,
+  sendOtpEmail,
+  sendPasswordChangedEmail,
+  sendPasswordResetAlertEmail,
+} from '../../lib/brevo-mailer.js'
 import { supabase, supabaseAnon } from '../../lib/supabase.js'
 import { isManagedRole } from '../../constants/modules.js'
 import { getSessionPermissions } from '../admin/permissions.service.js'
@@ -118,11 +123,44 @@ export async function changePassword(
   userId:      string,
   newPassword: string,
 ): Promise<void> {
+  // Read before the update so we still know whether this was the forced
+  // first-login change - clearMustChangePassword wipes that flag below.
+  const user = await AuthModel.findUserById(userId)
+
   const { error } = await supabase.auth.admin.updateUserById(userId, {
     password: newPassword,
   })
   if (error) throw new Error(`Failed to update password: ${error.message}`)
   await AuthModel.clearMustChangePassword(userId)
+
+  // Tell the account holder, as a completed reset does. afterReset=false because
+  // this path neither signs out other devices nor lifts a lockout.
+  if (user) {
+    sendPasswordChangedEmail({
+      to:         user.email,
+      firstName:  user.first_name ?? null,
+      changedAt:  formatManilaTimestamp(),
+      afterReset: false,
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[change-password] confirmation email failed for ${user.email}:`, msg)
+    })
+  }
+
+  // Company copy, same as a completed reset. Fire-and-forget: the password has
+  // already changed, so a mail failure must not report this call as failed.
+  if (user) {
+    sendPasswordResetAlertEmail({
+      userEmail: user.email,
+      fullName:  [user.first_name, user.last_name].filter(Boolean).join(' ') || null,
+      role:      user.role ?? null,
+      changedAt: formatManilaTimestamp(),
+      kind:      user.must_change_password ? 'first_login' : 'change',
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[change-password] company alert email failed for ${user.email}:`, msg)
+    })
+  }
 
   logEvent({
     user_id:  userId,

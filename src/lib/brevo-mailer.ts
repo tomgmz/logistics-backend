@@ -722,6 +722,13 @@ export interface PasswordChangedEmailParams {
    * If you are about to persist this value, that is the policy you are changing.
    */
   ipAddress?: string | null
+  /**
+   * True (the default) when this follows a completed reset, which signs out
+   * every device and lifts any lockout. False for a change made while signed
+   * in (first-login or otherwise), which does neither - so the email must not
+   * claim it did.
+   */
+  afterReset?: boolean
 }
 
 /**
@@ -770,16 +777,19 @@ export async function sendPasswordChangedEmail(
     throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
   }
 
-  const { to, firstName, changedAt, ipAddress } = params
-  const name = firstName ?? 'there'
-  const ip   = displayableIp(ipAddress)
+  const { to, firstName, changedAt, ipAddress, afterReset = true } = params
+  const name    = firstName ?? 'there'
+  const ip      = displayableIp(ipAddress)
+  const meaning = afterReset
+    ? 'Any devices that were signed in to your account have been signed out, and any lock on your account has been lifted.'
+    : 'Use your new password the next time you sign in. Your old password no longer works.'
 
   try {
     const brevo = getBrevoClient()
     await brevo.transactionalEmails.sendTransacEmail({
       subject:     `Your ${APP_NAME} password was changed`,
-      htmlContent: generatePasswordChangedEmailHtml(name, changedAt, ip),
-      textContent: generatePasswordChangedEmailText(name, changedAt, ip),
+      htmlContent: generatePasswordChangedEmailHtml(name, changedAt, ip, meaning),
+      textContent: generatePasswordChangedEmailText(name, changedAt, ip, meaning),
       sender:      { name: FROM_NAME, email: FROM_EMAIL },
       to:          [{ email: to, name: firstName ?? undefined }],
     })
@@ -798,6 +808,7 @@ function generatePasswordChangedEmailHtml(
   name:      string,
   changedAt: string,
   ip:        string | null,
+  meaning:   string,
 ): string {
   const year = new Date().getFullYear()
 
@@ -864,8 +875,7 @@ function generatePasswordChangedEmailHtml(
                           What this means
                         </p>
                         <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#115e59;line-height:1.6;">
-                          Any devices that were signed in to your account have been signed out,
-                          and any lock on your account has been lifted.
+                          ${meaning}
                         </p>${ipRow}
                       </td>
                     </tr>
@@ -920,6 +930,7 @@ function generatePasswordChangedEmailText(
   name:      string,
   changedAt: string,
   ip:        string | null,
+  meaning:   string,
 ): string {
   const year = new Date().getFullYear()
   const ipLine = ip ? `\nRequest came from IP address ${ip}.` : ''
@@ -930,7 +941,7 @@ Hi ${name},
 Your ${APP_NAME} password was changed on ${changedAt}. You can now sign in with your new password.
 
 WHAT THIS MEANS
-Any devices that were signed in to your account have been signed out, and any lock on your account has been lifted.${ipLine}
+${meaning}${ipLine}
 
 IF YOU DID NOT DO THIS
 Your account may be at risk. Contact us straight away at ${APP_SUPPORT_EMAIL} so we can secure it.
@@ -943,11 +954,11 @@ This is a security notification sent because your password changed. It cannot be
 }
 
 // ---------------------------------------------------------------------------
-// Company copy of every completed password reset.
+// Company copy of every completed password reset or password change.
 //
 // The account holder already gets sendPasswordChangedEmail; this one goes to the
 // company mailbox so someone other than the (possibly compromised) account holder
-// sees every reset across all roles.
+// sees every reset and password change across all roles.
 //
 // TESTING MAILBOX for now: 8338logisticsservice@gmail.com. Do NOT swap in the
 // official 8338logisitcsservice@gmail.com (note the different spelling) until
@@ -963,6 +974,28 @@ export interface PasswordResetAlertEmailParams {
   role:      string | null
   /** When the change landed, already formatted for reading. */
   changedAt: string
+  /**
+   * reset       - finished a reset (emailed link or IT Admin code)
+   * first_login - replaced the temporary password they were issued
+   * change      - changed it themselves while signed in
+   */
+  kind?:     'reset' | 'first_login' | 'change'
+}
+
+const PASSWORD_ALERT_COPY = {
+  reset:       { heading: 'Password Reset Completed',   sentence: 'successfully reset their',                        subject: 'password reset completed by' },
+  first_login: { heading: 'First Sign-in Password Set', sentence: 'replaced their temporary password and set a new', subject: 'first sign-in password set by' },
+  change:      { heading: 'Password Changed',           sentence: 'changed their',                                   subject: 'password changed by' },
+} as const
+
+/** "September 27, 2026 at 3:04 PM (PHT)" - the form every password email uses. */
+export function formatManilaTimestamp(iso?: string | null): string {
+  const when = iso ? new Date(iso) : new Date()
+  return new Intl.DateTimeFormat('en-PH', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+    timeZone:  'Asia/Manila',
+  }).format(when) + ' (PHT)'
 }
 
 function escapeHtml(value: string): string {
@@ -976,7 +1009,7 @@ function escapeHtml(value: string): string {
 
 /**
  * Deliberately carries no IP address, no password and no link: it is a record
- * that a reset happened, not a way to act on the account.
+ * that the password changed, not a way to act on the account.
  */
 export async function sendPasswordResetAlertEmail(
   params: PasswordResetAlertEmailParams,
@@ -988,7 +1021,8 @@ export async function sendPasswordResetAlertEmail(
     throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
   }
 
-  const { userEmail, fullName, role, changedAt } = params
+  const { userEmail, fullName, role, changedAt, kind = 'reset' } = params
+  const copy      = PASSWORD_ALERT_COPY[kind]
   const name      = fullName ?? userEmail
   const roleLabel = role ? (ROLE_LABELS[role] ?? role.replace(/_/g, ' ')) : 'Unknown role'
   const year      = new Date().getFullYear()
@@ -1010,7 +1044,7 @@ export async function sendPasswordResetAlertEmail(
   const htmlContent = `
     <!DOCTYPE html>
     <html lang="en">
-    <head><meta charset="UTF-8"><title>Password reset completed</title></head>
+    <head><meta charset="UTF-8"><title>${copy.heading}</title></head>
     <body style="margin:0;padding:0;background-color:#f6f6f6;">
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
         <tr>
@@ -1020,13 +1054,13 @@ export async function sendPasswordResetAlertEmail(
               <tr>
                 <td style="background-color:#0a0a0a;padding:32px 40px;">
                   <h1 style="margin:0;font-family:Arial,sans-serif;font-size:22px;color:#ffffff;font-weight:700;letter-spacing:0.05em;">${APP_NAME}</h1>
-                  <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:12px;color:#818181;letter-spacing:0.12em;text-transform:uppercase;">Password Reset Completed</p>
+                  <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:12px;color:#818181;letter-spacing:0.12em;text-transform:uppercase;">${copy.heading}</p>
                 </td>
               </tr>
               <tr>
                 <td style="padding:36px 40px 12px 40px;">
                   <p style="margin:0 0 20px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
-                    A user successfully reset their ${APP_NAME} password.
+                    A user ${copy.sentence} ${APP_NAME} password.
                   </p>
                   <table cellpadding="0" cellspacing="0" border="0">${rowsHtml}
                   </table>
@@ -1036,7 +1070,7 @@ export async function sendPasswordResetAlertEmail(
                 <td style="padding:20px 40px 32px 40px;border-top:1px solid #eeeeee;">
                   <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;line-height:1.6;">
                     &copy; ${year} ${APP_NAME}. ${PHYSICAL_ADDRESS}<br>
-                    Automatic notice sent whenever any user completes a password reset.
+                    Automatic notice sent whenever any user resets or changes their password.
                   </p>
                 </td>
               </tr>
@@ -1049,19 +1083,19 @@ export async function sendPasswordResetAlertEmail(
   `
 
   const textContent = `
-A user successfully reset their ${APP_NAME} password.
+A user ${copy.sentence} ${APP_NAME} password.
 
 ${rows.map(([label, value]) => `${label}: ${value}`).join('\n')}
 
 ---
 (c) ${year} ${APP_NAME}. ${PHYSICAL_ADDRESS}
-Automatic notice sent whenever any user completes a password reset.
+Automatic notice sent whenever any user resets or changes their password.
   `.trim()
 
   try {
     const brevo = getBrevoClient()
     await brevo.transactionalEmails.sendTransacEmail({
-      subject:     `${APP_NAME}: password reset completed by ${name}`,
+      subject:     `${APP_NAME}: ${copy.subject} ${name}`,
       htmlContent,
       textContent,
       sender:      { name: FROM_NAME, email: FROM_EMAIL },
