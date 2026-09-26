@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase.js'
 import {
   buildResetUrl,
   sendPasswordChangedEmail,
+  sendPasswordResetAlertEmail,
   sendPasswordResetEmail,
   sendPasswordResetOtpEmail,
 } from '../../lib/brevo-mailer.js'
@@ -452,6 +453,17 @@ export async function completeReset(
   }).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[password-reset] confirmation email failed for ${request.email}:`, msg)
+  })
+
+  // Company copy, for every role. Fire-and-forget for the same reason as above.
+  sendPasswordResetAlertEmail({
+    userEmail: user?.email ?? request.email,
+    fullName,
+    role:      user?.role ?? null,
+    changedAt: formatChangedAt(completed.completed_at),
+  }).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[password-reset] company alert email failed for ${request.email}:`, msg)
   })
 
   await notifyResetCompleted(completed, fullName)

@@ -942,6 +942,142 @@ This is a security notification sent because your password changed. It cannot be
   `.trim()
 }
 
+// ---------------------------------------------------------------------------
+// Company copy of every completed password reset.
+//
+// The account holder already gets sendPasswordChangedEmail; this one goes to the
+// company mailbox so someone other than the (possibly compromised) account holder
+// sees every reset across all roles.
+//
+// TESTING MAILBOX for now: 8338logisticsservice@gmail.com. Do NOT swap in the
+// official 8338logisitcsservice@gmail.com (note the different spelling) until
+// the company says to — set PASSWORD_RESET_ALERT_EMAIL to change it without a
+// code edit.
+// ---------------------------------------------------------------------------
+const PASSWORD_RESET_ALERT_EMAIL =
+  process.env.PASSWORD_RESET_ALERT_EMAIL?.trim() || '8338logisticsservice@gmail.com'
+
+export interface PasswordResetAlertEmailParams {
+  userEmail: string
+  fullName:  string | null
+  role:      string | null
+  /** When the change landed, already formatted for reading. */
+  changedAt: string
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/**
+ * Deliberately carries no IP address, no password and no link: it is a record
+ * that a reset happened, not a way to act on the account.
+ */
+export async function sendPasswordResetAlertEmail(
+  params: PasswordResetAlertEmailParams,
+): Promise<void> {
+  if (!process.env.BREVO_API_KEY) {
+    throw new Error('Brevo is not configured. Please set BREVO_API_KEY.')
+  }
+  if (!process.env.BREVO_SENDER_EMAIL) {
+    throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
+  }
+
+  const { userEmail, fullName, role, changedAt } = params
+  const name      = fullName ?? userEmail
+  const roleLabel = role ? (ROLE_LABELS[role] ?? role.replace(/_/g, ' ')) : 'Unknown role'
+  const year      = new Date().getFullYear()
+
+  const rows: Array<[string, string]> = [
+    ['Name',       name],
+    ['Email',      userEmail],
+    ['Role',       roleLabel],
+    ['Changed on', changedAt],
+  ]
+  const rowsHtml = rows
+    .map(([label, value]) => `
+                  <tr>
+                    <td style="padding:6px 16px 6px 0;font-family:Arial,sans-serif;font-size:14px;color:#818181;white-space:nowrap;">${label}</td>
+                    <td style="padding:6px 0;font-family:Arial,sans-serif;font-size:14px;color:#333333;">${escapeHtml(value)}</td>
+                  </tr>`)
+    .join('')
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head><meta charset="UTF-8"><title>Password reset completed</title></head>
+    <body style="margin:0;padding:0;background-color:#f6f6f6;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
+        <tr>
+          <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0"
+              style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;">
+              <tr>
+                <td style="background-color:#0a0a0a;padding:32px 40px;">
+                  <h1 style="margin:0;font-family:Arial,sans-serif;font-size:22px;color:#ffffff;font-weight:700;letter-spacing:0.05em;">${APP_NAME}</h1>
+                  <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:12px;color:#818181;letter-spacing:0.12em;text-transform:uppercase;">Password Reset Completed</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:36px 40px 12px 40px;">
+                  <p style="margin:0 0 20px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
+                    A user successfully reset their ${APP_NAME} password.
+                  </p>
+                  <table cellpadding="0" cellspacing="0" border="0">${rowsHtml}
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:20px 40px 32px 40px;border-top:1px solid #eeeeee;">
+                  <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;line-height:1.6;">
+                    &copy; ${year} ${APP_NAME}. ${PHYSICAL_ADDRESS}<br>
+                    Automatic notice sent whenever any user completes a password reset.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `
+
+  const textContent = `
+A user successfully reset their ${APP_NAME} password.
+
+${rows.map(([label, value]) => `${label}: ${value}`).join('\n')}
+
+---
+(c) ${year} ${APP_NAME}. ${PHYSICAL_ADDRESS}
+Automatic notice sent whenever any user completes a password reset.
+  `.trim()
+
+  try {
+    const brevo = getBrevoClient()
+    await brevo.transactionalEmails.sendTransacEmail({
+      subject:     `${APP_NAME}: password reset completed by ${name}`,
+      htmlContent,
+      textContent,
+      sender:      { name: FROM_NAME, email: FROM_EMAIL },
+      to:          [{ email: PASSWORD_RESET_ALERT_EMAIL }],
+    })
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('BREVO PASSWORD RESET ALERT EMAIL ERROR:', {
+      error,
+      recipient: PASSWORD_RESET_ALERT_EMAIL,
+      timestamp: new Date().toISOString(),
+    })
+    throw new Error(`Failed to send password reset alert email: ${error}`)
+  }
+}
+
 function generatePasswordResetEmailHtml(
   name:     string,
   resetUrl: string,
