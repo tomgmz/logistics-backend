@@ -6,22 +6,39 @@ import {
   SystemLogLevel,
 } from '../../types/system-logs.types.js'
 
+// Shared by the list and the export so both read the filters the same way.
+function queryFrom(req: Request): GetSystemLogsQuery {
+  return {
+    event_type: req.query.event_type as SystemLogEventType | undefined,
+    log_level:  req.query.log_level  as SystemLogLevel     | undefined,
+    // Absent means "both"; only an explicit true/false filters.
+    resolved:   req.query.resolved === undefined
+                  ? undefined
+                  : req.query.resolved === 'true',
+    search:     req.query.search as string | undefined,
+    sort:       (req.query.sort === 'asc' ? 'asc' : 'desc'),
+    page:       req.query.page  ? Number(req.query.page)  : 1,
+    limit:      req.query.limit ? Number(req.query.limit) : 15,
+  }
+}
+
 export async function getAllLogs(req: Request, res: Response) {
   try {
-    const query: GetSystemLogsQuery = {
-      event_type: req.query.event_type as SystemLogEventType | undefined,
-      log_level:  req.query.log_level  as SystemLogLevel     | undefined,
-      // Absent means "both"; only an explicit true/false filters.
-      resolved:   req.query.resolved === undefined
-                    ? undefined
-                    : req.query.resolved === 'true',
-      search:     req.query.search as string | undefined,
-      sort:       (req.query.sort === 'asc' ? 'asc' : 'desc'),
-      page:       req.query.page  ? Number(req.query.page)  : 1,
-      limit:      req.query.limit ? Number(req.query.limit) : 15,
-    }
-    const data = await SystemLogService.getAllLogs(query)
+    const data = await SystemLogService.getAllLogs(queryFrom(req))
     res.status(200).json({ status: 'success', ...data })
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+}
+
+/**
+ * Returns rows, not a file — the Next proxy re-serialises every response with
+ * NextResponse.json, so the browser builds the .xlsx.
+ */
+export async function exportLogs(req: Request, res: Response) {
+  try {
+    const { rows, truncated } = await SystemLogService.exportLogs(queryFrom(req))
+    res.status(200).json({ status: 'success', data: rows, meta: { truncated, count: rows.length } })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })
   }

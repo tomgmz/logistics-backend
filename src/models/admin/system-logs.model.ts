@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import { GetSystemLogsQuery } from '../../types/system-logs.types.js'
+import { readInPages } from '../../lib/read-in-pages.js'
 
 /**
  * Reads the system_logs table.
@@ -16,18 +17,17 @@ import { GetSystemLogsQuery } from '../../types/system-logs.types.js'
 const DEFAULT_LIMIT = 15
 const MAX_LIMIT     = 200
 
-export async function findAll(query: GetSystemLogsQuery = {}) {
-  const { event_type, log_level, resolved, search, sort = 'desc' } = query
-
-  const page  = Math.max(1, Number(query.page) || 1)
-  const limit = Math.min(MAX_LIMIT, Math.max(1, Number(query.limit) || DEFAULT_LIMIT))
-  const from  = (page - 1) * limit
-
+// The list and the export share this, so "export what I'm looking at" really
+// does export the same filtered, same-ordered rows.
+function filteredQuery(
+  { event_type, log_level, resolved, search, sort = 'desc' }: GetSystemLogsQuery,
+  options?: { count: 'exact' },
+) {
   let q = supabase
     .from('system_logs')
     .select(
       'log_id, log_level, event_type, source, message, metadata, resolved, user_id, timestamp',
-      { count: 'exact' },
+      options,
     )
 
   if (event_type)          q = q.eq('event_type', event_type)
@@ -37,11 +37,26 @@ export async function findAll(query: GetSystemLogsQuery = {}) {
     q = q.or(`message.ilike.%${search}%,source.ilike.%${search}%`)
   }
 
-  q = q.order('timestamp', { ascending: sort === 'asc' }).range(from, from + limit - 1)
+  return q.order('timestamp', { ascending: sort === 'asc' })
+}
 
-  const { data, error, count } = await q
+export async function findAll(query: GetSystemLogsQuery = {}) {
+  const page  = Math.max(1, Number(query.page) || 1)
+  const limit = Math.min(MAX_LIMIT, Math.max(1, Number(query.limit) || DEFAULT_LIMIT))
+  const from  = (page - 1) * limit
+
+  const { data, error, count } = await filteredQuery(query, { count: 'exact' })
+    .range(from, from + limit - 1)
   if (error) throw error
   return { data: data ?? [], total: count ?? 0, page, limit }
+}
+
+export async function findForExport(query: GetSystemLogsQuery, cap: number) {
+  return readInPages(
+    // log_id breaks timestamp ties so paging never skips or repeats a row.
+    (from, to) => filteredQuery(query).order('log_id').range(from, to),
+    cap,
+  )
 }
 
 export async function findById(logId: string) {

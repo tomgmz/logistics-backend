@@ -29,6 +29,7 @@ import { setReportStatusSchema } from '../schema/driver/report.schema.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as PasswordResetController from '../controllers/admin/password-reset.controller.js'
 import * as ExternalDriverController from '../controllers/admin/external-driver.controller.js'
+import { requireModuleFlag } from '../middlewares/moduleAccess.middleware.js'
 import * as AuditLogController from '../controllers/admin/audit-logs.controller.js'
 import * as SystemLogController from '../controllers/admin/system-logs.controller.js'
 import * as PermissionsController from '../controllers/admin/permissions.controller.js'
@@ -214,6 +215,9 @@ router.put('/users/:id/permissions', authenticate, isAdmin, lockGuard('user', fr
 // only ever inserted by logEvent().
 router.get('/audit-logs',        authenticate, isAdmin, AuditLogController.getAllLogs)
 router.get('/audit-logs/stats',  authenticate, isAdmin, AuditLogController.getLogStats)
+// An export is a GET, which moduleGuard maps to can_view, so the export tier
+// has to be named here or it would mean nothing. Registered before /:id.
+router.get('/audit-logs/export', authenticate, isAdmin, requireModuleFlag('audit-logs', 'can_export'), AuditLogController.exportLogs)
 router.get('/audit-logs/:id',    authenticate, isAdmin, AuditLogController.getLogById)
 
 // System logs — the technical trail. IT Admin ONLY. Stack traces, provider
@@ -221,6 +225,7 @@ router.get('/audit-logs/:id',    authenticate, isAdmin, AuditLogController.getLo
 // these do not sit behind isAdmin like the audit routes above.
 router.get('/system-logs',              authenticate, isItAdmin, SystemLogController.getAllLogs)
 router.get('/system-logs/stats',        authenticate, isItAdmin, SystemLogController.getLogStats)
+router.get('/system-logs/export',       authenticate, isItAdmin, SystemLogController.exportLogs)
 router.get('/system-logs/:id',          authenticate, isItAdmin, SystemLogController.getLogById)
 router.patch('/system-logs/:id/resolve', authenticate, isItAdmin, SystemLogController.setResolved)
 
