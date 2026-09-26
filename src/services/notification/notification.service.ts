@@ -121,18 +121,18 @@ function copyFor(
     case 'gm_pending':
       return { title: 'New booking awaiting your approval', body: `Booking ${label} was submitted by the client and needs your approval.` }
     case 'rejected_gm':
-      return { title: 'Booking rejected', body: `Your booking ${label} was rejected by the general manager${reason ? `: ${reason}` : '.'}` }
+      return { title: 'Booking rejected', body: `Your booking ${label} was rejected by the General Manager${reason ? `: ${reason}` : '.'}` }
     // Turned down by the administrator directly, without going to the GM.
     case 'rejected_admin':
       return { title: 'Booking rejected', body: `Your booking ${label} was not approved${reason ? `: ${reason}` : '.'}` }
     case 'ops_pending':
-      return { title: 'Booking ready for assignment', body: `Booking ${label} was approved by the GM. Select a vehicle and driver.` }
+      return { title: 'Booking ready for assignment', body: `Booking ${label} was approved by the General Manager. Select a vehicle and driver.` }
     case 'assigned':
       return { title: 'New delivery assigned', body: `You have been assigned to booking ${label}.` }
     case 'vehicle_assigned':
       return {
         title: 'Vehicle assigned to a booking',
-        body:  `${extra?.vehicleLabel ?? 'A vehicle'} was selected by operations for booking ${label}.`,
+        body:  `${extra?.vehicleLabel ?? 'A vehicle'} was selected by the Operations Manager for booking ${label}.`,
       }
     case 'fleet_recheck':
       return {

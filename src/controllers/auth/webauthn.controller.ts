@@ -37,7 +37,7 @@ export async function enrollOptions(req: Request, res: Response) {
       console.error('PASSKEY ENROLL OPTIONS — NOT CONFIGURED:', err.message)
       res.status(503).json({
         status:  'error',
-        message: 'Passkey setup is unavailable on this server. Please contact your administrator.',
+        message: 'Passkey setup is unavailable on this server. Please contact your Administrator.',
       })
       return
     }
@@ -72,7 +72,7 @@ export async function enrollVerify(req: Request, res: Response) {
       console.error('PASSKEY ENROLL VERIFY — NOT CONFIGURED:', err.message)
       res.status(503).json({
         status:  'error',
-        message: 'Passkey setup is unavailable on this server. Please contact your administrator.',
+        message: 'Passkey setup is unavailable on this server. Please contact your Administrator.',
       })
       return
     }

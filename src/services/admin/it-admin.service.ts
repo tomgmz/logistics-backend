@@ -36,7 +36,7 @@ async function assertNotLastActive(userId: string): Promise<void> {
   const others = await ITAdminModel.countOtherActive(userId)
   if (others === 0) {
     throw coded(
-      'This is the only active IT Admin. Use the transition flow to hand the role ' +
+      'This is the only active IT Administrator. Use the transition flow to hand the role ' +
       'to a successor — removing them outright would leave every staff password ' +
       'reset with nobody able to action it.',
       'LAST_IT_ADMIN',
@@ -54,7 +54,7 @@ async function assertNotLastActive(userId: string): Promise<void> {
 function assertNotSelf(userId: string, actorId?: string | null): void {
   if (actorId && actorId === userId) {
     throw coded(
-      'You cannot deactivate or remove your own IT Admin account.',
+      'You cannot deactivate or remove your own IT Administrator account.',
       'IT_ADMIN_SELF_ACTION',
     )
   }
@@ -66,7 +66,7 @@ export async function getAllITAdmins(actorId?: string | null) {
 
 export async function getITAdminById(userId: string) {
   const itAdmin = await ITAdminModel.findById(userId)
-  if (!itAdmin) throw new Error('IT Admin not found')
+  if (!itAdmin) throw new Error('IT Administrator not found')
   return itAdmin
 }
 
@@ -81,7 +81,7 @@ export async function createITAdmin(
   const active = await ITAdminModel.findActive()
   if (active.length > 0) {
     throw coded(
-      `An active IT Admin already exists (${active[0].email}). The system allows ` +
+      `An active IT Administrator already exists (${active[0].email}). The system allows ` +
       'only one. Use the transition flow to replace them.',
       'IT_ADMIN_EXISTS',
     )
@@ -117,7 +117,7 @@ export async function createITAdmin(
       user_id:     actorId,
       log_type:    'user_management',
       action:      'it_admin_created',
-      description: `IT Admin ${input.email} created (user: ${userId})`,
+      description: `IT Administrator ${input.email} created (user: ${userId})`,
     })
 
     return result
@@ -127,7 +127,7 @@ export async function createITAdmin(
     console.error('IT Admin creation failed, rolling back auth user...', msg)
     const ok = await deleteAuthUserSafely(userId)
     if (!ok) console.error('ROLLBACK FAILED. Orphan auth user with ID:', userId)
-    throw new Error(`IT Admin creation failed: ${msg}`)
+    throw new Error(`IT Administrator creation failed: ${msg}`)
   }
 }
 
@@ -149,7 +149,7 @@ export async function updateITAdmin(
     user_id:     actorId,
     log_type:    'user_management',
     action:      'it_admin_updated',
-    description: `IT Admin ${userId} updated`,
+    description: `IT Administrator ${userId} updated`,
   })
 
   return result
@@ -169,7 +169,7 @@ export async function deleteITAdmin(
     user_id:     actorId,
     log_type:    'user_management',
     action:      'it_admin_deleted',
-    description: `IT Admin ${userId} deleted`,
+    description: `IT Administrator ${userId} deleted`,
   })
 
   return result
@@ -182,7 +182,7 @@ export async function deactivateITAdmin(
   assertNotSelf(userId, actorId)
   await assertNotLastActive(userId)
 
-  const result = await deactivateUserWithBan(userId, 'it_admin', 'it_admin_deactivated', 'IT Admin', actorId)
+  const result = await deactivateUserWithBan(userId, 'it_admin', 'it_admin_deactivated', 'IT Administrator', actorId)
 
   // deactivateUserWithBan flips the status and bans the Supabase Auth identity,
   // but this app issues its own JWTs and `authenticate` only checks the session
@@ -200,7 +200,7 @@ export async function activateITAdmin(
   userId:   string,
   actorId?: string | null,
 ) {
-  return activateUserWithUnban(userId, 'it_admin', 'it_admin_activated', 'IT Admin', actorId)
+  return activateUserWithUnban(userId, 'it_admin', 'it_admin_activated', 'IT Administrator', actorId)
 }
 
 /**
@@ -224,7 +224,7 @@ export async function transitionITAdmin(
   const active = await ITAdminModel.findActive()
   if (active.length === 0) {
     throw coded(
-      'There is no active IT Admin to transition from. Create one instead.',
+      'There is no active IT Administrator to transition from. Create one instead.',
       'NO_ACTIVE_IT_ADMIN',
     )
   }
@@ -233,7 +233,7 @@ export async function transitionITAdmin(
   // leave the other in place.
   if (active.length > 1) {
     throw coded(
-      `Found ${active.length} active IT Admins. Resolve that before transitioning.`,
+      `Found ${active.length} active IT Administrators. Resolve that before transitioning.`,
       'MULTIPLE_ACTIVE_IT_ADMINS',
     )
   }
@@ -269,7 +269,7 @@ export async function transitionITAdmin(
     console.error('IT Admin transition failed, rolling back auth user...', rpcError.message)
     const ok = await deleteAuthUserSafely(incomingId)
     if (!ok) console.error('ROLLBACK FAILED. Orphan auth user with ID:', incomingId)
-    throw new Error(`IT Admin transition failed: ${rpcError.message}`)
+    throw new Error(`IT Administrator transition failed: ${rpcError.message}`)
   }
 
   // Past this point the handover is durable. Everything below is best effort and
@@ -318,7 +318,7 @@ export async function transitionITAdmin(
     log_type:    'user_management',
     action:      'it_admin_transitioned',
     description:
-      `IT Admin role transitioned from ${outgoing.email} (${outgoing.user_id}, now deactivated) ` +
+      `IT Administrator role transitioned from ${outgoing.email} (${outgoing.user_id}, now deactivated) ` +
       `to ${input.email} (${incomingId}). Reason: ${input.reason}`,
   })
 

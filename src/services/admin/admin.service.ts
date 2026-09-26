@@ -12,7 +12,7 @@ export async function getAllAdmin() {
 
 export async function getAdminById(userId: string) {
   const admin = await AdminModel.findById(userId)
-  if (!admin) throw new Error('Admin not found')
+  if (!admin) throw new Error('Administrator not found')
   return admin
 }
 
@@ -49,7 +49,7 @@ export async function createAdmin(input: CreateAdminInput, actorId?: string | nu
       user_id:     actorId,
       log_type:    'user_management',
       action:      'admin_created',
-      description: `Admin ${input.email} created (user: ${userId})`,
+      description: `Administrator ${input.email} created (user: ${userId})`,
 
     })
 
@@ -74,7 +74,7 @@ export async function updateAdmin(userId: string, input: UpdateAdminInput, actor
     user_id:     actorId,
     log_type:    'user_management',
     action:      'admin_updated',
-    description: `Admin ${userId} updated`,
+    description: `Administrator ${userId} updated`,
 
   })
 
@@ -89,7 +89,7 @@ export async function deleteAdmin(userId: string, actorId?: string | null) {
     user_id:     actorId,
     log_type:    'user_management',
     action:      'admin_deleted',
-    description: `Admin ${userId} deleted`,
+    description: `Administrator ${userId} deleted`,
 
   })
 
@@ -97,9 +97,9 @@ export async function deleteAdmin(userId: string, actorId?: string | null) {
 }
 
 export async function deactivateAdmin(userId: string, actorId?: string | null) {
-  return deactivateUserWithBan(userId, 'admin', 'admin_deactivated', 'Admin', actorId)
+  return deactivateUserWithBan(userId, 'admin', 'admin_deactivated', 'Administrator', actorId)
 }
 
 export async function activateAdmin(userId: string, actorId?: string | null) {
-  return activateUserWithUnban(userId, 'admin', 'admin_activated', 'Admin', actorId)
+  return activateUserWithUnban(userId, 'admin', 'admin_activated', 'Administrator', actorId)
 }

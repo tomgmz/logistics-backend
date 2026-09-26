@@ -21,7 +21,7 @@ export async function getAllOperationsAdmins() {
 
 export async function getOperationsAdminById(userId: string) {
   const opsAdmin = await OperationsAdminModel.findById(userId)
-  if (!opsAdmin) throw new Error('Operations Admin not found')
+  if (!opsAdmin) throw new Error('Operations Manager not found')
   return opsAdmin
 }
 
@@ -58,7 +58,7 @@ export async function createOperationsAdmin(dto: BaseCreateDTO, actorId?: string
       user_id:     actorId,
       log_type:    'user_management',
       action:      'operations_admin_created',
-      description: `Operations Admin ${dto.email} created (user: ${userId})`,
+      description: `Operations Manager ${dto.email} created (user: ${userId})`,
   
     })
 
@@ -66,10 +66,10 @@ export async function createOperationsAdmin(dto: BaseCreateDTO, actorId?: string
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
-    console.error('Operations Admin creation failed, rolling back auth user...', msg)
+    console.error('Operations Manager creation failed, rolling back auth user...', msg)
     const ok = await deleteAuthUserSafely(userId)
     if (!ok) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
-    throw new Error(`Operations Admin creation failed: ${msg}`)
+    throw new Error(`Operations Manager creation failed: ${msg}`)
   }
 }
 
@@ -85,7 +85,7 @@ export async function updateOperationsAdmin(userId: string, dto: UpdateOperation
     user_id:     actorId,
     log_type:    'user_management',
     action:      'operations_admin_updated',
-    description: `Operations Admin ${userId} updated`,
+    description: `Operations Manager ${userId} updated`,
 
   })
 
@@ -100,7 +100,7 @@ export async function deleteOperationsAdmin(userId: string, actorId?: string | n
     user_id:     actorId,
     log_type:    'user_management',
     action:      'operations_admin_deleted',
-    description: `Operations Admin ${userId} deleted`,
+    description: `Operations Manager ${userId} deleted`,
 
   })
 
@@ -108,9 +108,9 @@ export async function deleteOperationsAdmin(userId: string, actorId?: string | n
 }
 
 export async function deactivateOperationsAdmin(userId: string, actorId?: string | null) {
-  return deactivateUserWithBan(userId, 'operations_manager', 'operations_admin_deactivated', 'Operations Admin', actorId)
+  return deactivateUserWithBan(userId, 'operations_manager', 'operations_admin_deactivated', 'Operations Manager', actorId)
 }
 
 export async function activateOperationsAdmin(userId: string, actorId?: string | null) {
-  return activateUserWithUnban(userId, 'operations_manager', 'operations_admin_activated', 'Operations Admin', actorId)
+  return activateUserWithUnban(userId, 'operations_manager', 'operations_admin_activated', 'Operations Manager', actorId)
 }

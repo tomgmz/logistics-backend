@@ -17,7 +17,7 @@ export async function getITAdminById(req: Request, res: Response) {
     const data = await ITAdminService.getITAdminById(param(req.params.id))
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
-    const status = err.message === 'IT Admin not found' ? 404 : 500
+    const status = err.message === 'IT Administrator not found' ? 404 : 500
     res.status(status).json({ status: 'error', message: err.message })
   }
 }
@@ -68,7 +68,7 @@ export async function transitionITAdmin(req: Request, res: Response) {
     const data = await ITAdminService.transitionITAdmin(req.body, userId)
     res.status(201).json({
       status:  'success',
-      message: 'IT Admin role transitioned. The outgoing account has been deactivated.',
+      message: 'IT Administrator role transitioned. The outgoing account has been deactivated.',
       data,
     })
   } catch (err: any) {
@@ -91,7 +91,7 @@ export async function deleteITAdmin(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
     await ITAdminService.deleteITAdmin(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'IT Admin deleted successfully' })
+    res.status(200).json({ status: 'success', message: 'IT Administrator deleted successfully' })
   } catch (err: any) {
     res.status(statusForError(err)).json({ status: 'error', code: err.code, message: err.message })
   }
@@ -101,7 +101,7 @@ export async function deactivateITAdmin(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
     const data = await ITAdminService.deactivateITAdmin(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'IT Admin deactivated', data })
+    res.status(200).json({ status: 'success', message: 'IT Administrator deactivated', data })
   } catch (err: any) {
     const status = err.message.includes('not found') ? 404
       : err.message.includes('already') ? 409
@@ -114,7 +114,7 @@ export async function activateITAdmin(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
     const data = await ITAdminService.activateITAdmin(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'IT Admin activated', data })
+    res.status(200).json({ status: 'success', message: 'IT Administrator activated', data })
   } catch (err: any) {
     const status = err.message.includes('not found') ? 404
       : err.message.includes('already') ? 409

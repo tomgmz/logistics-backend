@@ -29,8 +29,8 @@ const GROUP_QUEUE_PATH: Record<ResetHandlerGroup, string> = {
 }
 
 const ROLE_LABELS: Record<string, string> = {
-  admin:              'Company Admin',
-  it_admin:           'IT Admin',
+  admin:              'Company Administrator',
+  it_admin:           'IT Administrator',
   general_manager:    'General Manager',
   fleet_manager:      'Fleet Manager',
   operations_manager: 'Operations Manager',

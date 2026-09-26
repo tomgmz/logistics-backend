@@ -95,8 +95,8 @@ function assertOwnsRequest(request: PasswordResetRequestRow, actor: ResetActor):
   if (!actorGroup || actorGroup !== request.handler_group) {
     const err = new Error(
       request.handler_group === 'company_admin'
-        ? 'Driver and client password resets are handled by the Company Admin.'
-        : 'Staff password resets are handled by the IT Admin.',
+        ? 'Driver and client password resets are handled by the Company Administrator.'
+        : 'Staff password resets are handled by the IT Administrator.',
     )
     ;(err as any).code = 'RESET_WRONG_HANDLER'
     throw err
@@ -410,7 +410,7 @@ export async function completeReset(
     // The password is already changed, which is harmless, but the account stays
     // off and the link is burned.
     await ResetModel.markCompleted(request.request_id).catch(() => {})
-    const err = new Error('This account is no longer active. Please contact your administrator.')
+    const err = new Error('This account is no longer active. Please contact your Administrator.')
     ;(err as any).code = 'RESET_ACCOUNT_INACTIVE'
     throw err
   }
@@ -507,7 +507,7 @@ export async function requestItAdminOtp(input: {
         email,
         attempt_status: 'failed_inactive',
         failure_reason: user
-          ? `Self-service reset code requested by non-IT-Admin account (${user.role})`
+          ? `Self-service reset code requested by non-IT-Administrator account (${user.role})`
           : 'Self-service reset code requested for unknown email',
       })
       return
@@ -595,7 +595,7 @@ export async function requestItAdminOtp(input: {
       user_id:     user.user_id,
       log_type:    'auth',
       action:      'password_reset_otp_sent',
-      description: `Self-service reset code sent to IT Admin ${email}, request ${request.request_id}`,
+      description: `Self-service reset code sent to IT Administrator ${email}, request ${request.request_id}`,
     })
   } catch (err) {
     // Swallowed for the same reason requestPasswordReset swallows: a failure that
@@ -696,7 +696,7 @@ export async function verifyItAdminOtp(input: {
     user_id:     user.user_id,
     log_type:    'auth',
     action:      'password_reset_otp_verified',
-    description: `IT Admin ${email} verified a self-service reset code, request ${request.request_id}`,
+    description: `IT Administrator ${email} verified a self-service reset code, request ${request.request_id}`,
   })
 
   return { token, expires_at: expiresAt.toISOString() }

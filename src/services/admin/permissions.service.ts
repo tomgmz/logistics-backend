@@ -56,7 +56,7 @@ export async function setUserPermissions(
   }
 
   if (await isProtectedAdmin(userId)) {
-    throw new Error('protected: The primary administrator account cannot be restricted.')
+    throw new Error('protected: The primary Administrator account cannot be restricted.')
   }
 
   // Only persist modules this role actually has pages for; drop anything else so

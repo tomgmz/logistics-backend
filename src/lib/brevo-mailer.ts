@@ -339,7 +339,7 @@ export async function sendPasswordResetOtpEmail(
   const copy: OtpCopy = {
     noun:    'password reset code',
     intro:   'Here is your one-time password reset code',
-    because: 'a password reset was requested for your administrator account',
+    because: 'a password reset was requested for your Administrator account',
     minutes: expiresInMinutes,
   }
 
@@ -635,7 +635,7 @@ function generateWelcomeEmailHtml(
               <tr>
                 <td style="padding:0 40px 32px 40px;">
                   <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#666666;line-height:1.6;">
-                    Having trouble signing in? Contact your administrator or reach us at
+                    Having trouble signing in? Contact your Administrator or reach us at
                     <a href="mailto:${APP_SUPPORT_EMAIL}" style="color:#4f46e5;text-decoration:none;">
                       ${APP_SUPPORT_EMAIL}
                     </a>.
@@ -653,7 +653,7 @@ function generateWelcomeEmailHtml(
                     ${PHYSICAL_ADDRESS}
                   </p>
                   <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    This email was sent because an administrator created an account for you.
+                    This email was sent because an Administrator created an account for you.
                     If this was a mistake, contact us immediately.
                   </p>
                 </td>
@@ -702,7 +702,7 @@ Need help? Contact us at ${APP_SUPPORT_EMAIL}.
 ---
 © ${year} ${APP_NAME}. All rights reserved.
 ${PHYSICAL_ADDRESS}
-This email was sent because an administrator created an account for you.
+This email was sent because an Administrator created an account for you.
   `.trim()
 }
 
@@ -960,7 +960,7 @@ function generatePasswordResetEmailHtml(
     <body style="margin:0;padding:0;background-color:#f6f6f6;">
 
       <div style="display:none;font-size:1px;color:#f6f6f6;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
-        Your administrator sent you a link to set a new ${APP_NAME} password — it expires in ${minutes} minutes.
+        Your Administrator sent you a link to set a new ${APP_NAME} password — it expires in ${minutes} minutes.
       </div>
 
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
@@ -988,7 +988,7 @@ function generatePasswordResetEmailHtml(
                     Hi ${name},
                   </p>
                   <p style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
-                    Your administrator has approved your password reset request.
+                    Your Administrator has approved your password reset request.
                   </p>
                   <p style="margin:0 0 28px 0;font-family:Arial,sans-serif;font-size:15px;color:#555555;line-height:1.6;">
                     Use the button below to choose a new password. This link works
@@ -1032,7 +1032,7 @@ function generatePasswordResetEmailHtml(
                         <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.5;">
                           <strong>Do not forward this email.</strong>
                           Anyone with this link can set your password until it is used or expires.
-                          If you did not ask for a reset, contact your administrator immediately.
+                          If you did not ask for a reset, contact your Administrator immediately.
                         </p>
                       </td>
                     </tr>
@@ -1087,7 +1087,7 @@ function generatePasswordResetEmailText(
   return `
 Hi ${name},
 
-Your administrator has approved your password reset request.
+Your Administrator has approved your password reset request.
 
 Open this link to choose a new password:
 
@@ -1097,7 +1097,7 @@ This link works ONCE and expires in ${minutes} minutes. Setting a new password a
 unlocks your account.
 
 DO NOT FORWARD THIS EMAIL. Anyone with this link can set your password until it is
-used or expires. If you did not ask for a reset, contact your administrator immediately.
+used or expires. If you did not ask for a reset, contact your Administrator immediately.
 
 Link expired? Request another reset from the sign-in screen, or reach us at ${APP_SUPPORT_EMAIL}.
 

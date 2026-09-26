@@ -21,7 +21,7 @@ export async function getAllFleetAdmins() {
 
 export async function getFleetAdminById(userId: string) {
   const fleetAdmin = await FleetAdminModel.findById(userId)
-  if (!fleetAdmin) throw new Error('Fleet Admin not found')
+  if (!fleetAdmin) throw new Error('Fleet Manager not found')
   return fleetAdmin
 }
 
@@ -58,7 +58,7 @@ export async function createFleetAdmin(dto: BaseCreateDTO, actorId?: string | nu
       user_id:     actorId,
       log_type:    'user_management',
       action:      'fleet_admin_created',
-      description: `Fleet Admin ${dto.email} created (user: ${userId})`,
+      description: `Fleet Manager ${dto.email} created (user: ${userId})`,
   
     })
 
@@ -66,10 +66,10 @@ export async function createFleetAdmin(dto: BaseCreateDTO, actorId?: string | nu
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
-    console.error('Fleet Admin creation failed, rolling back auth user...', msg)
+    console.error('Fleet Manager creation failed, rolling back auth user...', msg)
     const ok = await deleteAuthUserSafely(userId)
     if (!ok) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
-    throw new Error(`Fleet Admin creation failed: ${msg}`)
+    throw new Error(`Fleet Manager creation failed: ${msg}`)
   }
 }
 
@@ -85,7 +85,7 @@ export async function updateFleetAdmin(userId: string, dto: UpdateFleetAdminDTO,
     user_id:     actorId,
     log_type:    'user_management',
     action:      'fleet_admin_updated',
-    description: `Fleet Admin ${userId} updated`,
+    description: `Fleet Manager ${userId} updated`,
 
   })
 
@@ -100,7 +100,7 @@ export async function deleteFleetAdmin(userId: string, actorId?: string | null) 
     user_id:     actorId,
     log_type:    'user_management',
     action:      'fleet_admin_deleted',
-    description: `Fleet Admin ${userId} deleted`,
+    description: `Fleet Manager ${userId} deleted`,
 
   })
 
@@ -108,9 +108,9 @@ export async function deleteFleetAdmin(userId: string, actorId?: string | null) 
 }
 
 export async function deactivateFleetAdmin(userId: string, actorId?: string | null) {
-  return deactivateUserWithBan(userId, 'fleet_manager', 'fleet_admin_deactivated', 'Fleet Admin', actorId)
+  return deactivateUserWithBan(userId, 'fleet_manager', 'fleet_admin_deactivated', 'Fleet Manager', actorId)
 }
 
 export async function activateFleetAdmin(userId: string, actorId?: string | null) {
-  return activateUserWithUnban(userId, 'fleet_manager', 'fleet_admin_activated', 'Fleet Admin', actorId)
+  return activateUserWithUnban(userId, 'fleet_manager', 'fleet_admin_activated', 'Fleet Manager', actorId)
 }

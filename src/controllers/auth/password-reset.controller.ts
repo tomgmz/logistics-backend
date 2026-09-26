@@ -5,14 +5,14 @@ import * as ResetService from '../../services/auth/password-reset.service.js'
 // tell an unknown address from a real one, a locked account from an active one,
 // or a first request from a repeat.
 const NEUTRAL_REQUEST_MESSAGE =
-  'If that account exists, your administrator has been notified and will send you a reset link.'
+  'If that account exists, your Administrator has been notified and will send you a reset link.'
 
 // The same idea for the IT Admin's code: one answer for a sent code, an address
 // with no account, an address belonging to somebody who is not the IT Admin, a
 // deactivated account, and a resend inside the cooldown. The endpoint must not
 // become a way to ask which mailbox administers the system.
 const NEUTRAL_OTP_MESSAGE =
-  'If that address belongs to an IT Admin account, a 6-digit code is on its way to it.'
+  'If that address belongs to an IT Administrator account, a 6-digit code is on its way to it.'
 
 export async function requestReset(req: Request, res: Response) {
   // The service never throws; it logs and returns so that a failure cannot be

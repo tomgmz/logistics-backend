@@ -153,7 +153,7 @@ router.patch('/general-managers/:id/deactivate', authenticate, isAdmin, lockGuar
 router.patch('/general-managers/:id/activate',   authenticate, isAdmin, lockGuard('user', fromParam('id')), GeneralManagerController.activateGeneralManager)
 router.delete('/general-managers/:id', authenticate, isAdmin, lockGuard('user', fromParam('id')), GeneralManagerController.deleteGeneralManager)
 
-//Fleet Admins — isAdmin manages, isFleet can view
+//Fleet Managers — isAdmin manages, isFleet can view
 router.get('/fleet-admins',        authenticate, isFleet,      FleetAdminController.getAllFleetAdmins)
 router.get('/fleet-admins/:id',    authenticate, isFleet,      FleetAdminController.getFleetAdminById)
 router.post('/fleet-admins',       authenticate, isAdmin, validate(createFleetAdminSchema), FleetAdminController.createFleetAdmin)
@@ -162,7 +162,7 @@ router.patch('/fleet-admins/:id/deactivate', authenticate, isAdmin, lockGuard('u
 router.patch('/fleet-admins/:id/activate',   authenticate, isAdmin, lockGuard('user', fromParam('id')), FleetAdminController.activateFleetAdmin)
 router.delete('/fleet-admins/:id', authenticate, isAdmin, lockGuard('user', fromParam('id')), FleetAdminController.deleteFleetAdmin)
 
-//Operations Admins — isAdmin manages, isOperations can view
+//Operations Managers — isAdmin manages, isOperations can view
 router.get('/operations-admins',        authenticate, isOperations, OperationsAdminController.getAllOperationsAdmins)
 router.get('/operations-admins/:id',    authenticate, isOperations, OperationsAdminController.getOperationsAdminById)
 router.post('/operations-admins',       authenticate, isAdmin,  validate(createOperationsAdminSchema), OperationsAdminController.createOperationsAdmin)

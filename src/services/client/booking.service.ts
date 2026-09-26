@@ -360,7 +360,7 @@ async function routeNewBookingToGm(
       user_id:     userId,
       log_type:    'booking',
       action:      'gm_auto_approved',
-      description: `Booking ${bookingRef(booking)} GM stage auto-cleared (no general manager or proxy staffed)`,
+      description: `Booking ${bookingRef(booking)} General Manager stage auto-cleared (no General Manager or proxy staffed)`,
     })
     await notifyStage('ops_pending', advanced ?? booking)
   } catch (err) {
@@ -432,7 +432,7 @@ export async function updateBookingStatusService(
     log_type:    'booking',
     action:      `booking_${status}`,
     description: status === 'cancelled' && rejectionReason
-      ? `Booking ${bookingRef(booking)} rejected by the administrator: ${rejectionReason}`
+      ? `Booking ${bookingRef(booking)} rejected by the Administrator: ${rejectionReason}`
       : `Booking ${bookingRef(booking)} marked as ${status}`,
 
   })
@@ -449,7 +449,7 @@ export async function updateBookingStatusService(
       user_id:     userId,
       log_type:    'booking',
       action:      'booking_approved_to_ops',
-      description: `Booking ${bookingRef(advanced ?? booking)} approved; routed to operations`,
+      description: `Booking ${bookingRef(advanced ?? booking)} approved; routed to the Operations Manager`,
     })
     void notifyStage('ops_pending', advanced ?? booking)
   }
@@ -503,20 +503,20 @@ export async function gmReviewService(
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
 
   if (existing.gm_status !== 'pending') {
-    throw new Error(`Booking has already been reviewed by the general manager (status: ${existing.gm_status})`)
+    throw new Error(`Booking has already been reviewed by the General Manager (status: ${existing.gm_status})`)
   }
   if (input.gm_status === 'rejected' && !input.rejection_reason?.trim()) {
     throw new Error('Remarks explaining the rejection are required')
   }
 
   const booking = await BookingModel.updateGmStatus(bookingId, input)
-  if (!booking) throw new Error('Failed to update GM status')
+  if (!booking) throw new Error('Failed to update General Manager status')
 
   logEvent({
     user_id:     userId,
     log_type:    'booking',
     action:      `gm_${input.gm_status}`,
-    description: `Booking ${bookingRef(booking)} ${input.gm_status} by GM`,
+    description: `Booking ${bookingRef(booking)} ${input.gm_status} by General Manager`,
 
   })
 

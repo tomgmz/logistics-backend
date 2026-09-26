@@ -65,7 +65,7 @@ export async function latestInspectionFor(truckId: string): Promise<TruckInspect
 export async function assertTruckPassedInspection(truckId: string): Promise<void> {
   const latest = await latestInspectionFor(truckId)
   if (!latest) {
-    throw new Error('This vehicle has not been inspected yet — the fleet manager must run a BLOWBAGETS check before it can be assigned')
+    throw new Error('This vehicle has not been inspected yet — the Fleet Manager must run a BLOWBAGETS check before it can be assigned')
   }
   if (!latest.passed) {
     throw new Error('This vehicle failed its last BLOWBAGETS inspection and cannot be assigned until it passes a re-check')
@@ -125,7 +125,7 @@ async function assertInspectedSinceLastReturn(truckId: string): Promise<void> {
 
   throw new Error(
     'This vehicle has been back in the yard since its last BLOWBAGETS check — ' +
-    'the fleet manager must inspect it again before it can be assigned',
+    'the Fleet Manager must inspect it again before it can be assigned',
   )
 }
 

@@ -16,7 +16,7 @@ export async function getOperationsAdminById(req: Request, res: Response) {
     const data = await OperationsAdminService.getOperationsAdminById(param(req.params.id))
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
-    const status = error.message === 'Operations Admin not found' ? 404 : 500
+    const status = error.message === 'Operations Manager not found' ? 404 : 500
     res.status(status).json({ status: 'error', message: error.message })
   }
 }
@@ -45,7 +45,7 @@ export async function deleteOperationsAdmin(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
     await OperationsAdminService.deleteOperationsAdmin(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'Operations Admin deleted successfully' })
+    res.status(200).json({ status: 'success', message: 'Operations Manager deleted successfully' })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
   }
@@ -55,7 +55,7 @@ export async function deactivateOperationsAdmin(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
     const data = await OperationsAdminService.deactivateOperationsAdmin(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'Operations Admin deactivated', data })
+    res.status(200).json({ status: 'success', message: 'Operations Manager deactivated', data })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404
       : error.message.includes('already') ? 409
@@ -68,7 +68,7 @@ export async function activateOperationsAdmin(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
     const data = await OperationsAdminService.activateOperationsAdmin(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'Operations Admin activated', data })
+    res.status(200).json({ status: 'success', message: 'Operations Manager activated', data })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404
       : error.message.includes('already') ? 409

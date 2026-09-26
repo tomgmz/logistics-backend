@@ -87,7 +87,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       res.status(401).json({
         status:  'error',
         code:    'ACCOUNT_INACTIVE',
-        message: 'Your account is no longer active. Please contact your administrator.',
+        message: 'Your account is no longer active. Please contact your Administrator.',
       })
       return
     }
@@ -197,7 +197,7 @@ export async function isRootAdmin(req: Request, res: Response, next: NextFunctio
   if (!req.user || !(await isProtectedAdmin(req.user.sub))) {
     res.status(403).json({
       status:  'error',
-      message: 'Only the primary administrator account can perform this action.',
+      message: 'Only the primary Administrator account can perform this action.',
     })
     return
   }

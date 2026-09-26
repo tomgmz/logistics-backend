@@ -24,7 +24,7 @@ export async function requireGmApprover(req: Request, res: Response, next: NextF
 
     res.status(403).json({
       status:  'error',
-      message: 'Only the general manager can approve bookings',
+      message: 'Only the General Manager can approve bookings',
     })
   } catch (err) {
     console.error('GM APPROVER MIDDLEWARE ERROR:', err)
