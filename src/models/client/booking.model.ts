@@ -578,6 +578,39 @@ async function setGmStatus(bookingId: string, input: GmReviewInput): Promise<voi
   if (error) throw error
 }
 
+/**
+ * Stamp who made a decision on the booking, the role they made it in, and when.
+ * 'gm' is the approve/reject decision (General Manager, or the Company Admin on
+ * their own authority); 'ops' is the driver-and-vehicle assignment. The role is
+ * copied at write time so a later role change can't rewrite the record.
+ * No actor (a scheduler, a script) means nothing to attribute: a no-op.
+ *
+ * Never throws. The decision itself is already committed by the time this
+ * runs, and failing to label it must not turn a successful approval into an
+ * error for the person who made it.
+ */
+async function recordDecision(bookingId: string, stage: 'gm' | 'ops', userId: string | null | undefined): Promise<void> {
+  if (!userId) return
+  try {
+    const { data: actor, error: actorErr } = await supabase
+      .from('users')
+      .select('role')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (actorErr) throw actorErr
+
+    const now = new Date().toISOString()
+    const fields = stage === 'gm'
+      ? { gm_reviewed_by: userId, gm_reviewed_at: now, gm_reviewed_role: actor?.role ?? null }
+      : { ops_assigned_by: userId, ops_assigned_at: now, ops_assigned_role: actor?.role ?? null }
+
+    const { error } = await supabase.from('bookings').update(fields).eq('booking_id', bookingId)
+    if (error) throw error
+  } catch (err) {
+    console.error('[booking] failed to record decision attribution', bookingId, stage, err)
+  }
+}
+
 async function updateOpsStatus(
   bookingId: string,
   input: OpsAssignInput,
@@ -967,6 +1000,7 @@ export const BookingModel = {
   setGmStatus,
   updateOpsStatus,
   markFleetRecheckSent,
+  recordDecision,
   remove,
   settleDelivery,
   setPickupProof,

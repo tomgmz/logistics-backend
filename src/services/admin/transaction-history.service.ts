@@ -138,13 +138,76 @@ export interface TransactionRecord {
   trips:       TripWithStops[]
   /** Incidents the driver raised against this booking, with their media. */
   reports:     DriverReport[]
-  /** BLOWBAGETS inspections of the assigned vehicle that cover this job. */
-  inspections: InspectionModel.TruckInspection[]
+  /** The passed BLOWBAGETS inspection the vehicle was assigned on. */
+  inspection:  InspectionModel.TruckInspection | null
+  /** Who approved/rejected, who assigned, who cancelled — with role and time. */
+  approvals:   TransactionApprovals
+}
+
+export interface DecisionActor {
+  name: string | null
+  /** users.role the person acted in. */
+  role: string | null
+  at:   string | null
+}
+
+export interface TransactionApprovals {
+  /** The approve/reject decision: General Manager, or Company Admin on their own authority. */
+  review:     (DecisionActor & { outcome: string | null }) | null
+  /** The driver-and-vehicle assignment. */
+  assignment: DecisionActor | null
+  /** A cancellation or Company Admin rejection. */
+  cancelled:  DecisionActor | null
+}
+
+/**
+ * Resolve the decision columns into names. Tolerates a database without the
+ * 20260928000000 attribution columns (answers with nothing rather than failing
+ * the whole record), so this can ship ahead of the migration.
+ */
+async function loadApprovals(bookingId: string): Promise<TransactionApprovals> {
+  const empty: TransactionApprovals = { review: null, assignment: null, cancelled: null }
+  const { data: b, error } = await supabase
+    .from('bookings')
+    .select('gm_status, gm_reviewed_by, gm_reviewed_at, gm_reviewed_role, ops_assigned_by, ops_assigned_at, ops_assigned_role, cancelled_by, cancelled_at')
+    .eq('booking_id', bookingId)
+    .maybeSingle()
+  if (error) {
+    console.error('[transaction-history] approvals unavailable', error.message)
+    return empty
+  }
+  if (!b) return empty
+
+  const ids = [b.gm_reviewed_by, b.ops_assigned_by, b.cancelled_by].filter((x): x is string => !!x)
+  const people = new Map<string, { name: string | null; role: string | null }>()
+  if (ids.length) {
+    const { data: users, error: usersErr } = await supabase
+      .from('users')
+      .select('user_id, first_name, last_name, role')
+      .in('user_id', [...new Set(ids)])
+    if (usersErr) throw usersErr
+    for (const u of users ?? []) {
+      const name = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || null
+      people.set(u.user_id as string, { name, role: (u.role as string) ?? null })
+    }
+  }
+
+  const who = (id: string | null, at: string | null, role?: string | null): DecisionActor | null =>
+    id || at
+      ? { name: id ? people.get(id)?.name ?? null : null, role: role ?? (id ? people.get(id)?.role ?? null : null), at }
+      : null
+
+  const review = who(b.gm_reviewed_by, b.gm_reviewed_at, b.gm_reviewed_role)
+  return {
+    review:     review ? { ...review, outcome: (b.gm_status as string) ?? null } : null,
+    assignment: who(b.ops_assigned_by, b.ops_assigned_at, b.ops_assigned_role),
+    cancelled:  who(b.cancelled_by, b.cancelled_at),
+  }
 }
 
 /**
  * Everything attached to one booking that the list row does not carry: the
- * crew and vehicle, trip proof photos, driver reports and vehicle inspections.
+ * crew and vehicle, trip proof photos, driver reports and the vehicle's inspection.
  *
  * Fetched per booking when a row is opened, not joined into the list — the
  * list is paged 20 at a time and none of this is needed to render a row.
@@ -159,26 +222,33 @@ export async function getTransactionRecordService(bookingId: string): Promise<Tr
   if (error) throw error
   if (!booking) return null
 
-  const [delivery, trips, reports] = await Promise.all([
+  const [delivery, trips, reports, approvals] = await Promise.all([
     AssignmentModel.findByBookingId(bookingId),
     TripModel.findByBookingId(bookingId),
     ReportModel.findByBookingId(bookingId),
+    loadApprovals(bookingId),
   ])
 
-  // Inspections belong to the vehicle, not the booking, so the ones that matter
-  // are picked by time: the last one before the booking existed (what the truck
-  // was assigned on) plus every one up to the fleet return.
-  let inspections: InspectionModel.TruckInspection[] = []
+  // Inspections belong to the vehicle, not the booking. The one that matters is
+  // the pass the vehicle was assigned on: the latest passed inspection at or
+  // before the moment it went onto this booking.
+  let inspection: InspectionModel.TruckInspection | null = null
   const truckId = delivery?.truck_id ?? null
   if (truckId) {
-    const all   = await InspectionModel.listForTruck(truckId, 100)
-    const start = new Date(booking.created_at as string).getTime()
-    const end   = booking.fleet_return_at ? new Date(booking.fleet_return_at as string).getTime() : Date.now()
-    const at    = (i: InspectionModel.TruckInspection) => new Date(i.inspected_at).getTime()
-    const during = all.filter((i) => at(i) >= start && at(i) <= end)
-    const prior  = all.find((i) => at(i) < start)
-    inspections = [...(prior ? [prior] : []), ...during.reverse()]
+    const { data: ta, error: taErr } = await supabase
+      .from('truck_assignments')
+      .select('assigned_at')
+      .eq('booking_id', bookingId)
+      .eq('truck_id', truckId)
+      .order('assigned_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (taErr) throw taErr
+
+    const assignedAt = new Date((ta?.assigned_at ?? delivery?.created_at) as string).getTime()
+    const all = await InspectionModel.listForTruck(truckId, 100)
+    inspection = all.find((i) => i.passed && new Date(i.inspected_at).getTime() <= assignedAt) ?? null
   }
 
-  return { delivery, trips, reports, inspections }
+  return { delivery, trips, reports, inspection, approvals }
 }

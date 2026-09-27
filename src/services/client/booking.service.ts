@@ -444,6 +444,8 @@ export async function updateBookingStatusService(
     if (existing.gm_status === 'pending') {
       await BookingModel.setGmStatus(bookingId, { gm_status: 'approved' })
     }
+    // The Company Admin approved it on their own authority; record that it was them.
+    await BookingModel.recordDecision(bookingId, 'gm', userId)
     const advanced = await BookingModel.findById(bookingId)
     logEvent({
       user_id:     userId,
@@ -511,6 +513,7 @@ export async function gmReviewService(
 
   const booking = await BookingModel.updateGmStatus(bookingId, input)
   if (!booking) throw new Error('Failed to update General Manager status')
+  await BookingModel.recordDecision(bookingId, 'gm', userId)
 
   logEvent({
     user_id:     userId,

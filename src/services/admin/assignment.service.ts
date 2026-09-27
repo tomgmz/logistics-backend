@@ -185,6 +185,7 @@ export async function assignBookingService(
 
   // The booking is now crewed: tell the driver they have a delivery, and tell the
   // fleet manager one of their vehicles has been taken.
+  await BookingModel.recordDecision(bookingId, 'ops', userId)
   const advanced = await BookingModel.updateOpsStatus(bookingId, { ops_status: 'assigned' })
   const booking  = advanced ?? (await BookingModel.findById(bookingId))
   if (booking) {
