@@ -1,4 +1,6 @@
-export type BookingStatus      = 'pending' | 'approved' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
+// 'delivered': the driver finished every drop-off; 'completed' once the client
+// (or staff for them, or the 3-day auto-complete) confirms it.
+export type BookingStatus      = 'pending' | 'approved' | 'assigned' | 'in_transit' | 'delivered' | 'completed' | 'cancelled'
 export type DestinationStatus  = 'pending' | 'delivered' | 'failed'
 export type GmStatus           = 'pending' | 'approved' | 'rejected'
 export type OpsStatus          = 'pending' | 'assigned'

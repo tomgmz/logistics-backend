@@ -277,7 +277,7 @@ export async function optimizeBookingRouteService(
     throw new Error('Booking has no destinations to optimize')
   }
 
-  if (booking.status === 'completed' || booking.status === 'cancelled') {
+  if (booking.status === 'delivered' || booking.status === 'completed' || booking.status === 'cancelled') {
     throw new Error(`Cannot optimize a ${booking.status} booking`)
   }
 

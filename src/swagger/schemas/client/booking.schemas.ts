@@ -40,14 +40,14 @@ export const bookingSchemas = {
       cargo_details:      { type: 'string', nullable: true, example: 'Fragile electronics' },
       schedule_date:      { type: 'string', format: 'date', example: '2027-01-15' },
       call_time:          { type: 'string', example: '08:00' },
-      status:             { type: 'string', enum: ['pending', 'assigned', 'in_transit', 'completed', 'cancelled'], example: 'assigned' },
+      status:             { type: 'string', enum: ['pending', 'assigned', 'in_transit', 'delivered', 'completed', 'cancelled'], example: 'assigned' },
     },
   },
   UpdateBookingStatusRequest: {
     type: 'object',
     required: ['status'],
     properties: {
-      status: { type: 'string', enum: ['pending', 'assigned', 'in_transit', 'completed', 'cancelled'], example: 'in_transit' },
+      status: { type: 'string', enum: ['pending', 'assigned', 'in_transit', 'delivered', 'completed', 'cancelled'], example: 'in_transit' },
     },
   },
   UpdateDestinationRequest: {
@@ -95,7 +95,7 @@ export const bookingSchemas = {
       cargo_details:       { type: 'string', nullable: true,       example: 'Fragile electronics' },
       schedule_date:       { type: 'string', format: 'date',       example: '2027-01-15' },
       call_time:           { type: 'string',                       example: '08:00' },
-      status:              { type: 'string', enum: ['pending', 'assigned', 'in_transit', 'completed', 'cancelled'], example: 'pending' },
+      status:              { type: 'string', enum: ['pending', 'assigned', 'in_transit', 'delivered', 'completed', 'cancelled'], example: 'pending' },
       required_weight_kg:  { type: 'number', nullable: true,       example: 1500.50 },
       required_volume_cbm: { type: 'number', nullable: true,       example: 12.5 },
       required_length_cm:  { type: 'number', nullable: true,       example: 600 },

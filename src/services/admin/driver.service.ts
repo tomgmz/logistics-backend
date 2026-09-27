@@ -200,7 +200,7 @@ async function liveDeliveryFor(driverId: string): Promise<{ reference: string } 
   for (const row of (data ?? []) as any[]) {
     const booking = row.bookings
     if (!booking?.status) continue
-    if (booking.status === 'completed' || booking.status === 'cancelled') continue
+    if (booking.status === 'delivered' || booking.status === 'completed' || booking.status === 'cancelled') continue
     return { reference: bookingRef({ ...booking, booking_id: row.booking_id }) }
   }
   return null

@@ -11,6 +11,7 @@ import {
   updateDestinationSchema,
   updateDestinationStatusSchema,
   gmReviewSchema,
+  reportDeliveryIssueSchema,
 } from '../schema/client/booking.schema.js'
 import * as BookingController from '../controllers/client/booking.controller.js'
 import * as TrackingController from '../controllers/driver/tracking.controller.js'
@@ -75,6 +76,15 @@ router.delete('/:id',           authenticate, authenticatedLimiter, isClient, at
 //
 // `requireGmApprover` admits the general manager, admins, and any user the IT
 router.patch('/:id/gm-review', authenticate, authenticatedLimiter, requireGmApprover, lockGuard('booking', fromParam('id')), validate(gmReviewSchema), BookingController.gmReview)
+
+// Completion is the client's call once the driver has finished. The client
+// confirms their own booking (attachClientScope scopes them to it); the Company
+// Administrator and Operations Manager may confirm for them. No lockGuard: this
+// is a single guarded transition, and a staff member merely viewing the booking
+// must not lock the client out of confirming it.
+const canConfirmCompletion = authorize('client', 'admin', 'operations_manager')
+router.post('/:id/confirm-completion', authenticate, authenticatedLimiter, canConfirmCompletion, attachClientScope, BookingController.confirmCompletion)
+router.post('/:id/report-issue',       authenticate, authenticatedLimiter, authorize('client'), attachClientScope, validate(reportDeliveryIssueSchema), BookingController.reportDeliveryIssue)
 
 // Same story one level down: `isAdmin` admits clients, so these need the stop's
 // parent booking checked against the caller's own company too.

@@ -30,7 +30,7 @@ async function assertBookingAssignable(bookingId: string): Promise<{ scheduleDat
   if (error) throw error
   if (!data) throw new Error(`Booking with ID ${bookingId} not found`)
 
-  const nonAssignable = ['completed', 'cancelled']
+  const nonAssignable = ['delivered', 'completed', 'cancelled']
   if (nonAssignable.includes(data.status)) {
     throw new Error(`Cannot assign a booking with status '${data.status}'`)
   }

@@ -12,6 +12,8 @@ import {
   updateBookingStatusService,
   deleteBookingService,
   gmReviewService,
+  confirmCompletionService,
+  reportDeliveryIssueService,
   getDestinationsByBookingService,
   updateDestinationService,
   updateDestinationStatusService,
@@ -347,5 +349,32 @@ export const deleteCargoItem = async (req: Request, res: Response) => {
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
     res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+/** The client (or staff for them) confirms a delivered booking is complete. */
+export const confirmCompletion = async (req: Request, res: Response) => {
+  try {
+    const { userId } = getRequestMeta(req)
+    const booking = await confirmCompletionService(param(req.params.id), viewerFrom(req), userId)
+    res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    const isNotFound  = error.message.includes('not found')
+    const isForbidden = error.message.startsWith('Only ')
+    const isBad       = error.message.startsWith('Cannot confirm')
+    res.status(isNotFound ? 404 : isForbidden ? 403 : isBad ? 400 : 500).json({ status: 'error', message: error.message })
+  }
+}
+
+/** The client reports that a delivered booking is not right. */
+export const reportDeliveryIssue = async (req: Request, res: Response) => {
+  try {
+    const { userId } = getRequestMeta(req)
+    const booking = await reportDeliveryIssueService(param(req.params.id), req.body.note, viewerFrom(req), userId)
+    res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    const isNotFound  = error.message.includes('not found')
+    const isForbidden = error.message.startsWith('Only ')
+    const isBad       = error.message.startsWith('A problem can only')
+    res.status(isNotFound ? 404 : isForbidden ? 403 : isBad ? 400 : 500).json({ status: 'error', message: error.message })
   }
 }

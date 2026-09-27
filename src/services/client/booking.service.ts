@@ -13,7 +13,7 @@ import { invalidateEta } from '../maps/eta.service.js'
 import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 import { logEvent } from '../../lib/log-event.js'
 import { badRequest } from '../../lib/http-error.js'
-import { bookingRef } from '../../lib/booking-ref.js'
+import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay, phDay } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers } from '../notification/notification.service.js'
 import { crewOnBooking, releaseCrew } from '../admin/fleet-availability.service.js'
@@ -60,7 +60,7 @@ function validateScheduleDate(scheduleDate: string): void {
   }
 }
 
-const NON_DELETABLE_STATUSES = ['approved', 'assigned', 'in_transit', 'completed']
+const NON_DELETABLE_STATUSES = ['approved', 'assigned', 'in_transit', 'delivered', 'completed']
 
 /**
  * Who is asking, resolved from the session by `attachClientScope`.
@@ -409,11 +409,21 @@ export async function updateBookingStatusService(
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
   assertBookingOwnership(existing, viewer)
 
-  const statusOrder  = ['pending', 'approved', 'assigned', 'in_transit', 'completed', 'cancelled']
+  const statusOrder  = ['pending', 'approved', 'assigned', 'in_transit', 'delivered', 'completed', 'cancelled']
   const currentIndex = statusOrder.indexOf(existing.status)
   const newIndex     = statusOrder.indexOf(status)
 
   if (newIndex === currentIndex) return existing
+
+  // Past the drop-offs, the only way forward is confirmation. The crew is
+  // already released and the delivery settled, so none of the completion side
+  // effects below may run a second time.
+  if (status === 'completed' && existing.status === 'delivered') {
+    return confirmCompletionService(bookingId, viewer, userId)
+  }
+  if (status === 'delivered') {
+    throw new Error("Cannot change status to 'delivered' by hand — it is set when the driver finishes the last drop-off")
+  }
 
   if (newIndex < currentIndex && status !== 'cancelled') {
     throw new Error(`Cannot change status from '${existing.status}' back to '${status}'`)
@@ -678,7 +688,7 @@ export async function driverConfirmPickupService(
 ): Promise<BookingWithRelations> {
   const booking = await assertDriverOnBooking(bookingId, actor)
 
-  if (booking.status === 'in_transit' || booking.status === 'completed') return booking
+  if (booking.status === 'in_transit' || booking.status === 'delivered' || booking.status === 'completed') return booking
   if (booking.status !== 'assigned') {
     throw new Error(`Cannot confirm pickup while the booking is '${booking.status}'`)
   }
@@ -756,7 +766,7 @@ export async function driverConfirmDeliveryService(
     throw new Error(`Destination with ID ${destinationId} not found on this booking`)
   }
   if (destination.status === 'delivered') return destination
-  if (booking.status !== 'in_transit' && booking.status !== 'completed') {
+  if (booking.status !== 'in_transit' && booking.status !== 'delivered' && booking.status !== 'completed') {
     throw new Error('Confirm the pickup before marking a drop-off as delivered')
   }
   if (!proofPhotoUrl) {
@@ -835,7 +845,7 @@ export async function driverCompleteBookingService(
 ): Promise<BookingWithRelations> {
   const booking = await assertDriverOnBooking(bookingId, actor)
 
-  if (booking.status === 'completed') return booking
+  if (booking.status === 'delivered' || booking.status === 'completed') return booking
   if (booking.status !== 'in_transit') {
     throw new Error(`Cannot complete a booking that is '${booking.status}'`)
   }
@@ -849,15 +859,18 @@ export async function driverCompleteBookingService(
     throw new Error(`${remaining.length} drop-off(s) still pending — confirm every drop-off before completing`)
   }
 
-  const updated = await BookingModel.updateStatus(bookingId, 'completed')
+  // The driver's part is done, but completion is the client's call: the booking
+  // waits at 'delivered' for their confirmation (or the 3-day auto-complete).
+  const updated = await BookingModel.markDelivered(bookingId)
   if (!updated) throw new Error('Failed to update booking status')
 
   logEvent({
     user_id:     actor.userId,
     log_type:    'booking',
-    action:      'driver_booking_completed',
-    description: `Driver marked booking ${bookingRef(updated)} as completed`,
+    action:      'driver_booking_delivered',
+    description: `Driver finished every drop-off on booking ${bookingRef(updated)}; awaiting the client's confirmation`,
   })
+  void notifyStage('delivery_confirm', updated)
 
   // Close the delivery record before the crew is released — once the driver is
   // off the booking, `crewOnBooking` is the only thing that still knows who was
@@ -932,4 +945,104 @@ export async function deleteCargoItemService(
   })
 
   return result
+}
+
+/* ── Completion: the client's call ────────────────────────────────────────── */
+
+/** Days after delivery before an unconfirmed, undisputed booking completes itself. */
+export const AUTO_COMPLETE_DAYS = 3
+
+/** Who may confirm a delivered booking: its client, or staff on the client's behalf. */
+const COMPLETION_CONFIRMERS = new Set(['client', 'admin', 'operations_manager'])
+
+/**
+ * Confirm a delivered booking is complete.
+ *
+ * The client confirms their own; the Company Administrator or Operations
+ * Manager can confirm for them (the client said so by phone, or does not use
+ * the app). Staff confirming also resolves a problem the client reported —
+ * that is how a disputed booking is closed. A client with an open report can
+ * still confirm, which withdraws it.
+ */
+export async function confirmCompletionService(
+  bookingId: string,
+  viewer:    BookingViewer,
+  userId?:   string | null,
+): Promise<BookingWithRelations> {
+  const existing = await BookingModel.findById(bookingId)
+  if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
+  assertBookingOwnership(existing, viewer)
+
+  if (!COMPLETION_CONFIRMERS.has(viewer.role)) {
+    throw new Error('Only the client, the Company Administrator or the Operations Manager can confirm completion')
+  }
+  if (existing.status === 'completed') return existing
+  if (existing.status !== 'delivered') {
+    throw new Error(`Cannot confirm completion while the booking is '${existing.status}' — the driver has not finished yet`)
+  }
+
+  const done    = await BookingModel.markCompleted(bookingId, { by: userId ?? null, role: viewer.role, auto: false })
+  const booking = (await BookingModel.findById(bookingId)) ?? existing
+  if (!done) return booking // someone else confirmed first
+
+  const byClient = viewer.role === 'client'
+  const disputed = !!(existing as { client_issue_reported_at?: string | null }).client_issue_reported_at
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      byClient ? 'booking_completion_confirmed_by_client' : 'booking_completion_confirmed_by_staff',
+    description: byClient
+      ? `Client confirmed booking ${bookingRef(booking)} is complete`
+      : `Booking ${bookingRef(booking)} confirmed complete on the client's behalf` +
+        (disputed ? ' (resolving the problem the client reported)' : ''),
+  })
+
+  return booking
+}
+
+/**
+ * The client says the delivery is not right. The booking stays 'delivered'
+ * (auto-complete is held) and operations is told so someone follows up.
+ */
+export async function reportDeliveryIssueService(
+  bookingId: string,
+  note:      string,
+  viewer:    BookingViewer,
+  userId?:   string | null,
+): Promise<BookingWithRelations> {
+  const existing = await BookingModel.findById(bookingId)
+  if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
+  assertBookingOwnership(existing, viewer)
+
+  if (viewer.role !== 'client') {
+    throw new Error('Only the client can report a problem with their delivery')
+  }
+  if (existing.status !== 'delivered') {
+    throw new Error(`A problem can only be reported on a delivered booking (this one is '${existing.status}')`)
+  }
+
+  const clean   = note.trim()
+  const booking = (await BookingModel.reportClientIssue(bookingId, clean, userId ?? null)) ?? existing
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      'booking_delivery_issue_reported',
+    description: `Client reported a problem with booking ${bookingRef(booking)}: ${clean}`,
+  })
+  void notifyStage('delivery_issue', booking, { reason: clean })
+
+  return booking
+}
+
+/** The scheduler's auto-complete. No actor: recorded as automatic. */
+export async function autoCompleteBookingService(bookingId: string): Promise<boolean> {
+  const done = await BookingModel.markCompleted(bookingId, { by: null, role: null, auto: true })
+  if (!done) return false
+  logEvent({
+    log_type:    'booking',
+    action:      'booking_auto_completed',
+    description: `Booking ${await bookingRefById(bookingId)} completed automatically — no confirmation or problem report within ${AUTO_COMPLETE_DAYS} days of delivery`,
+  })
+  return true
 }

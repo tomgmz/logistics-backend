@@ -158,6 +158,10 @@ export interface TransactionApprovals {
   assignment: DecisionActor | null
   /** A cancellation or Company Admin rejection. */
   cancelled:  DecisionActor | null
+  /** Who confirmed completion; `auto` when it completed on its own after 3 days. */
+  completion: (DecisionActor & { auto: boolean }) | null
+  /** A problem the client reported instead of confirming. */
+  issue:      { note: string; at: string | null } | null
 }
 
 /**
@@ -166,10 +170,10 @@ export interface TransactionApprovals {
  * the whole record), so this can ship ahead of the migration.
  */
 async function loadApprovals(bookingId: string): Promise<TransactionApprovals> {
-  const empty: TransactionApprovals = { review: null, assignment: null, cancelled: null }
+  const empty: TransactionApprovals = { review: null, assignment: null, cancelled: null, completion: null, issue: null }
   const { data: b, error } = await supabase
     .from('bookings')
-    .select('gm_status, gm_reviewed_by, gm_reviewed_at, gm_reviewed_role, ops_assigned_by, ops_assigned_at, ops_assigned_role, cancelled_by, cancelled_at')
+    .select('gm_status, gm_reviewed_by, gm_reviewed_at, gm_reviewed_role, ops_assigned_by, ops_assigned_at, ops_assigned_role, cancelled_by, cancelled_at, completion_confirmed_by, completion_confirmed_role, completion_confirmed_at, completion_auto, client_issue_note, client_issue_reported_at')
     .eq('booking_id', bookingId)
     .maybeSingle()
   if (error) {
@@ -178,7 +182,7 @@ async function loadApprovals(bookingId: string): Promise<TransactionApprovals> {
   }
   if (!b) return empty
 
-  const ids = [b.gm_reviewed_by, b.ops_assigned_by, b.cancelled_by].filter((x): x is string => !!x)
+  const ids = [b.gm_reviewed_by, b.ops_assigned_by, b.cancelled_by, b.completion_confirmed_by].filter((x): x is string => !!x)
   const people = new Map<string, { name: string | null; role: string | null }>()
   if (ids.length) {
     const { data: users, error: usersErr } = await supabase
@@ -202,6 +206,10 @@ async function loadApprovals(bookingId: string): Promise<TransactionApprovals> {
     review:     review ? { ...review, outcome: (b.gm_status as string) ?? null } : null,
     assignment: who(b.ops_assigned_by, b.ops_assigned_at, b.ops_assigned_role),
     cancelled:  who(b.cancelled_by, b.cancelled_at),
+    completion: b.completion_confirmed_at
+      ? { ...who(b.completion_confirmed_by, b.completion_confirmed_at, b.completion_confirmed_role)!, auto: !!b.completion_auto }
+      : null,
+    issue: b.client_issue_note ? { note: b.client_issue_note as string, at: (b.client_issue_reported_at as string) ?? null } : null,
   }
 }
 

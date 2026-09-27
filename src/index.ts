@@ -22,6 +22,7 @@ import notificationsRoutes from './routes/notifications.routes.js'
 import transactionHistoryRoutes from './routes/transaction-history.routes.js'
 import lockRoutes from './routes/locks.routes.js'
 import { startFleetRecheckScheduler } from './services/notification/fleet-recheck.scheduler.js'
+import { startCompletionScheduler } from './services/notification/completion.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
 import { reportEmailLinkBaseUrl } from './lib/brevo-mailer.js'
 import { reportWebauthnConfig } from './lib/webauthn-config.js'
@@ -198,6 +199,7 @@ app.listen(PORT, '0.0.0.0', () => {
   // Reminds the fleet manager to re-run BLOWBAGETS the day before a booking
   // dispatches and again on the day itself.
   startFleetRecheckScheduler();
+  startCompletionScheduler();
 
   // Drops driver position breadcrumbs past their retention window. The live
   // position table is one row per driver and never needs pruning; the history

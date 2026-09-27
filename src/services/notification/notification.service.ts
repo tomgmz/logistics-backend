@@ -70,6 +70,10 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   // The driver confirmed the vehicle is back; its pass has expired and the Fleet
   // Manager (plus the Company Administrator, appended as always) must re-check it.
   vehicle_returned: { type: 'booking.vehicle_returned', roles: ['fleet_manager'], target: 'vehicle' },
+  // Completion is the client's call once the driver is done.
+  delivery_confirm:          { type: 'booking.delivery_confirm',          audience: 'client' },
+  delivery_confirm_reminder: { type: 'booking.delivery_confirm_reminder', audience: 'client' },
+  delivery_issue:            { type: 'booking.delivery_issue',            roles: ['operations_manager'] },
 }
 
 // Route map per role so a notification tap lands on the right dashboard page.
@@ -143,6 +147,23 @@ function copyFor(
         body:  extra?.window === 'day_of'
           ? `Booking ${label} dispatches today. Run BLOWBAGETS on ${extra?.vehicleLabel ?? 'the assigned vehicle'} before it rolls out.`
           : `Booking ${label} dispatches tomorrow. Re-run BLOWBAGETS on ${extra?.vehicleLabel ?? 'the assigned vehicle'} so any fault can still be fixed.`,
+      }
+    case 'delivery_confirm':
+      return {
+        title: 'Delivery finished — please confirm',
+        body:  `The driver has finished every drop-off for booking ${label}. Confirm it is complete, or report a problem. ` +
+               'It completes automatically in 3 days if nothing is reported.',
+      }
+    case 'delivery_confirm_reminder':
+      return {
+        title: 'Booking completes tomorrow',
+        body:  `Booking ${label} will be marked complete automatically tomorrow. Report a problem before then if something is wrong.`,
+      }
+    case 'delivery_issue':
+      return {
+        title: 'Client reported a problem with a delivery',
+        body:  `The client reported a problem with booking ${label}${reason ? `: ${reason}` : '.'} ` +
+               'It will not complete until you confirm it.',
       }
     case 'vehicle_returned':
       return {

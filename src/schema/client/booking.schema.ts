@@ -169,6 +169,11 @@ export const updateBookingStatusSchema = z.object({
 // The general manager's decision — the single approval gate on a booking. A
 // rejection must carry the GM's remarks; the client sees them in the rejection
 // notification and on the booking record.
+/** The client's account of what went wrong, sent instead of confirming. */
+export const reportDeliveryIssueSchema = z.object({
+  note: z.string().trim().min(5, 'Describe the problem in a few words').max(1000),
+})
+
 export const gmReviewSchema = z.object({
   gm_status:        z.enum(['approved', 'rejected']),
   rejection_reason: z.string().min(1).optional(),

@@ -14,7 +14,7 @@ import { supabase } from './supabase.js'
  */
 
 /** Bookings that are over. A delivery on one of these holds nobody. */
-const FINISHED_BOOKING_STATUSES = ['completed', 'cancelled']
+const FINISHED_BOOKING_STATUSES = ['delivered', 'completed', 'cancelled']
 
 /**
  * The booking whose vehicle has not been brought back yet.
@@ -60,7 +60,8 @@ async function unreturnedBy(
     // which delivery rows come back, only which embeds are populated.
     .select('driver_id, truck_id, bookings!inner ( booking_id, reference_number, status, fleet_return_at )')
     .in(column, ids)
-    .eq('bookings.status', 'completed')
+    // Done delivering, whether or not the client has confirmed yet.
+    .in('bookings.status', ['delivered', 'completed'])
     .is('bookings.fleet_return_at', null)
 
   if (error) throw error

@@ -69,6 +69,12 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   pickup_proof_distance_m,
   pickup_proof_override_reason,
   fleet_return_at,
+  delivered_at,
+  completion_confirmed_at,
+  completion_confirmed_role,
+  completion_auto,
+  client_issue_note,
+  client_issue_reported_at,
   created_at,
   updated_at,
   clients (
@@ -579,6 +585,86 @@ async function setGmStatus(bookingId: string, input: GmReviewInput): Promise<voi
 }
 
 /**
+ * The driver finished the last drop-off. Starts the client's 3-day window.
+ * Guarded on 'in_transit' so a retried call cannot restart the clock.
+ */
+async function markDelivered(bookingId: string): Promise<BookingWithRelations | null> {
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('bookings')
+    .update({ status: 'delivered', delivered_at: now, updated_at: now })
+    .eq('booking_id', bookingId)
+    .eq('status', 'in_transit')
+  if (error) throw error
+  return findById(bookingId)
+}
+
+/**
+ * Close a delivered booking. `by` is the client or staff member who confirmed;
+ * null with `auto` is the 3-day auto-complete. Guarded on 'delivered', so two
+ * confirmations racing each other complete it once and the loser gets false.
+ */
+async function markCompleted(
+  bookingId: string,
+  opts: { by: string | null; role: string | null; auto: boolean },
+): Promise<boolean> {
+  const now = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('bookings')
+    .update({
+      status:                    'completed',
+      completion_confirmed_by:   opts.by,
+      completion_confirmed_role: opts.role,
+      completion_confirmed_at:   now,
+      completion_auto:           opts.auto,
+      updated_at:                now,
+    })
+    .eq('booking_id', bookingId)
+    .eq('status', 'delivered')
+    .select('booking_id')
+  if (error) throw error
+  return (data ?? []).length > 0
+}
+
+/** The client's report that the delivery is not right. Holds auto-completion. */
+async function reportClientIssue(bookingId: string, note: string, by: string | null): Promise<BookingWithRelations | null> {
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('bookings')
+    .update({
+      client_issue_note:        note,
+      client_issue_reported_at: now,
+      client_issue_reported_by: by,
+      updated_at:               now,
+    })
+    .eq('booking_id', bookingId)
+    .eq('status', 'delivered')
+  if (error) throw error
+  return findById(bookingId)
+}
+
+/** Delivered bookings with no open problem — the auto-complete scheduler's queue. */
+async function findAwaitingCompletion(): Promise<Array<{
+  booking_id: string; delivered_at: string | null; completion_reminder_sent_at: string | null
+}>> {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('booking_id, delivered_at, completion_reminder_sent_at')
+    .eq('status', 'delivered')
+    .is('client_issue_reported_at', null)
+  if (error) throw error
+  return data ?? []
+}
+
+async function markCompletionReminderSent(bookingId: string): Promise<void> {
+  const { error } = await supabase
+    .from('bookings')
+    .update({ completion_reminder_sent_at: new Date().toISOString() })
+    .eq('booking_id', bookingId)
+  if (error) throw error
+}
+
+/**
  * Stamp who made a decision on the booking, the role they made it in, and when.
  * 'gm' is the approve/reject decision (General Manager, or the Company Admin on
  * their own authority); 'ops' is the driver-and-vehicle assignment. The role is
@@ -1001,6 +1087,11 @@ export const BookingModel = {
   updateOpsStatus,
   markFleetRecheckSent,
   recordDecision,
+  markDelivered,
+  markCompleted,
+  reportClientIssue,
+  findAwaitingCompletion,
+  markCompletionReminderSent,
   remove,
   settleDelivery,
   setPickupProof,

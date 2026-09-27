@@ -471,7 +471,7 @@ export async function driverConfirmFleetReturnService(
   const booking = await assertDriverOnBooking(bookingId, actor)
 
   if ((booking as any).fleet_return_at) return booking
-  if (booking.status !== 'completed') {
+  if (booking.status !== 'delivered' && booking.status !== 'completed') {
     throw new Error('Confirm every drop-off before recording the return to the yard')
   }
 
