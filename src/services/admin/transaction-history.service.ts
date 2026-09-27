@@ -7,6 +7,14 @@ import {
 } from '../../models/admin/transaction-history.model.js'
 import type { BookingWithRelations } from '../../types/client/booking.types.js'
 import { logEvent } from '../../lib/log-event.js'
+import { supabase } from '../../lib/supabase.js'
+import { AssignmentModel } from '../../models/admin/assignment.model.js'
+import TripModel from '../../models/client/trip.model.js'
+import ReportModel from '../../models/driver/report.model.js'
+import * as InspectionModel from '../../models/admin/truck-inspection.model.js'
+import type { AssignmentWithRelations } from '../../types/assignment.types.js'
+import type { TripWithStops } from '../../types/client/trip.types.js'
+import type { DriverReport } from '../../types/driver/report.types.js'
 
 /**
  * Staff transaction history. Thin over the model: clamps, derived ratios, and
@@ -121,4 +129,56 @@ export async function exportTransactionsService(
   })
 
   return { rows: truncated ? rows.slice(0, EXPORT_ROW_CAP) : rows, truncated }
+}
+
+export interface TransactionRecord {
+  /** Crew and vehicle as assigned, including a vendor-supplied snapshot. */
+  delivery:    AssignmentWithRelations | null
+  /** Every run of the vehicle, each with its pickup proof and per-stop proof. */
+  trips:       TripWithStops[]
+  /** Incidents the driver raised against this booking, with their media. */
+  reports:     DriverReport[]
+  /** BLOWBAGETS inspections of the assigned vehicle that cover this job. */
+  inspections: InspectionModel.TruckInspection[]
+}
+
+/**
+ * Everything attached to one booking that the list row does not carry: the
+ * crew and vehicle, trip proof photos, driver reports and vehicle inspections.
+ *
+ * Fetched per booking when a row is opened, not joined into the list — the
+ * list is paged 20 at a time and none of this is needed to render a row.
+ * Returns null for an unknown booking.
+ */
+export async function getTransactionRecordService(bookingId: string): Promise<TransactionRecord | null> {
+  const { data: booking, error } = await supabase
+    .from('bookings')
+    .select('booking_id, created_at, fleet_return_at')
+    .eq('booking_id', bookingId)
+    .maybeSingle()
+  if (error) throw error
+  if (!booking) return null
+
+  const [delivery, trips, reports] = await Promise.all([
+    AssignmentModel.findByBookingId(bookingId),
+    TripModel.findByBookingId(bookingId),
+    ReportModel.findByBookingId(bookingId),
+  ])
+
+  // Inspections belong to the vehicle, not the booking, so the ones that matter
+  // are picked by time: the last one before the booking existed (what the truck
+  // was assigned on) plus every one up to the fleet return.
+  let inspections: InspectionModel.TruckInspection[] = []
+  const truckId = delivery?.truck_id ?? null
+  if (truckId) {
+    const all   = await InspectionModel.listForTruck(truckId, 100)
+    const start = new Date(booking.created_at as string).getTime()
+    const end   = booking.fleet_return_at ? new Date(booking.fleet_return_at as string).getTime() : Date.now()
+    const at    = (i: InspectionModel.TruckInspection) => new Date(i.inspected_at).getTime()
+    const during = all.filter((i) => at(i) >= start && at(i) <= end)
+    const prior  = all.find((i) => at(i) < start)
+    inspections = [...(prior ? [prior] : []), ...during.reverse()]
+  }
+
+  return { delivery, trips, reports, inspections }
 }

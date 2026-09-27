@@ -51,4 +51,11 @@ router.get(
   TransactionHistoryController.exportRows,
 )
 
+// Declared after the fixed paths above so '/summary' etc. never match as an id.
+router.get(
+  '/:bookingId/record',
+  authenticate, authenticatedLimiter, isHistoryStaff, canReadHistory,
+  TransactionHistoryController.record,
+)
+
 export default router

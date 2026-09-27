@@ -5,6 +5,7 @@ import {
   getTransactionSummaryService,
   listTransactionCompaniesService,
   exportTransactionsService,
+  getTransactionRecordService,
 } from '../../services/admin/transaction-history.service.js'
 import type {
   TransactionFilters,
@@ -123,6 +124,26 @@ export const exportRows = async (req: Request, res: Response) => {
     res.status(200).json({ status: 'success', data: rows, meta: { truncated, count: rows.length } })
   } catch (error: any) {
     console.error('TRANSACTION HISTORY EXPORT ERROR:', error)
+    res.status(500).json({ status: 'error', message: error.message })
+  }
+}
+
+/** Everything attached to one booking, loaded when its row is opened. */
+export const record = async (req: Request, res: Response) => {
+  const id = z.string().uuid().safeParse(req.params.bookingId)
+  if (!id.success) {
+    res.status(400).json({ status: 'error', message: 'Invalid booking id' })
+    return
+  }
+  try {
+    const data = await getTransactionRecordService(id.data)
+    if (!data) {
+      res.status(404).json({ status: 'error', message: 'Booking not found' })
+      return
+    }
+    res.status(200).json({ status: 'success', data })
+  } catch (error: any) {
+    console.error('TRANSACTION HISTORY RECORD ERROR:', error)
     res.status(500).json({ status: 'error', message: error.message })
   }
 }

@@ -90,6 +90,18 @@ async function findAll(status?: ReportStatus | null): Promise<DriverReport[]> {
   return (data ?? []) as unknown as DriverReport[]
 }
 
+/** Every report raised against one booking, oldest first, for its record. */
+async function findByBookingId(bookingId: string): Promise<DriverReport[]> {
+  const { data, error } = await supabase
+    .from('driver_reports')
+    .select(`${REPORT_WITH_RELATIONS_SELECT}, drivers ( driver_id, users ( first_name, last_name, phone ) )`)
+    .eq('booking_id', bookingId)
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []) as unknown as DriverReport[]
+}
+
 /**
  * Add to a report that already exists.
  *
@@ -115,5 +127,6 @@ export default {
   findByDriverId,
   findById,
   findAll,
+  findByBookingId,
   update,
 }

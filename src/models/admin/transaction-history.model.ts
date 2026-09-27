@@ -338,6 +338,10 @@ export interface ExportRow {
   origin:           string | null
   destinations:     string | null
   truck_type:       string | null
+  driver_name:      string | null
+  vehicle_plate:    string | null
+  vehicle_type:     string | null
+  vendor_name:      string | null
   total_cost:       number | null
 }
 
@@ -358,8 +362,29 @@ async function findForExport(f: TransactionFilters, cap: number): Promise<Export
                WHERE d.booking_id = b.booking_id
             )                                                            AS destinations,
             b.truck_type_needed                                          AS truck_type,
+            crew.driver_name,
+            crew.vehicle_plate,
+            crew.vehicle_type,
+            crew.vendor_name,
             b.total_cost
      ${FROM_SQL}
+     -- Company crew comes off the fleet rows, vendor crew off the snapshot the
+     -- assignment wrote onto the delivery.
+     LEFT JOIN LATERAL (
+       SELECT CASE WHEN dl.is_vendor_supplied THEN dl.vendor_driver_name
+                   ELSE NULLIF(TRIM(CONCAT_WS(' ', du.first_name, du.last_name)), '') END AS driver_name,
+              CASE WHEN dl.is_vendor_supplied THEN dl.vendor_vehicle_plate ELSE t.plate_number END AS vehicle_plate,
+              CASE WHEN dl.is_vendor_supplied THEN dl.vendor_vehicle_type  ELSE tm.vehicle_type END AS vehicle_type,
+              CASE WHEN dl.is_vendor_supplied THEN dl.vendor_name END                             AS vendor_name
+         FROM deliveries dl
+         LEFT JOIN drivers dr     ON dr.driver_id = dl.driver_id
+         LEFT JOIN users du       ON du.user_id   = dr.user_id
+         LEFT JOIN trucks t       ON t.truck_id   = dl.truck_id
+         LEFT JOIN truck_models tm ON tm.model_id = t.model_id
+        WHERE dl.booking_id = b.booking_id
+        ORDER BY dl.created_at DESC
+        LIMIT 1
+     ) crew ON true
      ${whereSql}
      ORDER BY b.created_at DESC
      LIMIT $${params.length + 1}`,
