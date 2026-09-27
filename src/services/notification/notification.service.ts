@@ -67,6 +67,9 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   assigned:         { type: 'booking.assigned',         audience: 'drivers' },
   vehicle_assigned: { type: 'booking.vehicle_assigned', roles: ['fleet_manager'] },
   fleet_recheck:    { type: 'booking.fleet_recheck',    roles: ['fleet_manager'], target: 'vehicle' },
+  // The driver confirmed the vehicle is back; its pass has expired and the Fleet
+  // Manager (plus the Company Administrator, appended as always) must re-check it.
+  vehicle_returned: { type: 'booking.vehicle_returned', roles: ['fleet_manager'], target: 'vehicle' },
 }
 
 // Route map per role so a notification tap lands on the right dashboard page.
@@ -140,6 +143,12 @@ function copyFor(
         body:  extra?.window === 'day_of'
           ? `Booking ${label} dispatches today. Run BLOWBAGETS on ${extra?.vehicleLabel ?? 'the assigned vehicle'} before it rolls out.`
           : `Booking ${label} dispatches tomorrow. Re-run BLOWBAGETS on ${extra?.vehicleLabel ?? 'the assigned vehicle'} so any fault can still be fixed.`,
+      }
+    case 'vehicle_returned':
+      return {
+        title: 'Vehicle back — BLOWBAGETS re-check due',
+        body:  `${extra?.vehicleLabel ?? 'The vehicle'} is back in the parking lot after booking ${label}. ` +
+               'It cannot be assigned until it passes a new BLOWBAGETS inspection.',
       }
   }
 }

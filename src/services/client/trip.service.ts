@@ -1,6 +1,9 @@
 import TripModel from '../../models/client/trip.model.js'
 import { BookingModel } from '../../models/client/booking.model.js'
 import { logEvent } from '../../lib/log-event.js'
+import * as TruckModel from '../../models/admin/truck.model.js'
+import { crewOnBooking } from '../admin/fleet-availability.service.js'
+import { notifyStage } from '../notification/notification.service.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay } from '../../lib/ph-date.js'
 import { invalidateEta } from '../maps/eta.service.js'
@@ -481,6 +484,32 @@ export async function driverConfirmFleetReturnService(
     description: `Driver confirmed the vehicle for booking ${bookingRef(booking)} is back in the company parking lot`,
   })
 
+  // The return expires the vehicle's BLOWBAGETS pass. Put it on hold so the fleet
+  // shows it as not ready, and tell the people who have to re-check it. A vendor
+  // vehicle is not ours to inspect, so it has neither.
   const updated = await BookingModel.findById(bookingId)
+  void holdReturnedVehicle(updated ?? booking)
   return updated ?? booking
+}
+
+async function holdReturnedVehicle(booking: BookingWithRelations): Promise<void> {
+  try {
+    const { truck_id } = await crewOnBooking(booking.booking_id)
+    if (!truck_id) return
+    const truck = await TruckModel.findById(truck_id)
+    if (!truck) return
+
+    // Only a vehicle that would otherwise read as ready. One already under
+    // maintenance, deactivated or archived keeps the status that explains it.
+    if (truck.status === 'available' || truck.status === 'in_use') {
+      await TruckModel.update(truck_id, { status: 'recheck_due' })
+    }
+
+    const model = (truck as { truck_models?: { name?: string | null } | null }).truck_models?.name
+    await notifyStage('vehicle_returned', booking, {
+      vehicleLabel: model ? `${truck.plate_number} (${model})` : truck.plate_number,
+    })
+  } catch (err) {
+    console.error('[trip] failed to hold returned vehicle', booking.booking_id, err)
+  }
 }

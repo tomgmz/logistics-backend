@@ -16,7 +16,7 @@ export interface Truck {
   vehicle_type:       string | null
   model_name:         string | null
   truck_model?:       TruckModel | null
-  status:             'available' | 'in_use' | 'under_maintenance' | 'inactive' | 'archived'
+  status:             'available' | 'recheck_due' | 'in_use' | 'under_maintenance' | 'inactive' | 'archived'
   /** Who normally drives it. A default for assignment, never a lock — see the
    *  20260910220000_truck_assigned_driver migration. */
   assigned_driver_id?: string | null
@@ -33,7 +33,7 @@ export interface CreateTruckInput {
 export interface UpdateTruckInput {
   plate_number?:      string
   model_id?:          string | null
-  status?:            'available' | 'in_use' | 'under_maintenance' | 'inactive'
+  status?:            'available' | 'recheck_due' | 'in_use' | 'under_maintenance' | 'inactive'
   /** `null` clears the pairing; absent leaves it untouched. */
   assigned_driver_id?: string | null
 }

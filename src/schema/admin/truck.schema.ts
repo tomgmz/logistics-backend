@@ -25,7 +25,7 @@ export const updateTruckSchema = z.object({
   model_id:  z.string().uuid().optional().nullable(),
   // No 'archived': that goes through POST /trucks/:id/archive, which also
   // releases the driver pairing and refuses a vehicle that is out on a booking.
-  status:    z.enum(['available', 'in_use', 'under_maintenance', 'inactive']).optional(),
+  status:    z.enum(['available', 'recheck_due', 'in_use', 'under_maintenance', 'inactive']).optional(),
   // The vehicle's regular driver. Explicitly nullable: sending null is how the
   // fleet manager unpairs a truck.
   assigned_driver_id: z.string().uuid().optional().nullable(),

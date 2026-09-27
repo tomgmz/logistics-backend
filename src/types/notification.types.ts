@@ -13,6 +13,7 @@ export type NotificationType =
   | 'booking.assigned'             // ops assigned -> assigned driver(s)
   | 'booking.vehicle_assigned'     // ops assigned -> fleet + admins (informational)
   | 'booking.fleet_recheck'        // scheduled BLOWBAGETS re-check -> fleet + admins
+  | 'booking.vehicle_returned'     // vehicle back in the lot, re-check due -> fleet + admins
   // Legacy types, still present on historical rows. No longer emitted: accounting
   // was removed from the chain and the fleet stage no longer gates dispatch.
   | 'booking.accounting_pending'
@@ -61,3 +62,4 @@ export type NotificationStage =
   | 'assigned'
   | 'vehicle_assigned'
   | 'fleet_recheck'
+  | 'vehicle_returned'

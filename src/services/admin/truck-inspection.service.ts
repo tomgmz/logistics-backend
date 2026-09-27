@@ -42,10 +42,11 @@ export async function recordInspection(
 
   // A failed inspection also takes the vehicle out of service so it can't be
   // picked through any other path; a pass returns it to the pool unless it is
-  // currently out on a delivery.
+  // currently out on a delivery. 'recheck_due' is the hold a vehicle is put on
+  // when it comes back from a job, and this pass is the re-check that lifts it.
   if (!passed && truck.status !== 'archived') {
     await TruckModel.update(truckId, { status: 'under_maintenance' })
-  } else if (passed && truck.status === 'under_maintenance') {
+  } else if (passed && (truck.status === 'under_maintenance' || truck.status === 'recheck_due')) {
     await TruckModel.update(truckId, { status: 'available' })
   }
 
