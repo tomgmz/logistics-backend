@@ -148,13 +148,26 @@ async function update(truckId: string, input: UpdateTruckInput) {
   return findById(truckId)
 }
 
-async function remove(truckId: string) {
+/**
+ * Retire a vehicle. The row stays — bookings, inspections and reports still
+ * point at it — but it drops out of every list and the assignable pool.
+ *
+ * The regular-driver pairing is released in the same statement: an archived
+ * truck holding its driver would block the unique pairing index, and the fleet
+ * manager could not give that driver another vehicle.
+ *
+ * `status <> 'in_use'` is repeated here rather than trusted from the service's
+ * check, so a booking that grabbed the vehicle in between still wins.
+ */
+async function archive(truckId: string) {
   const result = await pool.query(
-    `UPDATE trucks SET status = 'archived' WHERE truck_id = $1 RETURNING truck_id, status`,
+    `UPDATE trucks
+        SET status = 'archived', assigned_driver_id = NULL
+      WHERE truck_id = $1 AND status NOT IN ('archived', 'in_use')
+      RETURNING truck_id, plate_number`,
     [truckId]
   )
-  if (result.rowCount === 0) throw new Error(`No truck found with ID: ${truckId}`)
-  return true
+  return result.rows[0] ?? null
 }
 
-export { findAll, findAllPaginated, findById, findByAssignedDriver, create, update, remove }
+export { findAll, findAllPaginated, findById, findByAssignedDriver, create, update, archive }

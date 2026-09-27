@@ -42,13 +42,15 @@ export async function updateTruckModel(req: Request, res: Response) {
   }
 }
 
-export async function deleteTruckModel(req: Request, res: Response) {
+export async function archiveTruckModel(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
-    await TruckModelService.deleteTruckModel(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'Truck model deleted successfully' })
+    await TruckModelService.archiveTruckModel(param(req.params.id), userId)
+    res.status(200).json({ status: 'success', message: 'Truck model archived' })
   } catch (err: any) {
-    const status = err.message === 'Truck model not found' ? 404 : 500
+    const status = err.message === 'Truck model not found' ? 404
+      : err.message.includes('is still used by') ? 409
+      : 500
     res.status(status).json({ status: 'error', message: err.message })
   }
 }

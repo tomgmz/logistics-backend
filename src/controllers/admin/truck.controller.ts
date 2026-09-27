@@ -76,13 +76,15 @@ export async function getTruckInspections(req: Request, res: Response) {
   }
 }
 
-export async function deleteTruck(req: Request, res: Response) {
+export async function archiveTruck(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
-    await TruckService.deleteTruck(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'Truck deleted successfully' })
+    await TruckService.archiveTruck(param(req.params.id), userId)
+    res.status(200).json({ status: 'success', message: 'Vehicle archived' })
   } catch (err: any) {
-    const status = err.message.includes('No truck found') ? 404 : 500
+    const status = err.message.includes('No truck found') ? 404
+      : err.message.includes('out on a booking') ? 409
+      : 500
     res.status(status).json({ status: 'error', message: err.message })
   }
 }

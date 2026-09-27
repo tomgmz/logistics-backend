@@ -140,15 +140,26 @@ export async function updateTruck(truckId: string, input: UpdateTruckInput, acto
   return result
 }
 
-export async function deleteTruck(truckId: string, actorId?: string | null) {
-  const result = await TruckModel.remove(truckId)
+export async function archiveTruck(truckId: string, actorId?: string | null) {
+  const truck = await TruckModel.findById(truckId)
+  if (!truck) throw new Error(`No truck found with ID: ${truckId}`)
+  if (truck.status === 'in_use') {
+    throw new Error(`${truck.plate_number} is out on a booking — archive it once it is back in the yard`)
+  }
+
+  const result = await TruckModel.archive(truckId)
+  // Only reachable if a booking took the vehicle between the read and the write.
+  if (!result) {
+    throw new Error(`${truck.plate_number} is out on a booking — archive it once it is back in the yard`)
+  }
 
   logEvent({
     user_id:     actorId,
     log_type:    'vehicle_activity',
-    action:      'vehicle_deleted',
-    description: `Vehicle ${truckId} deleted`,
-
+    action:      'vehicle_archived',
+    description: truck.assigned_driver_id
+      ? `Vehicle ${truck.plate_number} archived and unpaired from its regular driver`
+      : `Vehicle ${truck.plate_number} archived`,
   })
 
   return result

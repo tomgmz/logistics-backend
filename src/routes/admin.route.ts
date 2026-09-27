@@ -89,7 +89,7 @@ router.post('/drivers/scan-license',       authenticate, isFleet, uploadSingle, 
 router.get('/drivers/assignable',          authenticate, isFleetRead, DriverController.getAssignableDrivers)
 router.get('/drivers/:id',                 authenticate, isFleetRead, DriverController.getDriverById)
 router.post('/drivers',                    authenticate, isFleet, uploadSingle, validate(createDriverSchema), DriverController.createDriver)
-router.patch('/drivers/:id',               authenticate, isFleet, lockGuard('user', fromParam('id')), validate(updateDriverSchema), DriverController.updateDriver)
+router.patch('/drivers/:id',               authenticate, isFleet, lockGuard('user', fromParam('id')), uploadSingle, validate(updateDriverSchema), DriverController.updateDriver)
 router.patch('/drivers/:id/deactivate',    authenticate, isFleet, lockGuard('user', fromParam('id')), DriverController.deactivateDriver)
 router.patch('/drivers/:id/activate',      authenticate, isFleet, lockGuard('user', fromParam('id')), DriverController.activateDriver)
 // Recovery hatch for a driver left reserved against a delivery that is gone.
@@ -134,14 +134,14 @@ router.get('/trucks/:id/inspections',  authenticate, isFleetRead, TruckControlle
 router.post('/trucks/:id/inspections', authenticate, isFleet, lockGuard('truck', fromParam('id')), validate(recordTruckInspectionSchema), TruckController.recordTruckInspection)
 router.post('/trucks',       authenticate, isFleet, validate(createTruckSchema), TruckController.createTruck)
 router.patch('/trucks/:id',  authenticate, isFleet, lockGuard('truck', fromParam('id')), validate(updateTruckSchema), TruckController.updateTruck)
-router.delete('/trucks/:id', authenticate, isFleet, lockGuard('truck', fromParam('id')), TruckController.deleteTruck)
+router.post('/trucks/:id/archive', authenticate, isFleet, lockGuard('truck', fromParam('id')), TruckController.archiveTruck)
 
 //Truck Models
 router.get('/truck-models',        authenticate, isFleet, TruckModelController.getAllTruckModels)
 router.get('/truck-models/:id',    authenticate, isFleet, TruckModelController.getTruckModelById)
 router.post('/truck-models',       authenticate, isFleet, validate(createTruckModelSchema), TruckModelController.createTruckModel)
 router.patch('/truck-models/:id',  authenticate, isFleet, lockGuard('truck_model', fromParam('id')), validate(updateTruckModelSchema), TruckModelController.updateTruckModel)
-router.delete('/truck-models/:id', authenticate, isFleet, lockGuard('truck_model', fromParam('id')), TruckModelController.deleteTruckModel)
+router.post('/truck-models/:id/archive', authenticate, isFleet, lockGuard('truck_model', fromParam('id')), TruckModelController.archiveTruckModel)
 
 
 //General Managers

@@ -124,28 +124,31 @@ export const truckPaths = {
         500: { description: 'Internal server error' },
       },
     },
-    delete: {
+  },
+  '/trucks/{id}/archive': {
+    post: {
       tags: ['Trucks'],
-      summary: 'Delete a truck',
+      summary: 'Archive a truck (soft delete; releases its regular-driver pairing)',
       parameters: [
         { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
       ],
       responses: {
         200: {
-          description: 'Truck deleted successfully',
+          description: 'Vehicle archived',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status:  { type: 'string', example: 'success' },
-                  message: { type: 'string', example: 'Truck deleted successfully' },
+                  message: { type: 'string', example: 'Vehicle archived' },
                 },
               },
             },
           },
         },
         404: { description: 'Truck not found' },
+        409: { description: 'Vehicle is out on a booking' },
         500: { description: 'Internal server error' },
       },
     },

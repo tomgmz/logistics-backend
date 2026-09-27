@@ -127,28 +127,31 @@ export const truckModelPaths = {
         500: { description: 'Internal server error' },
       },
     },
-    delete: {
+  },
+  '/truck-models/{id}/archive': {
+    post: {
       tags: ['Truck Models'],
-      summary: 'Delete a truck model',
+      summary: 'Archive a truck model (hidden from the catalog; kept for existing joins)',
       parameters: [
         { in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' }, example: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
       ],
       responses: {
         200: {
-          description: 'Truck model deleted successfully',
+          description: 'Truck model archived',
           content: {
             'application/json': {
               schema: {
                 type: 'object',
                 properties: {
                   status:  { type: 'string', example: 'success' },
-                  message: { type: 'string', example: 'Truck model deleted successfully' },
+                  message: { type: 'string', example: 'Truck model archived' },
                 },
               },
             },
           },
         },
         404: { description: 'Truck model not found' },
+        409: { description: 'Model is still used by active vehicles' },
         500: { description: 'Internal server error' },
       },
     },

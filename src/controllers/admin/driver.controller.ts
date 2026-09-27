@@ -78,7 +78,11 @@ export async function createDriver(req: Request, res: Response) {
 export async function updateDriver(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
-    const data = await DriverService.updateDriver(param(req.params.id), req.body, userId)
+    // A replacement license photo arrives as multipart; plain JSON edits have no file.
+    const body = req.file
+      ? { ...req.body, license_image_url: await uploadToCloudinary(req.file.buffer) }
+      : req.body
+    const data = await DriverService.updateDriver(param(req.params.id), body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
