@@ -117,6 +117,8 @@ try {
      union all
      select proof_photo_url from booking_destinations where proof_photo_url is not null
      union all
+     select pickup_proof_photo_url from booking_trips where pickup_proof_photo_url is not null
+     union all
      select s.proof_photo_url from booking_trip_stops s
        join booking_trips t on t.trip_id = s.trip_id
       where s.proof_photo_url is not null
@@ -222,6 +224,10 @@ try {
   // billing_booking_claims.
   await step('bookings (+cascades)',
     `delete from bookings where booking_id = any($1::uuid[])`, [bookingIds])
+  // A lock on a booking that no longer exists would only confuse the next editor.
+  await step('record_locks (booking)',
+    `delete from record_locks where resource_type = 'booking' and resource_id = any($1::text[])`,
+    [bookingIds.map(String)])
   // Next booking starts the month's sequence again at 00001.
   await step('booking_reference_counters reset',
     `delete from booking_reference_counters`, [])
@@ -282,6 +288,22 @@ for (const a of assets) {
     console.log(`  ${(res.result === 'ok' ? 'ok' : res.result).padEnd(9)} ${a.resource_type.padEnd(5)} ${a.public_id}`)
   } catch (err) {
     console.log(`  fail      ${a.resource_type.padEnd(5)} ${a.public_id} — ${err.message}`)
+  }
+}
+
+// These folders hold nothing but booking files, and earlier deletes left assets
+// behind that no row points at any more. Starting fresh means sweeping them too.
+const BOOKING_FOLDERS = ['booking_documents', 'delivery_proofs']
+console.log('\nCloudinary folder sweep:')
+for (const folder of BOOKING_FOLDERS) {
+  for (const resourceType of ['image', 'raw', 'video']) {
+    try {
+      const res = await cloudinary.api.delete_resources_by_prefix(`${folder}/`, { resource_type: resourceType, invalidate: true })
+      const n = Object.keys(res.deleted ?? {}).length
+      if (n) console.log(`  ${folder.padEnd(18)} ${resourceType.padEnd(5)} ${n} deleted`)
+    } catch (err) {
+      console.log(`  fail ${folder} ${resourceType} — ${err.error?.message ?? err.message}`)
+    }
   }
 }
 
