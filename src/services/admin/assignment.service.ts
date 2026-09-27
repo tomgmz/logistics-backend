@@ -165,11 +165,12 @@ export async function assignBookingService(
   )
   await reserveCrew(nextDriverId, nextTruckId)
 
-  // A newly provisioned vendor driver needs a way in. Fire-and-forget, like the
+  // A vendor driver with no working passkey needs a way in — a new account, or a
+  // returning one whose access was revoked. Fire-and-forget, like the
   // welcome email on driver creation: the assignment is already committed and
   // correct, and a Brevo outage must not undo it. If the email fails the invite
   // is re-sendable from the booking's assignment card.
-  if (external?.created && input.vendor_driver_email) {
+  if (external?.needsInvite && input.vendor_driver_email) {
     void issueInvite({
       userId:     external.userId,
       email:      input.vendor_driver_email,

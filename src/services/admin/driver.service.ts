@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } from './user-auth-status.service.js'
 import * as DriverModel from '../../models/admin/driver.model.js'
+import * as WebauthnModel from '../../models/auth/webauthn.model.js'
 import { CreateDriverDTO, UpdateDriverDTO } from '../../types/driver.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { bookingRef } from '../../lib/booking-ref.js'
@@ -122,6 +123,11 @@ export async function updateDriver(userId: string, dto: UpdateDriverDTO, actorId
 export async function deleteDriver(userId: string, actorId?: string | null) {
   const result = await DriverModel.remove(userId)
   await banArchivedAuthUser(userId)
+  // Only vendor drivers hold passkeys; for everyone else this is a no-op. The ban
+  // already blocks sign-in, but a passkey left live would come back the moment
+  // the account is reused, and would block a fresh setup on the same phone with
+  // "one of the excluded credentials exists on the local device".
+  await WebauthnModel.revokeAllForUser(userId, actorId ?? null, 'Account deleted')
 
   logEvent({
     user_id:     actorId,

@@ -11,6 +11,7 @@ import { generateInviteToken } from './webauthn.service.js'
 import * as InviteModel from '../../models/auth/driver-invite.model.js'
 import * as WebauthnModel from '../../models/auth/webauthn.model.js'
 import * as AuthModel from '../../models/auth/auth.model.js'
+import * as DriverModel from '../../models/admin/driver.model.js'
 
 /**
  * Accounts for outside-vendor drivers.
@@ -39,6 +40,13 @@ export interface ProvisionedExternalDriver {
   driverId: string
   /** False when an existing account was reused — a repeat subcontractor. */
   created:  boolean
+  /**
+   * True when the driver has no working passkey — a new account, or a reused one
+   * whose access was revoked. The caller sends a setup link in exactly that case;
+   * without it a revoked driver who is assigned again comes back active but with
+   * no way in and no link to fix it.
+   */
+  needsInvite: boolean
 }
 
 /**
@@ -113,19 +121,20 @@ export async function provisionExternalDriver(
       )
     }
 
-    // An archived account is reactivated rather than duplicated: same person,
-    // same passkeys, back on the road. Archiving banned the auth identity, so
-    // the ban has to come off too or the passkey sign-in can't mint a session.
-    if (existing.status !== 'active') {
-      const { error } = await supabase
-        .from('users')
-        .update({ status: 'active' })
-        .eq('user_id', existing.user_id)
-      if (error) throw error
-      await unbanAuthUser(existing.user_id)
-    }
+    // A revoked or archived account is reactivated rather than duplicated: same
+    // person, back on the road. Archiving banned the auth identity, so the ban
+    // has to come off too or the passkey sign-in can't mint a session. Revoking
+    // killed their passkeys, which is why needsInvite is worked out below rather
+    // than assumed false for a reused account.
+    if (existing.status !== 'active') await reactivateAccount(existing.user_id)
 
-    return { userId: existing.user_id, driverId: profile.driver_id, created: false }
+    const active = await WebauthnModel.listCredentialsForUser(existing.user_id)
+    return {
+      userId:      existing.user_id,
+      driverId:    profile.driver_id,
+      created:     false,
+      needsInvite: active.length === 0,
+    }
   }
 
   const { first, last } = splitName(input.name)
@@ -218,7 +227,26 @@ export async function provisionExternalDriver(
     description: `Provisioned app access for vendor driver ${input.name} (${email})`,
   })
 
-  return { userId, driverId: created.driver_id, created: true }
+  return { userId, driverId: created.driver_id, created: true, needsInvite: true }
+}
+
+/**
+ * Put a switched-off account back to active, lockout counters and auth ban
+ * included — the same fields activateUserWithUnban clears, so every way back in
+ * behaves the same.
+ */
+async function reactivateAccount(userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('users')
+    .update({
+      status:                'active',
+      locked_until:          null,
+      failed_login_attempts: 0,
+      lockup_count:          0,
+    })
+    .eq('user_id', userId)
+  if (error) throw error
+  await unbanAuthUser(userId)
 }
 
 // ---------------------------------------------------------------------------
@@ -290,7 +318,7 @@ export async function reinvite(userId: string, actorId?: string | null): Promise
     throw new Error('Only vendor-supplied drivers use passkey setup links.')
   }
   if (data.status !== 'active') {
-    throw new Error('This account is not active. Reactivate it before sending a setup link.')
+    throw new Error('This driver\'s access was revoked. Use "Restore access" to turn it back on and send a new setup link.')
   }
 
   await issueInvite({
@@ -347,12 +375,89 @@ export async function revokeExternalDriver(
   return { credentialsRevoked }
 }
 
+/**
+ * Undo revokeExternalDriver: reactivate the account and send a fresh setup link.
+ *
+ * The old passkeys stay revoked — revocation is final for a credential, because
+ * the phone that held it may no longer be the driver's. The driver enrols again,
+ * and since a revoked credential is never in the exclusion list, a phone still
+ * holding the stale copy simply replaces it.
+ */
+export async function restoreExternalDriver(userId: string, actorId?: string | null): Promise<void> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id, email, first_name, status, drivers ( is_external )')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Driver not found')
+
+  const profile = Array.isArray(data.drivers) ? data.drivers[0] : data.drivers
+  if (profile?.is_external !== true) {
+    throw new Error('This is not a vendor-supplied driver.')
+  }
+  if (data.status === 'active') {
+    throw new Error('This driver\'s access is already active. Use "Resend setup link" instead.')
+  }
+
+  await reactivateAccount(userId)
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_management',
+    action:      'external_driver_restored',
+    description: `Restored app access for ${data.email}`,
+  })
+
+  await issueInvite({
+    userId:    data.user_id,
+    email:     data.email,
+    firstName: data.first_name,
+    actorId,
+  })
+}
+
+/**
+ * The vendor-driver roster for User Management, each row carrying its access
+ * state so the list can offer the right action without a request per row.
+ */
+export async function listExternalDrivers() {
+  const users = await DriverModel.findAllExternal()
+  const ids   = users.map((u: any) => u.user_id as string)
+
+  const [credentials, invites] = await Promise.all([
+    WebauthnModel.listActiveCredentialsForUsers(ids),
+    InviteModel.listForUsers(ids),
+  ])
+
+  const now = new Date()
+  return users.map((u: any) => {
+    const mine       = credentials.filter((c) => c.user_id === u.user_id)
+    const openInvite = invites.find(
+      (i) => i.user_id === u.user_id && i.status === 'sent' && new Date(i.expires_at) > now,
+    )
+    return {
+      ...u,
+      access: {
+        passkey_count:     mine.length,
+        last_used_at:      mine.map((c) => c.last_used_at).filter(Boolean).sort().pop() ?? null,
+        invite_pending:    !!openInvite,
+        invite_expires_at: openInvite?.expires_at ?? null,
+        enrolled:          mine.length > 0,
+        account_active:    u.status === 'active',
+      },
+    }
+  })
+}
+
 /** What the admin panel shows next to a vendor-supplied assignment. */
 export async function externalDriverAccessStatus(userId: string) {
-  const [credentials, invites] = await Promise.all([
+  const [credentials, invites, account] = await Promise.all([
     WebauthnModel.listCredentialsForUser(userId),
     InviteModel.listForUser(userId),
+    supabase.from('users').select('status').eq('user_id', userId).maybeSingle(),
   ])
+  if (account.error) throw account.error
 
   const openInvite = invites.find((i) => i.status === 'sent' && new Date(i.expires_at) > new Date())
 
@@ -366,5 +471,8 @@ export async function externalDriverAccessStatus(userId: string) {
     invite_pending:    !!openInvite,
     invite_expires_at: openInvite?.expires_at ?? null,
     enrolled:          credentials.length > 0,
+    // False after a revoke. The panel swaps its buttons for "Restore access",
+    // because a setup link cannot be sent to an inactive account.
+    account_active:    account.data?.status === 'active',
   }
 }

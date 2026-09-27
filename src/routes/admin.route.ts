@@ -202,9 +202,11 @@ router.patch('/password-resets/:id/cancel', authenticate, isAdmin, lockGuard('pa
 // a new setup link from the person looking at the booking, not an escalation.
 // Revocation is the same group: the fastest offboarding is the one the
 // dispatcher can do the moment a vendor is stood down.
+router.get('/external-drivers',                  authenticate, isCrewRelease, ExternalDriverController.list)
 router.get('/external-drivers/:userId/access',   authenticate, isCrewRelease, ExternalDriverController.getAccessStatus)
 router.post('/external-drivers/:userId/reinvite', authenticate, isCrewRelease, lockGuard('user', fromParam('userId')), ExternalDriverController.reinvite)
 router.post('/external-drivers/:userId/revoke',   authenticate, isCrewRelease, lockGuard('user', fromParam('userId')), ExternalDriverController.revoke)
+router.post('/external-drivers/:userId/restore',  authenticate, isCrewRelease, lockGuard('user', fromParam('userId')), ExternalDriverController.restore)
 
 //Module permissions (RBAC) — managed by admin / it_admin
 router.get('/users/:id/permissions', authenticate, isAdmin, PermissionsController.getUserPermissions)

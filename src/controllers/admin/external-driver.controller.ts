@@ -4,11 +4,21 @@ import * as EnrollmentService from '../../services/auth/driver-enrollment.servic
 /**
  * Admin actions on a vendor-supplied driver's app access.
  *
- * Deliberately only three: resend the setup link, revoke everything, and look at
- * the current state. Anything more (editing the account, resetting a password)
+ * Deliberately few: resend the setup link, revoke everything, restore a revoked
+ * account, and look at the current state. Anything more (editing the account, resetting a password)
  * either does not apply to a passkey-only account or belongs on the assignment
  * that created it.
  */
+
+export async function list(_req: Request, res: Response) {
+  try {
+    const drivers = await EnrollmentService.listExternalDrivers()
+    res.status(200).json({ status: 'success', data: drivers })
+  } catch (err: any) {
+    console.error('EXTERNAL DRIVER LIST ERROR:', err)
+    res.status(400).json({ status: 'error', message: err?.message ?? 'Could not load vendor drivers.' })
+  }
+}
 
 export async function getAccessStatus(req: Request, res: Response) {
   try {
@@ -47,5 +57,15 @@ export async function revoke(req: Request, res: Response) {
   } catch (err: any) {
     console.error('EXTERNAL DRIVER REVOKE ERROR:', err)
     res.status(400).json({ status: 'error', message: err?.message ?? 'Could not revoke access.' })
+  }
+}
+
+export async function restore(req: Request, res: Response) {
+  try {
+    await EnrollmentService.restoreExternalDriver(String(req.params.userId), req.user?.sub ?? null)
+    res.status(200).json({ status: 'success', message: 'Access restored. A new setup link was sent.' })
+  } catch (err: any) {
+    console.error('EXTERNAL DRIVER RESTORE ERROR:', err)
+    res.status(400).json({ status: 'error', message: err?.message ?? 'Could not restore access.' })
   }
 }

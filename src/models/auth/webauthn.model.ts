@@ -185,6 +185,18 @@ export async function listCredentialsForUser(
   return (data ?? []) as WebauthnCredentialRow[]
 }
 
+/** Live credentials for a set of users — one query for a whole roster. */
+export async function listActiveCredentialsForUsers(userIds: string[]): Promise<WebauthnCredentialRow[]> {
+  if (userIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('webauthn_credentials')
+    .select('*')
+    .in('user_id', userIds)
+    .is('revoked_at', null)
+  if (error) throw error
+  return (data ?? []) as WebauthnCredentialRow[]
+}
+
 export async function recordUse(credentialPk: string, counter: number): Promise<void> {
   const { error } = await supabase
     .from('webauthn_credentials')

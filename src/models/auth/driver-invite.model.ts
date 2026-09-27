@@ -114,3 +114,15 @@ export async function listForUser(userId: string): Promise<DriverInviteRow[]> {
   if (error) throw error
   return (data ?? []) as DriverInviteRow[]
 }
+
+/** Every invite for a set of drivers, newest first — one query for a whole roster. */
+export async function listForUsers(userIds: string[]): Promise<DriverInviteRow[]> {
+  if (userIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('driver_enrollment_invites')
+    .select('*')
+    .in('user_id', userIds)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as DriverInviteRow[]
+}
