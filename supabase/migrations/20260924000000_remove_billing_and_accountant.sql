@@ -10,6 +10,16 @@
 -- destroyed here. What does exist is 6 billing_periods, 5 billing_period_items
 -- and the 2 seeded document_series counters. Re-check those counts before
 -- running if any billing activity has happened since.
+--
+-- Applied 2026-09-29, not 2026-09-24: the code shipped but this file was never
+-- run. By then the 2026-09-27 fresh-start wipe had emptied every billing table
+-- except document_series (2 rows). Two fixes made before applying: it now also
+-- drops billing_booking_claims (which references billing_periods, so the old
+-- file would have aborted), and the create_user_with_profile body below is
+-- rebased on the external-drivers version (20260917040000) so is_external
+-- isn't silently lost. The clients.billing_mode drop moved to
+-- 20260929000000_drop_clients_billing_mode.sql, to run once the backend that
+-- stopped selecting it is deployed.
 
 begin;
 
@@ -22,6 +32,7 @@ drop table if exists public.acknowledgement_receipts;
 drop table if exists public.billing_payments;
 drop table if exists public.service_invoices;
 drop table if exists public.billing_period_items;
+drop table if exists public.billing_booking_claims;
 drop table if exists public.billing_submissions;
 drop table if exists public.billing_periods;
 drop table if exists public.document_series;
@@ -33,11 +44,11 @@ drop table if exists public.document_series;
 -- every declared non-working day by hand later.
 
 -- 2. Client billing arrangement ----------------------------------------------
--- `billing_mode` was the weekly/monthly reverse-billing cycle from the client's
--- contract. With reverse billing gone it has no reader and no meaning.
+-- `billing_mode` (the weekly/monthly reverse-billing cycle) is dropped in
+-- 20260929000000_drop_clients_billing_mode.sql, not here: the deployed backend
+-- still selected it in getMe, so dropping it first would lock clients out.
 -- `billing_address` STAYS — it is a real address, printed on delivery paperwork
 -- and read by the booking detail screen.
-alter table public.clients drop column if exists billing_mode;
 
 -- 3. GM approval proxy --------------------------------------------------------
 -- Only an accountant could ever be appointed, so with the role gone nothing can
@@ -54,15 +65,18 @@ update public.users
  where role = 'accountant'
    and status <> 'archived';
 
--- Then retire the role itself. This must run AFTER the update above: the new
--- constraint rejects the value, archived rows included.
+-- Then retire the role itself. NOT VALID: the archived accountant rows keep
+-- role='accountant' (so their audit rows still say who acted), and a validated
+-- constraint rejects them. NOT VALID skips the check on existing rows while
+-- still refusing any new insert — or any update of those rows — carrying the
+-- retired role.
 alter table public.users drop constraint if exists users_role_check;
 alter table public.users add constraint users_role_check check (
   (role)::text = any (array[
     'admin','general_manager','fleet_manager','operations_manager',
     'client','driver','it_admin'
   ])
-);
+) not valid;
 
 -- 5. RBAC ---------------------------------------------------------------------
 -- `billing-management` is no longer a module key on either side, so these rows
@@ -147,12 +161,15 @@ BEGIN
       p_detail->>'landline'
     );
   ELSIF p_role = 'driver' THEN
-    INSERT INTO public.drivers (user_id, license_number, license_expiry, license_image_url)
+    INSERT INTO public.drivers (
+      user_id, license_number, license_expiry, license_image_url, is_external
+    )
     VALUES (
       p_user_id,
       p_detail->>'license_number',
-      (p_detail->>'license_expiry')::date,
-      p_detail->>'license_image_url'
+      NULLIF(p_detail->>'license_expiry', '')::date,
+      p_detail->>'license_image_url',
+      COALESCE((p_detail->>'is_external')::boolean, false)
     );
   END IF;
 
