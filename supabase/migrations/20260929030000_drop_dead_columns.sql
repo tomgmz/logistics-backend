@@ -1,12 +1,14 @@
 -- Drop columns with no reader or writer (schema audit, 2026-09-29).
 --
 -- Every column below was NULL in every row and unreferenced by the backend,
--- web and mobile code and by every database function — except fleet_status and
--- cargo_details, whose last readers are removed in the same commit:
+-- web and mobile code and by every database function — except fleet_status,
+-- accounting_status and cargo_details, whose last readers were removed first:
 --
 --   bookings.fleet_status   the fleet approval stage retired in
 --                           20260821000000_gm_first_approval_flow; its CHECK
 --                           constraint goes with it.
+--   bookings.accounting_status  the accounting approval stage, removed from
+--                           the flow before billing; 'pending' on every row.
 --   bookings.cargo_details  the old free-text/JSON cargo blob, superseded by
 --                           booking_cargo_items. The unused legacy RPCs
 --                           get_all_bookings / get_bookings_by_client /
@@ -21,6 +23,7 @@
 begin;
 
 alter table public.bookings   drop column if exists fleet_status;
+alter table public.bookings   drop column if exists accounting_status;
 alter table public.bookings   drop column if exists cargo_details;
 
 alter table public.clients    drop column if exists tin;

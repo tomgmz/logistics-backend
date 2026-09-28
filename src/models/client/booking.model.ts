@@ -42,7 +42,6 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   schedule_date,
   call_time,
   status,
-  accounting_status,
   gm_status,
   ops_status,
   blowbagets_check,
