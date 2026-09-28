@@ -18,7 +18,7 @@ export function phDay(at: Date | number = Date.now()): string {
 }
 
 /** A `date` value from the database, normalised to `YYYY-MM-DD`. */
-function asDay(value: string | Date | null | undefined): string | null {
+export function asDay(value: string | Date | null | undefined): string | null {
   if (!value) return null
   if (value instanceof Date) return phDay(value)
   const trimmed = String(value).trim()

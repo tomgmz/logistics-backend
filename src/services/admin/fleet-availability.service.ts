@@ -8,6 +8,7 @@ import {
 import { driverCalendarAllows } from '../driver/availability.service.js'
 import type { BlowbagetsItems } from '../../types/client/booking.types.js'
 import { logEvent } from '../../lib/log-event.js'
+import { assertServiceNotOverdue } from './truck-upkeep.service.js'
 
 /**
  * Availability rules shared by the assignment flow and the booking lifecycle.
@@ -88,6 +89,9 @@ export async function assertTruckAssignable(
   currentTruckId?: string | null,
 ): Promise<void> {
   await assertTruckPassedInspection(truckId)
+  // Past its routine service (km or date, whichever came first): it stays in
+  // the yard until the service is recorded.
+  await assertServiceNotOverdue(truckId)
 
   if (truckId === currentTruckId) return
 

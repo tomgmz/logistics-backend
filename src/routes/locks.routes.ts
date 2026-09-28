@@ -43,8 +43,9 @@ const MODULE_OF: Partial<Record<LockType, ModuleKey>> = {
   commodity:       'system-maintenance',
   product:         'system-maintenance',
   landline_prefix: 'system-maintenance',
-  // 'user' spans user-management (staff) and vehicle-management (drivers), and
-  // 'driver_report' belongs to the crewing roles; both rely on the role gate.
+  driver_report:   'reports',
+  // 'user' spans user-management (staff) and vehicle-management (drivers), so
+  // it relies on the role gate.
 }
 
 function lockType(req: Request, res: Response, next: NextFunction) {

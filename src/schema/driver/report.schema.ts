@@ -74,3 +74,8 @@ export const setReportStatusSchema = z.object({
   status:          z.enum(['acknowledged', 'resolved']),
   resolution_note: z.string().max(2000).optional().nullable(),
 })
+
+/** The desk naming what an unspecified alert was. */
+export const classifyReportSchema = z.object({
+  incident_type: incidentTypeSchema,
+})

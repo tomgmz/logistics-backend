@@ -8,8 +8,9 @@ import {
   listAllReportsService,
   enrichReportService,
   setReportStatusService,
+  classifyReportService,
 } from '../../services/driver/report.service.js'
-import type { ReportStatus } from '../../types/driver/report.types.js'
+import { reportScopeForRole, type ReportStatus } from '../../types/driver/report.types.js'
 
 /**
  * The driver app's Reports module (this replaces the placeholder "Maintenance"
@@ -43,6 +44,7 @@ async function myDriverId(req: Request): Promise<string | null> {
 function reportStatus(message: string): number {
   if (message.includes('not found'))  return 404
   if (message.includes('Choose the') || message.includes('Describe what')) return 400
+  if (message.includes('already classified')) return 409
   return 500
 }
 
@@ -94,7 +96,11 @@ export const getReport = async (req: Request, res: Response) => {
     // id into the service is what enforces that — not a check up here that a
     // later caller could forget.
     const driverId = req.user?.role === 'driver' ? await myDriverId(req) : null
-    const report   = await getReportService(param(req.params.reportId), driverId)
+    const report   = await getReportService(
+      param(req.params.reportId),
+      driverId,
+      reportScopeForRole(req.user?.role),
+    )
     res.status(200).json({ status: 'success', data: report })
   } catch (error: any) {
     res.status(reportStatus(error.message)).json({ status: 'error', message: error.message })
@@ -130,7 +136,7 @@ export const enrichReport = async (req: Request, res: Response) => {
 export const listAllReports = async (req: Request, res: Response) => {
   try {
     const status = String(req.query.status ?? '') as ReportStatus | ''
-    const reports = await listAllReportsService(status || null)
+    const reports = await listAllReportsService(status || null, reportScopeForRole(req.user?.role))
     res.status(200).json({ status: 'success', data: reports })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
@@ -152,6 +158,21 @@ export const setReportStatus = async (req: Request, res: Response) => {
       next,
       reportActor(req),
       req.body.resolution_note ?? null,
+      reportScopeForRole(req.user?.role),
+    )
+    res.status(200).json({ status: 'success', data: report })
+  } catch (error: any) {
+    res.status(reportStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+/** The desk classifies an "Unspecified Emergency". */
+export const classifyReport = async (req: Request, res: Response) => {
+  try {
+    const report = await classifyReportService(
+      param(req.params.reportId),
+      req.body.incident_type,
+      reportActor(req),
     )
     res.status(200).json({ status: 'success', data: report })
   } catch (error: any) {

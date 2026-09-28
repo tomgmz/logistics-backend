@@ -14,6 +14,24 @@ export type IncidentType =
   | 'health_emergency'
   | 'security_threat'
 
+/**
+ * The incidents that are about the VEHICLE. The fleet manager's Reports view is
+ * limited to these; an unclassified quick alert (incident_type NULL) is not one
+ * until the Company Administrator or Operations Manager classifies it.
+ */
+export const VEHICLE_INCIDENTS: IncidentType[] = ['vehicle_breakdown', 'accident']
+
+export function isVehicleIncident(type: IncidentType | null | undefined): boolean {
+  return !!type && VEHICLE_INCIDENTS.includes(type)
+}
+
+/** 'all' — the Reports desk; 'vehicle' — the fleet manager's slice of it. */
+export type ReportScope = 'all' | 'vehicle'
+
+export function reportScopeForRole(role: string | null | undefined): ReportScope {
+  return role === 'fleet_manager' ? 'vehicle' : 'all'
+}
+
 /** 'reported' — nobody has picked it up; 'acknowledged' — seen; 'resolved' — dealt with. */
 export type ReportStatus = 'reported' | 'acknowledged' | 'resolved'
 
@@ -59,6 +77,10 @@ export interface DriverReport {
   // joined
   bookings?: { booking_id: string; reference_number: string | null; origin: string } | null
   trucks?:   { truck_id: string; plate_number: string; truck_models?: { name: string | null; vehicle_type: string | null } | null } | null
+  // joined on the staff reads only
+  drivers?:      { driver_id: string; users?: { first_name: string | null; last_name: string | null; phone: string | null } | null } | null
+  acknowledger?: { first_name: string | null; last_name: string | null } | null
+  resolver?:     { first_name: string | null; last_name: string | null } | null
 }
 
 export interface CreateDriverReportInput {

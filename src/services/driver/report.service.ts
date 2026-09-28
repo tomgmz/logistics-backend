@@ -4,11 +4,13 @@ import * as push from '../messaging/push.service.js'
 import { broadcast } from '../../lib/realtime.js'
 import { logEvent } from '../../lib/log-event.js'
 import { supabase } from '../../lib/supabase.js'
-import type {
-  DriverReport,
-  CreateDriverReportInput,
-  ReportStatus,
-  IncidentType,
+import {
+  isVehicleIncident,
+  type DriverReport,
+  type CreateDriverReportInput,
+  type ReportStatus,
+  type ReportScope,
+  type IncidentType,
 } from '../../types/driver/report.types.js'
 import type { CreateNotificationInput, NotificationRow } from '../../types/notification.types.js'
 
@@ -25,8 +27,27 @@ import type { CreateNotificationInput, NotificationRow } from '../../types/notif
  * the driver believes help is coming.
  */
 
-/** Who gets told. Fleet own the vehicle, operations own the delivery. */
-const RESPONDER_ROLES = ['operations_manager', 'fleet_manager', 'admin']
+/**
+ * Who gets told. The desk (Company Administrator, Operations Manager) hears
+ * about everything; the fleet manager only about the vehicle — a breakdown or
+ * an accident. An unclassified alert reaches fleet once the desk classifies it.
+ */
+const DESK_ROLES  = ['operations_manager', 'admin']
+const FLEET_ROLES = ['fleet_manager']
+
+function responderRolesFor(report: Pick<DriverReport, 'incident_type'>): string[] {
+  return isVehicleIncident(report.incident_type) ? [...DESK_ROLES, ...FLEET_ROLES] : DESK_ROLES
+}
+
+/** Where each responder's tap lands — their own Reports page. */
+function reportUrlForRole(role: string, reportId: string): string {
+  const id = encodeURIComponent(reportId)
+  switch (role) {
+    case 'operations_manager': return `/operations_admin/reports?report=${id}`
+    case 'fleet_manager':      return `/fleet_admin/reports?report=${id}`
+    default:                   return `/admin/reports?report=${id}`
+  }
+}
 
 const INCIDENT_LABEL: Record<IncidentType, string> = {
   accident:         'Accident',
@@ -113,9 +134,12 @@ async function truckOnBooking(bookingId: string): Promise<string | null> {
  * saved, and failing the driver's request because a push token expired would
  * lose the very thing we are trying not to lose.
  */
-async function notifyResponders(report: DriverReport): Promise<void> {
+async function notifyResponders(
+  report: DriverReport,
+  roles: string[] = responderRolesFor(report),
+): Promise<void> {
   try {
-    const recipients = await notificationModel.resolveRecipientsByRoles(RESPONDER_ROLES)
+    const recipients = await notificationModel.resolveRecipientsByRoles(roles)
     if (recipients.length === 0) return
 
     // A quick alert, or anything that stops the truck, is an emergency; a
@@ -147,13 +171,13 @@ async function notifyResponders(report: DriverReport): Promise<void> {
       longitude:  report.longitude,
     }
 
-    const rows: CreateNotificationInput[] = recipients.map(({ user_id }) => ({
+    const rows: CreateNotificationInput[] = recipients.map(({ user_id, role }) => ({
       user_id,
       type,
       title,
       body,
       booking_id: report.booking_id,
-      data:       { ...data, action_url: `/admin/reports?report=${encodeURIComponent(report.report_id)}` },
+      data:       { ...data, action_url: reportUrlForRole(role, report.report_id) },
     }))
 
     const inserted = await notificationModel.insertMany(rows)
@@ -176,19 +200,37 @@ export function listDriverReportsService(driverId: string): Promise<DriverReport
   return ReportModel.findByDriverId(driverId)
 }
 
-export async function getReportService(reportId: string, driverId?: string | null): Promise<DriverReport> {
-  const report = await ReportModel.findById(reportId)
+export async function getReportService(
+  reportId: string,
+  driverId?: string | null,
+  scope: ReportScope = 'all',
+): Promise<DriverReport> {
+  // Staff (no driverId) get the desk's view with driver and responder names.
+  const report = driverId
+    ? await ReportModel.findById(reportId)
+    : await ReportModel.findByIdForStaff(reportId)
   if (!report) throw new Error('Report not found')
 
   // A driver reads only their own. `driverId` is null for staff callers, who
   // read every report — that is the whole purpose of the operations queue.
   if (driverId && report.driver_id !== driverId) throw new Error('Report not found')
+  // The fleet manager's slice: a report outside it reads as absent, not as
+  // forbidden, so an id can't be used to probe what else exists.
+  if (scope === 'vehicle' && !isVehicleIncident(report.incident_type)) throw new Error('Report not found')
 
   return report
 }
 
-export function listAllReportsService(status?: ReportStatus | null): Promise<DriverReport[]> {
-  return ReportModel.findAll(status)
+export function listAllReportsService(
+  status?: ReportStatus | null,
+  scope: ReportScope = 'all',
+): Promise<DriverReport[]> {
+  return ReportModel.findAll(status, scope)
+}
+
+/** Open breakdown/accident reports, for the fleet's Maintenance tab. */
+export function listOpenVehicleReportsService(): Promise<DriverReport[]> {
+  return ReportModel.findOpenVehicleReports()
 }
 
 /* ── Enriching a quick alert ──────────────────────────────────────────────── */
@@ -234,7 +276,47 @@ export async function enrichReportService(
     patch.source = 'detailed'
   }
 
-  return ReportModel.update(reportId, patch as Partial<DriverReport>)
+  const updated = await ReportModel.update(reportId, patch as Partial<DriverReport>)
+
+  // The driver's own detail turned it into a vehicle report: fleet was not told
+  // at the time, so tell them now.
+  if (!isVehicleIncident(report.incident_type) && isVehicleIncident(updated.incident_type)) {
+    void notifyResponders(updated, FLEET_ROLES)
+  }
+
+  return updated
+}
+
+/* ── Classifying an unspecified alert ─────────────────────────────────────── */
+
+/**
+ * The desk names what an "Unspecified Emergency" actually was. Only a report
+ * with no incident type can be classified — a type the driver picked is their
+ * account of it and is not overwritten. Classifying it as a breakdown or an
+ * accident is what brings it into the fleet manager's view, so they are
+ * notified at that moment.
+ */
+export async function classifyReportService(
+  reportId: string,
+  incidentType: IncidentType,
+  actor: ReportActor,
+): Promise<DriverReport> {
+  const report = await getReportService(reportId)
+  if (report.incident_type) throw new Error('This report is already classified')
+
+  await ReportModel.update(reportId, { incident_type: incidentType } as Partial<DriverReport>)
+  const updated = (await ReportModel.findByIdForStaff(reportId))!
+
+  logEvent({
+    user_id:     actor.userId,
+    log_type:    'vehicle_activity',
+    action:      'driver_report_classified',
+    description: `Driver report ${reportId} classified as ${incidentLabel(incidentType)}`,
+  })
+
+  if (isVehicleIncident(incidentType)) void notifyResponders(updated, FLEET_ROLES)
+
+  return updated
 }
 
 /* ── Responding ───────────────────────────────────────────────────────────── */
@@ -245,8 +327,9 @@ export async function setReportStatusService(
   status: Exclude<ReportStatus, 'reported'>,
   actor: ReportActor,
   resolutionNote?: string | null,
+  scope: ReportScope = 'all',
 ): Promise<DriverReport> {
-  const report = await getReportService(reportId)
+  const report = await getReportService(reportId, null, scope)
   const now    = new Date().toISOString()
 
   const patch: Record<string, unknown> = { status }

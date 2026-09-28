@@ -5,7 +5,7 @@ import { authenticate, authorize, isRootAdmin }   from '../middlewares/auth.midd
 import { createAdminSchema, updateAdminSchema }                       from '../schema/admin/admin.schema.js'
 import { createClientSchema, updateClientSchema }                     from '../schema/admin/client.schema.js'
 import { createDriverSchema, updateDriverSchema }                     from '../schema/admin/driver.schema.js'
-import { createTruckSchema, updateTruckSchema, recordTruckInspectionSchema } from '../schema/admin/truck.schema.js'
+import { createTruckSchema, updateTruckSchema, recordTruckInspectionSchema, recordReturnOdometerSchema, recordServiceSchema } from '../schema/admin/truck.schema.js'
 import { createTruckModelSchema, updateTruckModelSchema }             from '../schema/admin/truck-model.schema.js'
 import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../schema/admin/general_manager.schema.js'
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
@@ -25,7 +25,7 @@ import * as AssignmentController from '../controllers/admin/assignment.controlle
 import * as TripController from '../controllers/client/trip.controller.js'
 import * as ReportController from '../controllers/driver/report.controller.js'
 import { setTripPlanSchema } from '../schema/client/trip.schema.js'
-import { setReportStatusSchema } from '../schema/driver/report.schema.js'
+import { setReportStatusSchema, classifyReportSchema } from '../schema/driver/report.schema.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as PasswordResetController from '../controllers/admin/password-reset.controller.js'
 import * as ExternalDriverController from '../controllers/admin/external-driver.controller.js'
@@ -61,6 +61,14 @@ const isFleetRead  = authorize('admin', 'it_admin', 'fleet_manager', 'general_ma
 // are the ones the stuck driver disappears on. Not clients — they have no
 // business moving a driver between pools.
 const isCrewRelease = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager', 'operations_manager')
+// Reports: the Company Administrator and the Operations Manager see every
+// report; the fleet manager sees only vehicle-related ones (scoped by role in
+// the report service). Classifying an unspecified alert is the desk's call.
+const isReportsDesk   = authorize('admin', 'it_admin', 'operations_manager', 'fleet_manager')
+const isReportsTriage = authorize('admin', 'it_admin', 'operations_manager')
+// Vehicle upkeep records (odometer readings, services): the Company
+// Administrator and the Fleet Manager. Staff only — isFleet admits 'client'.
+const isFleetUpkeep = authorize('admin', 'it_admin', 'fleet_manager')
 
 //Admins — admin / it_admin only
 router.get('/admins',        authenticate, isAdmin, AdminController.getAllAdmins)
@@ -117,14 +125,21 @@ router.patch('/assignments/:bookingId/status', authenticate, isOperations, lockG
 router.get('/assignments/:bookingId/trips',  authenticate, isCrewRelease, TripController.getTrips)
 router.put('/assignments/:bookingId/trips',  authenticate, isCrewRelease, lockGuard('booking', fromParam('bookingId')), validate(setTripPlanSchema), TripController.setTripPlan)
 
-// Incidents raised by drivers from the road. Fleet own the vehicle and
-// operations own the delivery, so both read this queue.
-router.get('/driver-reports',                 authenticate, isFleetRead, ReportController.listAllReports)
-router.get('/driver-reports/:reportId',       authenticate, isFleetRead, ReportController.getReport)
-router.patch('/driver-reports/:reportId/status', authenticate, isCrewRelease, lockGuard('driver_report', fromParam('reportId')), validate(setReportStatusSchema), ReportController.setReportStatus)
+// Incidents raised by drivers from the road — the Reports module. It used to be
+// readable by isFleetRead, which admits 'client': a client could read every
+// driver's incident photos and positions. Staff on the Reports desk only now;
+// the module tier (reports) is enforced by moduleGuard on top.
+router.get('/driver-reports',                 authenticate, isReportsDesk, ReportController.listAllReports)
+router.get('/driver-reports/:reportId',       authenticate, isReportsDesk, ReportController.getReport)
+router.patch('/driver-reports/:reportId/status', authenticate, isReportsDesk, lockGuard('driver_report', fromParam('reportId')), validate(setReportStatusSchema), ReportController.setReportStatus)
+router.patch('/driver-reports/:reportId/classify', authenticate, isReportsTriage, lockGuard('driver_report', fromParam('reportId')), validate(classifyReportSchema), ReportController.classifyReport)
 
 // Trucks
 router.get('/trucks',        authenticate, isFleetRead, TruckController.getAllTrucks)
+// Vehicles that need a mechanic rather than a routine check: out of service,
+// failed their last BLOWBAGETS, or with an open breakdown/accident report from
+// a driver. Before /:id so 'maintenance' is never read as a truck id.
+router.get('/trucks/maintenance', authenticate, isCrewRelease, TruckController.getMaintenanceQueue)
 router.get('/trucks/:id',    authenticate, isFleetRead, TruckController.getTruckById)
 // BLOWBAGETS inspections live on the VEHICLE: the fleet manager records them
 // here, and only a vehicle whose latest inspection passed can be picked by
@@ -132,6 +147,12 @@ router.get('/trucks/:id',    authenticate, isFleetRead, TruckController.getTruck
 // assignment UI can show readiness.
 router.get('/trucks/:id/inspections',  authenticate, isFleetRead, TruckController.getTruckInspections)
 router.post('/trucks/:id/inspections', authenticate, isFleet, lockGuard('truck', fromParam('id')), validate(recordTruckInspectionSchema), TruckController.recordTruckInspection)
+// Odometer and routine service. The before-delivery reading rides on the
+// inspection above; this is the after-delivery one, once the driver has
+// stamped the vehicle back in the lot.
+router.post('/trucks/:id/odometer', authenticate, isFleetUpkeep, lockGuard('truck', fromParam('id')), validate(recordReturnOdometerSchema), TruckController.recordReturnOdometer)
+router.post('/trucks/:id/services', authenticate, isFleetUpkeep, lockGuard('truck', fromParam('id')), validate(recordServiceSchema), TruckController.recordService)
+router.get('/trucks/:id/upkeep',    authenticate, isCrewRelease, TruckController.getUpkeepHistory)
 router.post('/trucks',       authenticate, isFleet, validate(createTruckSchema), TruckController.createTruck)
 router.patch('/trucks/:id',  authenticate, isFleet, lockGuard('truck', fromParam('id')), validate(updateTruckSchema), TruckController.updateTruck)
 router.post('/trucks/:id/archive', authenticate, isFleet, lockGuard('truck', fromParam('id')), TruckController.archiveTruck)
@@ -233,6 +254,7 @@ router.patch('/system-logs/:id/resolve', authenticate, isItAdmin, SystemLogContr
 
 //upload
 router.post('/upload/image', authenticate, isFleet, uploadSingle, UploadController.uploadImage)
+router.post('/upload/fleet-photo', authenticate, isFleetUpkeep, uploadSingle, UploadController.uploadFleetRecordPhoto)
 
 // Handling Codes
 router.get('/handling-codes',        authenticate, isOperations, CargoCatalogController.getAllHandlingCodes)

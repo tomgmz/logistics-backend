@@ -48,6 +48,8 @@ export const MODULE_KEYS = [
   'transaction-history',
   'system-maintenance',
   'audit-logs',
+  // Incidents drivers raise from the road (the driver app's Reports tab).
+  'reports',
 ] as const
 export type ModuleKey = (typeof MODULE_KEYS)[number]
 
@@ -78,14 +80,15 @@ export const MODULES_BY_ROLE: Record<ManagedRole, ModuleKey[]> = {
     'document-management',
     'system-maintenance',
     'audit-logs',
+    'reports',
   ],
   general_manager: [
     'vehicle-management',
     'booking-management',
     'document-management',
   ],
-  fleet_manager: ['booking-management', 'vehicle-management', 'transit-tracking'],
-  operations_manager: ['booking-management', 'vehicle-management', 'document-management', 'transit-tracking'],
+  fleet_manager: ['booking-management', 'vehicle-management', 'transit-tracking', 'reports'],
+  operations_manager: ['booking-management', 'vehicle-management', 'document-management', 'transit-tracking', 'reports'],
 }
 
 // Default access tier per role per module. Seeded into module_permissions when a
@@ -105,6 +108,7 @@ export const ROLE_MODULE_DEFAULTS: Record<ManagedRole, Partial<Record<ModuleKey,
     'transit-tracking':    'manage',
     'transaction-history': 'read',
     'audit-logs':          'read',
+    'reports':             'all',
   },
   general_manager: {
     'booking-management':  'manage',
@@ -118,12 +122,18 @@ export const ROLE_MODULE_DEFAULTS: Record<ManagedRole, Partial<Record<ModuleKey,
     'booking-management': 'read',
     'vehicle-management': 'all',
     'transit-tracking':   'manage',
+    // Vehicle-related reports only (breakdowns, accidents) — the scoping is
+    // done server-side in the report service, not by this tier.
+    'reports':            'manage',
   },
   operations_manager: {
     'booking-management':  'all',
     'vehicle-management':  'read',
     'document-management': 'manage',
     'transit-tracking':    'manage',
+    // Operations is who responds to a driver in trouble: acknowledging and
+    // resolving a report is an edit, so Manage.
+    'reports':             'manage',
   },
 }
 
@@ -148,6 +158,8 @@ const MODULE_ROUTE_MAP: { prefix: string; module: ModuleKey }[] = [
   { prefix: '/trucks',            module: 'vehicle-management' },
   { prefix: '/drivers',           module: 'vehicle-management' },
   { prefix: '/assignments',       module: 'booking-management' },
+  // Driver incident queue: reading needs can_view, acknowledge/resolve can_edit.
+  { prefix: '/driver-reports',    module: 'reports' },
   // Cargo catalog + landline prefixes are managed on the admin-only System
   // Maintenance page, so their CRUD is governed by the system-maintenance tier
   // (which only the admin role holds). Clients still bypass (non-managed), so the

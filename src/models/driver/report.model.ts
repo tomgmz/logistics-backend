@@ -1,8 +1,10 @@
 import { supabase } from '../../lib/supabase.js'
-import type {
-  DriverReport,
-  CreateDriverReportInput,
-  ReportStatus,
+import {
+  VEHICLE_INCIDENTS,
+  type DriverReport,
+  type CreateDriverReportInput,
+  type ReportStatus,
+  type ReportScope,
 } from '../../types/driver/report.types.js'
 
 /**
@@ -16,6 +18,16 @@ const REPORT_WITH_RELATIONS_SELECT = `
   *,
   bookings ( booking_id, reference_number, origin ),
   trucks ( truck_id, plate_number, truck_models ( name, vehicle_type ) )
+`
+
+// What the staff side reads on top: who filed it, and which staff member picked
+// it up / closed it. The actor names stay OUT of the driver's own reads — a
+// driver is told "Our team", never a staff name (see record locks).
+const STAFF_REPORT_SELECT = `
+  ${REPORT_WITH_RELATIONS_SELECT},
+  drivers ( driver_id, users ( first_name, last_name, phone ) ),
+  acknowledger:users!acknowledged_by ( first_name, last_name ),
+  resolver:users!resolved_by ( first_name, last_name )
 `
 
 async function create(driverId: string, input: CreateDriverReportInput): Promise<DriverReport> {
@@ -77,13 +89,16 @@ async function findById(reportId: string): Promise<DriverReport | null> {
 }
 
 /** Operations' queue. `status` narrows it; omitted, it is everything. */
-async function findAll(status?: ReportStatus | null): Promise<DriverReport[]> {
+async function findAll(status?: ReportStatus | null, scope: ReportScope = 'all'): Promise<DriverReport[]> {
   let query = supabase
     .from('driver_reports')
-    .select(`${REPORT_WITH_RELATIONS_SELECT}, drivers ( driver_id, users ( first_name, last_name, phone ) )`)
+    .select(STAFF_REPORT_SELECT)
     .order('created_at', { ascending: false })
 
   if (status) query = query.eq('status', status)
+  // An IN on incident_type also drops NULLs — unclassified alerts stay out of
+  // the fleet's view until someone on the desk classifies them.
+  if (scope === 'vehicle') query = query.in('incident_type', VEHICLE_INCIDENTS)
 
   const { data, error } = await query
   if (error) throw error
@@ -94,9 +109,39 @@ async function findAll(status?: ReportStatus | null): Promise<DriverReport[]> {
 async function findByBookingId(bookingId: string): Promise<DriverReport[]> {
   const { data, error } = await supabase
     .from('driver_reports')
-    .select(`${REPORT_WITH_RELATIONS_SELECT}, drivers ( driver_id, users ( first_name, last_name, phone ) )`)
+    .select(STAFF_REPORT_SELECT)
     .eq('booking_id', bookingId)
     .order('created_at', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []) as unknown as DriverReport[]
+}
+
+/** One report as the staff desk reads it (with driver + actor names). */
+async function findByIdForStaff(reportId: string): Promise<DriverReport | null> {
+  const { data, error } = await supabase
+    .from('driver_reports')
+    .select(STAFF_REPORT_SELECT)
+    .eq('report_id', reportId)
+    .maybeSingle()
+
+  if (error) throw error
+  return (data ?? null) as unknown as DriverReport | null
+}
+
+/**
+ * Unresolved reports that are about the VEHICLE — a breakdown or an accident —
+ * on a known truck. This is what puts a truck on the Maintenance tab even
+ * while its status still says it is fine.
+ */
+async function findOpenVehicleReports(): Promise<DriverReport[]> {
+  const { data, error } = await supabase
+    .from('driver_reports')
+    .select(STAFF_REPORT_SELECT)
+    .neq('status', 'resolved')
+    .in('incident_type', VEHICLE_INCIDENTS)
+    .not('truck_id', 'is', null)
+    .order('created_at', { ascending: false })
 
   if (error) throw error
   return (data ?? []) as unknown as DriverReport[]
@@ -128,5 +173,7 @@ export default {
   findById,
   findAll,
   findByBookingId,
+  findByIdForStaff,
+  findOpenVehicleReports,
   update,
 }
