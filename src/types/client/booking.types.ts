@@ -7,7 +7,6 @@ export type OpsStatus          = 'pending' | 'assigned'
 // Legacy sub-stages kept for historical rows. Accounting no longer gates the
 // flow, and BLOWBAGETS moved off the booking and onto the vehicle.
 export type AccountingStatus   = 'pending' | 'approved' | 'rejected' | 'forwarded'
-export type FleetStatus        = 'pending' | 'approved' | 'rejected'
 
 // The fleet manager's BLOWBAGETS vehicle inspection. Each key is one item of the
 // mnemonic; `true` means it passed. Battery and Brakes share the letter B but
@@ -132,7 +131,6 @@ export interface Booking {
   accounting_status?:     AccountingStatus | null
   gm_status?:             GmStatus | null
   ops_status?:            OpsStatus | null
-  fleet_status?:          FleetStatus | null
   blowbagets_check?:      BlowbagetsCheck | null
   rejection_reason?:      string | null
   cancelled_by?:          string | null

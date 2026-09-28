@@ -33,7 +33,6 @@ export const bookingPaths = {
               client_id: '550e8400-e29b-41d4-a716-446655440000',
               origin: 'Laguna Warehouse',
               truck_type_needed: '10-wheeler',
-              cargo_details: 'Fragile electronics',
               schedule_date: '2027-01-15',
               call_time: '08:00',
               destinations: [

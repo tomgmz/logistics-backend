@@ -8,7 +8,6 @@ export const bookingSchemas = {
       origin_latitude:     { type: 'number', nullable: true, example: 14.1678 },
       origin_longitude:    { type: 'number', nullable: true, example: 121.2416 },
       truck_type_needed:   { type: 'string', example: '10-wheeler' },
-      cargo_details:       { type: 'string', nullable: true, example: 'Fragile electronics' },
       schedule_date:       { type: 'string', format: 'date', example: '2027-01-15' },
       call_time:           { type: 'string', example: '08:00' },
       required_weight_kg:  { type: 'number', nullable: true, example: 1500.50 },
@@ -37,7 +36,6 @@ export const bookingSchemas = {
     properties: {
       origin:             { type: 'string', example: 'Laguna Warehouse' },
       truck_type_needed:  { type: 'string', example: '10-wheeler' },
-      cargo_details:      { type: 'string', nullable: true, example: 'Fragile electronics' },
       schedule_date:      { type: 'string', format: 'date', example: '2027-01-15' },
       call_time:          { type: 'string', example: '08:00' },
       status:             { type: 'string', enum: ['pending', 'assigned', 'in_transit', 'delivered', 'completed', 'cancelled'], example: 'assigned' },
@@ -92,7 +90,6 @@ export const bookingSchemas = {
       origin_latitude:     { type: 'number', nullable: true,       example: 14.1678 },
       origin_longitude:    { type: 'number', nullable: true,       example: 121.2416 },
       truck_type_needed:   { type: 'string',                       example: '10-wheeler' },
-      cargo_details:       { type: 'string', nullable: true,       example: 'Fragile electronics' },
       schedule_date:       { type: 'string', format: 'date',       example: '2027-01-15' },
       call_time:           { type: 'string',                       example: '08:00' },
       status:              { type: 'string', enum: ['pending', 'assigned', 'in_transit', 'delivered', 'completed', 'cancelled'], example: 'pending' },

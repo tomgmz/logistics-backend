@@ -45,7 +45,6 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   accounting_status,
   gm_status,
   ops_status,
-  fleet_status,
   blowbagets_check,
   rejection_reason,
   cancelled_by,
