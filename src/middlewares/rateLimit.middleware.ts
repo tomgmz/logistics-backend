@@ -53,7 +53,7 @@ export const globalLimiter = rateLimit({
  *
  * It is a backstop against a runaway client, NOT a quota on working. It used to
  * be 100 per 15 minutes, which sounds generous until you notice this single
- * budget covers ~70 route usages across billing, bookings, driver, notifications,
+ * budget covers ~70 route usages across bookings, driver, notifications,
  * uploads, directions and history: a screen that loads half a dozen endpoints
  * spends it in fifteen screens, and the app then starts refusing the user their
  * own data mid-shift. That is a broken app, not a protected one — and it is what

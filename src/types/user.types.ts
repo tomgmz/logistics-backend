@@ -1,4 +1,11 @@
-export type UserRole = 'admin' | 'driver' | 'client' | 'accountant' | 'general_manager'
+export type UserRole =
+  | 'admin'
+  | 'it_admin'
+  | 'general_manager'
+  | 'fleet_manager'
+  | 'operations_manager'
+  | 'client'
+  | 'driver'
 export type UserStatus = 'active' | 'inactive' | 'archived'
 export type UserSuffix = string
 

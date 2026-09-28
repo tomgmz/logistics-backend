@@ -25,8 +25,7 @@ export function hasActiveUsersWithRoles(roles: string[]) {
   return model.hasActiveUsersWithRoles(roles)
 }
 
-// Whether anyone can act on the GM approval stage — a general manager or an
-// accountant the IT admin appointed as GM proxy.
+// Whether anyone can act on the GM approval stage — an active general manager.
 export async function hasGmApprovers(): Promise<boolean> {
   return (await model.resolveGmApprovers()).length > 0
 }
@@ -52,7 +51,7 @@ interface StageConfig {
   // and is appended automatically, so it can be omitted here.
   roles?: string[]
   // For stages targeting the client, the assigned driver(s), or everyone who may
-  // act on the GM approval stage (the GM plus any appointed proxy).
+  // act on the GM approval stage (the general manager).
   audience?: 'client' | 'drivers' | 'gm_approvers'
   // Stages about a vehicle rather than an approval step deep-link the recipient
   // into Vehicle Management instead of Booking Management.
@@ -191,7 +190,7 @@ async function resolveRecipients(stage: NotificationStage, booking: BookingWithR
     return ids.map((user_id) => ({ user_id, role: 'driver' }))
   }
   if (cfg.audience === 'gm_approvers') {
-    // The GM plus any appointed proxy, plus admins as the standing fallback.
+    // The general manager, plus admins as the standing fallback.
     const approvers = await model.resolveGmApprovers()
     const admins    = await model.resolveRecipientsByRoles(['admin'])
     const byId      = new Map<string, Recipient>()

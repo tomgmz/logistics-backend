@@ -222,8 +222,8 @@ export async function driverConfirmTripPickupService(
 
   await TripModel.setTripPickupProof(tripId, proofPhotoUrl, position, fence)
 
-  // The booking-level pickup columns are what the web app, the client's booking
-  // detail and the billing PDFs read. They keep meaning "the first loading",
+  // The booking-level pickup columns are what the web app and the client's
+  // booking detail read. They keep meaning "the first loading",
   // so they are stamped once, by the first run, and left alone after that.
   if (isFirstRun) {
     await BookingModel.setPickupProof(trip.booking_id, proofPhotoUrl, position, fence)

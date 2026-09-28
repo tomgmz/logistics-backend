@@ -157,7 +157,7 @@ export function authorize(...roles: string[]) {
     if (!req.user || !roles.includes(req.user.role)) {
       // An attempt to reach something you are not entitled to is a business
       // fact, not a technical one, so it belongs in the audit trail: "did
-      // anyone try to open billing before we granted it?" is a question the
+      // anyone try to open user management before we granted it?" is a question the
       // Company Admin asks. Only logged when we know who asked — an
       // unauthenticated caller never got past authenticate().
       if (req.user) {

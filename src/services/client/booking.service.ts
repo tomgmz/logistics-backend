@@ -87,7 +87,7 @@ const isDriverViewer = (viewer: BookingViewer): boolean => viewer.role === 'driv
  * straight through.
  *
  * Reported as "not found" rather than "forbidden" so the reply never confirms
- * that another company's booking exists — the same choice billing makes.
+ * that another company's booking exists.
  */
 function assertBookingOwnership(booking: { client_id: string }, viewer: BookingViewer): void {
   if (!isClientViewer(viewer)) return
@@ -265,7 +265,7 @@ export async function createBookingService(
 
   })
 
-  // Stage 1: straight to the general manager (or an appointed GM proxy) for
+  // Stage 1: straight to the general manager for
   // approval. If nobody can act on that stage, clear it and hand the booking to
   // operations so a new booking is never stranded.
   void routeNewBookingToGm(booking, userId)
@@ -342,8 +342,8 @@ async function reoptimizeBookingStops(booking: BookingWithRelations): Promise<vo
 
 /**
  * Send a freshly created booking into the approval chain. Normally that means
- * notifying the GM stage; with nobody staffed to approve (no general manager and
- * no proxy) the stage is auto-cleared and the booking goes straight to ops.
+ * notifying the GM stage; with nobody staffed to approve (no active general
+ * manager) the stage is auto-cleared and the booking goes straight to ops.
  */
 async function routeNewBookingToGm(
   booking: BookingWithRelations,
@@ -361,7 +361,7 @@ async function routeNewBookingToGm(
       user_id:     userId,
       log_type:    'booking',
       action:      'gm_auto_approved',
-      description: `Booking ${bookingRef(booking)} General Manager stage auto-cleared (no General Manager or proxy staffed)`,
+      description: `Booking ${bookingRef(booking)} General Manager stage auto-cleared (no General Manager staffed)`,
     })
     await notifyStage('ops_pending', advanced ?? booking)
   } catch (err) {

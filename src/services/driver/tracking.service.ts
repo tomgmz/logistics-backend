@@ -208,8 +208,8 @@ export async function getLivePositionService(
 }
 
 /**
- * How long a breadcrumb trail is kept. Comfortably outlives the billing period a
- * detention or route dispute would be raised against.
+ * How long a breadcrumb trail is kept. Comfortably outlives the window in which
+ * a detention or route dispute would be raised.
  */
 export const LOCATION_RETENTION_DAYS = 30
 

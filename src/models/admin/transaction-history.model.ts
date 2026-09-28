@@ -62,8 +62,8 @@ const FROM_SQL = `
   LEFT JOIN clients c ON c.client_id = b.client_id
 `
 
-// `registered_name` is the BIR-registered entity and takes precedence over the
-// trading name: the BIR-registered entity is the one a company is invoiced as.
+// `registered_name` is the company's registered legal name and takes precedence
+// over the trading name on anything that identifies the client formally.
 const COMPANY_NAME_SQL = `COALESCE(NULLIF(c.registered_name, ''), NULLIF(c.company_name, ''), 'Unknown client')`
 
 // The moment a booking actually finished: its last delivered stop. `bookings`

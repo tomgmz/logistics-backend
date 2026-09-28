@@ -1,8 +1,7 @@
 import multer from 'multer'
 
 /**
- * Uploads for client-supplied paperwork: booking documents
- * and proof of payment.
+ * Uploads for client-supplied paperwork attached to a booking.
  *
  * Images are accepted alongside office formats because most of what clients
  * actually attach is photographed rather than scanned — a signed DR, a deposit

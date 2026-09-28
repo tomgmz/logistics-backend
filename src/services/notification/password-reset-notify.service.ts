@@ -9,7 +9,7 @@ import { PasswordResetRequestRow, ResetHandlerGroup } from '../../types/password
  *
  * Deliberately separate from notifyStage(), which is booking-shaped (it takes a
  * BookingWithRelations and deep-links off a booking_id). This follows the same
- * precedent as billing-notify.service and report.service's notifyResponders:
+ * precedent as report.service's notifyResponders:
  * share the model and the three delivery steps, not the booking vocabulary.
  */
 

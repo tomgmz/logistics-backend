@@ -90,8 +90,7 @@ export async function hasActiveUsersWithRoles(roles: string[]): Promise<boolean>
   return (count ?? 0) > 0
 }
 
-// Anyone who may act on the GM approval stage. The proxy appointment was
-// retired with the accountant role, so this is the active general manager(s).
+// Anyone who may act on the GM approval stage: the active general manager(s).
 // Used both for recipient resolution and for the staffing check that decides
 // whether the stage can be auto-cleared.
 export async function resolveGmApprovers(): Promise<{ user_id: string; role: string }[]> {

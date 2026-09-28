@@ -6,7 +6,6 @@ export type UserRole =
   | 'general_manager'
   | 'fleet_manager'
   | 'operations_manager'
-  | 'accountant'
   | 'client'
   | 'driver'
   | 'it_admin'
