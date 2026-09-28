@@ -773,8 +773,8 @@ async function settleDelivery(
  * NO ACTION, so a crewed booking could not be deleted at all — the foreign key
  * threw first and the caller's crew release never ran, stranding the driver on
  * 'assigned'. The delivery is cleared here, in the order the constraints need:
- * its own nullable references are detached (they outlive the trip — an expense
- * or an emergency alert is a record in its own right and must not be destroyed
+ * its own nullable references are detached (they outlive the trip — a
+ * maintenance request is a record in its own right and must not be destroyed
  * with it), then the delivery, then the booking.
  */
 async function remove(bookingId: string): Promise<boolean> {
@@ -788,7 +788,7 @@ async function remove(bookingId: string): Promise<boolean> {
   const deliveryIds = (deliveries ?? []).map((row: any) => row.delivery_id)
 
   if (deliveryIds.length > 0) {
-    for (const table of ['expenses', 'emergency_alerts', 'maintenance_requests'] as const) {
+    for (const table of ['maintenance_requests'] as const) {
       const { error } = await supabase
         .from(table)
         .update({ delivery_id: null })
