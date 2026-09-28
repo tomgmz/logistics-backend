@@ -16,6 +16,7 @@ import { badRequest } from '../../lib/http-error.js'
 import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay, phDay } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers } from '../notification/notification.service.js'
+import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { crewOnBooking, releaseCrew } from '../admin/fleet-availability.service.js'
 import {
   assertStopProximity,
@@ -384,6 +385,12 @@ export async function updateBookingService(
 
   const booking = await BookingModel.update(bookingId, input)
   if (!booking) throw new Error('Failed to update booking')
+
+  // A moved departure or pickup point moves every planned arrival. No-op unless
+  // the booking is crewed.
+  const moved = ['schedule_date', 'call_time', 'origin_latitude', 'origin_longitude']
+    .some((k) => k in (input as Record<string, unknown>))
+  if (moved) void refreshPlannedEta(bookingId)
 
   logEvent({
     user_id:     userId,

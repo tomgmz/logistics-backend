@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase.js'
 import { logEvent } from '../../lib/log-event.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { bookingRefById } from '../../lib/booking-ref.js'
+import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { provisionExternalDriver, issueInvite } from '../auth/driver-enrollment.service.js'
 import {
   assertDriverAssignable,
@@ -195,6 +196,9 @@ export async function assignBookingService(
       : input.vendor_vehicle_plate ?? 'A vendor-supplied vehicle'
     void notifyStage('vehicle_assigned', booking, { vehicleLabel: label })
   }
+
+  // First moment the booking has a truck, and so a plan to estimate.
+  void refreshPlannedEta(bookingId)
 
   return { ...assignment, capacity_warning: capacityWarning }
 }

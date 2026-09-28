@@ -27,6 +27,14 @@ export interface BookingTrip {
   pickup_proof_distance_m?:      number | null
   pickup_proof_override_reason?: string | null
 
+  // The planned estimate (planned-eta.service.ts): Google's predicted drive
+  // times plus flat unloading/reloading allowances, chained run to run.
+  planned_departure_at?: string | null
+  /** Arrival at this run's last stop. */
+  planned_arrival_at?:   string | null
+  /** Back at the origin, ready to load the next run. */
+  planned_return_at?:    string | null
+
   notes?:      string | null
   created_at?: string
   updated_at?: string
@@ -40,6 +48,7 @@ export interface BookingTripStop {
   sequence_order: number
   status:         TripStopStatus
   delivered_at?:  string | null
+  planned_arrival_at?: string | null
 
   proof_photo_url?:       string | null
   proof_at?:              string | null

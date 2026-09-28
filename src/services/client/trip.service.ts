@@ -7,6 +7,7 @@ import { notifyStage } from '../notification/notification.service.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay } from '../../lib/ph-date.js'
 import { invalidateEta } from '../maps/eta.service.js'
+import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import {
   assertStopProximity,
   stopCoordinates,
@@ -140,6 +141,7 @@ export async function setTripPlanService(
   }
 
   const trips = await TripModel.replacePlan(bookingId, plan)
+  void refreshPlannedEta(bookingId)
 
   logEvent({
     user_id:     actor.userId,
@@ -230,6 +232,9 @@ export async function driverConfirmTripPickupService(
       await BookingModel.settleDelivery(trip.booking_id, 'in_transit')
     }
   }
+
+  // The run's real departure replaces its planned one, and moves every run after it.
+  void refreshPlannedEta(trip.booking_id)
 
   logEvent({
     user_id:     actor.userId,
@@ -387,7 +392,11 @@ async function completeTripIfAllStopsDone(
 
     const trips     = await TripModel.findByBookingId(bookingId)
     const remaining = trips.filter((t) => t.status !== 'completed' && t.status !== 'cancelled')
-    if (remaining.length > 0) return
+    if (remaining.length > 0) {
+      // The next run's start is now knowable from when this one actually ended.
+      void refreshPlannedEta(bookingId)
+      return
+    }
 
     // Every run is back. The driver used to have to tap "mark delivery as done"
     // as a separate step; confirming the final stop of the final run IS
