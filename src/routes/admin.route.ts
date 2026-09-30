@@ -45,6 +45,9 @@ import {
 import * as CargoCatalogController from '../controllers/admin/cargo-catalog.controller.js'
 import { createLandlinePrefixSchema, updateLandlinePrefixSchema } from '../schema/admin/landline-prefix.schema.js'
 import * as LandlinePrefixController from '../controllers/admin/landline-prefix.controller.js'
+import * as DocumentsController from '../controllers/admin/documents.controller.js'
+import { uploadStaffDocumentsSchema, reviewDocumentSchema } from '../schema/admin/documents.schema.js'
+import { uploadDocuments } from '../middlewares/uploadDocuments.middleware.js'
 
 const router = Router()
 
@@ -69,6 +72,18 @@ const isReportsTriage = authorize('admin', 'it_admin', 'operations_manager')
 // Vehicle upkeep records (odometer readings, services): the Company
 // Administrator and the Fleet Manager. Staff only — isFleet admits 'client'.
 const isFleetUpkeep = authorize('admin', 'it_admin', 'fleet_manager')
+// Document Management: the portals that carry the module. What each may do
+// (view / upload / review / archive / export) is the document-management tier.
+const isDocuments = authorize('admin', 'it_admin', 'general_manager', 'operations_manager')
+
+// multer reports a rejected type or an oversized file through `err`; answer it
+// as a 400 instead of letting it surface as a 500.
+const handleDocumentUpload = (req: any, res: any, next: any) => {
+  uploadDocuments(req, res, (err: unknown) => {
+    if (err) return res.status(400).json({ status: 'error', message: (err as Error).message })
+    next()
+  })
+}
 
 //Admins — admin / it_admin only
 router.get('/admins',        authenticate, isAdmin, AdminController.getAllAdmins)
@@ -251,6 +266,19 @@ router.get('/system-logs/stats',        authenticate, isItAdmin, SystemLogContro
 router.get('/system-logs/export',       authenticate, isItAdmin, SystemLogController.exportLogs)
 router.get('/system-logs/:id',          authenticate, isItAdmin, SystemLogController.getLogById)
 router.patch('/system-logs/:id/resolve', authenticate, isItAdmin, SystemLogController.setResolved)
+
+// Document Management — a library over every stored file, plus paperwork staff
+// attach to a booking. Derived files (proof photos, client attachments, fleet
+// receipts) are read-only; only staff uploads are reviewed or archived.
+// moduleGuard maps GET/POST/PATCH to view/create/edit; export and archive have
+// no verb of their own, so their tier is named explicitly.
+router.get('/documents',                authenticate, isDocuments, DocumentsController.listDocuments)
+router.get('/documents/export',         authenticate, isDocuments, requireModuleFlag('document-management', 'can_export'), DocumentsController.exportDocuments)
+router.get('/documents/bookings',       authenticate, isDocuments, DocumentsController.searchBookings)
+router.post('/documents',               authenticate, isDocuments, handleDocumentUpload, validate(uploadStaffDocumentsSchema), DocumentsController.uploadDocuments)
+router.patch('/documents/:id/review',   authenticate, isDocuments, validate(reviewDocumentSchema), DocumentsController.reviewDocument)
+router.post('/documents/:id/archive',   authenticate, isDocuments, requireModuleFlag('document-management', 'can_delete'), DocumentsController.archiveDocument)
+router.post('/documents/:id/restore',   authenticate, isDocuments, requireModuleFlag('document-management', 'can_delete'), DocumentsController.restoreDocument)
 
 //upload
 router.post('/upload/image', authenticate, isFleet, uploadSingle, UploadController.uploadImage)

@@ -180,6 +180,7 @@ const MODULE_ROUTE_MAP: { prefix: string; module: ModuleKey }[] = [
   { prefix: '/password-resets',   module: 'user-management' },
   { prefix: '/users',             module: 'user-management' },
   { prefix: '/audit-logs',        module: 'audit-logs' },
+  { prefix: '/documents',         module: 'document-management' },
 ]
 
 // Resolve the module a request path belongs to. Tolerates both the mounted
