@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import * as ResetService from '../../services/auth/password-reset.service.js'
+import { describeIpLocation } from '../../lib/ip-location.js'
 
 // One response for every outcome of a reset request. A caller must not be able to
 // tell an unknown address from a real one, a locked account from an active one,
@@ -39,9 +40,11 @@ export async function verifyToken(req: Request, res: Response) {
 export async function completeReset(req: Request, res: Response) {
   try {
     const { token, password } = req.body
-    // Passed through for the confirmation email and nothing else — the service
-    // does not persist it. See completeReset's parameter docs.
-    await ResetService.completeReset(token, password, req.ip ?? null)
+    // The emails say roughly WHERE the reset came from, never the IP. The IP is
+    // turned into a place here, offline, and goes no further. See
+    // lib/ip-location.ts and completeReset's parameter docs.
+    const location = await describeIpLocation(req.ip)
+    await ResetService.completeReset(token, password, location)
     res.status(200).json({
       status:  'success',
       message: 'Your password has been reset. You can now sign in.',

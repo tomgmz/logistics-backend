@@ -32,6 +32,7 @@
     "express": "^5.2.1",
     "express-basic-auth": "^1.2.1",
     "express-rate-limit": "^8.3.1",
+    "fast-geoip": "^1.1.88",
     "google-auth-library": "^10.6.2",
     "helmet": "^8.1.0",
     "idanalyzer2": "^1.0.2",

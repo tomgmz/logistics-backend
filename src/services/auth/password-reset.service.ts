@@ -363,15 +363,15 @@ export async function completeReset(
   token:       string,
   newPassword: string,
   /**
-   * The caller's address, for the confirmation email ONLY.
+   * Roughly where the reset came from ("San Pablo City, Philippines"), for the
+   * confirmation emails ONLY. The controller works it out from the request, so
+   * the IP itself never reaches this service (see lib/ip-location.ts).
    *
    * It is handed to the mailer and then goes out of scope. Nothing on this path
    * writes it down -- not the audit event below, not the request row, not a log
-   * line. A user's IP is not recorded; showing someone their own, once, in a
-   * notice addressed to them, is the single agreed exception and it needs no
-   * storage to work.
+   * line.
    */
-  ip?:         string | null,
+  location?:   string | null,
 ): Promise<void> {
   const tokenHash = hashToken(token)
   const request   = await ResetModel.findLiveByTokenHash(tokenHash)
@@ -441,7 +441,7 @@ export async function completeReset(
     to:        user?.email ?? request.email,
     firstName: user?.first_name ?? null,
     changedAt: formatManilaTimestamp(completed.completed_at),
-    ipAddress: ip ?? null,
+    location:  location ?? null,
   }).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[password-reset] confirmation email failed for ${request.email}:`, msg)
@@ -453,6 +453,7 @@ export async function completeReset(
     fullName,
     role:      user?.role ?? null,
     changedAt: formatManilaTimestamp(completed.completed_at),
+    location:  location ?? null,
   }).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[password-reset] company alert email failed for ${request.email}:`, msg)

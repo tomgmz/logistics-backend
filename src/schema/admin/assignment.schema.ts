@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { emailField, fullNameField, optionalMobileField } from './shared.schema.js'
 
 // A booking can be crewed two ways:
 //  - company path: pick a registered driver + truck (driver_id + truck_id)
@@ -11,9 +12,9 @@ export const assignBookingSchema = z.object({
   is_vendor_supplied:    z.boolean().optional().default(false),
   vendor_name:           z.string().trim().max(120).optional(),
   vendor_contact:        z.string().trim().max(120).optional(),
-  vendor_driver_name:    z.string().trim().max(120).optional(),
+  vendor_driver_name:    fullNameField('Driver name').optional(),
   vendor_driver_license: z.string().trim().max(60).optional(),
-  vendor_driver_phone:   z.string().trim().max(30).optional(),
+  vendor_driver_phone:   optionalMobileField(),
   vendor_vehicle_plate:  z.string().trim().max(30).optional(),
   vendor_vehicle_type:   z.string().trim().max(60).optional(),
 
@@ -21,7 +22,7 @@ export const assignBookingSchema = z.object({
   // a short local run where the dispatcher phones the driver — and requiring an
   // email would force operators to invent one. Supplying it is what opts this
   // driver into a provisioned account and a passkey invite.
-  vendor_driver_email:   z.string().trim().toLowerCase().email().max(254).optional(),
+  vendor_driver_email:   emailField().optional(),
 }).superRefine((data, ctx) => {
   if (data.is_vendor_supplied) {
     if (!data.vendor_driver_name) {

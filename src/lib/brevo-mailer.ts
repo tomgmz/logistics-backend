@@ -712,16 +712,15 @@ export interface PasswordChangedEmailParams {
   /** When the change landed, already formatted for the recipient to read. */
   changedAt: string
   /**
-   * The address the change came from, shown so the reader can recognise it as
-   * theirs or not.
+   * Roughly where the change came from ("San Pablo City, Philippines"), shown so
+   * the reader can recognise it as theirs or not. See lib/ip-location.ts.
    *
-   * It is passed in, rendered, and dropped. It is never written anywhere: not to
-   * the audit log, not to the request row, not to a console line. Company policy
-   * is that a user's IP is not recorded, and the one exception agreed here is
-   * telling the account holder their own -- which requires no storage at all.
-   * If you are about to persist this value, that is the policy you are changing.
+   * The email carries a place, never the IP address itself. The place is passed
+   * in, rendered, and dropped: it is never written to the audit log, the request
+   * row or a console line. If you are about to persist it, or put the IP back,
+   * that is a company privacy policy you are changing.
    */
-  ipAddress?: string | null
+  location?: string | null
   /**
    * True (the default) when this follows a completed reset, which signs out
    * every device and lifts any lockout. False for a change made while signed
@@ -729,24 +728,6 @@ export interface PasswordChangedEmailParams {
    * claim it did.
    */
   afterReset?: boolean
-}
-
-/**
- * Addresses not worth showing anyone.
- *
- * A loopback or an empty value means the request never crossed a network we can
- * describe (local development, a health check, a proxy we could not see past).
- * Printing "::1" in a security email teaches the reader to ignore the line;
- * omitting it keeps the line meaningful every time it does appear.
- */
-function displayableIp(ip?: string | null): string | null {
-  if (!ip) return null
-  const trimmed = ip.trim()
-  if (!trimmed) return null
-  // Express reports IPv4 through an IPv6 stack as ::ffff:127.0.0.1
-  const bare = trimmed.replace(/^::ffff:/i, '')
-  if (bare === '::1' || bare === '127.0.0.1' || bare === 'localhost') return null
-  return bare
 }
 
 /**
@@ -763,9 +744,10 @@ function displayableIp(ip?: string | null): string | null {
  * the address the reset was requested from.
  *
  * Deliberately absent: the new password (it is never ours to repeat), a reset
- * link (this mail grants nothing, so a leaked copy is worthless), and any IP
- * address or location -- company policy is that a user's IP is never recorded,
- * and putting it in an email is a worse version of recording it.
+ * link (this mail grants nothing, so a leaked copy is worthless), and the IP
+ * address -- company policy is that a user's IP is never recorded. An
+ * approximate location stands in for it, because "was this you?" cannot be
+ * answered from a timestamp alone.
  */
 export async function sendPasswordChangedEmail(
   params: PasswordChangedEmailParams,
@@ -777,9 +759,9 @@ export async function sendPasswordChangedEmail(
     throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
   }
 
-  const { to, firstName, changedAt, ipAddress, afterReset = true } = params
+  const { to, firstName, changedAt, location = null, afterReset = true } = params
   const name    = firstName ?? 'there'
-  const ip      = displayableIp(ipAddress)
+  const place   = location?.trim() || null
   const meaning = afterReset
     ? 'Any devices that were signed in to your account have been signed out, and any lock on your account has been lifted.'
     : 'Use your new password the next time you sign in. Your old password no longer works.'
@@ -788,8 +770,8 @@ export async function sendPasswordChangedEmail(
     const brevo = getBrevoClient()
     await brevo.transactionalEmails.sendTransacEmail({
       subject:     `Your ${APP_NAME} password was changed`,
-      htmlContent: generatePasswordChangedEmailHtml(name, changedAt, ip, meaning),
-      textContent: generatePasswordChangedEmailText(name, changedAt, ip, meaning),
+      htmlContent: generatePasswordChangedEmailHtml(name, changedAt, place, meaning),
+      textContent: generatePasswordChangedEmailText(name, changedAt, place, meaning),
       sender:      { name: FROM_NAME, email: FROM_EMAIL },
       to:          [{ email: to, name: firstName ?? undefined }],
     })
@@ -807,16 +789,16 @@ export async function sendPasswordChangedEmail(
 function generatePasswordChangedEmailHtml(
   name:      string,
   changedAt: string,
-  ip:        string | null,
+  place:     string | null,
   meaning:   string,
 ): string {
   const year = new Date().getFullYear()
 
-  // Only rendered when we actually have something to show — see displayableIp.
-  const ipRow = ip
+  // Only rendered when we actually have a place to show — see lib/ip-location.ts.
+  const placeRow = place
     ? `
                         <p style="margin:8px 0 0 0;font-family:Arial,sans-serif;font-size:14px;color:#115e59;line-height:1.6;">
-                          Request came from IP address <strong style="font-family:'Courier New',Courier,monospace;">${ip}</strong>.
+                          The change was made from near <strong>${escapeHtml(place)}</strong> (approximate location).
                         </p>`
     : ''
 
@@ -876,7 +858,7 @@ function generatePasswordChangedEmailHtml(
                         </p>
                         <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#115e59;line-height:1.6;">
                           ${meaning}
-                        </p>${ipRow}
+                        </p>${placeRow}
                       </td>
                     </tr>
                   </table>
@@ -929,11 +911,11 @@ function generatePasswordChangedEmailHtml(
 function generatePasswordChangedEmailText(
   name:      string,
   changedAt: string,
-  ip:        string | null,
+  place:     string | null,
   meaning:   string,
 ): string {
   const year = new Date().getFullYear()
-  const ipLine = ip ? `\nRequest came from IP address ${ip}.` : ''
+  const placeLine = place ? `\nThe change was made from near ${place} (approximate location).` : ''
 
   return `
 Hi ${name},
@@ -941,7 +923,7 @@ Hi ${name},
 Your ${APP_NAME} password was changed on ${changedAt}. You can now sign in with your new password.
 
 WHAT THIS MEANS
-${meaning}${ipLine}
+${meaning}${placeLine}
 
 IF YOU DID NOT DO THIS
 Your account may be at risk. Contact us straight away at ${APP_SUPPORT_EMAIL} so we can secure it.
@@ -980,6 +962,8 @@ export interface PasswordResetAlertEmailParams {
    * change      - changed it themselves while signed in
    */
   kind?:     'reset' | 'first_login' | 'change'
+  /** Approximate place the change came from; never the IP. Row left out when null. */
+  location?: string | null
 }
 
 const PASSWORD_ALERT_COPY = {
@@ -1021,7 +1005,7 @@ export async function sendPasswordResetAlertEmail(
     throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
   }
 
-  const { userEmail, fullName, role, changedAt, kind = 'reset' } = params
+  const { userEmail, fullName, role, changedAt, kind = 'reset', location = null } = params
   const copy      = PASSWORD_ALERT_COPY[kind]
   const name      = fullName ?? userEmail
   const roleLabel = role ? (ROLE_LABELS[role] ?? role.replace(/_/g, ' ')) : 'Unknown role'
@@ -1032,6 +1016,7 @@ export async function sendPasswordResetAlertEmail(
     ['Email',      userEmail],
     ['Role',       roleLabel],
     ['Changed on', changedAt],
+    ...(location ? [['Location', `${location} (approximate)`] as [string, string]] : []),
   ]
   const rowsHtml = rows
     .map(([label, value]) => `
@@ -1109,6 +1094,147 @@ Automatic notice sent whenever any user resets or changes their password.
       timestamp: new Date().toISOString(),
     })
     throw new Error(`Failed to send password reset alert email: ${error}`)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Landing-page contact form. Every enquiry goes to one company inbox.
+//
+// TESTING MAILBOX for now, the same one the password alerts use:
+// 8338logisticsservice@gmail.com. Do NOT swap in the official
+// 8338logisticsservices@gmail.com (note the extra "s") until the company says
+// to — set CONTACT_INBOX_EMAIL to change it without a code edit.
+// ---------------------------------------------------------------------------
+const CONTACT_INBOX_EMAIL =
+  process.env.CONTACT_INBOX_EMAIL?.trim() || '8338logisticsservice@gmail.com'
+
+const CONTACT_ROLE_LABELS: Record<string, string> = {
+  fmcg:    'FMCG',
+  shipper: 'Shipper',
+  other:   'Other',
+}
+
+export interface ContactInquiryEmailParams {
+  firstName: string
+  lastName:  string
+  email:     string
+  phone?:    string | null
+  role:      string
+  message:   string
+}
+
+/**
+ * Sent with the enquirer as reply-to, so answering it from the inbox writes
+ * straight back to them rather than to our own sender address.
+ */
+export async function sendContactInquiryEmail(params: ContactInquiryEmailParams): Promise<void> {
+  if (!process.env.BREVO_API_KEY) {
+    throw new Error('Brevo is not configured. Please set BREVO_API_KEY.')
+  }
+  if (!process.env.BREVO_SENDER_EMAIL) {
+    throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
+  }
+
+  const { firstName, lastName, email, phone, role, message } = params
+  const fullName  = `${firstName} ${lastName}`
+  const roleLabel = CONTACT_ROLE_LABELS[role] ?? role
+  const year      = new Date().getFullYear()
+
+  const rows: Array<[string, string]> = [
+    ['Name',     fullName],
+    ['Email',    email],
+    ['Phone',    phone || 'Not given'],
+    ['Role',     roleLabel],
+    ['Received', formatManilaTimestamp()],
+  ]
+  const rowsHtml = rows
+    .map(([label, value]) => `
+                  <tr>
+                    <td style="padding:6px 16px 6px 0;font-family:Arial,sans-serif;font-size:14px;color:#818181;white-space:nowrap;">${label}</td>
+                    <td style="padding:6px 0;font-family:Arial,sans-serif;font-size:14px;color:#333333;">${escapeHtml(value)}</td>
+                  </tr>`)
+    .join('')
+  const messageHtml = escapeHtml(message).replace(/\r?\n/g, '<br>')
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head><meta charset="UTF-8"><title>New Website Enquiry</title></head>
+    <body style="margin:0;padding:0;background-color:#f6f6f6;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
+        <tr>
+          <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0"
+              style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;">
+              <tr>
+                <td style="background-color:#0a0a0a;padding:32px 40px;">
+                  <h1 style="margin:0;font-family:Arial,sans-serif;font-size:22px;color:#ffffff;font-weight:700;letter-spacing:0.05em;">${APP_NAME}</h1>
+                  <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:12px;color:#818181;letter-spacing:0.12em;text-transform:uppercase;">New Website Enquiry</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:36px 40px 12px 40px;">
+                  <p style="margin:0 0 20px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
+                    Someone sent a message through the contact form on the website. Reply to this email to answer them directly.
+                  </p>
+                  <table cellpadding="0" cellspacing="0" border="0">${rowsHtml}
+                  </table>
+                  <p style="margin:24px 0 8px 0;font-family:Arial,sans-serif;font-size:14px;color:#818181;">Message</p>
+                  <div style="padding:16px;background-color:#f6f6f6;border-radius:6px;font-family:Arial,sans-serif;font-size:14px;color:#333333;line-height:1.6;">${messageHtml}</div>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:20px 40px 32px 40px;border-top:1px solid #eeeeee;">
+                  <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;line-height:1.6;">
+                    &copy; ${year} ${APP_NAME}. ${PHYSICAL_ADDRESS}<br>
+                    Sent from the contact form on the ${APP_NAME} website.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `
+
+  const textContent = `
+Someone sent a message through the contact form on the website. Reply to this email to answer them directly.
+
+${rows.map(([label, value]) => `${label}: ${value}`).join('\n')}
+
+Message:
+${message}
+
+---
+(c) ${year} ${APP_NAME}. ${PHYSICAL_ADDRESS}
+  `.trim()
+
+  try {
+    const brevo = getBrevoClient()
+    await brevo.transactionalEmails.sendTransacEmail({
+      subject:     `Website enquiry from ${fullName} (${roleLabel})`,
+      htmlContent,
+      textContent,
+      sender:      { name: FROM_NAME, email: FROM_EMAIL },
+      to:          [{ email: CONTACT_INBOX_EMAIL }],
+      replyTo:     { email, name: fullName },
+    })
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('BREVO CONTACT INQUIRY EMAIL ERROR:', {
+      error,
+      recipient: CONTACT_INBOX_EMAIL,
+      timestamp: new Date().toISOString(),
+    })
+    logSystem({
+      log_level:  'error',
+      event_type: 'email_event',
+      source:     'brevo-mailer',
+      message:    `Failed to send contact inquiry email: ${error}`,
+    })
+    throw new Error(`Failed to send contact inquiry email: ${error}`)
   }
 }
 

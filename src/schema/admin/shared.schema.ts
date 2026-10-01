@@ -10,6 +10,7 @@ const emailRegex =
 export const emailField = () =>
   z
     .string()
+    .trim()
     .min(5, 'Email is too short')
     .max(254, 'Email is too long')
     .regex(emailRegex, 'Invalid email address')
@@ -31,10 +32,18 @@ export const emailField = () =>
 export const mobileField = () =>
   z
     .string()
+    .trim()
     .regex(
       /^\+639[0-9]{9}$/,
       'Phone must be a valid PH mobile number (+639XXXXXXXXX)',
     )
+
+// For forms where a phone is welcome but not required: blank means "none given".
+export const optionalMobileField = () =>
+  z.preprocess(
+    v => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    mobileField().optional(),
+  )
 
 export const landlineField = () =>
   z
@@ -65,115 +74,89 @@ export const licenseExpiryField = () =>
     .refine(val => !isNaN(new Date(val).getTime()), 'Invalid date')
     .refine(val => isNaN(new Date(val).getTime()) || new Date(val) > new Date(), 'License is already expired')
 
-export const coreCreateFields = () => ({
-  first_name: z
+// Single source for the person-name rules. Every schema that takes a name — the
+// user forms, the vendor driver snapshot, the landing-page contact form — builds
+// from these so a name accepted in one place is accepted everywhere.
+const firstNameRegex = /^[\p{L}]+\.?(?:[ '-][\p{L}]+\.?)*$/u
+const lastNameRegex  = /^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u
+const middleNameRegex = /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u
+// A whole name in one box ("Juan Dela Cruz Jr."): the first-name rule already
+// allows words with a trailing period, so it covers a suffix like "Jr." or "III";
+// only the length cap differs.
+const fullNameRegex  = firstNameRegex
+
+export const firstNameField = () =>
+  z
     .string()
-    .min(2)
-    .max(50)
-    .regex(
-      /^[\p{L}]+\.?(?:[ '-][\p{L}]+\.?)*$/u,
-      'First name must contain only letters, spaces, hyphens, or apostrophes',
-    )
-    .transform(toNameCase),
-  last_name: z
+    .trim()
+    .min(2, 'First name must be at least 2 characters')
+    .max(50, 'First name is too long')
+    .regex(firstNameRegex, 'First name must contain only letters, spaces, hyphens, or apostrophes')
+    .transform(toNameCase)
+
+export const lastNameField = () =>
+  z
     .string()
-    .min(2)
-    .max(50)
-    .regex(
-      /^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u,
-      'Last name must contain only letters, spaces, hyphens, or apostrophes',
-    )
-    .transform(toNameCase),
-  middle_name: z
+    .trim()
+    .min(2, 'Last name must be at least 2 characters')
+    .max(50, 'Last name is too long')
+    .regex(lastNameRegex, 'Last name must contain only letters, spaces, hyphens, or apostrophes')
+    .transform(toNameCase)
+
+export const middleNameField = () =>
+  z
     .string()
     .optional()
     .nullable()
-    .transform(v => (v === '' ? null : v))
+    .transform(v => (v == null ? v : v.trim() === '' ? null : v.trim()))
+    .refine(v => v == null || v.length >= 2, 'Middle name must be at least 2 characters')
+    .refine(v => v == null || v.length <= 50, 'Middle name is too long')
     .refine(
-      v => v == null || v.length >= 2,
-      'Middle name must be at least 2 characters',
-    )
-    .refine(
-      v => v == null || v.length <= 50,
-      'Middle name is too long',
-    )
-    .refine(
-      v => v == null || /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u.test(v),
+      v => v == null || middleNameRegex.test(v),
       'Middle name must contain only letters, spaces, hyphens, or apostrophes',
     )
-    .transform(v => (v == null ? v : toNameCase(v))),
-  suffix: z.preprocess(
+    .transform(v => (v == null ? v : toNameCase(v)))
+
+export const suffixField = () =>
+  z.preprocess(
     (v) => {
       if (typeof v !== 'string') return v
       const normalized = v.trim().toLowerCase()
       return normalized === '' || normalized === 'n/a' || normalized === 'na' || normalized === 'none' || normalized === 'not applicable'
         ? null
-        : v
+        : v.trim()
     },
     z.string()
       .max(20, 'Suffix is too long')
       .regex(/^[\p{L}0-9 .,'-]*$/u, 'Suffix may only contain letters, numbers, spaces, periods, commas, apostrophes, or hyphens')
       .optional()
       .nullable(),
-  ),
-  email:      emailField(),
-  phone:      mobileField(),
-  created_by: z.string().uuid().optional().nullable(),
+  )
+
+export const fullNameField = (label = 'Name') =>
+  z
+    .string()
+    .trim()
+    .min(2, `${label} must be at least 2 characters`)
+    .max(100, `${label} is too long`)
+    .regex(fullNameRegex, `${label} must contain only letters, spaces, hyphens, periods, or apostrophes`)
+    .transform(toNameCase)
+
+export const coreCreateFields = () => ({
+  first_name:  firstNameField(),
+  last_name:   lastNameField(),
+  middle_name: middleNameField(),
+  suffix:      suffixField(),
+  email:       emailField(),
+  phone:       mobileField(),
+  created_by:  z.string().uuid().optional().nullable(),
 })
 
 export const coreUpdateFields = () => ({
-  first_name: z
-    .string()
-    .min(2)
-    .max(50)
-    .regex(
-      /^[\p{L}]+\.?(?:[ '-][\p{L}]+\.?)*$/u,
-      'First name must contain only letters, spaces, hyphens, or apostrophes',
-    )
-    .transform(toNameCase)
-    .optional(),
-  last_name: z
-    .string()
-    .min(2)
-    .max(50)
-    .regex(
-      /^[\p{L}](?:[\p{L}'-]*[\p{L}])?(?: [\p{L}'-]+[\p{L}])*$/u,
-      'Last name must contain only letters, spaces, hyphens, or apostrophes',
-    )
-    .transform(toNameCase)
-    .optional(),
-  middle_name: z
-    .string()
-    .optional()
-    .nullable()
-    .transform(v => (v === '' ? null : v))
-    .refine(
-      v => v == null || v.length >= 2,
-      'Middle name must be at least 2 characters',
-    )
-    .refine(
-      v => v == null || v.length <= 50,
-      'Middle name is too long',
-    )
-    .refine(
-      v => v == null || /^[\p{L}]+(?:[ '-][\p{L}]+)*$/u.test(v),
-      'Middle name must contain only letters, spaces, hyphens, or apostrophes',
-    )
-    .transform(v => (v == null ? v : toNameCase(v))),
-  suffix: z.preprocess(
-    (v) => {
-      if (typeof v !== 'string') return v
-      const normalized = v.trim().toLowerCase()
-      return normalized === '' || normalized === 'n/a' || normalized === 'na' || normalized === 'none' || normalized === 'not applicable'
-        ? null
-        : v
-    },
-    z.string()
-      .max(20, 'Suffix is too long')
-      .regex(/^[\p{L}0-9 .,'-]*$/u, 'Suffix may only contain letters, numbers, spaces, periods, commas, apostrophes, or hyphens')
-      .optional()
-      .nullable(),
-  ),
-  email: emailField().optional(),
-  phone: mobileField().optional(),
+  first_name:  firstNameField().optional(),
+  last_name:   lastNameField().optional(),
+  middle_name: middleNameField(),
+  suffix:      suffixField(),
+  email:       emailField().optional(),
+  phone:       mobileField().optional(),
 })

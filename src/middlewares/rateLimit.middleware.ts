@@ -232,3 +232,20 @@ export const passkeyAuthLimiter = rateLimit({
   keyGenerator: (req) => ipKeyGenerator(req.ip ?? '::1'),
   message: { status: 'error', message: 'Too many sign-in attempts. Please try again in a few minutes.' },
 })
+
+/**
+ * The landing-page contact form (POST /api/public/contact).
+ *
+ * Unauthenticated and it sends an email, so it is the one public write an
+ * outsider could turn into an inbox flood. Five an hour per network is far more
+ * than one real enquiry needs — someone fixing a typo and resending included.
+ */
+export const contactFormLimiter = rateLimit({
+  handler: limitTripped('contactFormLimiter', 'warn'),
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? '::1'),
+  message: limitMessage('You have sent several messages already. Please wait a while, or email or call us directly.'),
+})
