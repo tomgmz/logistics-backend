@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { authenticate } from '../middlewares/auth.middleware.js'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
+import { clientIp } from '../lib/client-ip.js'
 import { enforceClientMessagingPolicy } from '../middlewares/messaging.middleware.js'
 import * as dm    from '../controllers/messaging/messaging.controller.js'
 import * as group from '../controllers/messaging/group.controller.js'
@@ -9,14 +10,14 @@ const router = Router()
 
 const readLimit = rateLimit({
   windowMs: 60_000, max: 60,
-  keyGenerator: (req) => (req as any).user?.user_id ?? ipKeyGenerator(req.ip ?? ''),
+  keyGenerator: (req) => (req as any).user?.user_id ?? ipKeyGenerator(clientIp(req)),
   standardHeaders: true, legacyHeaders: false,
   message: { success: false, message: 'Too many requests, please slow down' },
 })
 
 const sendLimit = rateLimit({
   windowMs: 60_000, max: 30,
-  keyGenerator: (req) => (req as any).user?.user_id ?? ipKeyGenerator(req.ip ?? ''),
+  keyGenerator: (req) => (req as any).user?.user_id ?? ipKeyGenerator(clientIp(req)),
   standardHeaders: true, legacyHeaders: false,
   message: { success: false, message: 'Message rate limit reached' },
 })

@@ -1,6 +1,7 @@
 import geoip from 'fast-geoip'
 import crypto from 'crypto'
 import type { Request } from 'express'
+import { clientIp } from './client-ip.js'
 
 /** How old a forwarded location may be before it is ignored (guards replays). */
 const FORWARDED_GEO_MAX_AGE_MS = 5 * 60 * 1000
@@ -9,9 +10,10 @@ const FORWARDED_GEO_MAX_AGE_MS = 5 * 60 * 1000
  * Roughly where THIS request came from, for a security email.
  *
  * Two ways in:
- *  - Straight to the backend (mobile app, the web's direct reset call): req.ip
- *    is the person's own address, so look it up offline.
- *  - Through the web app's Next proxy: req.ip is Vercel's server, which would
+ *  - Straight to the backend (mobile app, the web's direct reset call): the
+ *    connecting address (see client-ip.ts) is the person's own, so look it up
+ *    offline.
+ *  - Through the web app's Next proxy: the connecting address is Vercel's, which would
  *    put a Philippine user in a US data centre. The proxy sends the visitor's
  *    location instead (Vercel's own geo headers) in X-Client-Geo, signed with
  *    GEO_FORWARD_SECRET so a direct caller cannot pick a reassuring city for an
@@ -24,7 +26,7 @@ const FORWARDED_GEO_MAX_AGE_MS = 5 * 60 * 1000
  */
 export async function describeRequestLocation(req: Request): Promise<string | null> {
   const forwarded = req.get('x-client-geo')
-  if (forwarded === undefined) return describeIpLocation(req.ip)
+  if (forwarded === undefined) return describeIpLocation(clientIp(req))
   return verifyForwardedGeo(forwarded, req.get('x-client-geo-sig'))
 }
 

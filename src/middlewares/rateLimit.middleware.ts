@@ -1,4 +1,5 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
+import { clientIp } from '../lib/client-ip.js'
 import { createHash } from 'crypto'
 import { logSystem } from '../lib/log-system.js'
 
@@ -43,7 +44,7 @@ export const globalLimiter = rateLimit({
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req.ip ?? '::1'),
+  keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
   message: limitMessage('Too many requests from this network. Please try again in a few minutes.'),
 })
 
@@ -70,7 +71,7 @@ export const authenticatedLimiter = rateLimit({
   max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(req.ip ?? '::1'),
+  keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(clientIp(req)),
   message: limitMessage('Too many requests. Please wait a moment and try again.'),
 })
 
@@ -89,7 +90,7 @@ export const trackingLimiter = rateLimit({
   max: 400,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(req.ip ?? '::1'),
+  keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(clientIp(req)),
   message: limitMessage('Position updates are coming in too fast. Tracking will resume shortly.'),
 })
 
@@ -114,7 +115,7 @@ export const emergencyLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(req.ip ?? '::1'),
+  keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(clientIp(req)),
   message: limitMessage('Several alerts have already been sent from this device. If this is still an emergency, call dispatch directly.'),
 })
 
@@ -127,7 +128,7 @@ export const authLimiter = rateLimit({
   keyGenerator: (req) => {
     const email = req.body?.email
     if (email && typeof email === 'string') return email.toLowerCase().trim()
-    return ipKeyGenerator(req.ip ?? '::1')
+    return ipKeyGenerator(clientIp(req))
   },
   message: { status: 'error', message: 'Too many requests, please try again later.' },
 })
@@ -160,7 +161,7 @@ export const passwordResetLimiter = rateLimit({
     if (token && typeof token === 'string') {
       return 'tok:' + createHash('sha256').update(token).digest('hex').slice(0, 32)
     }
-    return ipKeyGenerator(req.ip ?? '::1')
+    return ipKeyGenerator(clientIp(req))
   },
   message: { status: 'error', message: 'Too many attempts on this reset link. Please try again later.' },
 })
@@ -182,7 +183,7 @@ export const resetRequestIpLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req.ip ?? '::1'),
+  keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
   message: { status: 'error', message: 'Too many requests, please try again later.' },
 })
 
@@ -209,7 +210,7 @@ export const passkeyEnrollLimiter = rateLimit({
     if (token && typeof token === 'string') {
       return 'pk:' + createHash('sha256').update(token).digest('hex').slice(0, 32)
     }
-    return ipKeyGenerator(req.ip ?? '::1')
+    return ipKeyGenerator(clientIp(req))
   },
   message: { status: 'error', message: 'Too many attempts on this setup link. Please try again later.' },
 })
@@ -229,7 +230,7 @@ export const passkeyAuthLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req.ip ?? '::1'),
+  keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
   message: { status: 'error', message: 'Too many sign-in attempts. Please try again in a few minutes.' },
 })
 
@@ -246,6 +247,6 @@ export const contactFormLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req.ip ?? '::1'),
+  keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
   message: limitMessage('You have sent several messages already. Please wait a while, or email or call us directly.'),
 })
