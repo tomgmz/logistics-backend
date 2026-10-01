@@ -21,6 +21,7 @@ import messagingRoutes from './routes/messaging.routes.js'
 import notificationsRoutes from './routes/notifications.routes.js'
 import transactionHistoryRoutes from './routes/transaction-history.routes.js'
 import lockRoutes from './routes/locks.routes.js'
+import publicRoutes from './routes/public.routes.js'
 import { startFleetRecheckScheduler } from './services/notification/fleet-recheck.scheduler.js'
 import { startCompletionScheduler } from './services/notification/completion.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
@@ -125,6 +126,10 @@ app.use('/api/auth/csrf', authRoutes)
 app.use('/api/auth', authRoutes);
 
 app.use('/api', verifyCsrfToken);
+
+// Anonymous, read-only aggregates for the marketing site (GET only, so CSRF
+// has nothing to check).
+app.use('/api/public', publicRoutes);
 
 app.use('/api/booking', clientRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
