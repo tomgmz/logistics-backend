@@ -122,6 +122,8 @@ function buildAuthResponse(
 export async function changePassword(
   userId:      string,
   newPassword: string,
+  /** Approximate place the change came from, for the emails only. Never stored. */
+  location?:   string | null,
 ): Promise<void> {
   // Read before the update so we still know whether this was the forced
   // first-login change - clearMustChangePassword wipes that flag below.
@@ -140,6 +142,7 @@ export async function changePassword(
       to:         user.email,
       firstName:  user.first_name ?? null,
       changedAt:  formatManilaTimestamp(),
+      location:   location ?? null,
       afterReset: false,
     }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err)
@@ -156,6 +159,7 @@ export async function changePassword(
       role:      user.role ?? null,
       changedAt: formatManilaTimestamp(),
       kind:      user.must_change_password ? 'first_login' : 'change',
+      location:  location ?? null,
     }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err)
       console.error(`[change-password] company alert email failed for ${user.email}:`, msg)

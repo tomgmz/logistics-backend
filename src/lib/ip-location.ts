@@ -1,4 +1,54 @@
 import geoip from 'fast-geoip'
+import crypto from 'crypto'
+import type { Request } from 'express'
+
+/** How old a forwarded location may be before it is ignored (guards replays). */
+const FORWARDED_GEO_MAX_AGE_MS = 5 * 60 * 1000
+
+/**
+ * Roughly where THIS request came from, for a security email.
+ *
+ * Two ways in:
+ *  - Straight to the backend (mobile app, the web's direct reset call): req.ip
+ *    is the person's own address, so look it up offline.
+ *  - Through the web app's Next proxy: req.ip is Vercel's server, which would
+ *    put a Philippine user in a US data centre. The proxy sends the visitor's
+ *    location instead (Vercel's own geo headers) in X-Client-Geo, signed with
+ *    GEO_FORWARD_SECRET so a direct caller cannot pick a reassuring city for an
+ *    email that exists to catch them.
+ *
+ * X-Client-Geo being present at all means "came through the proxy". If the
+ * signature does not check out (secret missing on either side, tampering, too
+ * old), the answer is null, never a fall-back to req.ip, which is the proxy's
+ * address and would be wrong.
+ */
+export async function describeRequestLocation(req: Request): Promise<string | null> {
+  const forwarded = req.get('x-client-geo')
+  if (forwarded === undefined) return describeIpLocation(req.ip)
+  return verifyForwardedGeo(forwarded, req.get('x-client-geo-sig'))
+}
+
+function verifyForwardedGeo(payload: string, signature?: string): string | null {
+  const secret = process.env.GEO_FORWARD_SECRET
+  if (!secret || !signature) return null
+
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest()
+  const given    = Buffer.from(signature, 'base64url')
+  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null
+
+  try {
+    const geo = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      city?: string | null; country?: string | null; ts?: number
+    }
+    if (typeof geo.ts !== 'number' || Math.abs(Date.now() - geo.ts) > FORWARDED_GEO_MAX_AGE_MS) return null
+    if (!geo.country || !/^[A-Z]{2}$/.test(geo.country)) return null
+    const country = countryName(geo.country)
+    const city    = typeof geo.city === 'string' ? geo.city.trim().slice(0, 80) : ''
+    return city ? `${city}, ${country}` : country
+  } catch {
+    return null
+  }
+}
 
 /**
  * Roughly where a request came from, as a place a person recognises:

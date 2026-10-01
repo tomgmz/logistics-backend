@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import * as AuthService from '../../services/auth/auth.service.js'
 import { hashToken } from '../../services/auth/auth.service.js'
 import crypto from 'crypto'
+import { describeRequestLocation } from '../../lib/ip-location.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
@@ -245,7 +246,10 @@ export async function changePassword(req: Request, res: Response) {
       return
     }
 
-    await AuthService.changePassword(userId, password)
+    // Roughly where the change came from, for the confirmation emails. Never
+    // the IP itself; see lib/ip-location.ts.
+    const location = await describeRequestLocation(req)
+    await AuthService.changePassword(userId, password, location)
     res.status(200).json({ status: 'success', message: 'Password updated successfully.' })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to update password'
