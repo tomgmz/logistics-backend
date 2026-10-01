@@ -193,7 +193,7 @@ async function createTokensAndSession(
   const accessTokenHash  = hashToken(accessToken)
   const refreshTokenHash = hashToken(refreshToken)
 
-  await AuthModel.revokeAllUserSessions(user.user_id)
+  await AuthModel.revokeAllUserSessions(user.user_id, 'signed_in_elsewhere')
   await AuthModel.createSession({
     user_id:            user.user_id,
     token:              accessTokenHash,
@@ -696,6 +696,16 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
   const refreshTokenHash = hashToken(refreshToken)
   const session = await AuthModel.findActiveSessionByRefreshToken(refreshTokenHash)
   if (!session) {
+    // Superseded by a sign-in on another device: an expected outcome of the
+    // one-session rule, not a replay, so no alarm — just a code the client can
+    // turn into the right page.
+    const reason = await AuthModel.findSessionRevokedReason('refresh_token', refreshTokenHash).catch(() => null)
+    if (reason === 'signed_in_elsewhere') {
+      const err = new Error('Your account was signed in on another device.')
+      ;(err as any).code = 'SESSION_REPLACED'
+      throw err
+    }
+
     // A structurally valid refresh token with no live session means it was
     // already rotated or revoked — replay, not a routine expiry.
     logSystem({
@@ -733,7 +743,7 @@ export async function logout(tokenHash: string): Promise<void> {
 }
 
 export async function logoutAll(userId: string): Promise<void> {
-  await AuthModel.revokeAllUserSessions(userId)
+  await AuthModel.revokeAllUserSessions(userId, 'logout_all')
   logEvent({
     user_id:     userId,
     log_type:    'auth',

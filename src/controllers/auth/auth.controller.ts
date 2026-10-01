@@ -174,9 +174,10 @@ export async function refreshToken(req: Request, res: Response) {
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Session expired. Please log in again.'
-    console.error('TOKEN REFRESH ERROR:', err)
+    const code    = (err as { code?: string })?.code === 'SESSION_REPLACED' ? 'SESSION_REPLACED' : undefined
+    if (!code) console.error('TOKEN REFRESH ERROR:', err)
     clearAuthCookies(res)
-    res.status(401).json({ status: 'error', message })
+    res.status(401).json({ status: 'error', ...(code && { code }), message })
   }
 }
 

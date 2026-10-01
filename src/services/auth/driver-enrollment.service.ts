@@ -357,7 +357,7 @@ export async function revokeExternalDriver(
 
   const credentialsRevoked = await WebauthnModel.revokeAllForUser(userId, actorId ?? null, reason)
   await InviteModel.revokeOpenInvitesForUser(userId)
-  await AuthModel.revokeAllUserSessions(userId)
+  await AuthModel.revokeAllUserSessions(userId, 'credentials_revoked')
 
   const { error: userErr } = await supabase
     .from('users')

@@ -188,7 +188,7 @@ export async function deactivateITAdmin(
   // but this app issues its own JWTs and `authenticate` only checks the session
   // row — never users.status. Without this, a deactivated IT Admin keeps a working
   // access token until it expires (15 minutes by default).
-  await revokeAllUserSessions(userId).catch((err) =>
+  await revokeAllUserSessions(userId, 'deactivated').catch((err) =>
     console.error(`[it-admin] session revoke failed for deactivated ${userId}`, err),
   )
   invalidateUserPermissions(userId)
@@ -279,7 +279,7 @@ export async function transitionITAdmin(
   // The one that matters most: sign-in and refresh are already gated on
   // status='active', but `authenticate` checks only the session row, so without
   // this the outgoing IT Admin keeps a live access token for up to 15 minutes.
-  await revokeAllUserSessions(outgoing.user_id).catch((err) =>
+  await revokeAllUserSessions(outgoing.user_id, 'deactivated').catch((err) =>
     console.error(`[it-admin] session revoke failed for outgoing ${outgoing.user_id}`, err),
   )
   invalidateUserPermissions(outgoing.user_id)

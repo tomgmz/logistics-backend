@@ -237,7 +237,18 @@ export async function getOtpAttemptsSince(
  * No filter now: every row for the user is expired. Rewriting rows that were
  * already dead costs nothing and cannot leave one behind.
  */
-export async function revokeAllUserSessions(userId: string): Promise<void> {
+export type SessionRevokedReason =
+  | 'signed_in_elsewhere'
+  | 'logout'
+  | 'logout_all'
+  | 'password_reset'
+  | 'deactivated'
+  | 'credentials_revoked'
+
+export async function revokeAllUserSessions(
+  userId: string,
+  reason: SessionRevokedReason,
+): Promise<void> {
   const now = new Date().toISOString()
   const { error } = await supabase
     .from('active_sessions')
@@ -245,6 +256,36 @@ export async function revokeAllUserSessions(userId: string): Promise<void> {
     .eq('user_id', userId)
 
   if (error) throw error
+
+  // Stamp the reason only on rows that do not already carry one, so a device
+  // that was pushed out by a sign-in elsewhere keeps being told that, rather
+  // than whatever revoked the account's sessions after it.
+  const { error: reasonError } = await supabase
+    .from('active_sessions')
+    .update({ revoked_reason: reason })
+    .eq('user_id', userId)
+    .is('revoked_reason', null)
+
+  if (reasonError) throw reasonError
+}
+
+/**
+ * Why a session that no longer authenticates was ended, looked up by the hash
+ * of either its access or its refresh token. Only called on the refusal path,
+ * so a valid request never pays for it.
+ */
+export async function findSessionRevokedReason(
+  column: 'token' | 'refresh_token',
+  tokenHash: string,
+): Promise<SessionRevokedReason | null> {
+  const { data, error } = await supabase
+    .from('active_sessions')
+    .select('revoked_reason')
+    .eq(column, tokenHash)
+    .maybeSingle()
+
+  if (error) throw error
+  return (data?.revoked_reason as SessionRevokedReason | null) ?? null
 }
 
 export async function createSession(params: {
@@ -343,7 +384,7 @@ export async function revokeSession(tokenHash: string): Promise<void> {
   const now = new Date().toISOString()
   const { error } = await supabase
     .from('active_sessions')
-    .update({ expires_at: now, refresh_expires_at: now })
+    .update({ expires_at: now, refresh_expires_at: now, revoked_reason: 'logout' })
     .eq('token', tokenHash)
 
   if (error) throw error

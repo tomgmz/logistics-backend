@@ -65,6 +65,18 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     const session = await AuthModel.findActiveSession(tokenHash)
 
     if (!session) {
+      // Signing in elsewhere revokes this session. Say so with its own code, so
+      // the client can explain it instead of showing a generic sign-out — and
+      // so it does not bother refreshing a session that cannot come back.
+      const reason = await AuthModel.findSessionRevokedReason('token', tokenHash).catch(() => null)
+      if (reason === 'signed_in_elsewhere') {
+        res.status(401).json({
+          status:  'error',
+          code:    'SESSION_REPLACED',
+          message: 'Your account was signed in on another device.',
+        })
+        return
+      }
       res.status(401).json({ status: 'error', message: 'Session expired or revoked' })
       return
     }

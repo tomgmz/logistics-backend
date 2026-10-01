@@ -408,7 +408,7 @@ export async function completeReset(
     throw err
   }
 
-  await AuthModel.revokeAllUserSessions(request.user_id)
+  await AuthModel.revokeAllUserSessions(request.user_id, 'password_reset')
 
   const completed = await ResetModel.markCompleted(request.request_id)
   // Another request for the same token already completed — the password change
