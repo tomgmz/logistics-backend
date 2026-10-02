@@ -107,35 +107,59 @@ function normaliseSensor(value: number | null | undefined): number | null {
 }
 
 /**
+ * Why a fix was accepted but not recorded.
+ *
+ * Only `booking_ended` means the phone should stop reporting. The others are
+ * transient, and the app must keep going through them:
+ *
+ *   not_started — the booking is still `assigned`. The phone starts tracking the
+ *     moment the driver confirms the pickup, but that confirmation uploads a
+ *     photo first and may sit in the offline queue, so the first fixes routinely
+ *     land before the booking has moved to `in_transit`. Treating that as "stop"
+ *     switched tracking off at the start of the trip it was meant to cover.
+ *   stale_fix — this one fix was too old or dated in the future; the next is fine.
+ *   not_driver — an admin hitting the route for support; nothing to hang it on.
+ */
+export type IgnoredReason = 'booking_ended' | 'not_started' | 'stale_fix' | 'not_driver'
+
+export type RecordResult =
+  | { recorded: true;  position: DriverPosition }
+  | { recorded: false; reason: IgnoredReason }
+
+/**
  * Record a fix and push it to whoever is watching this booking.
  *
- * Returns null when the fix was accepted-but-ignored (too old, or the booking
- * isn't running). The caller answers 202 for that: the app has nothing useful to
- * do about it, and turning it into an error would only make drivers' phones
- * retry something that must not be retried.
+ * Returns `recorded: false` when the fix was accepted-but-ignored. The caller
+ * answers 202 for that, with the reason: turning it into an error would only
+ * make drivers' phones retry something that must not be retried.
  */
 export async function recordDriverPositionService(
   bookingId: string,
   ping: LocationPing,
   actor: DriverActor,
-): Promise<DriverPosition | null> {
+): Promise<RecordResult> {
   const booking = await assertDriverOnBooking(bookingId, actor)
 
   // The device stops pinging when the trip ends, but a ping already in flight
   // can land just after. More importantly this is what actually enforces "never
   // track a driver who isn't working" — the on-device gate is a convenience, and
   // a convenience is not a privacy control.
-  if (booking.status !== 'in_transit') return null
+  if (booking.status !== 'in_transit') {
+    return {
+      recorded: false,
+      reason:   booking.status === 'assigned' ? 'not_started' : 'booking_ended',
+    }
+  }
 
   const recordedAt = Date.parse(ping.recorded_at)
-  if (Number.isNaN(recordedAt)) return null
+  if (Number.isNaN(recordedAt)) return { recorded: false, reason: 'stale_fix' }
 
   const age = Date.now() - recordedAt
-  if (age > MAX_FIX_AGE_MS || age < -MAX_FIX_SKEW_MS) return null
+  if (age > MAX_FIX_AGE_MS || age < -MAX_FIX_SKEW_MS) return { recorded: false, reason: 'stale_fix' }
 
   // An admin can hit this route for support, but only a driver has a driver row
   // to hang a position on. There is nothing to record for anyone else.
-  if (!actor.userId) return null
+  if (!actor.userId) return { recorded: false, reason: 'not_driver' }
   const driverId = await resolveDriverId(actor.userId)
 
   const position: DriverPosition = {
@@ -177,7 +201,7 @@ export async function recordDriverPositionService(
   void maybeRefreshEta(driverId, bookingId, position)
     .catch((e) => console.warn(`[tracking] eta refresh failed for booking ${bookingId}:`, e?.message))
 
-  return position
+  return { recorded: true, position }
 }
 
 /**

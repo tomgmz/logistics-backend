@@ -20,7 +20,7 @@ function driverActor(req: Request) {
 
 export const recordDriverPosition = async (req: Request, res: Response) => {
   try {
-    const position = await recordDriverPositionService(
+    const result = await recordDriverPositionService(
       param(req.params.bookingId),
       {
         latitude:    req.body.latitude,
@@ -36,10 +36,13 @@ export const recordDriverPosition = async (req: Request, res: Response) => {
     // 202 means "understood, not recorded": the booking isn't running, or the
     // fix was too old to draw. Neither is the app's fault and neither is worth a
     // 4xx — an error here would push the device towards retrying a ping, which
-    // is the one thing a position must never do.
-    if (!position) return res.status(202).json({ status: 'success', data: null })
+    // is the one thing a position must never do. The reason travels with it
+    // because only `booking_ended` should make the phone stop reporting.
+    if (!result.recorded) {
+      return res.status(202).json({ status: 'success', data: null, reason: result.reason })
+    }
 
-    res.status(200).json({ status: 'success', data: position })
+    res.status(200).json({ status: 'success', data: result.position })
   } catch (error: any) {
     const message = String(error?.message ?? '')
     const httpStatus =
