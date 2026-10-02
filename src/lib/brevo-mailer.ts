@@ -73,6 +73,28 @@ const ROLE_LABELS: Record<string, string> = {
   client:           'Client',
 }
 
+/**
+ * The one footer every email uses: grey band, three centred lines. Each email
+ * passes only its own "why you got this" sentence, so the design cannot drift.
+ */
+function emailFooterHtml(reason: string): string {
+  const year = new Date().getFullYear()
+  const line = 'font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;line-height:1.5;'
+  return `
+              <tr>
+                <td style="background-color:#f9f9f9;padding:20px 40px;border-top:1px solid #eeeeee;">
+                  <p style="margin:0 0 6px 0;${line}">&copy; ${year} ${APP_NAME}. All rights reserved.</p>
+                  <p style="margin:0 0 6px 0;${line}">${PHYSICAL_ADDRESS}</p>
+                  <p style="margin:0;${line}">${reason}</p>
+                </td>
+              </tr>`
+}
+
+function emailFooterText(reason: string): string {
+  const year = new Date().getFullYear()
+  return `© ${year} ${APP_NAME}. All rights reserved.\n${PHYSICAL_ADDRESS}\n${reason}`
+}
+
 const UPPER  = 'ABCDEFGHJKLMNPQRSTUVWXYZ'  // no I, O
 const LOWER  = 'abcdefghjkmnpqrstuvwxyz'    // no i, l, o
 const DIGITS = '23456789'                   // no 0, 1
@@ -295,9 +317,12 @@ interface OtpCopy {
   // Why this email is transactional, for the footer.
   because: string
   minutes: number
+  // Small caption under the app name in the black header band.
+  label:   string
 }
 
 const LOGIN_OTP_COPY: OtpCopy = {
+  label:   'Sign-in Code',
   noun:    'login code',
   intro:   'Here is your one-time login code',
   because: 'a login was requested for your account',
@@ -337,6 +362,7 @@ export async function sendPasswordResetOtpEmail(
   const name = firstName ?? 'there'
 
   const copy: OtpCopy = {
+    label:   'Password Reset Code',
     noun:    'password reset code',
     intro:   'Here is your one-time password reset code',
     because: 'a password reset was requested for your Administrator account',
@@ -392,22 +418,20 @@ function generateOtpEmailHtml(name: string, code: string, copy: OtpCopy = LOGIN_
             <table width="600" cellpadding="0" cellspacing="0" border="0"
               style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
 
+              <!-- Header -->
               <tr>
-                <td style="padding:40px 40px 20px 40px;">
-                  <h1 style="margin:0;font-family:Arial,sans-serif;font-size:22px;color:#1a1a1a;font-weight:700;">
+                <td style="background-color:#0a0a0a;padding:32px 40px;">
+                  <h1 style="margin:0;font-family:Arial,sans-serif;font-size:22px;color:#ffffff;font-weight:700;letter-spacing:0.05em;">
                     ${APP_NAME}
                   </h1>
+                  <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:12px;color:#818181;letter-spacing:0.12em;text-transform:uppercase;">
+                    ${copy.label}
+                  </p>
                 </td>
               </tr>
 
               <tr>
-                <td style="padding:0 40px;">
-                  <hr style="border:none;border-top:1px solid #eeeeee;margin:0;">
-                </td>
-              </tr>
-
-              <tr>
-                <td style="padding:30px 40px 0 40px;">
+                <td style="padding:32px 40px 0 40px;">
                   <p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
                     Hi ${name},
                   </p>
@@ -463,19 +487,7 @@ function generateOtpEmailHtml(name: string, code: string, copy: OtpCopy = LOGIN_
                 </td>
               </tr>
 
-              <tr>
-                <td style="background-color:#f9f9f9;padding:20px 40px;border-top:1px solid #eeeeee;">
-                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    © ${year} ${APP_NAME}. All rights reserved.
-                  </p>
-                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    ${PHYSICAL_ADDRESS}
-                  </p>
-                  <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    This is a transactional email sent because ${copy.because}.
-                  </p>
-                </td>
-              </tr>
+              ${emailFooterHtml(`This is a transactional email sent because ${copy.because}.`)}
 
             </table>
           </td>
@@ -505,8 +517,7 @@ If you did not request this code, you can safely ignore this email.
 For concerns, contact us at ${APP_SUPPORT_EMAIL}.
 
 ---
-© ${year} ${APP_NAME}. All rights reserved.
-${PHYSICAL_ADDRESS}
+${emailFooterText(`This is a transactional email sent because ${copy.because}.`)}
   `.trim()
 }
 
@@ -643,21 +654,7 @@ function generateWelcomeEmailHtml(
                 </td>
               </tr>
 
-              <!-- Footer -->
-              <tr>
-                <td style="background-color:#f9f9f9;padding:20px 40px;border-top:1px solid #eeeeee;">
-                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    © ${year} ${APP_NAME}. All rights reserved.
-                  </p>
-                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    ${PHYSICAL_ADDRESS}
-                  </p>
-                  <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    This email was sent because an Administrator created an account for you.
-                    If this was a mistake, contact us immediately.
-                  </p>
-                </td>
-              </tr>
+              ${emailFooterHtml(`This email was sent because an Administrator created an account for you. If this was a mistake, contact us immediately.`)}
 
             </table>
           </td>
@@ -700,9 +697,7 @@ are available on the login screen.
 Need help? Contact us at ${APP_SUPPORT_EMAIL}.
 
 ---
-© ${year} ${APP_NAME}. All rights reserved.
-${PHYSICAL_ADDRESS}
-This email was sent because an Administrator created an account for you.
+${emailFooterText(`This email was sent because an Administrator created an account for you. If this was a mistake, contact us immediately.`)}
   `.trim()
 }
 
@@ -883,20 +878,7 @@ function generatePasswordChangedEmailHtml(
                 </td>
               </tr>
 
-              <!-- Footer -->
-              <tr>
-                <td style="background-color:#f9f9f9;padding:20px 40px;border-top:1px solid #eeeeee;">
-                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    &copy; ${year} ${APP_NAME}. All rights reserved.
-                  </p>
-                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    ${PHYSICAL_ADDRESS}
-                  </p>
-                  <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    This is a security notification sent because your password changed. It cannot be turned off.
-                  </p>
-                </td>
-              </tr>
+              ${emailFooterHtml(`This is a security notification sent because your password changed. It cannot be turned off.`)}
 
             </table>
           </td>
@@ -929,9 +911,7 @@ IF YOU DID NOT DO THIS
 Your account may be at risk. Contact us straight away at ${APP_SUPPORT_EMAIL} so we can secure it.
 
 ---
-(c) ${year} ${APP_NAME}. All rights reserved.
-${PHYSICAL_ADDRESS}
-This is a security notification sent because your password changed. It cannot be turned off.
+${emailFooterText(`This is a security notification sent because your password changed. It cannot be turned off.`)}
   `.trim()
 }
 
@@ -1051,14 +1031,7 @@ export async function sendPasswordResetAlertEmail(
                   </table>
                 </td>
               </tr>
-              <tr>
-                <td style="padding:20px 40px 32px 40px;border-top:1px solid #eeeeee;">
-                  <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;line-height:1.6;">
-                    &copy; ${year} ${APP_NAME}. ${PHYSICAL_ADDRESS}<br>
-                    Automatic notice sent whenever any user resets or changes their password.
-                  </p>
-                </td>
-              </tr>
+              ${emailFooterHtml(`Automatic notice sent whenever any user resets or changes their password.`)}
             </table>
           </td>
         </tr>
@@ -1073,8 +1046,7 @@ A user ${copy.sentence} ${APP_NAME} password.
 ${rows.map(([label, value]) => `${label}: ${value}`).join('\n')}
 
 ---
-(c) ${year} ${APP_NAME}. ${PHYSICAL_ADDRESS}
-Automatic notice sent whenever any user resets or changes their password.
+${emailFooterText(`Automatic notice sent whenever any user resets or changes their password.`)}
   `.trim()
 
   try {
@@ -1183,14 +1155,7 @@ export async function sendContactInquiryEmail(params: ContactInquiryEmailParams)
                   <div style="padding:16px;background-color:#f6f6f6;border-radius:6px;font-family:Arial,sans-serif;font-size:14px;color:#333333;line-height:1.6;">${messageHtml}</div>
                 </td>
               </tr>
-              <tr>
-                <td style="padding:20px 40px 32px 40px;border-top:1px solid #eeeeee;">
-                  <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;line-height:1.6;">
-                    &copy; ${year} ${APP_NAME}. ${PHYSICAL_ADDRESS}<br>
-                    Sent from the contact form on the ${APP_NAME} website.
-                  </p>
-                </td>
-              </tr>
+              ${emailFooterHtml(`Sent from the contact form on the ${APP_NAME} website.`)}
             </table>
           </td>
         </tr>
@@ -1208,7 +1173,7 @@ Message:
 ${message}
 
 ---
-(c) ${year} ${APP_NAME}. ${PHYSICAL_ADDRESS}
+${emailFooterText(`Sent from the contact form on the ${APP_NAME} website.`)}
   `.trim()
 
   try {
@@ -1348,20 +1313,7 @@ function generatePasswordResetEmailHtml(
                 </td>
               </tr>
 
-              <!-- Footer -->
-              <tr>
-                <td style="background-color:#f9f9f9;padding:20px 40px;border-top:1px solid #eeeeee;">
-                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    © ${year} ${APP_NAME}. All rights reserved.
-                  </p>
-                  <p style="margin:0 0 6px 0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    ${PHYSICAL_ADDRESS}
-                  </p>
-                  <p style="margin:0;font-family:Arial,sans-serif;font-size:12px;color:#999999;text-align:center;">
-                    This is a transactional email sent because a password reset was approved for your account.
-                  </p>
-                </td>
-              </tr>
+              ${emailFooterHtml(`This is a transactional email sent because a password reset was approved for your account.`)}
 
             </table>
           </td>
@@ -1398,9 +1350,7 @@ used or expires. If you did not ask for a reset, contact your Administrator imme
 Link expired? Request another reset from the sign-in screen, or reach us at ${APP_SUPPORT_EMAIL}.
 
 ---
-© ${year} ${APP_NAME}. All rights reserved.
-${PHYSICAL_ADDRESS}
-This is a transactional email sent because a password reset was approved for your account.
+${emailFooterText(`This is a transactional email sent because a password reset was approved for your account.`)}
   `.trim()
 }
 
@@ -1579,16 +1529,7 @@ function generateDriverEnrollmentEmailHtml(
                 </td>
               </tr>
 
-              <!-- Footer -->
-              <tr>
-                <td style="background-color:#fafafa;padding:20px 40px;">
-                  <p style="margin:0;font-family:Arial,sans-serif;font-size:11px;color:#999999;line-height:1.6;">
-                    &copy; ${year} ${APP_NAME}. All rights reserved.<br>
-                    ${PHYSICAL_ADDRESS}<br>
-                    This is a transactional email sent because you were assigned a delivery.
-                  </p>
-                </td>
-              </tr>
+              ${emailFooterHtml(`This is a transactional email sent because you were assigned a delivery.`)}
 
             </table>
           </td>
@@ -1632,8 +1573,6 @@ Link expired or not working? Ask your dispatcher to send a new one, or reach us 
 ${APP_SUPPORT_EMAIL}.
 
 ---
-© ${year} ${APP_NAME}. All rights reserved.
-${PHYSICAL_ADDRESS}
-This is a transactional email sent because you were assigned a delivery.
+${emailFooterText(`This is a transactional email sent because you were assigned a delivery.`)}
   `.trim()
 }
