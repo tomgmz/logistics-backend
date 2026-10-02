@@ -1,6 +1,7 @@
 import { GoogleAuth } from 'google-auth-library'
 import axios from 'axios'
 import { RouteOptimizationModel } from '../../models/maps/routeOptimization.model.js'
+import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from '../../lib/log-system.js'
 import {
   OptimizationDestination,
   OptimizedStop,
@@ -169,6 +170,15 @@ async function callOptimizationAPI(
     console.log('[callOptimizationAPI] skippedShipments:', JSON.stringify(response.data.skippedShipments ?? []))
   } catch (err) {
     console.warn('[callOptimizationAPI] Google API call failed, using original order:', (err as any).response?.data ?? err)
+    logSystemThrottled('google-maps.route-optimization', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+      log_level:  'warn',
+      event_type: 'external_api',
+      source:     'google-maps.route-optimization',
+      message:    `Route Optimization call failed, kept original stop order: ${
+        (err as any).response?.data?.error?.message ?? (err as Error)?.message ?? String(err)
+      }`,
+      metadata:   { status: (err as any).response?.status ?? null },
+    })
   }
 
   const visits: { shipmentLabel: string }[] =

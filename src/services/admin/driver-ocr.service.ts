@@ -1,5 +1,6 @@
 import axios from 'axios'
 import sharp from 'sharp'
+import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from '../../lib/log-system.js'
 
 const VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY;
 if (!VISION_API_KEY) throw new Error('GOOGLE_VISION_API_KEY is not set');
@@ -229,6 +230,14 @@ export async function extractLicenseData(buffer: Buffer): Promise<LicenseOCRResu
     { headers: { 'Content-Type': 'application/json' }, timeout: 15_000 },
   ).catch((err) => {
     console.error('Vision API error:', JSON.stringify(err.response?.data, null, 2))
+    // Message and status only: VISION_URL carries the API key.
+    logSystemThrottled('google-vision.ocr', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+      log_level:  'error',
+      event_type: 'external_api',
+      source:     'google-vision.ocr',
+      message:    `Vision API error: ${err.response?.data?.error?.message ?? err.message ?? String(err)}`,
+      metadata:   { status: err.response?.status ?? null },
+    })
     throw err
   })
 

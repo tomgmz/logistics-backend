@@ -82,19 +82,30 @@ export async function setResolved(logId: string, resolved: boolean) {
   return data
 }
 
+/**
+ * Head-only counts: Postgres does the counting and no rows come back. This used
+ * to select every row's level and count them in Node, which is exactly what the
+ * paginated list above exists to avoid — the scheduler heartbeats alone add
+ * ~200 rows a day — and PostgREST's row cap would quietly have made the totals
+ * wrong long before it got slow.
+ */
 export async function getStats() {
-  // Two narrow aggregate reads rather than pulling every row back to count it
-  // in Node, which is what the audit model does and what this file inherited.
-  const counts = { total: 0, info: 0, warn: 0, error: 0, critical: 0, unresolved: 0 }
-
-  const { data, error } = await supabase.from('system_logs').select('log_level, resolved')
-  if (error) throw error
-
-  for (const row of data ?? []) {
-    counts.total++
-    if (row.log_level in counts) counts[row.log_level as 'info' | 'warn' | 'error' | 'critical']++
-    if (!row.resolved) counts.unresolved++
+  const count = async (filter?: (q: any) => any) => {
+    let q = supabase.from('system_logs').select('log_id', { count: 'exact', head: true })
+    if (filter) q = filter(q)
+    const { count: n, error } = await q
+    if (error) throw error
+    return n ?? 0
   }
 
-  return counts
+  const [total, info, warn, error, critical, unresolved] = await Promise.all([
+    count(),
+    count((q) => q.eq('log_level', 'info')),
+    count((q) => q.eq('log_level', 'warn')),
+    count((q) => q.eq('log_level', 'error')),
+    count((q) => q.eq('log_level', 'critical')),
+    count((q) => q.eq('resolved', false)),
+  ])
+
+  return { total, info, warn, error, critical, unresolved }
 }

@@ -98,4 +98,35 @@ export function logSystemError(
   })
 }
 
+/**
+ * logSystem() for call sites that can fail at the rate of a hot loop — a Google
+ * Routes outage hits the live-ETA path on every position ping. One row per
+ * `key` per window is enough to see the outage on the IT Admin dashboard; the
+ * repeats are counted and carried on the next row that does get written, so the
+ * volume is still visible without one row per ping.
+ */
+const throttled = new Map<string, { at: number; suppressed: number }>()
+
+export function logSystemThrottled(key: string, windowMs: number, input: SystemLogInput): void {
+  try {
+    const now  = Date.now()
+    const seen = throttled.get(key)
+    if (seen && now - seen.at < windowMs) {
+      seen.suppressed++
+      return
+    }
+    const suppressed = seen?.suppressed ?? 0
+    throttled.set(key, { at: now, suppressed: 0 })
+    logSystem({
+      ...input,
+      metadata: { ...(input.metadata ?? {}), ...(suppressed > 0 && { suppressed_since_last: suppressed }) },
+    })
+  } catch (err) {
+    console.error('[logSystemThrottled] threw:', err)
+  }
+}
+
+/** Default window for logSystemThrottled at external-provider call sites. */
+export const EXTERNAL_FAILURE_LOG_WINDOW_MS = 60_000
+
 export default logSystem

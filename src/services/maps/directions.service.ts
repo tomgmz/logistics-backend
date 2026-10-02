@@ -1,5 +1,6 @@
 import { ComputeDirectionsInput } from '../../schema/maps/directions.schema.js'
 import { DirectionsResult }       from '../../types/maps/directions.types.js'
+import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from '../../lib/log-system.js'
 
 const GOOGLE_MAPS_KEY  = process.env.GOOGLE_MAPS_API_KEY!
 const ROUTES_API_URL   = 'https://routes.googleapis.com/directions/v2:computeRoutes'
@@ -119,6 +120,17 @@ async function snapPolylineToGoogleRoads(points: Point[]): Promise<Point[] | nul
 
     if (!res.ok || !data.snappedPoints?.length) {
       console.warn('[snap] Google Roads snap failed:', data?.error?.message ?? res.status)
+      // An empty snap on a 200 is a normal answer (nothing to snap to), not a
+      // provider failure — only a non-OK status is worth the IT Admin's time.
+      if (!res.ok) {
+        logSystemThrottled('google-maps.roads-snap', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+          log_level:  'warn',
+          event_type: 'external_api',
+          source:     'google-maps.roads-snap',
+          message:    `Roads snap failed: ${data?.error?.message ?? res.status}`,
+          metadata:   { status: res.status },
+        })
+      }
       return null
     }
 
@@ -127,6 +139,13 @@ async function snapPolylineToGoogleRoads(points: Point[]): Promise<Point[] | nul
     )
   } catch (err) {
     console.warn('[snap] Google Roads snap error, falling back to Google polyline:', err)
+    // Message only: the request URL carries the API key.
+    logSystemThrottled('google-maps.roads-snap', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+      log_level:  'warn',
+      event_type: 'external_api',
+      source:     'google-maps.roads-snap',
+      message:    `Roads snap error: ${(err as Error)?.message ?? String(err)}`,
+    })
     return null
   }
 }
@@ -229,6 +248,13 @@ export async function computeDirectionsService(
 
   if (!response.ok) {
     const message = data?.error?.message ?? data?.message ?? 'Google Routes API error'
+    logSystemThrottled('google-maps.directions', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+      log_level:  'error',
+      event_type: 'external_api',
+      source:     'google-maps.directions',
+      message:    `Routes API error: ${message}`,
+      metadata:   { status: response.status },
+    })
     throw new DirectionsUpstreamError(message, response.status)
   }
 

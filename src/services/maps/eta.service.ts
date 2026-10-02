@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import { broadcast } from '../../lib/realtime.js'
+import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from '../../lib/log-system.js'
 
 /**
  * How long until the truck reaches each remaining stop.
@@ -173,6 +174,13 @@ async function computeLegEtas(
     const data = await response.json()
     if (!response.ok) {
       console.warn('[eta] Routes API error:', data?.error?.message ?? response.status)
+      logSystemThrottled('google-maps.eta', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+        log_level:  'warn',
+        event_type: 'external_api',
+        source:     'google-maps.eta',
+        message:    `Routes API error: ${data?.error?.message ?? response.status}`,
+        metadata:   { status: response.status },
+      })
       return null
     }
 
@@ -192,6 +200,12 @@ async function computeLegEtas(
     })
   } catch (err) {
     console.warn('[eta] Routes call failed:', (err as Error)?.message)
+    logSystemThrottled('google-maps.eta', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+      log_level:  'warn',
+      event_type: 'external_api',
+      source:     'google-maps.eta',
+      message:    `Routes call failed: ${(err as Error)?.message ?? String(err)}`,
+    })
     return null
   }
 }

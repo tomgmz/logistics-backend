@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import TripModel from '../../models/client/trip.model.js'
+import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from '../../lib/log-system.js'
 import type { TripWithStops } from '../../types/client/trip.types.js'
 
 /**
@@ -110,6 +111,13 @@ async function legDurations(from: Point, points: Point[], to: Point, departAt: D
     const data = await response.json()
     if (!response.ok) {
       console.warn('[planned-eta] Routes API error:', data?.error?.message ?? response.status)
+      logSystemThrottled('google-maps.planned-eta', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+        log_level:  'warn',
+        event_type: 'external_api',
+        source:     'google-maps.planned-eta',
+        message:    `Routes API error: ${data?.error?.message ?? response.status}`,
+        metadata:   { status: response.status },
+      })
       return null
     }
     const legs = data.routes?.[0]?.legs as Array<{ duration?: string }> | undefined
@@ -118,6 +126,12 @@ async function legDurations(from: Point, points: Point[], to: Point, departAt: D
     return legs.map((l) => parseDuration(l.duration))
   } catch (err) {
     console.warn('[planned-eta] Routes call failed:', (err as Error)?.message)
+    logSystemThrottled('google-maps.planned-eta', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+      log_level:  'warn',
+      event_type: 'external_api',
+      source:     'google-maps.planned-eta',
+      message:    `Routes call failed: ${(err as Error)?.message ?? String(err)}`,
+    })
     return null
   }
 }

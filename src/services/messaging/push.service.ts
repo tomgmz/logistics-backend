@@ -1,6 +1,7 @@
 import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk'
 import webpush from 'web-push'
 import * as model from '../../models/messaging/push.model.js'
+import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from '../../lib/log-system.js'
 
 const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY
@@ -72,15 +73,39 @@ async function sendExpo(subs: model.PushSubscriptionRow[], payload: PushPayload)
       tickets.push(...(await expo.sendPushNotificationsAsync(chunk)))
     } catch (err) {
       console.error('[push] expo chunk error', err)
+      logSystemThrottled('push.expo', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+        log_level:  'error',
+        event_type: 'external_api',
+        source:     'push.expo',
+        message:    `Expo push send failed: ${(err as Error)?.message ?? String(err)}`,
+        metadata:   { messages: chunk.length },
+      })
     }
   }
 
+  let ticketErrors = 0
+  let lastTicketError: string | undefined
   tickets.forEach((ticket, i) => {
-    if (ticket.status === 'error' && ticket.details?.error === 'DeviceNotRegistered') {
+    if (ticket.status !== 'error') return
+    if (ticket.details?.error === 'DeviceNotRegistered') {
       const token = validSubs[i]?.token
       if (token) dead.push(token)
+      return
     }
+    // An uninstalled app is routine and pruned above; anything else
+    // (credentials, rate limits, payload) is the provider refusing us.
+    ticketErrors++
+    lastTicketError = ticket.details?.error ?? ticket.message
   })
+  if (ticketErrors > 0) {
+    logSystemThrottled('push.expo', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+      log_level:  'warn',
+      event_type: 'external_api',
+      source:     'push.expo',
+      message:    `Expo rejected ${ticketErrors} push message(s): ${lastTicketError ?? 'unknown error'}`,
+      metadata:   { rejected: ticketErrors, sent: tickets.length },
+    })
+  }
 
   return dead
 }
@@ -101,7 +126,16 @@ async function sendWeb(subs: model.PushSubscriptionRow[], payload: PushPayload):
       } catch (err) {
         const status = (err as { statusCode?: number }).statusCode
         if (status === 404 || status === 410) dead.push(s.token)
-        else console.error('[push] web push error', status, err)
+        else {
+          console.error('[push] web push error', status, err)
+          logSystemThrottled('push.web', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+            log_level:  'warn',
+            event_type: 'external_api',
+            source:     'push.web',
+            message:    `Web push failed: ${(err as Error)?.message ?? String(err)}`,
+            metadata:   { status: status ?? null },
+          })
+        }
       }
     })
   )
