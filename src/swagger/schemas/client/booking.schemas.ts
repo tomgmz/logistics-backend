@@ -1,7 +1,7 @@
 export const bookingSchemas = {
   CreateBookingRequest: {
     type: 'object',
-    required: ['client_id', 'origin', 'truck_type_needed', 'schedule_date', 'call_time', 'destinations'],
+    required: ['client_id', 'origin', 'schedule_date', 'call_time', 'destinations'],
     properties: {
       client_id:           { type: 'string', format: 'uuid', example: '550e8400-e29b-41d4-a716-446655440000' },
       origin:              { type: 'string', example: 'Laguna Warehouse' },

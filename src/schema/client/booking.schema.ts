@@ -73,7 +73,9 @@ export const createBookingSchema = z.object({
   origin:                z.string().min(1, 'Origin is required'),
   origin_longitude:      z.number().optional(),
   origin_latitude:       z.number().optional(),
-  truck_type_needed:     z.string().min(1, 'Truck type is required'),
+  // No longer sent by the client wizard: the vehicle is chosen by operations at
+  // assignment, which writes the assigned vehicle's model name here.
+  truck_type_needed:     z.string().min(1).optional(),
   schedule_date:         z.string().date(),
   call_time:             z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'call_time must be in HH:MM format'),
   required_volume_cbm:   z.number().min(0).optional(),

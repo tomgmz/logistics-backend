@@ -122,7 +122,8 @@ export interface Booking {
   origin:                 string
   origin_longitude?:      number | null
   origin_latitude?:       number | null
-  truck_type_needed:      string
+  /** Null until operations assigns a vehicle; then that vehicle's model name. */
+  truck_type_needed:      string | null
   schedule_date:          string
   call_time:              string
   status:                 BookingStatus
@@ -203,7 +204,7 @@ export interface CreateBookingInput {
   origin:                  string
   origin_longitude?:       number
   origin_latitude?:        number
-  truck_type_needed:       string
+  truck_type_needed?:      string
   schedule_date:           string
   call_time:               string
   required_volume_cbm?:    number

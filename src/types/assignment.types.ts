@@ -86,7 +86,7 @@ export interface AssignmentWithRelations extends VendorSnapshot {
     origin:            string
     status:            string
     schedule_date:     string
-    truck_type_needed: string
+    truck_type_needed: string | null
     clients?: {
       company_name: string | null
     } | null

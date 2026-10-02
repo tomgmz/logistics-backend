@@ -204,9 +204,29 @@ async function assign(
     if (insTruckErr) throw insTruckErr
   }
 
+  // The client no longer names a vehicle type when booking — operations picks
+  // the vehicle here, so its model becomes the booking's vehicle type. A vendor
+  // vehicle has no model row; its typed-in type stands in, when given.
+  let truckType: string | null = null
+  if (isVendor) {
+    truckType = input.vendor_vehicle_type?.trim() || null
+  } else if (truckId) {
+    const { data: truckRow } = await supabase
+      .from('trucks')
+      .select('truck_models ( name )')
+      .eq('truck_id', truckId)
+      .maybeSingle()
+    const model = (truckRow as { truck_models?: { name?: string | null } | null } | null)?.truck_models
+    truckType = model?.name ?? null
+  }
+
   const { error: bookingErr } = await supabase
     .from('bookings')
-    .update({ status: 'assigned', updated_at: now })
+    .update({
+      status: 'assigned',
+      ...(truckType && { truck_type_needed: truckType }),
+      updated_at: now,
+    })
     .eq('booking_id', bookingId)
     // Allow updating booking status to 'assigned' regardless of prior intermediate
     // approval status so admin or other roles that assign after approval
