@@ -27,9 +27,6 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** Sunday. The fleet does not run, and the driver calendar cannot tick it. */
-const REST_WEEKDAY = 0
-
 /**
  * How far ahead a client has to book: tomorrow at the earliest, a year out at
  * the latest.
@@ -37,17 +34,13 @@ const REST_WEEKDAY = 0
  * Compared in Philippine calendar days, matching the `date` column — the
  * server's own timezone must not decide what "tomorrow" means to a client in
  * Manila.
+ *
+ * Every day of the week is open for transit, Sundays included. Office hours
+ * (Monday to Saturday, 8 AM – 5 PM) only govern when bookings are reviewed,
+ * never which days a truck can run, so they are not checked here.
  */
 function validateScheduleDate(scheduleDate: string): void {
   const scheduled = scheduleDate.slice(0, 10)
-
-  // Sunday is the fleet's rest day: the driver calendar cannot express it, so no
-  // driver can ever tick one, and a Sunday booking would be uncrewable — it
-  // would sit in the queue with an empty driver list and no way to explain why.
-  // Refuse it at the door instead.
-  if (new Date(`${scheduled}T00:00:00Z`).getUTCDay() === REST_WEEKDAY) {
-    throw badRequest('Deliveries are not scheduled on Sundays — please pick another day')
-  }
 
   const earliest = phDay(Date.now() + DAY_MS)
   if (scheduled < earliest) {

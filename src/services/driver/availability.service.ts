@@ -202,9 +202,8 @@ export async function setAvailabilityDays(
  * meant the plan they filled in only ever narrowed a pool they were already in.
  * It is now the pool itself.
  *
- * Sundays are the one day the calendar cannot express, so no driver can tick one
- * — which is why a Sunday never becomes a booking in the first place (see
- * `validateScheduleDate`). Nothing here needs to special-case it.
+ * Sundays are ordinary days here: transit runs seven days a week, so a driver
+ * ticks a Sunday like any other day.
  */
 export async function driverCalendarAllows(
   driverId:     string,
