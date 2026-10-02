@@ -3,6 +3,7 @@ import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import {
   recordDriverPositionService,
   getLivePositionService,
+  getFleetPositionsService,
 } from '../../services/driver/tracking.service.js'
 
 /**
@@ -49,6 +50,14 @@ export const recordDriverPosition = async (req: Request, res: Response) => {
       message.includes('not assigned') ? 403 :
       message.includes('not found')    ? 404 : 500
     res.status(httpStatus).json({ status: 'error', message })
+  }
+}
+
+export const getFleetPositions = async (_req: Request, res: Response) => {
+  try {
+    res.status(200).json({ status: 'success', data: await getFleetPositionsService() })
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message })
   }
 }
 

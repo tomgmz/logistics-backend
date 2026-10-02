@@ -194,6 +194,14 @@ export async function recordDriverPositionService(
   void broadcast(`tracking:booking:${bookingId}`, 'driver_position', position)
     .catch((e) => console.warn(`[tracking] broadcast failed for booking ${bookingId}:`, e?.message))
 
+  // The staff fleet map. Id-only, like every live:* signal: the topic is public
+  // (anon key), and one channel carrying every truck's coordinates would hand
+  // the whole fleet's whereabouts to anyone who opened it. The map re-reads
+  // positions through the authenticated fleet endpoint instead. Sent from here
+  // rather than a DB trigger because this function is the only writer.
+  void broadcast('live:tracking', 'changed', { table: 'driver_locations', id: bookingId })
+    .catch(() => {})
+
   // Likewise fire-and-forget, and for a stronger reason: this can make a call to
   // Google, which is slow and can fail. The driver's position must be recorded
   // and pushed on its own schedule regardless. Most pings find a fresh cached
@@ -229,6 +237,54 @@ export async function getLivePositionService(
 
   if (error) throw error
   return (data as DriverPositionWithEta | null) ?? null
+}
+
+/** One truck on the fleet map: where it is, and enough to say whose it is. */
+export interface FleetPosition extends DriverPositionWithEta {
+  reference_number: string | null
+  driver_name:      string | null
+  plate_number:     string | null
+}
+
+/**
+ * Every truck currently out on a delivery, for the staff fleet map.
+ *
+ * Only `in_transit` bookings count — a driver_locations row outlives its trip
+ * (it is keyed by driver, and simply stops being updated), so without the
+ * filter the map would keep drawing trucks at wherever their last delivery
+ * ended. Staff-only by route guard; there is no client scoping to apply.
+ */
+export async function getFleetPositionsService(): Promise<FleetPosition[]> {
+  const { data, error } = await supabase
+    .from('driver_locations')
+    .select(
+      'booking_id, driver_id, latitude, longitude, accuracy_m, speed_mps, heading_deg, recorded_at, ' +
+      'eta_stops, eta_computed_at, ' +
+      'drivers ( users ( first_name, last_name ) ), ' +
+      'bookings!inner ( reference_number, status, truck_assignments ( trucks ( plate_number ) ) )',
+    )
+    .eq('bookings.status', 'in_transit')
+
+  if (error) throw error
+
+  type Row = DriverPositionWithEta & {
+    drivers:  { users: { first_name: string | null; last_name: string | null } | null } | null
+    bookings: {
+      reference_number:  string | null
+      truck_assignments: { trucks: { plate_number: string | null } | null }[] | null
+    } | null
+  }
+
+  return ((data ?? []) as unknown as Row[]).map(({ drivers, bookings, ...position }) => {
+    const user = drivers?.users
+    const name = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim()
+    return {
+      ...position,
+      reference_number: bookings?.reference_number ?? null,
+      driver_name:      name || null,
+      plate_number:     bookings?.truck_assignments?.[0]?.trucks?.plate_number ?? null,
+    }
+  })
 }
 
 /**

@@ -56,6 +56,12 @@ router.get('/client/:clientId', authenticate, authenticatedLimiter, isAny,    at
 // user could read any driver's run sheet by changing the uuid.
 router.get('/driver/:driverId', authenticate, authenticatedLimiter, canViewBookings, attachDriverScope, BookingController.getBookingsByDriver)
 
+// Every truck on the road, for the staff fleet map. Staff with Transit Tracking
+// only — never a client (other companies' trucks) or a driver (other drivers).
+// Declared before '/:id' so 'fleet' is never read as a booking id.
+const canViewFleet = authorize('admin', 'general_manager', 'operations_manager', 'fleet_manager')
+router.get('/fleet/live-positions', authenticate, trackingLimiter, canViewFleet, requireModule('transit-tracking'), TrackingController.getFleetPositions)
+
 router.get('/:id',              authenticate, authenticatedLimiter, canViewBookings, attachClientScope, BookingController.getBookingById)
 router.get('/:id/destinations', authenticate, authenticatedLimiter, canViewBookings, attachClientScope, BookingController.getDestinationsByBooking)
 
