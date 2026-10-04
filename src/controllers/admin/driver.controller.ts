@@ -39,7 +39,8 @@ export async function getAssignableDrivers(req: Request, res: Response) {
       res.status(400).json({ status: 'error', message: 'A date (YYYY-MM-DD) is required' })
       return
     }
-    const current = req.query.current_driver_id ? String(req.query.current_driver_id) : null
+    // Comma-separated: the main and second driver already on the booking.
+    const current = String(req.query.current_driver_id ?? '').split(',').map((s) => s.trim()).filter(Boolean)
     const data    = await DriverService.getAssignableDrivers(date, current)
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {

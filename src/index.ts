@@ -24,6 +24,7 @@ import lockRoutes from './routes/locks.routes.js'
 import publicRoutes from './routes/public.routes.js'
 import { startFleetRecheckScheduler } from './services/notification/fleet-recheck.scheduler.js'
 import { startCompletionScheduler } from './services/notification/completion.scheduler.js'
+import { startLicenseExpiryScheduler } from './services/notification/license-expiry.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
 import { reportEmailLinkBaseUrl } from './lib/brevo-mailer.js'
 import { reportWebauthnConfig } from './lib/webauthn-config.js'
@@ -205,6 +206,7 @@ app.listen(PORT, '0.0.0.0', () => {
   // dispatches and again on the day itself.
   startFleetRecheckScheduler();
   startCompletionScheduler();
+  startLicenseExpiryScheduler();
 
   // Drops driver position breadcrumbs past their retention window. The live
   // position table is one row per driver and never needs pruning; the history

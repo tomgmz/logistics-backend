@@ -40,6 +40,12 @@ const SCHEDULERS = [
     interval_minutes: 15,
   },
   {
+    source:           'license-expiry.scheduler',
+    label:            'Driver license expiry reminders',
+    description:      'Emails and notifies each driver one month before their license expires.',
+    interval_minutes: 60,
+  },
+  {
     source:           'tracking.pruneLocationHistory',
     label:            'Location history cleanup',
     description:      'Deletes truck position history past its retention period.',

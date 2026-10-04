@@ -1445,7 +1445,7 @@ function generateDriverEnrollmentEmailHtml(
   const year = new Date().getFullYear()
   const forBooking = bookingRef
     ? `You have been assigned to booking <strong>${bookingRef}</strong>.`
-    : 'You have been assigned a delivery.'
+    : `You have been registered as a driver on ${APP_NAME}.`
 
   return `
     <!DOCTYPE html>
@@ -1529,7 +1529,7 @@ function generateDriverEnrollmentEmailHtml(
                 </td>
               </tr>
 
-              ${emailFooterHtml(`This is a transactional email sent because you were assigned a delivery.`)}
+              ${emailFooterHtml(`This is a transactional email sent because you were registered as a driver or assigned a delivery.`)}
 
             </table>
           </td>
@@ -1549,7 +1549,7 @@ function generateDriverEnrollmentEmailText(
   const year = new Date().getFullYear()
   const forBooking = bookingRef
     ? `You have been assigned to booking ${bookingRef}.`
-    : 'You have been assigned a delivery.'
+    : `You have been registered as a driver on ${APP_NAME}.`
 
   return `
 Hi ${name},
@@ -1573,6 +1573,142 @@ Link expired or not working? Ask your dispatcher to send a new one, or reach us 
 ${APP_SUPPORT_EMAIL}.
 
 ---
-${emailFooterText(`This is a transactional email sent because you were assigned a delivery.`)}
+${emailFooterText(`This is a transactional email sent because you were registered as a driver or assigned a delivery.`)}
   `.trim()
+}
+// ---------------------------------------------------------------------------
+// Driver's licence expiry reminder, sent one month before the expiry date by
+// services/notification/license-expiry.scheduler.ts. The in-app notification
+// carries the same message; this copy reaches a driver who has not opened the
+// app in a while.
+// ---------------------------------------------------------------------------
+export interface LicenseExpiryEmailParams {
+  to:            string
+  firstName:     string | null
+  /** The expiry date, already formatted for reading ("November 4, 2026"). */
+  expiresOn:     string
+  /** Whole days from today to the expiry date. */
+  daysLeft:      number
+  licenseNumber: string | null
+}
+
+export async function sendLicenseExpiryEmail(params: LicenseExpiryEmailParams): Promise<void> {
+  if (!process.env.BREVO_API_KEY) {
+    throw new Error('Brevo is not configured. Please set BREVO_API_KEY.')
+  }
+  if (!process.env.BREVO_SENDER_EMAIL) {
+    throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
+  }
+
+  const { to, firstName, expiresOn, daysLeft, licenseNumber } = params
+  const name    = escapeHtml(firstName?.trim() || 'there')
+  const inDays  = daysLeft === 0 ? 'today' : daysLeft === 1 ? 'in 1 day' : `in ${daysLeft} days`
+  const licenseNo = licenseNumber?.trim() ? ` (license number ${escapeHtml(licenseNumber.trim())})` : ''
+  const reason  = `This reminder was sent because the driver's license on your ${APP_NAME} driver account is about to expire.`
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Your driver's license expires soon</title>
+    </head>
+    <body style="margin:0;padding:0;background-color:#f6f6f6;">
+
+      <div style="display:none;font-size:1px;color:#f6f6f6;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+        Your driver's license expires on ${expiresOn}. Renew it before then.
+      </div>
+
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
+        <tr>
+          <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0"
+              style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+
+              <tr>
+                <td style="background-color:#0a0a0a;padding:32px 40px;">
+                  <h1 style="margin:0;font-family:Arial,sans-serif;font-size:22px;color:#ffffff;font-weight:700;letter-spacing:0.05em;">
+                    ${APP_NAME}
+                  </h1>
+                  <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:12px;color:#818181;letter-spacing:0.12em;text-transform:uppercase;">
+                    License Expiry Reminder
+                  </p>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="padding:36px 40px 8px 40px;">
+                  <p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
+                    Hi ${name},
+                  </p>
+                  <p style="margin:0 0 24px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
+                    Your driver's license${licenseNo} expires on <strong>${expiresOn}</strong>, ${inDays}.
+                  </p>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="padding:0 40px 30px 40px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td style="background-color:#fff8f0;border-left:4px solid #f59e0b;border-radius:4px;padding:16px 18px;">
+                        <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.6;">
+                          <strong>Renew it before it expires.</strong> Once you have the renewed license,
+                          give the new expiry date and a photo of the card to the Company Administrator
+                          so your account stays up to date.
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              ${emailFooterHtml(reason)}
+
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `.trim()
+
+  const textContent = `
+Hi ${firstName?.trim() || 'there'},
+
+Your driver's license${licenseNumber?.trim() ? ` (license number ${licenseNumber.trim()})` : ''} expires on ${expiresOn}, ${inDays}.
+
+RENEW IT BEFORE IT EXPIRES
+Once you have the renewed license, give the new expiry date and a photo of the
+card to the Company Administrator so your account stays up to date.
+
+---
+${emailFooterText(reason)}
+  `.trim()
+
+  try {
+    const brevo = getBrevoClient()
+    await brevo.transactionalEmails.sendTransacEmail({
+      subject:     `Your driver's license expires on ${expiresOn}`,
+      htmlContent,
+      textContent,
+      sender:      { name: FROM_NAME, email: FROM_EMAIL },
+      to:          [{ email: to, name: firstName ?? undefined }],
+    })
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('BREVO LICENSE EXPIRY EMAIL ERROR:', {
+      error,
+      recipient: to,
+      timestamp: new Date().toISOString(),
+    })
+    logSystem({
+      log_level:  'error',
+      event_type: 'email_event',
+      source:     'brevo-mailer',
+      message:    `Failed to send license expiry email: ${error}`,
+    })
+    throw new Error(`Failed to send license expiry email: ${error}`)
+  }
 }

@@ -15,6 +15,7 @@ import {
 } from '../../lib/stop-geofence.js'
 import {
   assertDriverOnBooking,
+  assertLeadDriverOnBooking,
   driverCompleteBookingService,
   type DriverActor,
 } from './booking.service.js'
@@ -175,7 +176,7 @@ export async function driverConfirmTripPickupService(
   const trip = await TripModel.findById(tripId)
   if (!trip) throw new Error(`Trip with ID ${tripId} not found`)
 
-  const booking = await assertDriverOnBooking(trip.booking_id, actor)
+  const booking = await assertLeadDriverOnBooking(trip.booking_id, actor)
 
   // Already loaded, or already run and back. Either way there is nothing to do
   // and the queue is retrying — hand back what stands.
@@ -278,7 +279,7 @@ export async function driverConfirmTripStopService(
   if (!stop) throw new Error(`Trip stop with ID ${tripStopId} not found`)
 
   const trip    = stop.booking_trips
-  const booking = await assertDriverOnBooking(trip.booking_id, actor)
+  const booking = await assertLeadDriverOnBooking(trip.booking_id, actor)
 
   if (stop.status === 'delivered') return stop
   if (trip.status !== 'in_transit' && trip.status !== 'completed') {
@@ -438,7 +439,7 @@ export async function attachStopProofService(
   const stop = await TripModel.findStopById(tripStopId)
   if (!stop) throw new Error(`Trip stop with ID ${tripStopId} not found`)
 
-  const booking = await assertDriverOnBooking(stop.booking_trips.booking_id, actor)
+  const booking = await assertLeadDriverOnBooking(stop.booking_trips.booking_id, actor)
 
   if (stop.status === 'pending') {
     throw new Error('Confirm the drop-off before attaching its proof')
@@ -477,7 +478,7 @@ export async function driverConfirmFleetReturnService(
   actor: DriverActor,
   position?: StopProofPosition | null,
 ): Promise<BookingWithRelations> {
-  const booking = await assertDriverOnBooking(bookingId, actor)
+  const booking = await assertLeadDriverOnBooking(bookingId, actor)
 
   if ((booking as any).fleet_return_at) return booking
   if (booking.status !== 'delivered' && booking.status !== 'completed') {

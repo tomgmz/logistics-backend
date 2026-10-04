@@ -144,6 +144,7 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   driver_assignments (
     assignment_id,
     driver_id,
+    crew_role,
     assigned_at,
     drivers (
       license_number,
@@ -288,6 +289,7 @@ async function findByDriverId(driverId: string): Promise<BookingWithRelations[]>
     .select(`
       assignment_id,
       assigned_at,
+      crew_role,
       bookings (
         ${BOOKING_WITH_RELATIONS_SELECT}
       )
@@ -297,9 +299,11 @@ async function findByDriverId(driverId: string): Promise<BookingWithRelations[]>
 
   if (error) throw error
 
+  // `my_crew_role` tells the driver app whether this driver runs the trip
+  // ('lead') or rides along as the second driver ('second').
   return (data ?? [])
-    .map((row: any) => row.bookings)
-    .filter(Boolean) as BookingWithRelations[]
+    .filter((row: any) => row.bookings)
+    .map((row: any) => ({ ...row.bookings, my_crew_role: row.crew_role === 'second' ? 'second' : 'lead' })) as BookingWithRelations[]
 }
 
 /**
@@ -308,15 +312,26 @@ async function findByDriverId(driverId: string): Promise<BookingWithRelations[]>
  * that table's `user_id` (the id carried in the access token).
  */
 async function isDriverAssignedToBooking(bookingId: string, userId: string): Promise<boolean> {
+  return (await driverCrewRole(bookingId, userId)) !== null
+}
+
+/**
+ * Which seat this user holds on the booking: 'lead' (the main driver, who runs
+ * the trip in the app), 'second' (the optional second driver, who can see it),
+ * or null when they are not on it.
+ */
+async function driverCrewRole(bookingId: string, userId: string): Promise<'lead' | 'second' | null> {
   const { data, error } = await supabase
     .from('driver_assignments')
-    .select('assignment_id, drivers!inner ( user_id )')
+    .select('crew_role, drivers!inner ( user_id )')
     .eq('booking_id', bookingId)
     .eq('drivers.user_id', userId)
     .limit(1)
 
   if (error) throw error
-  return (data ?? []).length > 0
+  const role = (data ?? [])[0]?.crew_role
+  if (!role) return null
+  return role === 'second' ? 'second' : 'lead'
 }
 
 /**
@@ -1075,6 +1090,7 @@ export const BookingModel = {
   findBookingOwner,
   findDestinationOwner,
   isDriverAssignedToBooking,
+  driverCrewRole,
   // booking mutations
   create,
   update,

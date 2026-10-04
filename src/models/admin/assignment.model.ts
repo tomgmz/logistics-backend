@@ -4,6 +4,7 @@ import type {
   AssignBookingInput,
   UpdateDeliveryStatusInput,
   Delivery,
+  SecondDriver,
 } from '../../types/assignment.types.js'
 
 const DELIVERY_WITH_RELATIONS_SELECT = `
@@ -26,7 +27,7 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
   vendor_vehicle_type,
   vendor_driver_email,
   vendor_driver_user_id,
-  drivers (
+  drivers!deliveries_driver_id_fkey (
     driver_id,
     license_number,
     license_expiry,
@@ -58,6 +59,42 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
   )
 `
 
+// The optional second driver, kept in driver_assignments (crew_role 'second')
+// rather than on deliveries — see migration 20261005020000. Attached to each
+// assignment record so every reader gets the whole crew from one call.
+const SECOND_DRIVER_SELECT = `
+  booking_id,
+  drivers (
+    driver_id,
+    license_number,
+    license_expiry,
+    is_external,
+    vendor_name,
+    users ( user_id, first_name, last_name, phone, email )
+  )
+`
+
+async function withSecondDrivers<T extends { booking_id: string }>(rows: T[]): Promise<(T & { second_driver: SecondDriver | null })[]> {
+  if (rows.length === 0) return []
+  const { data, error } = await supabase
+    .from('driver_assignments')
+    .select(SECOND_DRIVER_SELECT)
+    .eq('crew_role', 'second')
+    .in('booking_id', rows.map((r) => r.booking_id))
+  if (error) throw error
+
+  const byBooking = new Map<string, SecondDriver>()
+  for (const row of (data ?? []) as any[]) {
+    const d = Array.isArray(row.drivers) ? row.drivers[0] : row.drivers
+    if (d) byBooking.set(row.booking_id, d as SecondDriver)
+  }
+  return rows.map((r) => ({ ...r, second_driver: byBooking.get(r.booking_id) ?? null }))
+}
+
+async function withSecondDriver<T extends { booking_id: string }>(row: T | null) {
+  return row ? (await withSecondDrivers([row]))[0] : null
+}
+
 async function findByBookingId(bookingId: string): Promise<AssignmentWithRelations | null> {
   const { data, error } = await supabase
     .from('deliveries')
@@ -68,7 +105,7 @@ async function findByBookingId(bookingId: string): Promise<AssignmentWithRelatio
     .maybeSingle()
 
   if (error) throw error
-  return (data ?? null) as unknown as AssignmentWithRelations | null
+  return withSecondDriver(data as unknown as AssignmentWithRelations | null)
 }
 
 async function findByDeliveryId(deliveryId: string): Promise<AssignmentWithRelations | null> {
@@ -79,7 +116,7 @@ async function findByDeliveryId(deliveryId: string): Promise<AssignmentWithRelat
     .maybeSingle()
 
   if (error) throw error
-  return (data ?? null) as unknown as AssignmentWithRelations | null
+  return withSecondDriver(data as unknown as AssignmentWithRelations | null)
 }
 
 async function findAll(): Promise<AssignmentWithRelations[]> {
@@ -89,7 +126,7 @@ async function findAll(): Promise<AssignmentWithRelations[]> {
     .order('created_at', { ascending: false })
 
   if (error) throw error
-  return (data ?? []) as unknown as AssignmentWithRelations[]
+  return withSecondDrivers((data ?? []) as unknown as AssignmentWithRelations[])
 }
 
 async function assign(
@@ -100,6 +137,9 @@ async function assign(
   // users row provisioned for them. Kept out of `deliveries.driver_id` on
   // purpose — see the comment on the driver_assignments write below.
   external?:  { driverId: string; userId: string } | null,
+  // drivers.driver_id of the optional second driver, on either path. On the
+  // vendor path it is a registered vendor driver.
+  secondDriverId?: string | null,
 ): Promise<AssignmentWithRelations | null> {
   const now           = new Date().toISOString()
   const isVendor       = input.is_vendor_supplied === true
@@ -180,15 +220,20 @@ async function assign(
     .eq('booking_id', bookingId)
   if (delTruckErr) throw delTruckErr
 
-  if (crewDriverId) {
+  const crewRows = [
+    crewDriverId   ? { driver_id: crewDriverId,   crew_role: 'lead'   } : null,
+    secondDriverId ? { driver_id: secondDriverId, crew_role: 'second' } : null,
+  ].filter((r): r is { driver_id: string; crew_role: string } => r !== null)
+
+  if (crewRows.length > 0) {
     const { error: insDriverErr } = await supabase
       .from('driver_assignments')
-      .insert({
+      .insert(crewRows.map((r) => ({
         booking_id:  bookingId,
-        driver_id:   crewDriverId,
+        ...r,
         assigned_at: now,
         assigned_by: assignedBy,
-      })
+      })))
     if (insDriverErr) throw insDriverErr
   }
 
@@ -266,7 +311,7 @@ async function getAssignmentHistory(bookingId: string): Promise<{
     supabase
       .from('driver_assignments')
       .select(`
-        assignment_id, assigned_at, assigned_by,
+        assignment_id, assigned_at, assigned_by, crew_role,
         drivers (
           driver_id, license_number,
           users ( first_name, last_name, email )

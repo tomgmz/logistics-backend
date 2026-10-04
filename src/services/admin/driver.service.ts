@@ -9,6 +9,8 @@ import { driversAvailableOn } from '../driver/availability.service.js'
 import { unreturnedVehiclesFor } from '../../lib/driver-reservation.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
+import { createExternalDriver } from '../auth/driver-enrollment.service.js'
+import { requestLicenseExpiryCheck } from '../notification/license-expiry.scheduler.js'
 
 export async function getAllDrivers() {
   return DriverModel.findAll()
@@ -21,10 +23,11 @@ export async function getAllDrivers() {
  * offers a driver the assignment call would then refuse: they ticked that day on
  * their calendar, nothing has stopped them working, and they are not still
  * holding a vehicle from a booking they finished but never brought back.
- * `currentDriverId` is the driver already on the booking being edited — they are
- * 'assigned' and so would filter themselves out of their own assignment.
+ * `currentDriverIds` are the drivers already on the booking being edited (main
+ * and second) — they are 'assigned' and so would filter themselves out of their
+ * own assignment.
  */
-export async function getAssignableDrivers(day: string, currentDriverId?: string | null) {
+export async function getAssignableDrivers(day: string, currentDriverIds: string[] = []) {
   const [drivers, ticked] = await Promise.all([
     DriverModel.findAll(),
     driversAvailableOn(day),
@@ -41,7 +44,7 @@ export async function getAssignableDrivers(day: string, currentDriverId?: string
   return (drivers ?? []).filter((user: any) => {
     const profile = Array.isArray(user.drivers) ? user.drivers[0] : user.drivers
     if (!profile?.driver_id) return false
-    if (profile.driver_id === currentDriverId) return true
+    if (currentDriverIds.includes(profile.driver_id)) return true
 
     return ticked.has(profile.driver_id)
       && !BLOCKING_DRIVER_STATUSES.includes(profile.status)
@@ -59,6 +62,29 @@ export async function getDriverById(userId: string) {
 }
 
 export async function createDriver(dto: CreateDriverDTO, actorId?: string | null) {
+  // A vendor driver gets a passkey-only account and a setup link instead of a
+  // password and a welcome email. Same details otherwise, so they show up in the
+  // license reminder and the Driver Management flag like any company driver.
+  if (dto.is_external) {
+    if (!dto.vendor_name?.trim()) throw new Error('Vendor name is required for a vendor driver')
+    const { userId } = await createExternalDriver({
+      email:             dto.email,
+      first_name:        dto.first_name,
+      last_name:         dto.last_name,
+      middle_name:       dto.middle_name ?? null,
+      suffix:            dto.suffix ?? null,
+      phone:             dto.phone ?? null,
+      license_number:    dto.license_number,
+      license_expiry:    dto.license_expiry,
+      license_image_url: dto.license_image_url ?? null,
+      vendor_name:       dto.vendor_name,
+      vendor_contact:    dto.vendor_contact ?? null,
+      actorId:           actorId ?? dto.created_by ?? null,
+    })
+    requestLicenseExpiryCheck()
+    return DriverModel.findById(userId)
+  }
+
   const password  = generateSecurePassword()
   const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
 
@@ -93,6 +119,10 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
       description: `Driver ${dto.email} created (user: ${userId})`,
     })
 
+    // A license already inside the reminder window is reminded now, not on the
+    // next hourly tick.
+    requestLicenseExpiryCheck()
+
     return result
   } catch (err: any) {
     console.error('Driver creation failed, rolling back auth user...', err.message)
@@ -116,6 +146,9 @@ export async function updateDriver(userId: string, dto: UpdateDriverDTO, actorId
     action:      'driver_updated',
     description: `Driver ${userId} updated`,
   })
+
+  // A new expiry date re-arms the reminder; check it now rather than within the hour.
+  if (dto.license_expiry !== undefined) requestLicenseExpiryCheck()
 
   return result
 }
@@ -190,14 +223,17 @@ export async function standDownDriver(userId: string, actorId?: string | null) {
 
 /** The unfinished booking a driver is actually out on, if any. */
 async function liveDeliveryFor(driverId: string): Promise<{ reference: string } | null> {
-  const { data, error } = await supabase
-    .from('deliveries')
-    .select('booking_id, bookings ( status, reference_number )')
-    .eq('driver_id', driverId)
+  // As the main driver (deliveries) or as a booking's second driver.
+  const [main, second] = await Promise.all([
+    supabase.from('deliveries').select('booking_id, bookings ( status, reference_number )').eq('driver_id', driverId),
+    supabase.from('driver_assignments').select('booking_id, bookings ( status, reference_number )')
+      .eq('driver_id', driverId).eq('crew_role', 'second'),
+  ])
 
-  if (error) throw error
+  if (main.error)   throw main.error
+  if (second.error) throw second.error
 
-  for (const row of (data ?? []) as any[]) {
+  for (const row of [...(main.data ?? []), ...(second.data ?? [])] as any[]) {
     const booking = row.bookings
     if (!booking?.status) continue
     if (booking.status === 'delivered' || booking.status === 'completed' || booking.status === 'cancelled') continue

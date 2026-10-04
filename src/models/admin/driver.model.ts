@@ -109,6 +109,22 @@ async function update(userId: string, dto: UpdateDriverDTO) {
   if (dto.license_expiry    !== undefined) driverFields.license_expiry    = dto.license_expiry
   if (dto.license_image_url !== undefined) driverFields.license_image_url = dto.license_image_url
 
+  // The vendor a driver comes from only means something on a vendor driver. On a
+  // company driver it is dropped rather than stored, or the driver would read as
+  // vendor-supplied wherever the field is shown.
+  if (dto.vendor_name !== undefined || dto.vendor_contact !== undefined) {
+    const { data: profile, error: profileErr } = await supabase
+      .from('drivers')
+      .select('is_external')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (profileErr) throw profileErr
+    if (profile?.is_external === true) {
+      if (dto.vendor_name    !== undefined) driverFields.vendor_name    = dto.vendor_name.trim()
+      if (dto.vendor_contact !== undefined) driverFields.vendor_contact = dto.vendor_contact?.trim() || null
+    }
+  }
+
   if (Object.keys(driverFields).length > 0) {
     // If license_number is being changed, ensure no other driver uses it
     if (driverFields.license_number) {

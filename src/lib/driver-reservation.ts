@@ -76,6 +76,30 @@ async function unreturnedBy(
       reference_number: row.bookings.reference_number ?? null,
     })
   }
+
+  // A second driver rode out in that truck too, and is just as tied to it until
+  // it is home. They are not on deliveries (see migration 20261005020000), so
+  // they are read from driver_assignments.
+  if (column === 'driver_id') {
+    const { data: seconds, error: secondErr } = await supabase
+      .from('driver_assignments')
+      .select('driver_id, bookings!inner ( booking_id, reference_number, status, fleet_return_at )')
+      .eq('crew_role', 'second')
+      .in('driver_id', ids)
+      .in('bookings.status', ['delivered', 'completed'])
+      .is('bookings.fleet_return_at', null)
+    if (secondErr) throw secondErr
+
+    for (const row of (seconds ?? []) as any[]) {
+      if (!row.driver_id || byId.has(row.driver_id)) continue
+      byId.set(row.driver_id, {
+        driver_id:        row.driver_id,
+        truck_id:         null,
+        booking_id:       row.bookings.booking_id,
+        reference_number: row.bookings.reference_number ?? null,
+      })
+    }
+  }
   return byId
 }
 
@@ -143,14 +167,17 @@ export async function lastFleetReturnFor(truckId: string): Promise<string | null
 }
 
 export async function hasLiveDelivery(driverId: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('deliveries')
-    .select('delivery_id, bookings ( status )')
-    .eq('driver_id', driverId)
+  // As the main driver (deliveries) or as the second driver (driver_assignments).
+  const [main, second] = await Promise.all([
+    supabase.from('deliveries').select('delivery_id, bookings ( status )').eq('driver_id', driverId),
+    supabase.from('driver_assignments').select('assignment_id, bookings ( status )')
+      .eq('driver_id', driverId).eq('crew_role', 'second'),
+  ])
 
-  if (error) throw error
+  if (main.error)   throw main.error
+  if (second.error) throw second.error
 
-  return (data ?? []).some((row: any) => {
+  return [...(main.data ?? []), ...(second.data ?? [])].some((row: any) => {
     const status = row.bookings?.status
     // A delivery whose booking is gone is itself an orphan — exactly the state
     // this guards against, so it counts for nothing.

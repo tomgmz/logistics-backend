@@ -215,17 +215,25 @@ async function setTruckStatus(truckId: string, status: string): Promise<void> {
   if (error) throw error
 }
 
-/** Take the driver + vehicle out of the pool for the duration of the delivery. */
-export async function reserveCrew(driverId: string | null, truckId: string | null): Promise<void> {
-  if (driverId) await setDriverStatus(driverId, 'assigned')
-  if (truckId)  await setTruckStatus(truckId, 'in_use')
+/**
+ * Take the driver + vehicle out of the pool for the duration of the delivery.
+ * `secondDriverId` is the optional company second driver, reserved the same way.
+ */
+export async function reserveCrew(
+  driverId:       string | null,
+  truckId:        string | null,
+  secondDriverId: string | null = null,
+): Promise<void> {
+  if (driverId)       await setDriverStatus(driverId, 'assigned')
+  if (secondDriverId) await setDriverStatus(secondDriverId, 'assigned')
+  if (truckId)        await setTruckStatus(truckId, 'in_use')
 
   // These silently change who is available. When a booking cannot be staffed,
   // this pair of events is the trail that explains why.
   logEvent({
     log_type:    'vehicle_activity',
     action:      'crew_reserved',
-    description: `Reserved driver ${driverId ?? '—'} / vehicle ${truckId ?? '—'}`,
+    description: `Reserved driver ${driverId ?? '—'}${secondDriverId ? ` + second driver ${secondDriverId}` : ''} / vehicle ${truckId ?? '—'}`,
   })
 }
 
@@ -240,27 +248,61 @@ export async function reserveCrew(driverId: string | null, truckId: string | nul
  * leaving them 'unavailable' would just be a word nothing reads. A driver who
  * does not want the next day's work says so by not ticking the day.
  */
-export async function releaseCrew(driverId: string | null, truckId: string | null): Promise<void> {
-  if (driverId) await setDriverStatus(driverId, 'available')
-  if (truckId)  await setTruckStatus(truckId, 'available')
+export async function releaseCrew(
+  driverId:       string | null,
+  truckId:        string | null,
+  secondDriverId: string | null = null,
+): Promise<void> {
+  if (driverId)       await setDriverStatus(driverId, 'available')
+  if (secondDriverId) await setDriverStatus(secondDriverId, 'available')
+  if (truckId)        await setTruckStatus(truckId, 'available')
 
   logEvent({
     log_type:    'vehicle_activity',
     action:      'crew_released',
-    description: `Released driver ${driverId ?? '—'} / vehicle ${truckId ?? '—'}`,
+    description: `Released driver ${driverId ?? '—'}${secondDriverId ? ` + second driver ${secondDriverId}` : ''} / vehicle ${truckId ?? '—'}`,
   })
 }
 
-/** The driver + truck currently recorded on a booking's delivery, if any. */
-export async function crewOnBooking(bookingId: string): Promise<{ driver_id: string | null; truck_id: string | null }> {
-  const { data, error } = await supabase
-    .from('deliveries')
-    .select('driver_id, truck_id')
-    .eq('booking_id', bookingId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+export interface CrewOnBooking {
+  driver_id:        string | null
+  truck_id:         string | null
+  /**
+   * The COMPANY second driver, if any — the one reserveCrew/releaseCrew manage.
+   * A vendor second driver is left out on purpose, exactly as the main vendor
+   * driver is (deliveries.driver_id is NULL for them): subcontractors never
+   * enter the company reservation state machine.
+   */
+  second_driver_id: string | null
+}
 
-  if (error) throw error
-  return { driver_id: data?.driver_id ?? null, truck_id: data?.truck_id ?? null }
+/** The crew currently recorded on a booking, if any. */
+export async function crewOnBooking(bookingId: string): Promise<CrewOnBooking> {
+  const [delivery, second] = await Promise.all([
+    supabase
+      .from('deliveries')
+      .select('driver_id, truck_id')
+      .eq('booking_id', bookingId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('driver_assignments')
+      .select('driver_id, drivers ( is_external )')
+      .eq('booking_id', bookingId)
+      .eq('crew_role', 'second')
+      .maybeSingle(),
+  ])
+
+  if (delivery.error) throw delivery.error
+  if (second.error)   throw second.error
+
+  const secondProfile: any = Array.isArray((second.data as any)?.drivers)
+    ? (second.data as any).drivers[0]
+    : (second.data as any)?.drivers
+  return {
+    driver_id:        delivery.data?.driver_id ?? null,
+    truck_id:         delivery.data?.truck_id ?? null,
+    second_driver_id: second.data && secondProfile?.is_external !== true ? second.data.driver_id : null,
+  }
 }

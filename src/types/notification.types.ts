@@ -28,6 +28,9 @@ export type NotificationType =
   // delivery at the time, so a report raised in the yard leaves it null.
   | 'driver.emergency'                // quick alert or a report that stops the trip -> ops + fleet + admins
   | 'driver.report'                   // detailed report the trip survives -> ops + fleet + admins
+  // Scheduled, about the driver themselves: their license expires within a month.
+  // Carries `license_expiry` in `data`; `booking_id` is always null.
+  | 'driver.license_expiring'         // one month before license_expiry -> that driver
   // Password resets. Scoped to a reset REQUEST, not a booking, so they carry
   // `request_id` in `data` and leave `booking_id` null. Routed to exactly one
   // admin group: driver/client requests to `admin` (Company Admin), staff

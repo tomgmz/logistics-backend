@@ -174,9 +174,14 @@ export interface BookingWithRelations extends Booking {
     }
   }
 
+  /** On the driver's own job list only: the seat they hold on this booking. */
+  my_crew_role?: 'lead' | 'second'
+
   driver_assignments?: Array<{
     assignment_id: string
     driver_id:     string
+    /** 'lead' = the main driver; 'second' = the optional second driver. */
+    crew_role?:    'lead' | 'second'
     assigned_at?:  Date
     drivers?: {
       license_number: string

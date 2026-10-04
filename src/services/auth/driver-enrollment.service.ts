@@ -16,10 +16,11 @@ import * as DriverModel from '../../models/admin/driver.model.js'
 /**
  * Accounts for outside-vendor drivers.
  *
- * A vendor-supplied assignment is still recorded as a snapshot on the delivery —
- * that remains the record of who drove. What this adds is an optional, minimal
- * account so the driver can actually open the app and do the job: see the run
- * sheet, get the assignment push, record proof at each stop.
+ * Vendor drivers are registered in Driver Management next to the company (8338)
+ * drivers, with the same details plus the vendor they come from. Booking
+ * Management then picks one from that roster for a vendor-supplied delivery and
+ * copies their details onto the delivery snapshot, which remains the record of
+ * who drove. Only the vehicle is typed per booking.
  *
  * The account is deliberately thin. It is role='driver' (access is scoped by
  * driver_assignments, not by role string), it is flagged is_external so it can
@@ -27,142 +28,94 @@ import * as DriverModel from '../../models/admin/driver.model.js'
  * in is a passkey the driver enrols on their own phone.
  */
 
-export interface ProvisionExternalDriverInput {
-  email:     string
-  name:      string
-  license?:  string | null
-  phone?:    string | null
-  actorId?:  string | null
+export interface CreateExternalDriverInput {
+  email:              string
+  first_name:         string
+  last_name:          string
+  middle_name?:       string | null
+  suffix?:            string | null
+  phone?:             string | null
+  license_number:     string
+  license_expiry:     string
+  license_image_url?: string | null
+  vendor_name:        string
+  vendor_contact?:    string | null
+  actorId?:           string | null
 }
 
-export interface ProvisionedExternalDriver {
-  userId:   string
-  driverId: string
-  /** False when an existing account was reused — a repeat subcontractor. */
-  created:  boolean
-  /**
-   * True when the driver has no working passkey — a new account, or a reused one
-   * whose access was revoked. The caller sends a setup link in exactly that case;
-   * without it a revoked driver who is assigned again comes back active but with
-   * no way in and no link to fix it.
-   */
+/** What a vendor-supplied assignment needs from the registered driver. */
+export interface ExternalDriverForAssignment {
+  userId:      string
+  driverId:    string
+  /** True when the driver has no working passkey, so a setup link must go out. */
   needsInvite: boolean
+  firstName:   string | null
+  snapshot: {
+    vendor_name:           string | null
+    vendor_contact:        string | null
+    vendor_driver_name:    string
+    vendor_driver_license: string | null
+    vendor_driver_phone:   string | null
+    vendor_driver_email:   string
+  }
 }
 
-/**
- * Split a single free-text driver name into the first/last the users table wants.
- *
- * Ops types one field ("Juan Dela Cruz"), so this is a guess by definition. The
- * last whitespace-separated token becomes the surname and everything before it
- * the given name, which is right for the common cases and harmless when wrong —
- * nothing keys off these, they are display only.
- */
-function splitName(full: string): { first: string; last: string | null } {
-  const parts = full.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return { first: 'Driver', last: null }
-  if (parts.length === 1) return { first: parts[0], last: null }
-  return { first: parts.slice(0, -1).join(' '), last: parts[parts.length - 1] }
+type NameParts = {
+  first_name?:  string | null
+  middle_name?: string | null
+  last_name?:   string | null
+  suffix?:      string | null
 }
 
-/**
- * drivers.license_number is NOT NULL and UNIQUE, but ops is not required to
- * capture a licence for a vendor driver. Mint a clearly-synthetic placeholder in
- * that case rather than blocking the assignment — it is visibly not a licence
- * number, so nobody mistakes it for one later.
- */
-function syntheticLicense(): string {
-  return `EXT-${crypto.randomBytes(4).toString('hex').toUpperCase()}`
+function fullName(u: NameParts): string {
+  return [u.first_name, u.middle_name, u.last_name, u.suffix].filter(Boolean).join(' ').trim() || 'Driver'
 }
 
 async function findUserByEmail(email: string) {
   const { data, error } = await supabase
     .from('users')
-    .select('user_id, role, status, drivers ( driver_id, is_external )')
+    .select('user_id, role')
     .eq('email', email)
     .maybeSingle()
   if (error) throw error
-  return data as
-    | { user_id: string; role: string; status: string | null; drivers: any }
-    | null
+  return data as { user_id: string; role: string } | null
 }
 
 /**
- * Create (or find) the account for a vendor's driver.
+ * Register a vendor's driver from Driver Management and email them a passkey
+ * setup link.
  *
- * Reuse is intentional: the same subcontractor often comes back on a later
- * booking, and minting a second account would mean a second enrolment and a
- * second passkey for the same person.
+ * Same details as a company driver (name, contact, license number, expiry and
+ * photo) so the license expiry reminder and the Driver Management flag cover
+ * them too. What differs is the sign-in: no password is ever issued.
  */
-export async function provisionExternalDriver(
-  input: ProvisionExternalDriverInput,
-): Promise<ProvisionedExternalDriver> {
+export async function createExternalDriver(
+  input: CreateExternalDriverInput,
+): Promise<{ userId: string; driverId: string }> {
   const email = input.email.trim().toLowerCase()
 
   const existing = await findUserByEmail(email)
   if (existing) {
-    // Never silently attach a vendor driver to a staff or client account. If the
-    // address is already spoken for by anything but a driver, that is either a
-    // typo or someone trying to widen their own access — say so out loud.
-    if (existing.role !== 'driver') {
-      throw new Error(
-        `The email ${email} already belongs to a ${existing.role} account. ` +
-        `Use a different address for the vendor driver.`,
-      )
-    }
-    const profile = Array.isArray(existing.drivers) ? existing.drivers[0] : existing.drivers
-    if (!profile?.driver_id) {
-      throw new Error(`The account for ${email} is missing its driver profile; fix it before assigning.`)
-    }
-    // A company driver reached through the vendor path would sidestep every
-    // availability and BLOWBAGETS check the company path enforces.
-    if (profile.is_external !== true) {
-      throw new Error(
-        `${email} is a company driver. Assign them through the company path instead of as vendor-supplied.`,
-      )
-    }
-
-    // A revoked or archived account is reactivated rather than duplicated: same
-    // person, back on the road. Archiving banned the auth identity, so the ban
-    // has to come off too or the passkey sign-in can't mint a session. Revoking
-    // killed their passkeys, which is why needsInvite is worked out below rather
-    // than assumed false for a reused account.
-    if (existing.status !== 'active') await reactivateAccount(existing.user_id)
-
-    const active = await WebauthnModel.listCredentialsForUser(existing.user_id)
-    return {
-      userId:      existing.user_id,
-      driverId:    profile.driver_id,
-      created:     false,
-      needsInvite: active.length === 0,
-    }
+    throw new Error(`The email ${email} already belongs to a ${existing.role} account.`)
   }
 
-  const { first, last } = splitName(input.name)
-  const license = input.license?.trim() || syntheticLicense()
-
-  // A licence number already on file belongs to someone else — most likely this
-  // vendor driver moonlighting under a company record, possibly a typo. Either
-  // way it cannot be written twice, and a clear message beats a raw unique
-  // violation surfacing in the operator's toast.
+  // A clear message beats a raw unique violation surfacing in the admin's toast.
   const { data: licenseClash, error: licenseErr } = await supabase
     .from('drivers')
     .select('driver_id')
-    .eq('license_number', license)
+    .eq('license_number', input.license_number)
     .maybeSingle()
   if (licenseErr) throw licenseErr
   if (licenseClash) {
-    throw new Error(`Licence number ${license} is already registered to another driver.`)
+    throw new Error(`License number ${input.license_number} is already registered to another driver.`)
   }
 
   // The password exists only because auth.users requires one. It is never sent
   // anywhere, never emailed, and loginWithPassword refuses external drivers
   // outright — the passkey is the only way in.
   const unusablePassword = crypto.randomBytes(32).toString('base64url')
-  const e164Phone = input.phone?.trim()
-    ? input.phone.trim().startsWith('0')
-      ? '+63' + input.phone.trim().slice(1)
-      : input.phone.trim()
-    : undefined
+  const phone     = input.phone?.trim() || null
+  const e164Phone = phone ? (phone.startsWith('0') ? '+63' + phone.slice(1) : phone) : undefined
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email,
@@ -174,61 +127,117 @@ export async function provisionExternalDriver(
   if (authError) throw new Error(`Auth error: ${authError.message}`)
 
   const userId = authData.user.id
+  let driverId: string
   try {
     await createUserWithProfile(
       userId,
       'driver',
       {
         email,
-        first_name: first,
-        last_name:  last,
-        phone:      input.phone ?? null,
-        created_by: input.actorId ?? null,
-        // The opposite of createDriver, and deliberately so. There is no password
-        // to change, and a true here would bounce the driver into
+        first_name:  input.first_name,
+        last_name:   input.last_name,
+        middle_name: input.middle_name ?? null,
+        suffix:      input.suffix ?? null,
+        phone,
+        created_by:  input.actorId ?? null,
+        // The opposite of a company driver, and deliberately so. There is no
+        // password to change, and a true here would bounce the driver into
         // /change-password after a successful passkey sign-in with no way out.
         must_change_password: false,
       },
       {
-        license_number: license,
-        // No expiry: ops captures none for a vendor driver, and the column now
-        // permits NULL for external drivers only.
-        license_expiry: null,
-        is_external:    true,
+        license_number:    input.license_number,
+        license_expiry:    input.license_expiry,
+        license_image_url: input.license_image_url ?? null,
+        is_external:       true,
       },
     )
+
+    // drivers.status 'inactive' keeps them out of the company pool twice over:
+    // the is_external filters are the real guard, this is the belt-and-braces
+    // one. Nothing on the driver's own side reads drivers.status.
+    const { data: profile, error: profileErr } = await supabase
+      .from('drivers')
+      .update({
+        status:         'inactive',
+        vendor_name:    input.vendor_name.trim(),
+        vendor_contact: input.vendor_contact?.trim() || null,
+      })
+      .eq('user_id', userId)
+      .select('driver_id')
+      .maybeSingle()
+    if (profileErr) throw profileErr
+    if (!profile?.driver_id) throw new Error('Vendor driver profile was not created')
+    driverId = profile.driver_id
   } catch (err: any) {
     const ok = await deleteAuthUserSafely(userId)
     if (!ok) console.error('ROLLBACK FAILED. Orphan auth user ID:', userId)
-    throw new Error(`External driver creation failed: ${err.message}`)
+    throw new Error(`Vendor driver creation failed: ${err.message}`)
   }
-
-  const { data: created, error: fetchErr } = await supabase
-    .from('drivers')
-    .select('driver_id')
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (fetchErr) throw fetchErr
-  if (!created?.driver_id) throw new Error('External driver profile was not created')
-
-  // Keep them out of the company pool twice over: the is_external filters are the
-  // real guard, this is the belt-and-braces one. Nothing on the driver's own side
-  // reads drivers.status, so it costs them nothing.
-  const { error: statusErr } = await supabase
-    .from('drivers')
-    .update({ status: 'inactive' })
-    .eq('driver_id', created.driver_id)
-  if (statusErr) throw statusErr
 
   logEvent({
     user_id:     input.actorId,
     log_type:    'user_management',
     action:      'external_driver_provisioned',
-    description: `Provisioned app access for vendor driver ${input.name} (${email})`,
+    description: `Registered vendor driver ${fullName(input)} (${email}) from ${input.vendor_name}`,
   })
 
-  return { userId, driverId: created.driver_id, created: true, needsInvite: true }
+  // Fire-and-forget, like the welcome email for a company driver: the account is
+  // made and correct, and a Brevo outage must not undo it. "Resend setup link"
+  // on the Vendor tab covers a lost email.
+  void issueInvite({ userId, email, firstName: input.first_name, actorId: input.actorId ?? null })
+    .catch((err) => console.error('[vendor-driver] failed to send setup link', userId, err))
+
+  return { userId, driverId }
 }
+
+/**
+ * Load a registered vendor driver for a vendor-supplied assignment.
+ *
+ * The server reads the driver's details itself rather than trusting what the
+ * browser sends, so the delivery snapshot always matches the record.
+ */
+export async function findExternalDriverForAssignment(userId: string): Promise<ExternalDriverForAssignment> {
+  const { data, error } = await supabase
+    .from('users')
+    .select(`
+      user_id, email, first_name, middle_name, last_name, suffix, phone, role, status,
+      drivers ( driver_id, is_external, license_number, vendor_name, vendor_contact )
+    `)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+
+  const row: any = data
+  const profile  = Array.isArray(row?.drivers) ? row.drivers[0] : row?.drivers
+  if (!row || row.role !== 'driver' || !profile?.driver_id) throw new Error('Vendor driver not found')
+  // A company driver reached through the vendor path would sidestep every
+  // availability and BLOWBAGETS check the company path enforces.
+  if (profile.is_external !== true) {
+    throw new Error('This is a company driver. Assign them through Company fleet instead.')
+  }
+  if (row.status === 'archived') throw new Error('This vendor driver was deleted.')
+  if (row.status !== 'active') {
+    throw new Error('This vendor driver\'s access is turned off. Restore it in Driver Management first.')
+  }
+
+  const active = await WebauthnModel.listCredentialsForUser(row.user_id)
+  return {
+    userId:      row.user_id,
+    driverId:    profile.driver_id,
+    needsInvite: active.length === 0,
+    firstName:   row.first_name ?? null,
+    snapshot: {
+      vendor_name:           profile.vendor_name ?? null,
+      vendor_contact:        profile.vendor_contact ?? null,
+      vendor_driver_name:    fullName(row),
+      vendor_driver_license: profile.license_number ?? null,
+      vendor_driver_phone:   row.phone ?? null,
+      vendor_driver_email:   row.email,
+    },
+  }
+}
+
 
 /**
  * Put a switched-off account back to active, lockout counters and auth ban

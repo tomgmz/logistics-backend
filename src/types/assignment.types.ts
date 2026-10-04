@@ -49,7 +49,25 @@ export interface TruckAssignment {
   assigned_by:   string | null
 }
 
+/** The optional second driver on a booking (driver_assignments, crew_role 'second'). */
+export interface SecondDriver {
+  driver_id:      string
+  license_number: string | null
+  license_expiry: string | null
+  is_external:    boolean
+  vendor_name:    string | null
+  users: {
+    user_id:    string
+    first_name: string | null
+    last_name:  string | null
+    phone:      string | null
+    email:      string | null
+  } | null
+}
+
 export interface AssignmentWithRelations extends VendorSnapshot {
+  /** Attached by the model from driver_assignments; null when there is none. */
+  second_driver?: SecondDriver | null
   delivery_id:   string
   booking_id:    string
   driver_id:     string | null
@@ -93,16 +111,25 @@ export interface AssignmentWithRelations extends VendorSnapshot {
   } | null
 }
 
+// What the assignment WRITE takes. On the vendor path the request only carries
+// vendor_driver_user_id + the vehicle; the service fills the driver and vendor
+// snapshot fields below from the registered vendor driver before calling assign().
 export interface AssignBookingInput {
   driver_id?: string
   truck_id?:  string
 
   is_vendor_supplied?:   boolean
-  vendor_name?:          string
-  vendor_contact?:       string
+  vendor_driver_user_id?: string
+  // Optional second driver. Company path: a drivers.driver_id from the same
+  // assignable pool as the main driver. Vendor path: a registered vendor
+  // driver's user_id.
+  second_driver_id?:             string | null
+  second_vendor_driver_user_id?: string | null
+  vendor_name?:          string | null
+  vendor_contact?:       string | null
   vendor_driver_name?:   string
-  vendor_driver_license?: string
-  vendor_driver_phone?:  string
+  vendor_driver_license?: string | null
+  vendor_driver_phone?:  string | null
   vendor_vehicle_plate?: string
   vendor_vehicle_type?:  string
   vendor_driver_email?:  string

@@ -1,7 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { broadcast } from '../../lib/realtime.js'
 import {
-  assertDriverOnBooking,
+  driverSeatOnBooking,
   assertBookingVisible,
   type DriverActor,
   type BookingViewer,
@@ -120,7 +120,9 @@ function normaliseSensor(value: number | null | undefined): number | null {
  *   stale_fix — this one fix was too old or dated in the future; the next is fine.
  *   not_driver — an admin hitting the route for support; nothing to hang it on.
  */
-export type IgnoredReason = 'booking_ended' | 'not_started' | 'stale_fix' | 'not_driver'
+// 'not_lead': the second driver's phone. Final for that phone, like
+// 'booking_ended' — the app stops tracking on it.
+export type IgnoredReason = 'booking_ended' | 'not_started' | 'stale_fix' | 'not_driver' | 'not_lead'
 
 export type RecordResult =
   | { recorded: true;  position: DriverPosition }
@@ -138,7 +140,13 @@ export async function recordDriverPositionService(
   ping: LocationPing,
   actor: DriverActor,
 ): Promise<RecordResult> {
-  const booking = await assertDriverOnBooking(bookingId, actor)
+  const { booking, seat } = await driverSeatOnBooking(bookingId, actor)
+
+  // Only the main driver's phone is the truck's position. driver_locations is one
+  // row per driver and the client's map reads one per booking, so a second phone
+  // pinging the same booking would give it two positions (and double the Google
+  // ETA calls). Ignored, not refused: the app stops on this reason.
+  if (seat === 'second') return { recorded: false, reason: 'not_lead' }
 
   // The device stops pinging when the trip ends, but a ping already in flight
   // can land just after. More importantly this is what actually enforces "never

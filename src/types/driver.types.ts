@@ -29,6 +29,10 @@ export interface CreateDriverDTO {
   license_number:     string
   license_expiry:     string
   license_image_url?: string | null
+  /** True for a vendor driver: passkey sign-in, never a password. */
+  is_external?:       boolean
+  vendor_name?:       string | null
+  vendor_contact?:    string | null
 }
 
 export interface UpdateDriverDTO {
@@ -41,4 +45,7 @@ export interface UpdateDriverDTO {
   license_number?:    string
   license_expiry?:    string
   license_image_url?: string | null
+  // Written only on a vendor driver; ignored for a company driver.
+  vendor_name?:       string
+  vendor_contact?:    string | null
 }

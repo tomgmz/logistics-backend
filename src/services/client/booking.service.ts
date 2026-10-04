@@ -185,6 +185,13 @@ export async function getBookingByIdService(
   const booking = await BookingModel.findById(bookingId)
   if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
   assertBookingOwnership(booking, viewer)
+
+  // A driver is told which seat they hold, so the app can show the trip
+  // controls to the main driver and a read-only view to the second driver.
+  if (isDriverViewer(viewer) && viewer.driverId) {
+    const mine = booking.driver_assignments?.find((a) => a.driver_id === viewer.driverId)
+    if (mine) booking.my_crew_role = mine.crew_role === 'second' ? 'second' : 'lead'
+  }
   return booking
 }
 
@@ -492,8 +499,8 @@ export async function updateBookingStatusService(
  */
 async function releaseBookingCrew(bookingId: string): Promise<void> {
   try {
-    const { driver_id, truck_id } = await crewOnBooking(bookingId)
-    await releaseCrew(driver_id, truck_id)
+    const { driver_id, truck_id, second_driver_id } = await crewOnBooking(bookingId)
+    await releaseCrew(driver_id, truck_id, second_driver_id)
   } catch (err) {
     console.error('[booking] failed to release crew for booking', bookingId, err)
   }
@@ -564,12 +571,12 @@ export async function deleteBookingService(
   // only moves ops_status — so deleting one has to hand the driver and vehicle
   // back the way cancelling does. Read the crew BEFORE the delete: the delivery
   // row goes with the booking, and with it any way of knowing who was on it.
-  const { driver_id, truck_id } = await crewOnBooking(bookingId)
+  const { driver_id, truck_id, second_driver_id } = await crewOnBooking(bookingId)
 
   const result = await BookingModel.remove(bookingId)
 
   try {
-    await releaseCrew(driver_id, truck_id)
+    await releaseCrew(driver_id, truck_id, second_driver_id)
   } catch (err) {
     console.error('[booking] failed to release crew for deleted booking', bookingId, err)
   }
@@ -660,17 +667,39 @@ export interface DriverActor {
 }
 
 export async function assertDriverOnBooking(bookingId: string, actor: DriverActor): Promise<BookingWithRelations> {
+  return (await driverSeatOnBooking(bookingId, actor)).booking
+}
+
+/**
+ * The same check, plus which seat the driver holds. Admins count as the main
+ * driver: they act on any booking for support or correction.
+ */
+export async function driverSeatOnBooking(
+  bookingId: string,
+  actor: DriverActor,
+): Promise<{ booking: BookingWithRelations; seat: 'lead' | 'second' }> {
   const booking = await BookingModel.findById(bookingId)
   if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
 
-  // Admins act on any booking (support / correction); a driver only on their own.
-  if (actor.role === 'admin') return booking
+  if (actor.role === 'admin') return { booking, seat: 'lead' }
 
-  const assigned = actor.userId
-    ? await BookingModel.isDriverAssignedToBooking(bookingId, actor.userId)
-    : false
-  if (!assigned) throw new Error('You are not assigned to this booking')
+  const seat = actor.userId ? await BookingModel.driverCrewRole(bookingId, actor.userId) : null
+  if (!seat) throw new Error('You are not assigned to this booking')
 
+  return { booking, seat }
+}
+
+/**
+ * For every write a driver makes on the trip — pickup, stops, proof photos,
+ * finishing, the vehicle's return. Only the main driver does those in the app,
+ * so the record has one author and one phone. The second driver can see the
+ * booking and its stops but is refused here.
+ */
+export async function assertLeadDriverOnBooking(bookingId: string, actor: DriverActor): Promise<BookingWithRelations> {
+  const { booking, seat } = await driverSeatOnBooking(bookingId, actor)
+  if (seat !== 'lead') {
+    throw new Error('Only the main driver can update this delivery in the app. You are the second driver on this booking.')
+  }
   return booking
 }
 
@@ -686,7 +715,7 @@ export async function driverConfirmPickupService(
   earlyStart = false,
   position?: StopProofPosition | null,
 ): Promise<BookingWithRelations> {
-  const booking = await assertDriverOnBooking(bookingId, actor)
+  const booking = await assertLeadDriverOnBooking(bookingId, actor)
 
   if (booking.status === 'in_transit' || booking.status === 'delivered' || booking.status === 'completed') return booking
   if (booking.status !== 'assigned') {
@@ -758,7 +787,7 @@ export async function driverConfirmDeliveryService(
   actor: DriverActor,
   position?: StopProofPosition | null,
 ): Promise<BookingDestination> {
-  const booking      = await assertDriverOnBooking(bookingId, actor)
+  const booking      = await assertLeadDriverOnBooking(bookingId, actor)
   const destinations = await BookingModel.findDestinationsByBookingId(bookingId) ?? []
   const destination  = destinations.find((d) => d.destination_id === destinationId)
 
@@ -843,7 +872,7 @@ export async function driverCompleteBookingService(
   bookingId: string,
   actor: DriverActor,
 ): Promise<BookingWithRelations> {
-  const booking = await assertDriverOnBooking(bookingId, actor)
+  const booking = await assertLeadDriverOnBooking(bookingId, actor)
 
   if (booking.status === 'delivered' || booking.status === 'completed') return booking
   if (booking.status !== 'in_transit') {

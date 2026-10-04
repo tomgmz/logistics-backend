@@ -6,7 +6,11 @@ import { logEvent } from '../../lib/log-event.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { bookingRefById } from '../../lib/booking-ref.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
-import { provisionExternalDriver, issueInvite } from '../auth/driver-enrollment.service.js'
+import {
+  findExternalDriverForAssignment,
+  issueInvite,
+  type ExternalDriverForAssignment,
+} from '../auth/driver-enrollment.service.js'
 import {
   assertDriverAssignable,
   assertTruckAssignable,
@@ -86,23 +90,59 @@ export async function assignBookingService(
   // in a different driver/vehicle, and stay valid if they are being kept.
   const previous = await crewOnBooking(bookingId)
 
+  // The registered vendor driver, on the vendor path. Read before anything is
+  // written, so a revoked or deleted driver is refused with the booking still
+  // uncrewed, and their details (plus their vendor) are copied onto the delivery
+  // from the record rather than from whatever the browser sent.
+  let external: ExternalDriverForAssignment | null = null
+  // The optional second vendor driver, read and checked the same way.
+  let externalSecond: ExternalDriverForAssignment | null = null
+  // drivers.driver_id of the second driver on either path, for driver_assignments.
+  let secondDriverId: string | null = null
+
+  // A driver already on this booking (as main or second) stays valid while the
+  // crew is edited — they read as 'assigned', which would otherwise block them,
+  // and swapping the two around must be allowed.
+  const alreadyOnBooking = (driverId: string) =>
+    driverId === previous.driver_id || driverId === previous.second_driver_id
+  const currentFor = (driverId: string) => (alreadyOnBooking(driverId) ? driverId : null)
+
   if (input.is_vendor_supplied) {
-    if (!input.vendor_driver_name) throw new Error('Vendor driver name is required')
+    if (!input.vendor_driver_user_id) throw new Error('Choose the vendor driver')
     if (!input.vendor_vehicle_plate) throw new Error('Vendor vehicle plate is required')
+    if (input.second_vendor_driver_user_id && input.second_vendor_driver_user_id === input.vendor_driver_user_id) {
+      throw new Error('The second driver must be a different person from the main driver')
+    }
+    ;[external, externalSecond] = await Promise.all([
+      findExternalDriverForAssignment(input.vendor_driver_user_id),
+      input.second_vendor_driver_user_id
+        ? findExternalDriverForAssignment(input.second_vendor_driver_user_id)
+        : Promise.resolve(null),
+    ])
+    secondDriverId = externalSecond?.driverId ?? null
+    input = { ...input, ...external.snapshot }
   } else {
     if (!input.driver_id) throw new Error('driver_id is required')
     if (!input.truck_id)  throw new Error('truck_id is required')
+    const second = input.second_driver_id ?? null
+    if (second && second === input.driver_id) {
+      throw new Error('The second driver must be a different person from the main driver')
+    }
     await Promise.all([
       assertDriverExists(input.driver_id),
       assertTruckExists(input.truck_id),
+      second ? assertDriverExists(second) : Promise.resolve(),
     ])
     // Operations may only pick from the vetted pools: a driver who ticked this
     // booking's day on their calendar and is not otherwise stopped, and a
-    // vehicle whose latest BLOWBAGETS check passed.
+    // vehicle whose latest BLOWBAGETS check passed. The second driver is held
+    // to exactly the same rules as the main one.
     await Promise.all([
-      assertDriverAssignable(input.driver_id, previous.driver_id, scheduleDate),
+      assertDriverAssignable(input.driver_id, currentFor(input.driver_id), scheduleDate),
       assertTruckAssignable(input.truck_id, previous.truck_id),
+      second ? assertDriverAssignable(second, currentFor(second), scheduleDate) : Promise.resolve(),
     ])
+    secondDriverId = second
   }
 
   // Does the chosen vehicle actually fit the load? Advisory, not a gate — see
@@ -115,22 +155,7 @@ export async function assignBookingService(
         return null
       })
 
-  // Provision app access for the vendor's driver before the assignment is
-  // written, not after. If provisioning fails — a typo'd address already held by
-  // a staff account, a clashing licence number — the operator gets the error with
-  // the booking still uncrewed, rather than a committed assignment plus a
-  // half-made account they have to reason about.
-  const external = input.is_vendor_supplied && input.vendor_driver_email
-    ? await provisionExternalDriver({
-        email:   input.vendor_driver_email,
-        name:    input.vendor_driver_name ?? 'Driver',
-        license: input.vendor_driver_license ?? null,
-        phone:   input.vendor_driver_phone ?? null,
-        actorId: userId ?? null,
-      })
-    : null
-
-  const assignment = await AssignmentModel.assign(bookingId, input, userId ?? null, external)
+  const assignment = await AssignmentModel.assign(bookingId, input, userId ?? null, external, secondDriverId)
   if (!assignment) throw new Error('Failed to create assignment')
 
   // An overloaded assignment is a real decision someone made; put it on the
@@ -149,35 +174,45 @@ export async function assignBookingService(
   const crewDescription = input.is_vendor_supplied
     ? `vendor driver ${input.vendor_driver_name} with vehicle ${input.vendor_vehicle_plate}`
     : `driver ${input.driver_id} with truck ${input.truck_id}`
+  const secondDescription = externalSecond
+    ? ` and second vendor driver ${externalSecond.snapshot.vendor_driver_name}`
+    : secondDriverId ? ` and second driver ${secondDriverId}` : ''
   logEvent({
     user_id:     userId,
     log_type:    'booking',
     action:      'booking_assigned',
-    description: `Booking ${await bookingRefById(bookingId)} assigned to ${crewDescription}`,
+    description: `Booking ${await bookingRefById(bookingId)} assigned to ${crewDescription}${secondDescription}`,
 
   })
 
   // Reserve the new crew and release whoever was displaced by this call.
+  // Only company drivers are reserved: a vendor second driver, like the main
+  // vendor driver, stays out of the company reservation state machine.
   const nextDriverId = input.is_vendor_supplied ? null : input.driver_id ?? null
+  const nextSecondId = input.is_vendor_supplied ? null : secondDriverId
   const nextTruckId  = input.is_vendor_supplied ? null : input.truck_id  ?? null
+  const staying      = new Set([nextDriverId, nextSecondId].filter(Boolean))
   await releaseCrew(
-    previous.driver_id && previous.driver_id !== nextDriverId ? previous.driver_id : null,
-    previous.truck_id  && previous.truck_id  !== nextTruckId  ? previous.truck_id  : null,
+    previous.driver_id        && !staying.has(previous.driver_id)        ? previous.driver_id        : null,
+    previous.truck_id         && previous.truck_id !== nextTruckId        ? previous.truck_id         : null,
+    previous.second_driver_id && !staying.has(previous.second_driver_id) ? previous.second_driver_id : null,
   )
-  await reserveCrew(nextDriverId, nextTruckId)
+  await reserveCrew(nextDriverId, nextTruckId, nextSecondId)
 
-  // A vendor driver with no working passkey needs a way in — a new account, or a
-  // returning one whose access was revoked. Fire-and-forget, like the
-  // welcome email on driver creation: the assignment is already committed and
-  // correct, and a Brevo outage must not undo it. If the email fails the invite
-  // is re-sendable from the booking's assignment card.
-  if (external?.needsInvite && input.vendor_driver_email) {
+  // A vendor driver who has not set up the app yet gets a fresh setup link now,
+  // naming this booking. Fire-and-forget, like the welcome email on driver
+  // creation: the assignment is already committed and correct, and a Brevo
+  // outage must not undo it. If the email fails the invite is re-sendable from
+  // the booking's assignment card.
+  const ref = external?.needsInvite || externalSecond?.needsInvite ? await bookingRefById(bookingId) : null
+  for (const driver of [external, externalSecond]) {
+    if (!driver?.needsInvite) continue
     void issueInvite({
-      userId:     external.userId,
-      email:      input.vendor_driver_email,
+      userId:     driver.userId,
+      email:      driver.snapshot.vendor_driver_email,
       bookingId,
-      bookingRef: await bookingRefById(bookingId),
-      firstName:  input.vendor_driver_name?.split(/\s+/)[0] ?? null,
+      bookingRef: ref,
+      firstName:  driver.firstName,
       actorId:    userId ?? null,
     }).catch((err) => {
       console.error('[assignment] failed to send driver enrollment invite', bookingId, err)
