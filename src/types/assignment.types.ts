@@ -66,7 +66,8 @@ export interface SecondDriver {
 }
 
 export interface AssignmentWithRelations extends VendorSnapshot {
-  /** Attached by the model from driver_assignments; null when there is none. */
+  /** deliveries.second_driver_id and its driver; null when there is none. */
+  second_driver_id?: string | null
   second_driver?: SecondDriver | null
   delivery_id:   string
   booking_id:    string

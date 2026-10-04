@@ -4,7 +4,6 @@ import type {
   AssignBookingInput,
   UpdateDeliveryStatusInput,
   Delivery,
-  SecondDriver,
 } from '../../types/assignment.types.js'
 
 const DELIVERY_WITH_RELATIONS_SELECT = `
@@ -27,6 +26,15 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
   vendor_vehicle_type,
   vendor_driver_email,
   vendor_driver_user_id,
+  second_driver_id,
+  second_driver:drivers!deliveries_second_driver_id_fkey (
+    driver_id,
+    license_number,
+    license_expiry,
+    is_external,
+    vendor_name,
+    users ( user_id, first_name, last_name, phone, email )
+  ),
   drivers!deliveries_driver_id_fkey (
     driver_id,
     license_number,
@@ -59,42 +67,6 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
   )
 `
 
-// The optional second driver, kept in driver_assignments (crew_role 'second')
-// rather than on deliveries — see migration 20261005020000. Attached to each
-// assignment record so every reader gets the whole crew from one call.
-const SECOND_DRIVER_SELECT = `
-  booking_id,
-  drivers (
-    driver_id,
-    license_number,
-    license_expiry,
-    is_external,
-    vendor_name,
-    users ( user_id, first_name, last_name, phone, email )
-  )
-`
-
-async function withSecondDrivers<T extends { booking_id: string }>(rows: T[]): Promise<(T & { second_driver: SecondDriver | null })[]> {
-  if (rows.length === 0) return []
-  const { data, error } = await supabase
-    .from('driver_assignments')
-    .select(SECOND_DRIVER_SELECT)
-    .eq('crew_role', 'second')
-    .in('booking_id', rows.map((r) => r.booking_id))
-  if (error) throw error
-
-  const byBooking = new Map<string, SecondDriver>()
-  for (const row of (data ?? []) as any[]) {
-    const d = Array.isArray(row.drivers) ? row.drivers[0] : row.drivers
-    if (d) byBooking.set(row.booking_id, d as SecondDriver)
-  }
-  return rows.map((r) => ({ ...r, second_driver: byBooking.get(r.booking_id) ?? null }))
-}
-
-async function withSecondDriver<T extends { booking_id: string }>(row: T | null) {
-  return row ? (await withSecondDrivers([row]))[0] : null
-}
-
 async function findByBookingId(bookingId: string): Promise<AssignmentWithRelations | null> {
   const { data, error } = await supabase
     .from('deliveries')
@@ -105,7 +77,7 @@ async function findByBookingId(bookingId: string): Promise<AssignmentWithRelatio
     .maybeSingle()
 
   if (error) throw error
-  return withSecondDriver(data as unknown as AssignmentWithRelations | null)
+  return (data ?? null) as unknown as AssignmentWithRelations | null
 }
 
 async function findByDeliveryId(deliveryId: string): Promise<AssignmentWithRelations | null> {
@@ -116,7 +88,7 @@ async function findByDeliveryId(deliveryId: string): Promise<AssignmentWithRelat
     .maybeSingle()
 
   if (error) throw error
-  return withSecondDriver(data as unknown as AssignmentWithRelations | null)
+  return (data ?? null) as unknown as AssignmentWithRelations | null
 }
 
 async function findAll(): Promise<AssignmentWithRelations[]> {
@@ -126,7 +98,7 @@ async function findAll(): Promise<AssignmentWithRelations[]> {
     .order('created_at', { ascending: false })
 
   if (error) throw error
-  return withSecondDrivers((data ?? []) as unknown as AssignmentWithRelations[])
+  return (data ?? []) as unknown as AssignmentWithRelations[]
 }
 
 async function assign(
@@ -166,6 +138,9 @@ async function assign(
     vendor_vehicle_type:   isVendor ? input.vendor_vehicle_type   ?? null : null,
     vendor_driver_email:   isVendor ? input.vendor_driver_email   ?? null : null,
     vendor_driver_user_id: isVendor ? external?.userId            ?? null : null,
+    // On both paths: the delivery's record of who rode along. Cleared on a
+    // re-assign without one, like every other crew field here.
+    second_driver_id:      secondDriverId ?? null,
   }
 
   const { data: existing } = await supabase

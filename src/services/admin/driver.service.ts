@@ -223,17 +223,15 @@ export async function standDownDriver(userId: string, actorId?: string | null) {
 
 /** The unfinished booking a driver is actually out on, if any. */
 async function liveDeliveryFor(driverId: string): Promise<{ reference: string } | null> {
-  // As the main driver (deliveries) or as a booking's second driver.
-  const [main, second] = await Promise.all([
-    supabase.from('deliveries').select('booking_id, bookings ( status, reference_number )').eq('driver_id', driverId),
-    supabase.from('driver_assignments').select('booking_id, bookings ( status, reference_number )')
-      .eq('driver_id', driverId).eq('crew_role', 'second'),
-  ])
+  // As the main driver or as a booking's second driver.
+  const { data, error } = await supabase
+    .from('deliveries')
+    .select('booking_id, bookings ( status, reference_number )')
+    .or(`driver_id.eq.${driverId},second_driver_id.eq.${driverId}`)
 
-  if (main.error)   throw main.error
-  if (second.error) throw second.error
+  if (error) throw error
 
-  for (const row of [...(main.data ?? []), ...(second.data ?? [])] as any[]) {
+  for (const row of (data ?? []) as any[]) {
     const booking = row.bookings
     if (!booking?.status) continue
     if (booking.status === 'delivered' || booking.status === 'completed' || booking.status === 'cancelled') continue

@@ -269,40 +269,31 @@ export interface CrewOnBooking {
   truck_id:         string | null
   /**
    * The COMPANY second driver, if any — the one reserveCrew/releaseCrew manage.
-   * A vendor second driver is left out on purpose, exactly as the main vendor
-   * driver is (deliveries.driver_id is NULL for them): subcontractors never
-   * enter the company reservation state machine.
+   * deliveries.second_driver_id is set on the vendor path too, but a vendor
+   * driver is left out here, exactly as the main vendor driver is
+   * (deliveries.driver_id is NULL for them): subcontractors never enter the
+   * company reservation state machine.
    */
   second_driver_id: string | null
 }
 
 /** The crew currently recorded on a booking, if any. */
 export async function crewOnBooking(bookingId: string): Promise<CrewOnBooking> {
-  const [delivery, second] = await Promise.all([
-    supabase
-      .from('deliveries')
-      .select('driver_id, truck_id')
-      .eq('booking_id', bookingId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from('driver_assignments')
-      .select('driver_id, drivers ( is_external )')
-      .eq('booking_id', bookingId)
-      .eq('crew_role', 'second')
-      .maybeSingle(),
-  ])
+  const { data, error } = await supabase
+    .from('deliveries')
+    .select('driver_id, truck_id, second_driver_id, second_driver:drivers!deliveries_second_driver_id_fkey ( is_external )')
+    .eq('booking_id', bookingId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
-  if (delivery.error) throw delivery.error
-  if (second.error)   throw second.error
+  if (error) throw error
 
-  const secondProfile: any = Array.isArray((second.data as any)?.drivers)
-    ? (second.data as any).drivers[0]
-    : (second.data as any)?.drivers
+  const row: any = data
+  const second   = Array.isArray(row?.second_driver) ? row.second_driver[0] : row?.second_driver
   return {
-    driver_id:        delivery.data?.driver_id ?? null,
-    truck_id:         delivery.data?.truck_id ?? null,
-    second_driver_id: second.data && secondProfile?.is_external !== true ? second.data.driver_id : null,
+    driver_id:        row?.driver_id ?? null,
+    truck_id:         row?.truck_id ?? null,
+    second_driver_id: row?.second_driver_id && second?.is_external !== true ? row.second_driver_id : null,
   }
 }
