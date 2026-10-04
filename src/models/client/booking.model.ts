@@ -832,6 +832,19 @@ async function remove(bookingId: string): Promise<boolean> {
  * The ownership checks on the light read paths — live position, route geometry —
  * need one column, and they run often enough for the difference to matter.
  */
+/**
+ * Whether this drivers row is on the booking's crew, as main or second driver.
+ * The read-side twin of driverCrewRole, keyed by driver_id (what
+ * attachDriverScope resolves) rather than user_id.
+ */
+async function isDriverIdOnBooking(bookingId: string, driverId: string): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM driver_assignments WHERE booking_id = $1 AND driver_id = $2 LIMIT 1`,
+    [bookingId, driverId],
+  )
+  return rows.length > 0
+}
+
 async function findBookingOwner(
   bookingId: string,
 ): Promise<{ booking_id: string; client_id: string } | null> {
@@ -1089,6 +1102,7 @@ export const BookingModel = {
   findByDriverId,
   findBookingOwner,
   findDestinationOwner,
+  isDriverIdOnBooking,
   isDriverAssignedToBooking,
   driverCrewRole,
   // booking mutations

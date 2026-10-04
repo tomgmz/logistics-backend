@@ -22,12 +22,19 @@ const router = Router()
 
 const isAdmin  = authorize('admin', 'client')
 const isClient = authorize('client')
-const isAny    = authorize('admin', 'client', 'driver')
 
 // All staff roles that share the booking-management view (read access). The view
 // itself filters what each role sees (e.g. ops sees approved, fleet sees assigned).
 const canViewBookings = authorize(
   'admin', 'client', 'driver',
+  'general_manager', 'operations_manager', 'fleet_manager',
+)
+
+// The whole-list and per-client reads. Drivers are left out: they have their own
+// scoped list (/driver/:driverId), and these two return other people's
+// bookings to anyone who is not a client.
+const canListBookings = authorize(
+  'admin', 'client',
   'general_manager', 'operations_manager', 'fleet_manager',
 )
 
@@ -49,8 +56,8 @@ const canManageBooking = requireModule('booking-management')
 // non-client role, so admin, GM, ops, fleet and the driver app are
 // unaffected. Note that `canManageBooking` does NOT cover this: `client` is not
 // a managed role, so requireModule waves it straight through.
-router.get('/',                 authenticate, authenticatedLimiter, canViewBookings, attachClientScope, BookingController.getAllBookings)
-router.get('/client/:clientId', authenticate, authenticatedLimiter, isAny,    attachClientScope, BookingController.getBookingsByClient)
+router.get('/',                 authenticate, authenticatedLimiter, canListBookings, attachClientScope, BookingController.getAllBookings)
+router.get('/client/:clientId', authenticate, authenticatedLimiter, isAdmin,  attachClientScope, BookingController.getBookingsByClient)
 // A driver is pinned to their own id by attachDriverScope; staff may read any
 // driver's day. Previously this had no role gate at all, so any authenticated
 // user could read any driver's run sheet by changing the uuid.
@@ -62,14 +69,15 @@ router.get('/driver/:driverId', authenticate, authenticatedLimiter, canViewBooki
 const canViewFleet = authorize('admin', 'general_manager', 'operations_manager', 'fleet_manager')
 router.get('/fleet/live-positions', authenticate, trackingLimiter, canViewFleet, requireModule('transit-tracking'), TrackingController.getFleetPositions)
 
-router.get('/:id',              authenticate, authenticatedLimiter, canViewBookings, attachClientScope, BookingController.getBookingById)
-router.get('/:id/destinations', authenticate, authenticatedLimiter, canViewBookings, attachClientScope, BookingController.getDestinationsByBooking)
+// attachDriverScope: a driver may open only bookings they are crewed on.
+router.get('/:id',              authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getBookingById)
+router.get('/:id/destinations', authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getDestinationsByBooking)
 
 // Where the truck is now. The map subscribes to a realtime channel for updates;
 // this serves the first paint and the fallback poll when that channel is down,
 // so it is on `trackingLimiter` rather than the shared budget — a client sitting
 // on the page with a broken socket polls it every 30 s.
-router.get('/:id/live-position', authenticate, trackingLimiter, canViewBookings, attachClientScope, TrackingController.getLivePosition)
+router.get('/:id/live-position', authenticate, trackingLimiter, canViewBookings, attachClientScope, attachDriverScope, TrackingController.getLivePosition)
 
 router.post('/',                authenticate, authenticatedLimiter, isClient, attachClientScope, validate(createBookingSchema),       BookingController.createBooking)
 router.patch('/:id',            authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), validate(updateBookingSchema),       BookingController.updateBooking)

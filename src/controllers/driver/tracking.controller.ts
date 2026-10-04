@@ -66,6 +66,7 @@ export const getLivePosition = async (req: Request, res: Response) => {
     const position = await getLivePositionService(param(req.params.id), {
       role:     req.user?.role ?? 'client',
       clientId: req.clientId ?? null,
+      driverId: req.driverId ?? null,
     })
     // Null is an ordinary answer, not a 404: the booking exists, the truck just
     // hasn't reported yet. The map renders "position unavailable" for it.

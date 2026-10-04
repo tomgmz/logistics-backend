@@ -76,17 +76,38 @@ const isClientViewer = (viewer: BookingViewer): boolean => viewer.role === 'clie
 const isDriverViewer = (viewer: BookingViewer): boolean => viewer.role === 'driver'
 
 /**
- * A client may only ever reach their own bookings; every other role passes
- * straight through.
+ * A client may only ever reach their own bookings, and a driver only the
+ * bookings they are crewed on (as main or second driver). Staff pass straight
+ * through.
+ *
+ * The driver half needs `driverId` from attachDriverScope on the route; a
+ * driver without one (no driver row, or a route that forgot the middleware)
+ * reaches nothing, which is the safe way for that mistake to fail.
  *
  * Reported as "not found" rather than "forbidden" so the reply never confirms
  * that another company's booking exists.
  */
-function assertBookingOwnership(booking: { client_id: string }, viewer: BookingViewer): void {
-  if (!isClientViewer(viewer)) return
-  if (!viewer.clientId || booking.client_id !== viewer.clientId) {
-    throw new Error('Booking not found')
+function assertBookingOwnership(
+  booking: { client_id: string; driver_assignments?: Array<{ driver_id: string }> | null },
+  viewer: BookingViewer,
+): void {
+  if (isClientViewer(viewer)) {
+    if (!viewer.clientId || booking.client_id !== viewer.clientId) {
+      throw new Error('Booking not found')
+    }
+    return
   }
+  if (isDriverViewer(viewer)) {
+    const onCrew = !!viewer.driverId &&
+      (booking.driver_assignments ?? []).some((a) => a.driver_id === viewer.driverId)
+    if (!onCrew) throw new Error('Booking not found')
+  }
+}
+
+/** The driver half of the rule, for callers that hold only a booking id. */
+async function assertDriverOnCrew(bookingId: string, viewer: BookingViewer, what = 'Booking'): Promise<void> {
+  const ok = !!viewer.driverId && await BookingModel.isDriverIdOnBooking(bookingId, viewer.driverId)
+  if (!ok) throw new Error(`${what} with ID ${bookingId} not found`)
 }
 
 /**
@@ -100,6 +121,7 @@ export async function assertBookingVisible(
   bookingId: string,
   viewer:    BookingViewer,
 ): Promise<void> {
+  if (isDriverViewer(viewer)) return assertDriverOnCrew(bookingId, viewer)
   if (!isClientViewer(viewer)) return
   const owner = await BookingModel.findBookingOwner(bookingId)
   if (!owner || !viewer.clientId || owner.client_id !== viewer.clientId) {
@@ -115,6 +137,11 @@ async function assertDestinationOwnership(
   destinationId: string,
   viewer:        BookingViewer,
 ): Promise<void> {
+  if (isDriverViewer(viewer)) {
+    const owner = await BookingModel.findDestinationOwner(destinationId)
+    if (!owner) throw new Error(`Destination with ID ${destinationId} not found`)
+    return assertDriverOnCrew(owner.booking_id, viewer, 'Destination')
+  }
   if (!isClientViewer(viewer)) return
   const owner = await BookingModel.findDestinationOwner(destinationId)
   if (!owner || !viewer.clientId || owner.client_id !== viewer.clientId) {

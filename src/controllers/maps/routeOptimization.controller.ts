@@ -18,7 +18,7 @@ import { assertBookingVisible } from '../../services/client/booking.service.js'
  * so asserting from inside would close an import cycle.
  */
 function viewerFrom(req: Request) {
-  return { role: req.user?.role ?? 'client', clientId: req.clientId ?? null }
+  return { role: req.user?.role ?? 'client', clientId: req.clientId ?? null, driverId: req.driverId ?? null }
 }
 
 export const getOptimizedRoute = async (req: Request, res: Response) => {
