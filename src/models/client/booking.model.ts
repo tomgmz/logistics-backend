@@ -73,6 +73,7 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   completion_auto,
   client_issue_note,
   client_issue_reported_at,
+  client_issue_resolved_at,
   created_at,
   updated_at,
   clients (
@@ -649,6 +650,9 @@ async function reportClientIssue(bookingId: string, note: string, by: string | n
       client_issue_note:        note,
       client_issue_reported_at: now,
       client_issue_reported_by: by,
+      // A new report reopens a problem staff had marked resolved.
+      client_issue_resolved_at: null,
+      client_issue_resolved_by: null,
       updated_at:               now,
     })
     .eq('booking_id', bookingId)
@@ -657,17 +661,49 @@ async function reportClientIssue(bookingId: string, note: string, by: string | n
   return findById(bookingId)
 }
 
-/** Delivered bookings with no open problem — the auto-complete scheduler's queue. */
+/**
+ * Staff mark the client's reported problem resolved. The report stays on the
+ * booking; the client gets a fresh 3 days from now to confirm, and a fresh
+ * reminder. Guarded on an open report, so a double click resolves it once.
+ */
+async function resolveClientIssue(bookingId: string, by: string | null): Promise<boolean> {
+  const now = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('bookings')
+    .update({
+      client_issue_resolved_at:    now,
+      client_issue_resolved_by:    by,
+      completion_reminder_sent_at: null,
+      updated_at:                  now,
+    })
+    .eq('booking_id', bookingId)
+    .eq('status', 'delivered')
+    .not('client_issue_reported_at', 'is', null)
+    .is('client_issue_resolved_at', null)
+    .select('booking_id')
+  if (error) throw error
+  return (data ?? []).length > 0
+}
+
+/**
+ * Delivered bookings with no open problem — the auto-complete scheduler's queue.
+ * `clock_from` is when the 3 days started: the delivery, or the moment staff
+ * resolved a reported problem.
+ */
 async function findAwaitingCompletion(): Promise<Array<{
-  booking_id: string; delivered_at: string | null; completion_reminder_sent_at: string | null
+  booking_id: string; clock_from: string | null; completion_reminder_sent_at: string | null
 }>> {
   const { data, error } = await supabase
     .from('bookings')
-    .select('booking_id, delivered_at, completion_reminder_sent_at')
+    .select('booking_id, delivered_at, client_issue_resolved_at, completion_reminder_sent_at')
     .eq('status', 'delivered')
-    .is('client_issue_reported_at', null)
+    .or('client_issue_reported_at.is.null,client_issue_resolved_at.not.is.null')
   if (error) throw error
-  return data ?? []
+  return (data ?? []).map((r) => ({
+    booking_id:                  r.booking_id,
+    clock_from:                  r.client_issue_resolved_at ?? r.delivered_at ?? null,
+    completion_reminder_sent_at: r.completion_reminder_sent_at ?? null,
+  }))
 }
 
 async function markCompletionReminderSent(bookingId: string): Promise<void> {
@@ -1117,6 +1153,7 @@ export const BookingModel = {
   markFleetRecheckSent,
   recordDecision,
   markDelivered,
+  resolveClientIssue,
   markCompleted,
   reportClientIssue,
   findAwaitingCompletion,

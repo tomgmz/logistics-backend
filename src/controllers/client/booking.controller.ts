@@ -13,6 +13,7 @@ import {
   deleteBookingService,
   gmReviewService,
   confirmCompletionService,
+  resolveDeliveryIssueService,
   reportDeliveryIssueService,
   getDestinationsByBookingService,
   updateDestinationService,
@@ -352,7 +353,7 @@ export const deleteCargoItem = async (req: Request, res: Response) => {
     res.status(status).json({ status: 'error', message: error.message })
   }
 }
-/** The client (or staff for them) confirms a delivered booking is complete. */
+/** The client confirms their delivered booking is complete. */
 export const confirmCompletion = async (req: Request, res: Response) => {
   try {
     const { userId } = getRequestMeta(req)
@@ -362,6 +363,20 @@ export const confirmCompletion = async (req: Request, res: Response) => {
     const isNotFound  = error.message.includes('not found')
     const isForbidden = error.message.startsWith('Only ')
     const isBad       = error.message.startsWith('Cannot confirm')
+    res.status(isNotFound ? 404 : isForbidden ? 403 : isBad ? 400 : 500).json({ status: 'error', message: error.message })
+  }
+}
+
+/** Staff mark the client's reported problem resolved; the 3-day clock restarts. */
+export const resolveDeliveryIssue = async (req: Request, res: Response) => {
+  try {
+    const { userId } = getRequestMeta(req)
+    const booking = await resolveDeliveryIssueService(param(req.params.id), viewerFrom(req), userId)
+    res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    const isNotFound  = error.message.includes('not found')
+    const isForbidden = error.message.startsWith('Only ')
+    const isBad       = error.message.startsWith('Cannot resolve')
     res.status(isNotFound ? 404 : isForbidden ? 403 : isBad ? 400 : 500).json({ status: 'error', message: error.message })
   }
 }

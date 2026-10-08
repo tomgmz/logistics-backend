@@ -156,6 +156,22 @@ export async function resolveClientUserId(clientId: string): Promise<string | nu
   return (data as { user_id: string } | null)?.user_id ?? null
 }
 
+// Where to email a booking's client: their account's address and first name.
+export async function resolveClientContact(
+  clientId: string,
+): Promise<{ email: string | null; first_name: string | null } | null> {
+  const { data, error } = await supabase
+    .from('clients')
+    .select('users ( email, first_name )')
+    .eq('client_id', clientId)
+    .maybeSingle()
+  if (error) throw error
+  const raw  = (data as { users: unknown } | null)?.users
+  const user = (Array.isArray(raw) ? raw[0] : raw) as { email?: string | null; first_name?: string | null } | null | undefined
+  if (!user) return null
+  return { email: user.email ?? null, first_name: user.first_name ?? null }
+}
+
 // The user accounts of every driver assigned to a booking
 // (driver_assignments.driver_id -> drivers.user_id).
 export async function resolveDriverUserIds(bookingId: string): Promise<string[]> {

@@ -1712,3 +1712,166 @@ ${emailFooterText(reason)}
     throw new Error(`Failed to send license expiry email: ${error}`)
   }
 }
+
+// ---------------------------------------------------------------------------
+// Delivery finished, please confirm. Sent to the client when the driver
+// completes the last drop-off (booking -> 'delivered'), alongside the in-app
+// `delivery_confirm` notification. The booking completes on its own after the
+// auto-complete window unless the client reports a problem first.
+// ---------------------------------------------------------------------------
+export interface DeliveryConfirmEmailParams {
+  to:             string
+  firstName:      string | null
+  /** Reference number, or whatever the notifications use when there is none. */
+  bookingLabel:   string
+  /** When it completes on its own, already formatted for reading. */
+  autoCompleteOn: string
+  bookingId:      string
+}
+
+export async function sendDeliveryConfirmEmail(params: DeliveryConfirmEmailParams): Promise<void> {
+  if (!process.env.BREVO_API_KEY) {
+    throw new Error('Brevo is not configured. Please set BREVO_API_KEY.')
+  }
+  if (!process.env.BREVO_SENDER_EMAIL) {
+    throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
+  }
+
+  const { to, firstName, bookingLabel, autoCompleteOn, bookingId } = params
+  const name   = escapeHtml(firstName?.trim() || 'there')
+  const label  = escapeHtml(bookingLabel)
+  // The client's booking page opens this booking with the Confirm / Report a
+  // problem panel. Without an app URL the email still says what to do, just
+  // without a button.
+  const base   = appBaseUrl()
+  const url    = base ? `${base}/client/history?booking=${encodeURIComponent(bookingId)}` : null
+  const reason = `This email was sent because a delivery on your ${APP_NAME} booking was finished and needs your confirmation.`
+
+  const buttonHtml = url
+    ? `
+              <tr>
+                <td style="padding:0 40px 28px 40px;" align="center">
+                  <a href="${url}"
+                    style="display:inline-block;background-color:#0a0a0a;color:#ffffff;
+                      font-family:Arial,sans-serif;font-size:14px;font-weight:700;
+                      text-decoration:none;padding:14px 36px;border-radius:8px;
+                      letter-spacing:0.08em;">
+                    Review Delivery
+                  </a>
+                </td>
+              </tr>`
+    : ''
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Delivery finished, please confirm</title>
+    </head>
+    <body style="margin:0;padding:0;background-color:#f6f6f6;">
+
+      <div style="display:none;font-size:1px;color:#f6f6f6;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+        Booking ${label} was delivered. Confirm it, or report a problem before ${autoCompleteOn}.
+      </div>
+
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
+        <tr>
+          <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0"
+              style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+
+              <tr>
+                <td style="background-color:#0a0a0a;padding:32px 40px;">
+                  <h1 style="margin:0;font-family:Arial,sans-serif;font-size:22px;color:#ffffff;font-weight:700;letter-spacing:0.05em;">
+                    ${APP_NAME}
+                  </h1>
+                  <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:12px;color:#818181;letter-spacing:0.12em;text-transform:uppercase;">
+                    Delivery Finished
+                  </p>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="padding:36px 40px 8px 40px;">
+                  <p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
+                    Hi ${name},
+                  </p>
+                  <p style="margin:0 0 16px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
+                    The driver has finished every drop-off for booking <strong>${label}</strong>.
+                  </p>
+                  <p style="margin:0 0 24px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">
+                    Please check that everything was received, then confirm the booking is complete,
+                    or report a problem if something is wrong.
+                  </p>
+                </td>
+              </tr>
+
+              ${buttonHtml}
+
+              <tr>
+                <td style="padding:0 40px 30px 40px;">
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td style="background-color:#fff8f0;border-left:4px solid #f59e0b;border-radius:4px;padding:16px 18px;">
+                        <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.6;">
+                          <strong>No reply needed if all is well.</strong> If nothing is reported, this booking
+                          is marked as received automatically on <strong>${autoCompleteOn}</strong>.
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              ${emailFooterHtml(reason)}
+
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `.trim()
+
+  const textContent = `
+Hi ${firstName?.trim() || 'there'},
+
+The driver has finished every drop-off for booking ${bookingLabel}.
+
+Please check that everything was received, then confirm the booking is complete,
+or report a problem if something is wrong.${url ? `\n\nReview the delivery: ${url}` : ''}
+
+NO REPLY NEEDED IF ALL IS WELL
+If nothing is reported, this booking is marked as received automatically on ${autoCompleteOn}.
+
+---
+${emailFooterText(reason)}
+  `.trim()
+
+  try {
+    const brevo = getBrevoClient()
+    await brevo.transactionalEmails.sendTransacEmail({
+      subject:     `Booking ${bookingLabel} delivered — please confirm`,
+      htmlContent,
+      textContent,
+      sender:      { name: FROM_NAME, email: FROM_EMAIL },
+      to:          [{ email: to, name: firstName ?? undefined }],
+    })
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err.message : String(err)
+    console.error('BREVO DELIVERY CONFIRM EMAIL ERROR:', {
+      error,
+      recipient: to,
+      timestamp: new Date().toISOString(),
+    })
+    logSystem({
+      log_level:  'error',
+      event_type: 'email_event',
+      source:     'brevo-mailer',
+      message:    `Failed to send delivery confirmation email: ${error}`,
+    })
+    throw new Error(`Failed to send delivery confirmation email: ${error}`)
+  }
+}

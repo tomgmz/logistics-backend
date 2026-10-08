@@ -15,7 +15,7 @@ import { logEvent } from '../../lib/log-event.js'
 import { badRequest } from '../../lib/http-error.js'
 import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay, phDay } from '../../lib/ph-date.js'
-import { notifyStage, hasGmApprovers } from '../notification/notification.service.js'
+import { notifyStage, hasGmApprovers, emailDeliveryConfirm } from '../notification/notification.service.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { assertBookingVehicleInService, crewOnBooking, releaseCrew } from '../admin/fleet-availability.service.js'
 import {
@@ -453,6 +453,9 @@ export async function updateBookingStatusService(
   // already released and the delivery settled, so none of the completion side
   // effects below may run a second time.
   if (status === 'completed' && existing.status === 'delivered') {
+    if (viewer.role !== 'client') {
+      throw new Error("Cannot change status to 'completed' — only the client can confirm a delivered booking")
+    }
     return confirmCompletionService(bookingId, viewer, userId)
   }
   if (status === 'delivered') {
@@ -929,6 +932,7 @@ export async function driverCompleteBookingService(
     description: `Driver finished every drop-off on booking ${bookingRef(updated)}; awaiting the client's confirmation`,
   })
   void notifyStage('delivery_confirm', updated)
+  void emailDeliveryConfirm(updated, AUTO_COMPLETE_DAYS)
 
   // Close the delivery record before the crew is released — once the driver is
   // off the booking, `crewOnBooking` is the only thing that still knows who was
@@ -1010,17 +1014,11 @@ export async function deleteCargoItemService(
 /** Days after delivery before an unconfirmed, undisputed booking completes itself. */
 export const AUTO_COMPLETE_DAYS = 3
 
-/** Who may confirm a delivered booking: its client, or staff on the client's behalf. */
-const COMPLETION_CONFIRMERS = new Set(['client', 'admin', 'operations_manager'])
-
 /**
- * Confirm a delivered booking is complete.
- *
- * The client confirms their own; the Company Administrator or Operations
- * Manager can confirm for them (the client said so by phone, or does not use
- * the app). Staff confirming also resolves a problem the client reported —
- * that is how a disputed booking is closed. A client with an open report can
- * still confirm, which withdraws it.
+ * Confirm a delivered booking is complete. Only the client can: staff cannot
+ * confirm on their behalf (they mark a reported problem resolved instead, see
+ * resolveDeliveryIssueService). A client with an open report can still
+ * confirm, which withdraws it.
  */
 export async function confirmCompletionService(
   bookingId: string,
@@ -1031,8 +1029,8 @@ export async function confirmCompletionService(
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
   assertBookingOwnership(existing, viewer)
 
-  if (!COMPLETION_CONFIRMERS.has(viewer.role)) {
-    throw new Error('Only the client, the Company Administrator or the Operations Manager can confirm completion')
+  if (viewer.role !== 'client') {
+    throw new Error('Only the client can confirm their booking is complete')
   }
   if (existing.status === 'completed') return existing
   if (existing.status !== 'delivered') {
@@ -1041,19 +1039,57 @@ export async function confirmCompletionService(
 
   const done    = await BookingModel.markCompleted(bookingId, { by: userId ?? null, role: viewer.role, auto: false })
   const booking = (await BookingModel.findById(bookingId)) ?? existing
-  if (!done) return booking // someone else confirmed first
+  if (!done) return booking // already completed (a double click, or the auto-complete)
 
-  const byClient = viewer.role === 'client'
-  const disputed = !!(existing as { client_issue_reported_at?: string | null }).client_issue_reported_at
   logEvent({
     user_id:     userId,
     log_type:    'booking',
-    action:      byClient ? 'booking_completion_confirmed_by_client' : 'booking_completion_confirmed_by_staff',
-    description: byClient
-      ? `Client confirmed booking ${bookingRef(booking)} is complete`
-      : `Booking ${bookingRef(booking)} confirmed complete on the client's behalf` +
-        (disputed ? ' (resolving the problem the client reported)' : ''),
+    action:      'booking_completion_confirmed_by_client',
+    description: `Client confirmed booking ${bookingRef(booking)} is complete`,
   })
+
+  return booking
+}
+
+/** Who may mark a client's reported problem resolved. */
+const ISSUE_RESOLVERS = new Set(['admin', 'operations_manager'])
+
+/**
+ * Staff mark the problem the client reported as resolved. The booking stays
+ * 'delivered' — completion is still the client's call — but the auto-complete
+ * clock restarts: the client has a fresh 3 days to confirm or report again.
+ */
+export async function resolveDeliveryIssueService(
+  bookingId: string,
+  viewer:    BookingViewer,
+  userId?:   string | null,
+): Promise<BookingWithRelations> {
+  const existing = await BookingModel.findById(bookingId)
+  if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
+
+  if (!ISSUE_RESOLVERS.has(viewer.role)) {
+    throw new Error('Only the Company Administrator or the Operations Manager can resolve a reported problem')
+  }
+  if (existing.status !== 'delivered') {
+    throw new Error(`Cannot resolve a problem on a booking that is '${existing.status}'`)
+  }
+  const issue = existing as { client_issue_reported_at?: string | null; client_issue_resolved_at?: string | null }
+  if (!issue.client_issue_reported_at) {
+    throw new Error('Cannot resolve: the client has not reported a problem on this booking')
+  }
+  if (issue.client_issue_resolved_at) return existing
+
+  const done    = await BookingModel.resolveClientIssue(bookingId, userId ?? null)
+  const booking = (await BookingModel.findById(bookingId)) ?? existing
+  if (!done) return booking // resolved by someone else first
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      'booking_delivery_issue_resolved',
+    description: `Problem reported on booking ${bookingRef(booking)} marked resolved; the client has ${AUTO_COMPLETE_DAYS} days to confirm`,
+  })
+  void notifyStage('delivery_issue_resolved', booking)
 
   return booking
 }

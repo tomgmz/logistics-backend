@@ -9,8 +9,8 @@ import { logSystem, logSystemError } from '../../lib/log-system.js'
  * The driver's last drop-off leaves a booking at 'delivered'; the client
  * confirms it or reports a problem. If they do neither, it completes on its own
  * AUTO_COMPLETE_DAYS after delivery — the day before, they get one reminder.
- * A reported problem takes the booking out of this queue entirely until staff
- * confirm it themselves.
+ * A reported problem takes the booking out of this queue until staff mark it
+ * resolved, which restarts the clock (and the reminder) from that moment.
  *
  * Same shape as the fleet re-check scheduler: an in-process tick, idempotent
  * through stamps on the booking (`completion_reminder_sent_at`, and the status
@@ -27,8 +27,8 @@ export async function runCompletionTick(now = new Date()): Promise<{ reminded: n
   const rows = await BookingModel.findAwaitingCompletion()
 
   for (const row of rows) {
-    if (!row.delivered_at) continue
-    const age = now.getTime() - new Date(row.delivered_at).getTime()
+    if (!row.clock_from) continue
+    const age = now.getTime() - new Date(row.clock_from).getTime()
 
     try {
       if (age >= AUTO_COMPLETE_DAYS * DAY_MS) {

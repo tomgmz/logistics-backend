@@ -9,6 +9,8 @@ import {
 } from '../../types/notification.types.js'
 import { BookingWithRelations } from '../../types/client/booking.types.js'
 import { bookingRef } from '../../lib/booking-ref.js'
+import { formatManilaTimestamp, sendDeliveryConfirmEmail } from '../../lib/brevo-mailer.js'
+import { logSystemError } from '../../lib/log-system.js'
 
 // --- read-side pass-throughs ------------------------------------------------
 
@@ -76,6 +78,7 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   delivery_confirm:          { type: 'booking.delivery_confirm',          audience: 'client' },
   delivery_confirm_reminder: { type: 'booking.delivery_confirm_reminder', audience: 'client' },
   delivery_issue:            { type: 'booking.delivery_issue',            roles: ['operations_manager'] },
+  delivery_issue_resolved:   { type: 'booking.delivery_issue_resolved',   audience: 'client' },
 }
 
 // Route map per role so a notification tap lands on the right dashboard page.
@@ -166,6 +169,12 @@ function copyFor(
         title: 'Client reported a problem with a delivery',
         body:  `The client reported a problem with booking ${label}${reason ? `: ${reason}` : '.'} ` +
                'It will not complete until you confirm it.',
+      }
+    case 'delivery_issue_resolved':
+      return {
+        title: 'Your reported problem was resolved',
+        body:  `The problem you reported on booking ${label} was marked resolved. Confirm the booking is complete, ` +
+               'or report a problem again if something is still wrong. It completes automatically in 3 days if nothing is reported.',
       }
     case 'vehicle_returned':
       return {
@@ -290,5 +299,36 @@ export async function notifyStage(
     }
   } catch (err) {
     console.error('[notifications] notifyStage failed', stage, err)
+  }
+}
+
+/**
+ * Email the client that the driver is done and the booking needs their
+ * confirmation — the email half of the `delivery_confirm` stage, so a client
+ * who is not signed in still learns the auto-complete clock has started.
+ * Best effort: a failed send is logged, never thrown into the driver's request.
+ */
+export async function emailDeliveryConfirm(
+  booking: BookingWithRelations,
+  autoCompleteDays: number,
+): Promise<void> {
+  try {
+    const contact = await model.resolveClientContact(booking.client_id)
+    if (!contact?.email) return
+
+    // Sent right after markDelivered stamps delivered_at, so "now" is that moment
+    // to within a second — the completion scheduler counts from the same instant.
+    const completesAt = new Date(Date.now() + autoCompleteDays * 24 * 60 * 60 * 1000)
+
+    await sendDeliveryConfirmEmail({
+      to:             contact.email,
+      firstName:      contact.first_name,
+      bookingLabel:   bookingLabel(booking),
+      autoCompleteOn: formatManilaTimestamp(completesAt.toISOString()),
+      bookingId:      booking.booking_id,
+    })
+  } catch (err) {
+    console.error('[notifications] delivery confirmation email failed', booking.booking_id, err)
+    logSystemError('notification.service', 'email_event', err, { booking_id: booking.booking_id })
   }
 }

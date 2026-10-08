@@ -18,6 +18,7 @@ export type NotificationType =
   | 'booking.delivery_confirm'     // driver finished -> client, please confirm or report a problem
   | 'booking.delivery_confirm_reminder' // day before auto-complete -> client
   | 'booking.delivery_issue'       // client reported a problem -> ops + admins
+  | 'booking.delivery_issue_resolved' // staff resolved it, 3 days restart -> client
   // Legacy types, still present on historical rows. No longer emitted: accounting
   // was removed from the chain and the fleet stage no longer gates dispatch.
   | 'booking.accounting_pending'
@@ -74,3 +75,4 @@ export type NotificationStage =
   | 'delivery_confirm'
   | 'delivery_confirm_reminder'
   | 'delivery_issue'
+  | 'delivery_issue_resolved'
