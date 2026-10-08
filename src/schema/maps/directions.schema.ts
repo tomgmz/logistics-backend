@@ -52,6 +52,11 @@ export const computeDirectionsSchema = z.object({
 
   computeAlternativeRoutes: z.boolean().optional().default(false),
 
+  // HIGH_QUALITY is Google's full-resolution, road-aligned line — what the web
+  // maps draw instead of a Roads snap. Left out, Google returns a coarse
+  // overview line that cuts corners when zoomed in.
+  polylineQuality: z.enum(['HIGH_QUALITY', 'OVERVIEW']).optional(),
+
   languageCode: z.string().optional(),
 
   units: z.enum(['METRIC', 'IMPERIAL']).optional().default('METRIC'),
