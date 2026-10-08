@@ -84,6 +84,48 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult> {
   return { address, latitude: lat, longitude: lng }
 }
 
+/**
+ * The street address at a point — what the proof-photo stamp prints under the
+ * time. Null when Google has nothing usable or cannot be reached: the stamp
+ * then shows the coordinates alone, and a photo is never held up for an address.
+ *
+ * Plus codes ("7Q63+XX …") are skipped: they are not an address anyone reads.
+ */
+export async function reverseGeocode(latitude: number, longitude: number): Promise<string | null> {
+  try {
+    const response = await axios.get(GEOCODING_URL, {
+      params:  { latlng: `${latitude},${longitude}`, key: GOOGLE_API_KEY, region: 'PH' },
+      timeout: 5_000,
+    })
+    const status = response.data?.status
+    if (status !== 'OK' && status !== 'ZERO_RESULTS') {
+      logSystemThrottled('google-maps.reverse-geocode', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+        log_level:  'warn',
+        event_type: 'external_api',
+        source:     'google-maps.reverse-geocode',
+        message:    `Reverse geocode failed: ${status} ${response.data?.error_message ?? ''}`.trim(),
+      })
+      return null
+    }
+    const results: Array<{ formatted_address?: string; types?: string[] }> = response.data.results ?? []
+    const best = results.find((r) => r.formatted_address && !r.types?.includes('plus_code'))
+    // Every stop is in the Philippines; the country name only costs stamp space.
+    // Google also prefixes some street results with a plus code ("P22M+GRR, …").
+    return best?.formatted_address
+      ?.replace(/,\s*Philippines$/, '')
+      .replace(/^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{0,3},\s*/i, '') ?? null
+  } catch (err) {
+    // Message only: the request URL carries the API key.
+    logSystemThrottled('google-maps.reverse-geocode', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+      log_level:  'warn',
+      event_type: 'external_api',
+      source:     'google-maps.reverse-geocode',
+      message:    `Reverse geocode error: ${(err as Error)?.message ?? String(err)}`,
+    })
+    return null
+  }
+}
+
 async function callOptimizationAPI(
   origin: { latitude: number; longitude: number },
   destinations: OptimizationDestination[],

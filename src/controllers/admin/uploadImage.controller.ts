@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { cloudinary } from '../../lib/cloudinary.js'
+import { proofPhotoBytes } from '../../services/driver/proof-stamp.service.js'
 
 export async function uploadImage(req: Request, res: Response) {
   try {
@@ -29,6 +30,10 @@ export async function uploadImage(req: Request, res: Response) {
  * Proof of pickup / proof of delivery photo, taken by the driver at a stop.
  * Returns the hosted URL, which the driver app then sends with the stop
  * confirmation (PATCH /driver/bookings/:id/pickup | .../delivered).
+ *
+ * Optional multipart fields (stamp_stop, stamp_ref, taken_at, latitude,
+ * longitude, accuracy_m, added_later) ask for the time-and-place stamp — see
+ * services/driver/proof-stamp.service.ts.
  */
 export async function uploadDeliveryProof(req: Request, res: Response) {
   try {
@@ -37,19 +42,27 @@ export async function uploadDeliveryProof(req: Request, res: Response) {
       return
     }
 
+    // Burns in the time / place / plate stamp when the app sent the stop it
+    // belongs to; anything else is stored as it came.
+    const { buffer, stamped } = await proofPhotoBytes(
+      req.file.buffer,
+      req.body,
+      { userId: req.user?.sub, role: req.user?.role },
+    )
+
     const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
           folder:        'delivery_proofs',
           resource_type: 'image',
-          tags:          ['delivery_proof'],
+          tags:          stamped ? ['delivery_proof', 'stamped'] : ['delivery_proof'],
         },
         (error, result) => {
           if (error || !result) return reject(error ?? new Error('Upload failed'))
           resolve(result)
         }
       )
-      stream.end(req.file!.buffer)
+      stream.end(buffer)
     })
 
     res.status(200).json({ status: 'success', data: { url: result.secure_url } })
