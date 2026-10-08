@@ -19,6 +19,10 @@ export const assignBookingSchema = z.object({
   // (or absent) means none; sending null on a re-assign removes them.
   second_driver_id:             z.string().uuid('second_driver_id must be a valid UUID').nullable().optional(),
   second_vendor_driver_user_id: z.string().uuid('Choose a valid second vendor driver').nullable().optional(),
+
+  // Optional helper on a route of 30 km or less, by name only — information,
+  // not a crew member. The distance rule itself is applied by the service.
+  helper_name: z.string().trim().max(120, 'Helper name is too long').nullable().optional(),
 }).superRefine((data, ctx) => {
   if (data.is_vendor_supplied) {
     if (!data.vendor_driver_user_id) {

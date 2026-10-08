@@ -6,6 +6,7 @@ import { logEvent } from '../../lib/log-event.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { bookingRefById } from '../../lib/booking-ref.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
+import { getRouteDistance, type RouteDistance } from '../maps/route-distance.service.js'
 import {
   findExternalDriverForAssignment,
   issueInvite,
@@ -85,6 +86,25 @@ export async function assignBookingService(
   userId?:   string | null,
 ): Promise<AssignmentWithRelations & { capacity_warning: CapacityWarning | null }> {
   const { scheduleDate } = await assertBookingAssignable(bookingId)
+
+  // Distance decides the crew: over the threshold a second driver is required,
+  // at or under it there is none, only an optional helper. An unknown distance
+  // (no coordinates yet, or Google down) enforces neither, so a Routes outage
+  // can never stop a booking from being crewed.
+  const route     = await getRouteDistance(bookingId)
+  const hasSecond = input.is_vendor_supplied ? !!input.second_vendor_driver_user_id : !!input.second_driver_id
+  if (route.requires_second_driver === true) {
+    if (!hasSecond) {
+      throw new Error(
+        `This route is ${route.distance_km} km. A route over ${route.threshold_km} km needs a second driver.`,
+      )
+    }
+    input = { ...input, helper_name: null }
+  } else if (route.requires_second_driver === false && hasSecond) {
+    throw new Error(
+      `This route is ${route.distance_km} km. A second driver is only for routes over ${route.threshold_km} km — add a helper instead.`,
+    )
+  }
 
   // Whoever is on the booking right now — they get stood down if this call swaps
   // in a different driver/vehicle, and stay valid if they are being kept.
@@ -176,7 +196,8 @@ export async function assignBookingService(
     : `driver ${input.driver_id} with truck ${input.truck_id}`
   const secondDescription = externalSecond
     ? ` and second vendor driver ${externalSecond.snapshot.vendor_driver_name}`
-    : secondDriverId ? ` and second driver ${secondDriverId}` : ''
+    : secondDriverId ? ` and second driver ${secondDriverId}`
+    : input.helper_name?.trim() ? ` with helper ${input.helper_name.trim()}` : ''
   logEvent({
     user_id:     userId,
     log_type:    'booking',
@@ -254,6 +275,11 @@ export async function getAssignmentByBookingService(
   if (!assignment) throw new Error(`No assignment found for booking ${bookingId}`)
 
   return assignment
+}
+
+/** The route's road distance and whether it calls for a second driver, for the crew picker. */
+export async function getRouteDistanceService(bookingId: string): Promise<RouteDistance> {
+  return getRouteDistance(bookingId)
 }
 
 export async function getAllAssignmentsService(): Promise<AssignmentWithRelations[]> {

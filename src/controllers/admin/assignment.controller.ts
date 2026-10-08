@@ -23,6 +23,16 @@ export async function getAssignmentByBooking(req: Request, res: Response) {
   }
 }
 
+export async function getRouteDistance(req: Request, res: Response) {
+  try {
+    const data = await AssignmentService.getRouteDistanceService(param(req.params.bookingId))
+    res.status(200).json({ status: 'success', data })
+  } catch (error: any) {
+    const status = /not found/i.test(error.message) ? 404 : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
 export async function getAllAssignments(_req: Request, res: Response) {
   try {
     const data = await AssignmentService.getAllAssignmentsService()

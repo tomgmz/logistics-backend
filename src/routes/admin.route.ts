@@ -126,6 +126,8 @@ router.delete('/drivers/:id',              authenticate, isFleet, lockGuard('use
 router.get('/assignments',                    authenticate, isOperations, AssignmentController.getAllAssignments)
 router.get('/assignments/:bookingId',         authenticate, isOperations, AssignmentController.getAssignmentByBooking)
 router.get('/assignments/:bookingId/history', authenticate, isOperations, AssignmentController.getAssignmentHistory)
+// Road distance of the route, which decides second driver (over 30 km) vs helper.
+router.get('/assignments/:bookingId/route-distance', authenticate, isOperations, AssignmentController.getRouteDistance)
 router.post('/assignments/:bookingId',        authenticate, isOperations, lockGuard('booking', fromParam('bookingId')), validate(assignBookingSchema), AssignmentController.assignBooking)
 router.patch('/assignments/:bookingId/status', authenticate, isOperations, lockGuard('booking', fromParam('bookingId')), validate(updateDeliveryStatusSchema), AssignmentController.updateDeliveryStatus)
 

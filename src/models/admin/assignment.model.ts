@@ -27,6 +27,7 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
   vendor_driver_email,
   vendor_driver_user_id,
   second_driver_id,
+  helper_name,
   second_driver:drivers!deliveries_second_driver_id_fkey (
     driver_id,
     license_number,
@@ -141,6 +142,8 @@ async function assign(
     // On both paths: the delivery's record of who rode along. Cleared on a
     // re-assign without one, like every other crew field here.
     second_driver_id:      secondDriverId ?? null,
+    // Information only; the service has already cleared it on a long route.
+    helper_name:           input.helper_name?.trim() || null,
   }
 
   const { data: existing } = await supabase

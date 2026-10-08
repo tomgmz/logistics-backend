@@ -69,6 +69,8 @@ export interface AssignmentWithRelations extends VendorSnapshot {
   /** deliveries.second_driver_id and its driver; null when there is none. */
   second_driver_id?: string | null
   second_driver?: SecondDriver | null
+  /** Optional helper on a short route, by name only. */
+  helper_name?:  string | null
   delivery_id:   string
   booking_id:    string
   driver_id:     string | null
@@ -126,6 +128,8 @@ export interface AssignBookingInput {
   // driver's user_id.
   second_driver_id?:             string | null
   second_vendor_driver_user_id?: string | null
+  /** Helper's name on a route of 30 km or less; information only. */
+  helper_name?:          string | null
   vendor_name?:          string | null
   vendor_contact?:       string | null
   vendor_driver_name?:   string
