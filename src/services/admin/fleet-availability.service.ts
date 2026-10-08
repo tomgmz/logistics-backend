@@ -62,6 +62,60 @@ export async function latestInspectionFor(truckId: string): Promise<TruckInspect
   return (await latestInspectionsFor([truckId])).get(truckId) ?? null
 }
 
+/**
+ * Statuses a person sets to take a vehicle off the road. Unlike 'in_use' and
+ * 'available', which the booking lifecycle manages, these are a judgement call
+ * and nothing automatic may overwrite them.
+ */
+export const OUT_OF_SERVICE_STATUSES = ['under_maintenance', 'inactive', 'archived'] as const
+
+export function isOutOfService(status: string | null | undefined): boolean {
+  return !!status && (OUT_OF_SERVICE_STATUSES as readonly string[]).includes(status)
+}
+
+const OUT_OF_SERVICE_WORDS: Record<string, string> = {
+  under_maintenance: 'under maintenance',
+  inactive:          'inactive',
+  archived:          'archived',
+}
+
+/** Throws when the vehicle has been taken out of service. */
+export async function assertTruckInService(truckId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('trucks')
+    .select('plate_number, status')
+    .eq('truck_id', truckId)
+    .maybeSingle()
+  if (error) throw error
+  if (data && isOutOfService(data.status)) {
+    throw new Error(
+      `${data.plate_number} is ${OUT_OF_SERVICE_WORDS[data.status] ?? data.status} and cannot be assigned — choose another vehicle`,
+    )
+  }
+}
+
+/**
+ * Throws when the vehicle on this booking was taken out of service, so the
+ * driver cannot load it. Operations has been told and picks another vehicle.
+ * A booking with no fleet vehicle (vendor-supplied) passes.
+ */
+export async function assertBookingVehicleInService(bookingId: string): Promise<void> {
+  const { truck_id } = await crewOnBooking(bookingId)
+  if (!truck_id) return
+  const { data, error } = await supabase
+    .from('trucks')
+    .select('plate_number, status')
+    .eq('truck_id', truck_id)
+    .maybeSingle()
+  if (error) throw error
+  if (data && isOutOfService(data.status)) {
+    throw new Error(
+      `${data.plate_number} was taken out of service by the Fleet Manager. Do not load it — ` +
+      'wait for Operations to assign another vehicle.',
+    )
+  }
+}
+
 /** Throws unless the truck's latest BLOWBAGETS inspection is a pass. */
 export async function assertTruckPassedInspection(truckId: string): Promise<void> {
   const latest = await latestInspectionFor(truckId)
@@ -88,6 +142,9 @@ export async function assertTruckAssignable(
   truckId: string,
   currentTruckId?: string | null,
 ): Promise<void> {
+  // Checked before the "already on this booking" exemption: a vehicle taken out
+  // of service has to come off its booking, not be kept on it by a re-save.
+  await assertTruckInService(truckId)
   await assertTruckPassedInspection(truckId)
   // Past its routine service (km or date, whichever came first): it stays in
   // the yard until the service is recorded.
@@ -210,8 +267,17 @@ async function setDriverStatus(driverId: string, status: string): Promise<void> 
   if (error) throw error
 }
 
+/**
+ * Reserve or release a vehicle. Never overwrites an out-of-service status: a
+ * Fleet Manager's maintenance hold must outlive the booking it interrupted, and
+ * only clearing it (or a passing inspection) puts the vehicle back.
+ */
 async function setTruckStatus(truckId: string, status: string): Promise<void> {
-  const { error } = await supabase.from('trucks').update({ status, updated_at: new Date().toISOString() }).eq('truck_id', truckId)
+  const { error } = await supabase
+    .from('trucks')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('truck_id', truckId)
+    .not('status', 'in', `(${OUT_OF_SERVICE_STATUSES.join(',')})`)
   if (error) throw error
 }
 

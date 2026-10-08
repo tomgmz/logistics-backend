@@ -71,7 +71,7 @@ export async function updateTruck(req: Request, res: Response) {
     const data = await TruckService.updateTruck(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
-    const status = /already the regular driver/.test(err.message) ? 409 : upkeepStatus(err.message)
+    const status = /already the regular driver|is on booking|set automatically/.test(err.message) ? 409 : upkeepStatus(err.message)
     res.status(status).json({ status: 'error', message: err.message })
   }
 }

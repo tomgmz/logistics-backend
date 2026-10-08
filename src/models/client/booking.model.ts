@@ -138,6 +138,7 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
     assigned_at,
     trucks (
       plate_number,
+      status,
       truck_models ( vehicle_type, name )
     )
   ),

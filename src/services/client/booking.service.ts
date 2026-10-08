@@ -17,7 +17,7 @@ import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay, phDay } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers } from '../notification/notification.service.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
-import { crewOnBooking, releaseCrew } from '../admin/fleet-availability.service.js'
+import { assertBookingVehicleInService, crewOnBooking, releaseCrew } from '../admin/fleet-availability.service.js'
 import {
   assertStopProximity,
   stopCoordinates,
@@ -751,6 +751,8 @@ export async function driverConfirmPickupService(
   if (!proofPhotoUrl) {
     throw new Error('A proof-of-pickup photo is required to confirm the pickup')
   }
+  // The Fleet Manager pulled the vehicle after it was assigned.
+  await assertBookingVehicleInService(bookingId)
 
   // A pickup stamps the booking `in_transit` and starts the proof trail every
   // drop-off hangs off, so it must not land days before the job is due. The app

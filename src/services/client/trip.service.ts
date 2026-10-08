@@ -2,7 +2,7 @@ import TripModel from '../../models/client/trip.model.js'
 import { BookingModel } from '../../models/client/booking.model.js'
 import { logEvent } from '../../lib/log-event.js'
 import * as TruckModel from '../../models/admin/truck.model.js'
-import { crewOnBooking } from '../admin/fleet-availability.service.js'
+import { assertBookingVehicleInService, crewOnBooking } from '../admin/fleet-availability.service.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay } from '../../lib/ph-date.js'
@@ -190,6 +190,9 @@ export async function driverConfirmTripPickupService(
   if (!proofPhotoUrl) {
     throw new Error('A proof-of-loading photo is required to confirm this pickup')
   }
+  // The Fleet Manager pulled the vehicle — no new load goes on it, including a
+  // later run of a booking already under way.
+  await assertBookingVehicleInService(trip.booking_id)
 
   // One truck, one load at a time. Loading run 3 while run 2 is still out would
   // mean the vehicle is in two places, and the resulting proof trail could not

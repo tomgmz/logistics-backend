@@ -2,7 +2,10 @@ import * as TruckModel from '../../models/admin/truck.model.js'
 import * as InspectionModel from '../../models/admin/truck-inspection.model.js'
 import { CreateTruckInput, UpdateTruckInput } from '../../types/truck.types.js'
 import { logEvent } from '../../lib/log-event.js'
-import { lastFleetReturnsFor } from '../../lib/driver-reservation.js'
+import { lastFleetReturnsFor, liveBookingForTruck, type TruckBooking } from '../../lib/driver-reservation.js'
+import { isOutOfService } from './fleet-availability.service.js'
+import { BookingModel } from '../../models/client/booking.model.js'
+import { notifyStage } from '../notification/notification.service.js'
 import { listOpenVehicleReportsService } from '../driver/report.service.js'
 import type { DriverReport } from '../../types/driver/report.types.js'
 import * as UpkeepModel from '../../models/admin/truck-upkeep.model.js'
@@ -209,7 +212,7 @@ export async function updateTruck(truckId: string, input: UpdateTruckInput, acto
     await assertDriverNotAlreadyPaired(truckId, input.assigned_driver_id)
   }
 
-  const { odometer_km: initialOdometer, ...fields } = input
+  const { odometer_km: initialOdometer, ...fields } = { ...input }
   const settingBaseline = input.last_service_at !== undefined || input.last_service_odometer_km !== undefined
   if (settingBaseline || initialOdometer !== undefined) {
     const current = await TruckModel.findById(truckId)
@@ -225,6 +228,9 @@ export async function updateTruck(truckId: string, input: UpdateTruckInput, acto
     assertBaselinePlausible(input, initialOdometer ?? current.odometer_km)
     if (initialOdometer !== undefined) assertReadingPlausible(current, initialOdometer)
   }
+
+  const statusChange = input.status !== undefined ? await resolveStatusChange(truckId, input.status) : null
+  if (statusChange) fields.status = statusChange.write as UpdateTruckInput['status']
 
   const result = await TruckModel.update(truckId, fields)
   if (initialOdometer !== undefined) {
@@ -254,14 +260,114 @@ export async function updateTruck(truckId: string, input: UpdateTruckInput, acto
     })
   }
 
-  return result
+  if (statusChange?.changed) {
+    const plate = result?.plate_number ?? truckId
+    logEvent({
+      user_id:     actorId,
+      log_type:    'vehicle_activity',
+      action:      'vehicle_status_changed',
+      description: `Vehicle ${plate} status changed from ${statusChange.from} to ${statusChange.write}` +
+        (statusChange.booking ? ` while on booking ${statusChange.booking.reference_number ?? statusChange.booking.booking_id}` : ''),
+    })
+    if (statusChange.booking && isOutOfService(statusChange.write)) {
+      void notifyOutOfService(statusChange.booking, plate, statusChange.write)
+    }
+  }
+
+  // The booking this change flagged, so the screen can say so.
+  const flagged = statusChange?.booking && statusChange.changed && isOutOfService(statusChange.write)
+    ? statusChange.booking
+    : null
+  return result ? { ...result, flagged_booking: flagged } : result
+}
+
+const STATUS_WORDS: Record<string, string> = {
+  available:         'Available',
+  recheck_due:       'Re-check due',
+  in_use:            'In use',
+  under_maintenance: 'Under Maintenance',
+  inactive:          'Inactive',
+}
+
+/**
+ * What a requested status change actually writes, given the booking the vehicle
+ * is on.
+ *
+ *   'in_use' / 'available'  belong to the booking lifecycle: assigning reserves a
+ *                           vehicle, finishing releases it. Setting them by hand
+ *                           on a vehicle that is on a booking would free it for
+ *                           a second booking while it is still committed.
+ *   'under_maintenance'     is always allowed — before departure or on the road.
+ *                           It is how a fault gets reported, and refusing it
+ *                           would only teach people to sit on one. The booking
+ *                           is flagged and Operations is told.
+ *   'inactive'              is refused while on a booking, like archiving: take
+ *                           it off the booking first, or use Under Maintenance.
+ *   clearing a hold         (out of service → available) on a vehicle still on
+ *                           its booking puts it back to 'in_use', not 'available'.
+ */
+async function resolveStatusChange(truckId: string, requested: string): Promise<{
+  from:    string
+  write:   string
+  changed: boolean
+  booking: TruckBooking | null
+} | null> {
+  const current = await TruckModel.findById(truckId)
+  if (!current) throw new Error('Truck not found')
+  const from = String(current.status)
+  if (requested === from) return { from, write: from, changed: false, booking: null }
+
+  if (requested === 'in_use') {
+    throw new Error('In use is set automatically when the vehicle is assigned to a booking')
+  }
+
+  const booking = await liveBookingForTruck(truckId)
+  if (!booking) return { from, write: requested, changed: true, booking: null }
+
+  const ref = booking.reference_number ?? booking.booking_id
+  if (requested === 'under_maintenance') {
+    return { from, write: requested, changed: true, booking }
+  }
+  if (requested === 'inactive') {
+    throw new Error(
+      `${current.plate_number} is on booking ${ref}. Take it off the booking first, or mark it Under Maintenance.`,
+    )
+  }
+  // 'available' or 'recheck_due' while on a booking.
+  if (isOutOfService(from)) {
+    // Back in service, and still committed to its booking.
+    return { from, write: 'in_use', changed: true, booking }
+  }
+  throw new Error(
+    `${current.plate_number} is on booking ${ref}, so its status follows the booking. ` +
+    'To pull it, mark it Under Maintenance.',
+  )
+}
+
+/** Tell Operations a vehicle on a live booking was pulled. Best effort. */
+async function notifyOutOfService(booking: TruckBooking, plate: string, status: string): Promise<void> {
+  try {
+    const full = await BookingModel.findById(booking.booking_id)
+    if (!full) return
+    await notifyStage('vehicle_out_of_service', full, {
+      vehicleLabel: plate,
+      statusLabel:  STATUS_WORDS[status] ?? status,
+      onTheRoad:    booking.status !== 'assigned',
+    })
+  } catch (err) {
+    console.error('[truck] failed to notify out-of-service vehicle', booking.booking_id, err)
+  }
 }
 
 export async function archiveTruck(truckId: string, actorId?: string | null) {
   const truck = await TruckModel.findById(truckId)
   if (!truck) throw new Error(`No truck found with ID: ${truckId}`)
-  if (truck.status === 'in_use') {
-    throw new Error(`${truck.plate_number} is out on a booking — archive it once it is back in the yard`)
+  // Asked of the booking, not the status: a vehicle put Under Maintenance while
+  // on a booking no longer reads 'in_use', but it is still on that booking.
+  const booking = truck.status === 'in_use' ? true : await liveBookingForTruck(truckId)
+  if (booking) {
+    const ref = booking === true ? '' : ` ${booking.reference_number ?? booking.booking_id}`
+    throw new Error(`${truck.plate_number} is on booking${ref} — take it off the booking, or archive it once it is back in the yard`)
   }
 
   const result = await TruckModel.archive(truckId)

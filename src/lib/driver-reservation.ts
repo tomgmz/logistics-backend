@@ -164,6 +164,43 @@ export async function lastFleetReturnFor(truckId: string): Promise<string | null
   return (await lastFleetReturnsFor([truckId])).get(truckId) ?? null
 }
 
+/** The booking a vehicle is tied to right now, if any. */
+export interface TruckBooking {
+  booking_id:       string
+  reference_number: string | null
+  status:           string
+  schedule_date:    string | null
+}
+
+/**
+ * The booking this vehicle is on: crewed and not finished, or finished but not
+ * yet confirmed back in the lot. Null when the vehicle is free.
+ */
+export async function liveBookingForTruck(truckId: string): Promise<TruckBooking | null> {
+  const { data, error } = await supabase
+    .from('deliveries')
+    .select('bookings!inner ( booking_id, reference_number, status, schedule_date, fleet_return_at )')
+    .eq('truck_id', truckId)
+    .neq('bookings.status', 'cancelled')
+
+  if (error) throw error
+
+  for (const row of (data ?? []) as any[]) {
+    const b = row.bookings
+    if (!b) continue
+    const out = !FINISHED_BOOKING_STATUSES.includes(b.status) || !b.fleet_return_at
+    if (out) {
+      return {
+        booking_id:       b.booking_id,
+        reference_number: b.reference_number ?? null,
+        status:           b.status,
+        schedule_date:    b.schedule_date ?? null,
+      }
+    }
+  }
+  return null
+}
+
 export async function hasLiveDelivery(driverId: string): Promise<boolean> {
   // As the main driver or as the second driver.
   const { data, error } = await supabase

@@ -41,7 +41,8 @@ function tripProgressStatus(message: string): number {
     message.includes('Confirm the ')   ||
     message.includes('Finish trip')    ||
     message.includes('was cancelled')  ||
-    message.includes('no longer on')
+    message.includes('no longer on')   ||
+    message.includes('taken out of service')
   ) return 409
   return 500
 }

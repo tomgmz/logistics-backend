@@ -69,6 +69,9 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   // The driver confirmed the vehicle is back; its pass has expired and the Fleet
   // Manager (plus the Company Administrator, appended as always) must re-check it.
   vehicle_returned: { type: 'booking.vehicle_returned', roles: ['fleet_manager'], target: 'vehicle' },
+  // The Fleet Manager pulled a vehicle that is on a live booking. Operations
+  // (plus the Company Administrator) has to put another vehicle on it.
+  vehicle_out_of_service: { type: 'booking.vehicle_out_of_service', roles: ['operations_manager'] },
   // Completion is the client's call once the driver is done.
   delivery_confirm:          { type: 'booking.delivery_confirm',          audience: 'client' },
   delivery_confirm_reminder: { type: 'booking.delivery_confirm_reminder', audience: 'client' },
@@ -170,6 +173,15 @@ function copyFor(
         body:  `${extra?.vehicleLabel ?? 'The vehicle'} is back in the parking lot after booking ${label}. ` +
                'It cannot be assigned until it passes a new BLOWBAGETS inspection.',
       }
+    case 'vehicle_out_of_service':
+      return {
+        title: 'Booking vehicle taken out of service',
+        body:  extra?.onTheRoad
+          ? `${extra?.vehicleLabel ?? 'The vehicle'} on booking ${label} was marked ${extra?.statusLabel ?? 'out of service'} while on the road. ` +
+            'Decide whether to send a replacement vehicle.'
+          : `${extra?.vehicleLabel ?? 'The vehicle'} on booking ${label} was marked ${extra?.statusLabel ?? 'out of service'}. ` +
+            'Choose another vehicle before it is loaded.',
+      }
   }
 }
 
@@ -210,6 +222,10 @@ export interface NotifyExtra {
   vehicleLabel?: string | null
   // Which re-check nudge this is, for the `fleet_recheck` stage.
   window?:       'day_before' | 'day_of'
+  // For `vehicle_out_of_service`: the status in words, and whether the vehicle
+  // had already left with the cargo.
+  statusLabel?:  string
+  onTheRoad?:    boolean
 }
 
 /**

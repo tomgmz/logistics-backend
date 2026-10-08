@@ -4,6 +4,9 @@ import { logEvent } from '../../lib/log-event.js'
 import type { BlowbagetsItems } from '../../types/client/booking.types.js'
 import * as UpkeepModel from '../../models/admin/truck-upkeep.model.js'
 import { assertReadingPlausible, assertReturnOdometerRecorded } from './truck-upkeep.service.js'
+import { liveBookingForTruck } from '../../lib/driver-reservation.js'
+import { BookingModel } from '../../models/client/booking.model.js'
+import { notifyStage } from '../notification/notification.service.js'
 
 // The ten items of the BLOWBAGETS mnemonic. Battery and Brakes both start with
 // B, so the keys — not the letters — are the stable identifiers.
@@ -63,10 +66,24 @@ export async function recordInspection(
   // picked through any other path; a pass returns it to the pool unless it is
   // currently out on a delivery. 'recheck_due' is the hold a vehicle is put on
   // when it comes back from a job, and this pass is the re-check that lifts it.
+  //
+  // Either way the vehicle may already be on a booking. A fail then pulls it off
+  // the road like a manual Under Maintenance would, so Operations is told; a pass
+  // puts it back to 'in_use', since it is still committed to that booking.
+  const onBooking = !passed || truck.status === 'under_maintenance' || truck.status === 'recheck_due'
+    ? await liveBookingForTruck(truckId)
+    : null
   if (!passed && truck.status !== 'archived') {
     await TruckModel.update(truckId, { status: 'under_maintenance' })
+    if (onBooking && truck.status !== 'under_maintenance') {
+      void BookingModel.findById(onBooking.booking_id).then((full) => full && notifyStage('vehicle_out_of_service', full, {
+        vehicleLabel: truck.plate_number,
+        statusLabel:  'Under Maintenance after a failed BLOWBAGETS inspection',
+        onTheRoad:    onBooking.status !== 'assigned',
+      })).catch((err) => console.error('[inspection] failed to notify out-of-service vehicle', truckId, err))
+    }
   } else if (passed && (truck.status === 'under_maintenance' || truck.status === 'recheck_due')) {
-    await TruckModel.update(truckId, { status: 'available' })
+    await TruckModel.update(truckId, { status: onBooking ? 'in_use' : 'available' })
   }
 
   const failed = BLOWBAGETS_KEYS.filter((key) => !items[key])

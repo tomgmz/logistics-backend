@@ -214,7 +214,8 @@ function driverProgressStatus(message: string): number {
     message.includes('Cannot ') ||
     message.includes('Confirm the pickup') ||
     message.includes('still pending') ||
-    message.includes('no destinations')
+    message.includes('no destinations') ||
+    message.includes('taken out of service')
   ) return 409
   return 500
 }
