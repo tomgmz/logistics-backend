@@ -8,6 +8,8 @@ import {
   BookingCargoItem,
   GmReviewInput,
 } from '../../types/client/booking.types.js'
+import { findClientVisibleForBooking } from '../../models/admin/documents.model.js'
+import type { ClientBookingDocument } from '../../types/documents.types.js'
 import { optimizeDestinationsService } from '../maps/routeOptimization.service.js'
 import { invalidateEta } from '../maps/eta.service.js'
 import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
@@ -630,6 +632,22 @@ export async function getDestinationsByBookingService(
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
   assertBookingOwnership(existing, viewer)
   return await BookingModel.findDestinationsByBookingId(bookingId) ?? []
+}
+
+/**
+ * Every file on the booking that its client may see: their own attachments,
+ * the pickup and drop-off proof photos, and approved shipment paperwork from
+ * staff. Ownership is checked the same way as the booking itself, so a client
+ * can only ever read their own company's files.
+ */
+export async function getBookingDocumentsService(
+  bookingId: string,
+  viewer:    BookingViewer,
+): Promise<ClientBookingDocument[]> {
+  const existing = await BookingModel.findById(bookingId)
+  if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
+  assertBookingOwnership(existing, viewer)
+  return await findClientVisibleForBooking(bookingId)
 }
 
 export async function updateDestinationService(

@@ -38,6 +38,36 @@ export const LIBRARY_DOCUMENT_TYPES: readonly LibraryDocumentType[] = [
   ...STAFF_DOCUMENT_TYPES,
 ]
 
+/**
+ * What a client sees in their own transaction history: their attachments, every
+ * pickup and drop-off proof photo, and the shipment paperwork staff attached to
+ * the booking. Left out are the files about OUR side of the job: a driver's
+ * Daily Time Record, maintenance records, and the fleet's odometer photos and
+ * service receipts. Staff uploads also appear only once they are approved and
+ * not archived, so a rejected or mistaken upload never reaches the client.
+ */
+export const CLIENT_VISIBLE_DOCUMENT_TYPES: readonly LibraryDocumentType[] = [
+  'transaction_document',
+  'pickup_proof',
+  'delivery_proof',
+  'delivery_receipt',
+  'proof_of_delivery',
+  'trip_ticket',
+  'purchase_order',
+  'other',
+]
+
+/** The client-safe projection of a library row: no staff names, notes or override reasons. */
+export interface ClientBookingDocument {
+  doc_key:     string
+  doc_type:    LibraryDocumentType
+  source:      DocumentSource
+  file_url:    string
+  file_name:   string
+  uploaded_at: string | null
+  detail:      string | null
+}
+
 /** Who put the file into the system. */
 export type DocumentSource = 'client' | 'driver' | 'fleet' | 'staff'
 

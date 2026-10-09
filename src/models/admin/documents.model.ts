@@ -1,6 +1,8 @@
 import { pool } from '../../lib/database.js'
 import { readInPages } from '../../lib/read-in-pages.js'
+import { CLIENT_VISIBLE_DOCUMENT_TYPES } from '../../types/documents.types.js'
 import type {
+  ClientBookingDocument,
   DocumentCounts,
   DocumentListQuery,
   LibraryDocument,
@@ -265,6 +267,27 @@ export async function findPage(q: DocumentListQuery): Promise<{ rows: LibraryDoc
   ])
 
   return { rows: list.rows, total: Number(count.rows[0]?.n ?? 0) }
+}
+
+/**
+ * One booking's files as its client may see them (CLIENT_VISIBLE_DOCUMENT_TYPES),
+ * oldest first so they read in the order the delivery happened.
+ *
+ * The staff-upload filter is in SQL, not left to the caller: an upload still
+ * pending review, rejected, or archived must never leave the server for a client.
+ */
+export async function findClientVisibleForBooking(bookingId: string): Promise<ClientBookingDocument[]> {
+  const { rows } = await pool.query<ClientBookingDocument>(
+    `SELECT l.doc_key, l.doc_type, l.source, l.file_url, l.file_name, l.uploaded_at, l.detail
+       FROM (${LIBRARY_SQL}) l
+      WHERE l.booking_id = $1::uuid
+        AND l.doc_type = ANY($2::text[])
+        AND l.archived_at IS NULL
+        AND (l.source <> 'staff' OR l.review_status = 'approved')
+      ORDER BY l.uploaded_at ASC NULLS LAST, l.doc_key ASC`,
+    [bookingId, CLIENT_VISIBLE_DOCUMENT_TYPES],
+  )
+  return rows
 }
 
 export async function findForExport(q: Omit<DocumentListQuery, 'page' | 'limit'>, cap: number): Promise<LibraryDocument[]> {

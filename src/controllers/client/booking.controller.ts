@@ -16,6 +16,7 @@ import {
   resolveDeliveryIssueService,
   reportDeliveryIssueService,
   getDestinationsByBookingService,
+  getBookingDocumentsService,
   updateDestinationService,
   updateDestinationStatusService,
   driverConfirmPickupService,
@@ -173,6 +174,16 @@ export const getDestinationsByBooking = async (req: Request, res: Response) => {
   try {
     const destinations = await getDestinationsByBookingService(param(req.params.id), viewerFrom(req))
     res.status(200).json({ status: 'success', data: destinations })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404 : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+export const getBookingDocuments = async (req: Request, res: Response) => {
+  try {
+    const documents = await getBookingDocumentsService(param(req.params.id), viewerFrom(req))
+    res.status(200).json({ status: 'success', data: documents })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
     res.status(status).json({ status: 'error', message: error.message })

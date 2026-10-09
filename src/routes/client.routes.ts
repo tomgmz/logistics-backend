@@ -72,6 +72,9 @@ router.get('/fleet/live-positions', authenticate, trackingLimiter, canViewFleet,
 // attachDriverScope: a driver may open only bookings they are crewed on.
 router.get('/:id',              authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getBookingById)
 router.get('/:id/destinations', authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getDestinationsByBooking)
+// The client's transaction history: their attachments, every proof photo, and
+// approved staff paperwork. Same scoping as the booking read above.
+router.get('/:id/documents',    authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getBookingDocuments)
 
 // Where the truck is now. The map subscribes to a realtime channel for updates;
 // this serves the first paint and the fallback poll when that channel is down,
