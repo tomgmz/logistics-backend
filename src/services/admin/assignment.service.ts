@@ -7,6 +7,7 @@ import { notifyStage } from '../notification/notification.service.js'
 import { bookingRefById } from '../../lib/booking-ref.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { getRouteDistance, type RouteDistance } from '../maps/route-distance.service.js'
+import { busyDriversFor, driverBusyMessage } from '../../lib/driver-reservation.js'
 import {
   findExternalDriverForAssignment,
   issueInvite,
@@ -163,6 +164,26 @@ export async function assignBookingService(
       second ? assertDriverAssignable(second, currentFor(second), scheduleDate) : Promise.resolve(),
     ])
     secondDriverId = second
+  }
+
+  // One booking per driver, in either seat, on either path, until the vehicle
+  // from their last one is confirmed back at the parking. The company path's
+  // reservation flag already covers most of this for fleet drivers; for vendor
+  // drivers it is the only check there is.
+  const crewToCheck = input.is_vendor_supplied
+    ? [
+        { id: external!.driverId, name: external!.snapshot.vendor_driver_name ?? 'This vendor driver' },
+        externalSecond ? { id: externalSecond.driverId, name: externalSecond.snapshot.vendor_driver_name ?? 'The second driver' } : null,
+      ]
+    : [
+        { id: input.driver_id!, name: 'This driver' },
+        secondDriverId ? { id: secondDriverId, name: 'The second driver' } : null,
+      ]
+  const crew = crewToCheck.filter((c): c is { id: string; name: string } => c !== null)
+  const busy = await busyDriversFor(crew.map((c) => c.id), bookingId)
+  for (const c of crew) {
+    const b = busy.get(c.id)
+    if (b) throw new Error(driverBusyMessage(c.name, b))
   }
 
   // Does the chosen vehicle actually fit the load? Advisory, not a gate — see

@@ -201,6 +201,69 @@ export async function liveBookingForTruck(truckId: string): Promise<TruckBooking
   return null
 }
 
+/**
+ * The booking a driver is still tied to, in either seat.
+ *
+ * One driver, one booking — as the main driver or as the second, from the fleet
+ * or from a vendor. A driver is tied to a booking from the moment they are
+ * crewed on it until the vehicle is confirmed back at the parking
+ * (`fleet_return_at`); finishing the last drop-off is not enough, because they
+ * are still out wherever it was.
+ *
+ * Asked of `driver_assignments` rather than the reservation flag or
+ * `deliveries.driver_id`, because those only cover company drivers: a vendor
+ * driver is never reserved and never written to `deliveries.driver_id`, so
+ * before this nothing stopped one being put on two bookings at once. Every
+ * crew member, on both paths and in both seats, has a row here.
+ */
+export interface DriverBusy {
+  booking_id:       string
+  reference_number: string | null
+  crew_role:        'lead' | 'second'
+  /** Done delivering, but nobody has confirmed the vehicle is back. */
+  awaiting_return:  boolean
+}
+
+export async function busyDriversFor(
+  driverIds:        string[],
+  exceptBookingId?: string | null,
+): Promise<Map<string, DriverBusy>> {
+  const byId = new Map<string, DriverBusy>()
+  if (driverIds.length === 0) return byId
+
+  const { data, error } = await supabase
+    .from('driver_assignments')
+    .select('driver_id, crew_role, bookings!inner ( booking_id, reference_number, status, fleet_return_at )')
+    .in('driver_id', driverIds)
+    .neq('bookings.status', 'cancelled')
+  if (error) throw error
+
+  for (const row of (data ?? []) as any[]) {
+    const b = Array.isArray(row.bookings) ? row.bookings[0] : row.bookings
+    if (!b || b.booking_id === exceptBookingId || byId.has(row.driver_id)) continue
+    const finished = FINISHED_BOOKING_STATUSES.includes(b.status)
+    if (finished && b.fleet_return_at) continue
+    byId.set(row.driver_id, {
+      booking_id:       b.booking_id,
+      reference_number: b.reference_number ?? null,
+      crew_role:        row.crew_role === 'second' ? 'second' : 'lead',
+      awaiting_return:  finished,
+    })
+  }
+  return byId
+}
+
+/** The refusal for a driver who is still on another booking, in plain words. */
+export function driverBusyMessage(name: string, busy: DriverBusy): string {
+  const ref  = busy.reference_number ?? busy.booking_id
+  const seat = busy.crew_role === 'second' ? ' as the second driver' : ''
+  return busy.awaiting_return
+    ? `${name} is still on booking ${ref}${seat}: the vehicle has not been confirmed back at the parking yet. ` +
+      'They can take another booking once the return is confirmed.'
+    : `${name} is already on booking ${ref}${seat}. A driver can be on one booking at a time, ` +
+      'until the vehicle is confirmed back at the parking.'
+}
+
 export async function hasLiveDelivery(driverId: string): Promise<boolean> {
   // As the main driver or as the second driver.
   const { data, error } = await supabase

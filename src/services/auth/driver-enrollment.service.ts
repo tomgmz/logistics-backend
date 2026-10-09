@@ -4,6 +4,7 @@ import { createUserWithProfile } from '../../lib/user-provisioning.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import { unbanAuthUser } from '../admin/user-auth-status.service.js'
 import { logEvent } from '../../lib/log-event.js'
+import { busyDriversFor } from '../../lib/driver-reservation.js'
 import { buildDriverSetupUrl, sendDriverEnrollmentEmail } from '../../lib/brevo-mailer.js'
 import { INVITE_TTL_MS } from '../../lib/webauthn-config.js'
 import { hashToken } from './auth.service.js'
@@ -434,9 +435,16 @@ export async function listExternalDrivers() {
   const users = await DriverModel.findAllExternal()
   const ids   = users.map((u: any) => u.user_id as string)
 
-  const [credentials, invites] = await Promise.all([
+  const driverIds = users
+    .map((u: any) => (Array.isArray(u.drivers) ? u.drivers[0] : u.drivers)?.driver_id as string | undefined)
+    .filter((id): id is string => !!id)
+
+  const [credentials, invites, busy] = await Promise.all([
     WebauthnModel.listActiveCredentialsForUsers(ids),
     InviteModel.listForUsers(ids),
+    // So the crew picker can show who is still on a booking instead of letting
+    // operations pick them and be refused on save.
+    busyDriversFor(driverIds),
   ])
 
   const now = new Date()
@@ -445,8 +453,11 @@ export async function listExternalDrivers() {
     const openInvite = invites.find(
       (i) => i.user_id === u.user_id && i.status === 'sent' && new Date(i.expires_at) > now,
     )
+    const driverId = (Array.isArray(u.drivers) ? u.drivers[0] : u.drivers)?.driver_id as string | undefined
     return {
       ...u,
+      // The booking they are still on, if any (see busyDriversFor). Null = free.
+      current_booking: (driverId && busy.get(driverId)) || null,
       access: {
         passkey_count:     mine.length,
         last_used_at:      mine.map((c) => c.last_used_at).filter(Boolean).sort().pop() ?? null,
