@@ -27,6 +27,9 @@ export const createTruckSchema = z.object({
   odometer_km:        km,
   odometer_photo_url: photoUrl.optional().nullable(),
   ...schedule,
+  // Optional regular driver, so a vehicle can be paired as it is created
+  // instead of needing a second trip through Update Details.
+  assigned_driver_id: z.string().uuid().optional().nullable(),
 })
 
 export const updateTruckSchema = z.object({
@@ -70,13 +73,13 @@ export const recordTruckInspectionSchema = z.object({
     self:    z.boolean(),
   }),
   notes: z.string().max(500).optional().nullable(),
-  // The before-delivery odometer, typed by the Fleet Manager with a photo of the dash.
-  odometer_km:        km,
-  odometer_photo_url: photoUrl,
 })
 
-/** The after-delivery odometer, once the driver has stamped the return. */
-export const recordReturnOdometerSchema = z.object({
+/**
+ * An odometer reading off the dash, with its photo. The after-delivery reading
+ * when the vehicle is back from a job, otherwise an ad-hoc update.
+ */
+export const recordOdometerSchema = z.object({
   reading_km: km,
   photo_url:  photoUrl,
 })

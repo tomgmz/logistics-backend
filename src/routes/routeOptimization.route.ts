@@ -9,8 +9,15 @@ import * as RouteOptimizationController from '../controllers/maps/routeOptimizat
 
 const router = Router()
 
-const canViewRoute     = authorize('client', 'driver', 'dispatcher', 'admin')
-const canOptimizeRoute = authorize('dispatcher', 'admin', 'driver', 'client')
+// The same staff roles that can read a booking (see canViewBookings in
+// client.routes). This used to name a 'dispatcher' role that no longer exists,
+// which left the Operations Manager and Fleet Manager with a refused route on
+// Transit Tracking.
+const canViewRoute     = authorize(
+  'client', 'driver', 'admin',
+  'general_manager', 'operations_manager', 'fleet_manager',
+)
+const canOptimizeRoute = authorize('admin', 'operations_manager', 'driver', 'client')
 
 // `attachClientScope` pins the caller's own client_id from their session so the
 // controller can check it against the booking's owner. Without it a client could

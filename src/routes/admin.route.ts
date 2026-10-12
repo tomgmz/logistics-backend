@@ -5,7 +5,7 @@ import { authenticate, authorize, isRootAdmin }   from '../middlewares/auth.midd
 import { createAdminSchema, updateAdminSchema }                       from '../schema/admin/admin.schema.js'
 import { createClientSchema, updateClientSchema }                     from '../schema/admin/client.schema.js'
 import { createDriverSchema, updateDriverSchema }                     from '../schema/admin/driver.schema.js'
-import { createTruckSchema, updateTruckSchema, recordTruckInspectionSchema, recordReturnOdometerSchema, recordServiceSchema } from '../schema/admin/truck.schema.js'
+import { createTruckSchema, updateTruckSchema, recordTruckInspectionSchema, recordOdometerSchema, recordServiceSchema } from '../schema/admin/truck.schema.js'
 import { createTruckModelSchema, updateTruckModelSchema }             from '../schema/admin/truck-model.schema.js'
 import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../schema/admin/general_manager.schema.js'
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
@@ -33,6 +33,7 @@ import { requireModuleFlag } from '../middlewares/moduleAccess.middleware.js'
 import * as AuditLogController from '../controllers/admin/audit-logs.controller.js'
 import * as SystemLogController from '../controllers/admin/system-logs.controller.js'
 import * as ItDashboardController from '../controllers/admin/it-dashboard.controller.js'
+import * as StaffDashboardController from '../controllers/admin/staff-dashboard.controller.js'
 import * as PermissionsController from '../controllers/admin/permissions.controller.js'
 import { replacePermissionsSchema } from '../schema/admin/permissions.schema.js'
 import { uploadSingle }    from '../middlewares/upload.middleware.js'
@@ -168,7 +169,7 @@ router.post('/trucks/:id/inspections', authenticate, isFleet, lockGuard('truck',
 // Odometer and routine service. The before-delivery reading rides on the
 // inspection above; this is the after-delivery one, once the driver has
 // stamped the vehicle back in the lot.
-router.post('/trucks/:id/odometer', authenticate, isFleetUpkeep, lockGuard('truck', fromParam('id')), validate(recordReturnOdometerSchema), TruckController.recordReturnOdometer)
+router.post('/trucks/:id/odometer', authenticate, isFleetUpkeep, lockGuard('truck', fromParam('id')), validate(recordOdometerSchema), TruckController.recordOdometer)
 router.post('/trucks/:id/services', authenticate, isFleetUpkeep, lockGuard('truck', fromParam('id')), validate(recordServiceSchema), TruckController.recordService)
 router.get('/trucks/:id/upkeep',    authenticate, isCrewRelease, TruckController.getUpkeepHistory)
 router.post('/trucks',       authenticate, isFleet, validate(createTruckSchema), TruckController.createTruck)
@@ -273,6 +274,9 @@ router.patch('/system-logs/:id/resolve', authenticate, isItAdmin, SystemLogContr
 // IT Admin dashboard — system health, sign-in security and the account roster
 // in one read. IT Admin only, for the same reason as the system logs above.
 router.get('/it-dashboard', authenticate, isItAdmin, ItDashboardController.getSummary)
+// Staff dashboards — each desk's queues, plus the Company Administrator's
+// analytics. Counts and short reference lists only.
+router.get('/dashboard', authenticate, authorize('admin', 'it_admin', 'general_manager', 'operations_manager', 'fleet_manager'), StaffDashboardController.getSummary)
 
 // Document Management — a library over every stored file, plus paperwork staff
 // attach to a booking. Derived files (proof photos, client attachments, fleet

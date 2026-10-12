@@ -49,6 +49,8 @@ export interface CreateTruckInput extends TruckScheduleInput {
   /** Current odometer (km) — the vehicle's first reading. */
   odometer_km?:      number
   odometer_photo_url?: string | null
+  /** The vehicle's regular driver, when paired at creation. */
+  assigned_driver_id?: string | null
 }
 
 export interface UpdateTruckInput extends TruckScheduleInput {

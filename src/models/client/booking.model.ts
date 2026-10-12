@@ -105,7 +105,8 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
     notes,
     latitude,
     longitude,
-    created_at
+    created_at,
+    booking_trip_stops ( status )
   ),
   booking_cargo_items (
     item_id,

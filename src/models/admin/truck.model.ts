@@ -111,8 +111,8 @@ async function findByAssignedDriver(driverId: string) {
 async function create(input: CreateTruckInput) {
   const result = await pool.query(
     `INSERT INTO trucks (plate_number, model_id, service_interval_km, service_interval_months,
-                         last_service_at, last_service_odometer_km)
-     VALUES ($1, $2, $3, $4, $5, $6)
+                         last_service_at, last_service_odometer_km, assigned_driver_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
     [
       input.plate_number,
@@ -121,6 +121,7 @@ async function create(input: CreateTruckInput) {
       input.service_interval_months ?? null,
       input.last_service_at ?? null,
       input.last_service_odometer_km ?? null,
+      input.assigned_driver_id ?? null,
     ]
   )
   return findById(result.rows[0].truck_id)

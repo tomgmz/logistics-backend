@@ -1,3 +1,4 @@
+import { broadcast } from '../../lib/realtime.js'
 import { supabase } from '../../lib/supabase.js'
 import {
   OtpCode,
@@ -267,6 +268,13 @@ export async function revokeAllUserSessions(
     .is('revoked_reason', null)
 
   if (reasonError) throw reasonError
+
+  // Tell the user's open browsers and devices right away, so a session pushed
+  // out (signed in elsewhere, deactivated, ...) signs out without waiting for
+  // its next request. The signal carries no authority: each client re-checks
+  // its own session with the server, so the session that just signed in, which
+  // hears this too, stays put. Best effort.
+  void broadcast(`session:user:${userId}`, 'session_revoked', { reason }).catch(() => {})
 }
 
 /**

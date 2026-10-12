@@ -9,7 +9,9 @@ import { pool } from '../../lib/database.js'
  * history they are derived from.
  */
 
-export type OdometerKind = 'initial' | 'pre_trip' | 'post_trip' | 'service'
+// 'pre_trip' is historical: it was taken with the BLOWBAGETS inspection until
+// the two were separated. 'manual' is an update taken at any other time.
+export type OdometerKind = 'initial' | 'pre_trip' | 'post_trip' | 'service' | 'manual'
 
 export interface OdometerReadingInput {
   truck_id:       string

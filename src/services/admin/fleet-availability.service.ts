@@ -8,7 +8,8 @@ import {
 import { driverCalendarAllows } from '../driver/availability.service.js'
 import type { BlowbagetsItems } from '../../types/client/booking.types.js'
 import { logEvent } from '../../lib/log-event.js'
-import { assertServiceNotOverdue } from './truck-upkeep.service.js'
+import { assertServiceNotOverdue, assertReturnOdometerRecorded } from './truck-upkeep.service.js'
+import * as TruckModel from '../../models/admin/truck.model.js'
 
 /**
  * Availability rules shared by the assignment flow and the booking lifecycle.
@@ -159,6 +160,11 @@ export async function assertTruckAssignable(
       `${unreturned.reference_number ?? unreturned.booking_id} — it cannot be assigned until it is returned`,
     )
   }
+
+  // Back from its last job: the return odometer is owed before the next one,
+  // so every job is metered. (This used to block the BLOWBAGETS inspection.)
+  const truck = await TruckModel.findById(truckId)
+  if (truck) await assertReturnOdometerRecorded(truck)
 
   await assertInspectedSinceLastReturn(truckId)
 }

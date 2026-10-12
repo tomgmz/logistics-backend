@@ -166,6 +166,8 @@ function assertBaselinePlausible(input: {
 
 export async function createTruck(input: CreateTruckInput, actorId?: string | null) {
   assertBaselinePlausible(input, input.odometer_km)
+  // No truck id yet, so any existing pairing is "elsewhere".
+  if (input.assigned_driver_id) await assertDriverNotAlreadyPaired('', input.assigned_driver_id)
 
   const result = await TruckModel.create(input)
   if (result && input.odometer_km != null) {
@@ -185,6 +187,14 @@ export async function createTruck(input: CreateTruckInput, actorId?: string | nu
     description: `Vehicle ${input.plate_number} created`,
 
   })
+  if (input.assigned_driver_id) {
+    logEvent({
+      user_id:     actorId,
+      log_type:    'vehicle_activity',
+      action:      'vehicle_driver_paired',
+      description: `Vehicle ${input.plate_number} paired with driver ${input.assigned_driver_id}`,
+    })
+  }
 
   return result ? getTruckById(result.truck_id) : result
 }

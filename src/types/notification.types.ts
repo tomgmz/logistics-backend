@@ -9,6 +9,8 @@ export type NotificationType =
   | 'booking.gm_pending'           // new booking -> GMs (+ GM proxies) + admins
   | 'booking.rejected_gm'          // GM rejected -> client
   | 'booking.rejected_admin'       // admin rejected outright -> client
+  | 'booking.approved_gm'          // GM approved -> client
+  | 'booking.approved_admin'       // admin approved on their own authority -> client
   | 'booking.ops_pending'          // GM approved -> ops + admins
   | 'booking.assigned'             // ops assigned -> assigned driver(s)
   | 'booking.vehicle_assigned'     // ops assigned -> fleet + admins (informational)
@@ -66,6 +68,8 @@ export type NotificationStage =
   | 'gm_pending'
   | 'rejected_gm'
   | 'rejected_admin'
+  | 'approved_gm'
+  | 'approved_admin'
   | 'ops_pending'
   | 'assigned'
   | 'vehicle_assigned'

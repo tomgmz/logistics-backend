@@ -64,6 +64,10 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   gm_pending:       { type: 'booking.gm_pending',       audience: 'gm_approvers' },
   rejected_gm:      { type: 'booking.rejected_gm',      audience: 'client' },
   rejected_admin:   { type: 'booking.rejected_admin',   audience: 'client' },
+  // The other half of the decision: the client hears about an approval too, not
+  // only about a rejection.
+  approved_gm:      { type: 'booking.approved_gm',      audience: 'client' },
+  approved_admin:   { type: 'booking.approved_admin',   audience: 'client' },
   ops_pending:      { type: 'booking.ops_pending',      roles: ['operations_manager'] },
   assigned:         { type: 'booking.assigned',         audience: 'drivers' },
   vehicle_assigned: { type: 'booking.vehicle_assigned', roles: ['fleet_manager'] },
@@ -137,6 +141,16 @@ function copyFor(
     // Turned down by the administrator directly, without going to the GM.
     case 'rejected_admin':
       return { title: 'Booking rejected', body: `Your booking ${label} was not approved${reason ? `: ${reason}` : '.'}` }
+    case 'approved_gm':
+      return {
+        title: 'Booking approved',
+        body:  `Your booking ${label} was approved by the General Manager. We will let you know once a vehicle and driver are assigned.`,
+      }
+    case 'approved_admin':
+      return {
+        title: 'Booking approved',
+        body:  `Your booking ${label} was approved by the Company Administrator. We will let you know once a vehicle and driver are assigned.`,
+      }
     case 'ops_pending':
       return { title: 'Booking ready for assignment', body: `Booking ${label} was approved by the General Manager. Select a vehicle and driver.` }
     case 'assigned':
@@ -180,7 +194,7 @@ function copyFor(
       return {
         title: 'Vehicle back — BLOWBAGETS re-check due',
         body:  `${extra?.vehicleLabel ?? 'The vehicle'} is back in the parking lot after booking ${label}. ` +
-               'It cannot be assigned until it passes a new BLOWBAGETS inspection.',
+               'Record its return odometer; it cannot be assigned until that is in and it passes a new BLOWBAGETS inspection.',
       }
     case 'vehicle_out_of_service':
       return {

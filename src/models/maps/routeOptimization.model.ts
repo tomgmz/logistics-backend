@@ -19,7 +19,8 @@ async function getBookingWithDestinations(bookingId: string) {
         longitude,
         sequence_order,
         status,
-        notes
+        notes,
+        booking_trip_stops ( status )
       )
     `)
     .eq('booking_id', bookingId)

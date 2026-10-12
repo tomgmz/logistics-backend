@@ -2,8 +2,6 @@ import * as InspectionModel from '../../models/admin/truck-inspection.model.js'
 import * as TruckModel from '../../models/admin/truck.model.js'
 import { logEvent } from '../../lib/log-event.js'
 import type { BlowbagetsItems } from '../../types/client/booking.types.js'
-import * as UpkeepModel from '../../models/admin/truck-upkeep.model.js'
-import { assertReadingPlausible, assertReturnOdometerRecorded } from './truck-upkeep.service.js'
 import { liveBookingForTruck } from '../../lib/driver-reservation.js'
 import { BookingModel } from '../../models/client/booking.model.js'
 import { notifyStage } from '../notification/notification.service.js'
@@ -17,15 +15,17 @@ export const BLOWBAGETS_KEYS: (keyof BlowbagetsItems)[] = [
 export interface RecordInspectionInput {
   items:  BlowbagetsItems
   notes?: string | null
-  /** The before-delivery odometer, with a photo of the dash. */
-  odometer_km:        number
-  odometer_photo_url: string
 }
 
 /**
  * Record a fleet manager's inspection of a vehicle. The inspection passes only
  * when every item is ticked; a single fault fails it, and a failed vehicle drops
  * out of the operations selection list until it passes a re-check.
+ *
+ * The odometer is no longer taken here. It is its own record (Update Odometer,
+ * truck-upkeep.service): set at creation, owed when the vehicle comes back from
+ * a job, and updatable whenever the Fleet Manager or Company Administrator reads
+ * it, so a re-check before a resumed multi-trip run needs no new reading.
  */
 export async function recordInspection(
   truckId: string,
@@ -34,11 +34,6 @@ export async function recordInspection(
 ) {
   const truck = await TruckModel.findById(truckId)
   if (!truck) throw new Error('Truck not found')
-
-  // A vehicle back from a delivery owes its after-delivery reading first, so
-  // every job is metered at both ends.
-  await assertReturnOdometerRecorded(truck)
-  assertReadingPlausible(truck, input.odometer_km)
 
   const items  = Object.fromEntries(
     BLOWBAGETS_KEYS.map((key) => [key, input.items[key] === true]),
@@ -51,15 +46,6 @@ export async function recordInspection(
     passed,
     notes:        input.notes ?? null,
     inspected_by: actorId ?? null,
-  })
-
-  await UpkeepModel.insertReading({
-    truck_id:      truckId,
-    reading_km:    input.odometer_km,
-    kind:          'pre_trip',
-    photo_url:     input.odometer_photo_url,
-    inspection_id: inspection.inspection_id,
-    recorded_by:   actorId ?? null,
   })
 
   // A failed inspection also takes the vehicle out of service so it can't be

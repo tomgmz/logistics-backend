@@ -110,11 +110,11 @@ export async function archiveTruck(req: Request, res: Response) {
   }
 }
 
-// The after-delivery odometer (the before-delivery one rides on the inspection).
-export async function recordReturnOdometer(req: Request, res: Response) {
+// An odometer reading: the after-delivery one when owed, otherwise an update.
+export async function recordOdometer(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
-    const data = await UpkeepService.recordReturnOdometer(param(req.params.id), req.body, userId)
+    const data = await UpkeepService.recordOdometerReading(param(req.params.id), req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (err: any) {
     res.status(upkeepStatus(err.message)).json({ status: 'error', message: err.message })

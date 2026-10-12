@@ -19,6 +19,7 @@ import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay, phDay } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers, emailDeliveryConfirm } from '../notification/notification.service.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
+import { revokeVendorCrewAfterCompletion } from '../auth/driver-enrollment.service.js'
 import { assertBookingVehicleInService, crewOnBooking, releaseCrew } from '../admin/fleet-availability.service.js'
 import {
   assertStopProximity,
@@ -503,6 +504,7 @@ export async function updateBookingStatusService(
       description: `Booking ${bookingRef(advanced ?? booking)} approved; routed to the Operations Manager`,
     })
     void notifyStage('ops_pending', advanced ?? booking)
+    void notifyStage('approved_admin', advanced ?? booking)
   }
 
   // The delivery is over: settle the delivery record and hand the driver and
@@ -582,6 +584,7 @@ export async function gmReviewService(
   // send to operations to select a vehicle and driver.
   const advanced = await BookingModel.updateStatus(bookingId, 'approved')
   void notifyStage('ops_pending', advanced ?? booking)
+  void notifyStage('approved_gm', advanced ?? booking)
 
   return advanced ?? booking
 }
@@ -1065,6 +1068,7 @@ export async function confirmCompletionService(
     action:      'booking_completion_confirmed_by_client',
     description: `Client confirmed booking ${bookingRef(booking)} is complete`,
   })
+  void revokeVendorCrewAfterCompletion(bookingId, bookingRef(booking))
 
   return booking
 }
@@ -1151,10 +1155,12 @@ export async function reportDeliveryIssueService(
 export async function autoCompleteBookingService(bookingId: string): Promise<boolean> {
   const done = await BookingModel.markCompleted(bookingId, { by: null, role: null, auto: true })
   if (!done) return false
+  const ref = await bookingRefById(bookingId)
+  void revokeVendorCrewAfterCompletion(bookingId, ref)
   logEvent({
     log_type:    'booking',
     action:      'booking_auto_completed',
-    description: `Booking ${await bookingRefById(bookingId)} completed automatically — no confirmation or problem report within ${AUTO_COMPLETE_DAYS} days of delivery`,
+    description: `Booking ${ref} completed automatically — no confirmation or problem report within ${AUTO_COMPLETE_DAYS} days of delivery`,
   })
   return true
 }

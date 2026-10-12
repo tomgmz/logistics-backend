@@ -397,6 +397,18 @@ export async function optimizeBookingRouteService(
   }
 }
 
+/** Loads bound for a drop-off across the trips, and how many have unloaded. */
+function loadsOf(dest: { status: string; booking_trip_stops?: { status: string }[] | null }) {
+  const visits = dest.booking_trip_stops ?? []
+  if (visits.length === 0) {
+    return { loads_total: 1, loads_done: dest.status === 'delivered' ? 1 : 0 }
+  }
+  return {
+    loads_total: visits.length,
+    loads_done:  visits.filter((v) => v.status === 'delivered').length,
+  }
+}
+
 export async function getOptimizedRouteService(
   bookingId: string
 ): Promise<OptimizeRouteResponse> {
@@ -425,6 +437,7 @@ export async function getOptimizedRouteService(
       sequence_order: number
       status: 'pending' | 'delivered' | 'failed'
       notes: string | null
+      booking_trip_stops?: { status: string }[] | null
     }) => {
       if (dest.latitude == null || dest.longitude == null) {
         throw new Error(`Destination ${dest.destination_id} is missing coordinates — re-run optimization`)
@@ -437,6 +450,9 @@ export async function getOptimizedRouteService(
         optimized_sequence_order: dest.sequence_order,
         status:                   dest.status,
         notes:                    dest.notes ?? null,
+        // A drop-off split over several trips takes one unload (and one proof
+        // photo) per trip; it is delivered only when the last of them is in.
+        ...loadsOf(dest),
       }
     })
 

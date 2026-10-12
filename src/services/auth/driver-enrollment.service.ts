@@ -346,11 +346,15 @@ export async function reinvite(userId: string, actorId?: string | null): Promise
  * deactivates the account. What it does NOT touch is the delivery's vendor
  * snapshot or vendor_driver_user_id — that is the record of who drove, and it
  * outlives the access.
+ *
+ * The account is flagged (drivers.access_revoked_*) with when, why and, for an
+ * automatic revoke, which booking, so Driver Management can show it.
  */
 export async function revokeExternalDriver(
   userId:  string,
   actorId?: string | null,
   reason   = 'Offboarded',
+  bookingId: string | null = null,
 ): Promise<{ credentialsRevoked: number }> {
   const { data, error } = await supabase
     .from('users')
@@ -374,6 +378,16 @@ export async function revokeExternalDriver(
     .update({ status: 'inactive' })
     .eq('user_id', userId)
   if (userErr) throw userErr
+
+  const { error: flagErr } = await supabase
+    .from('drivers')
+    .update({
+      access_revoked_at:         new Date().toISOString(),
+      access_revoked_reason:     reason,
+      access_revoked_booking_id: bookingId,
+    })
+    .eq('user_id', userId)
+  if (flagErr) throw flagErr
 
   logEvent({
     user_id:     actorId,
@@ -412,6 +426,12 @@ export async function restoreExternalDriver(userId: string, actorId?: string | n
 
   await reactivateAccount(userId)
 
+  const { error: flagErr } = await supabase
+    .from('drivers')
+    .update({ access_revoked_at: null, access_revoked_reason: null, access_revoked_booking_id: null })
+    .eq('user_id', userId)
+  if (flagErr) throw flagErr
+
   logEvent({
     user_id:     actorId,
     log_type:    'user_management',
@@ -425,6 +445,46 @@ export async function restoreExternalDriver(userId: string, actorId?: string | n
     firstName: data.first_name,
     actorId,
   })
+}
+
+/**
+ * Close a vendor driver's app access once the booking they drove is done.
+ *
+ * Runs when the booking completes, which is the client's call: their own
+ * confirmation, or the 3-day auto-complete that stands in for it. Every vendor
+ * driver on the booking (main or second) is revoked unless they are already
+ * crewed on another booking that is still open, in which case cutting them off
+ * would strand that job. Best effort: a failure is logged, the completion
+ * stands.
+ */
+export async function revokeVendorCrewAfterCompletion(bookingId: string, bookingLabel: string): Promise<void> {
+  try {
+    const { data, error } = await supabase
+      .from('driver_assignments')
+      .select('driver_id, drivers!inner ( user_id, is_external, users!drivers_user_id_fkey ( status ) )')
+      .eq('booking_id', bookingId)
+    if (error) throw error
+
+    for (const row of (data ?? []) as any[]) {
+      const d    = Array.isArray(row.drivers) ? row.drivers[0] : row.drivers
+      const user = Array.isArray(d?.users) ? d.users[0] : d?.users
+      if (!d?.is_external || !d.user_id || user?.status !== 'active') continue
+
+      const { data: others, error: othersErr } = await supabase
+        .from('driver_assignments')
+        .select('booking_id, bookings!inner ( status )')
+        .eq('driver_id', row.driver_id)
+        .neq('booking_id', bookingId)
+        .not('bookings.status', 'in', '(cancelled,completed)')
+        .limit(1)
+      if (othersErr) throw othersErr
+      if ((others ?? []).length > 0) continue
+
+      await revokeExternalDriver(d.user_id, null, `Booking ${bookingLabel} completed`, bookingId)
+    }
+  } catch (err) {
+    console.error('[vendor-access] auto-revoke after completion failed', bookingId, err)
+  }
 }
 
 /**

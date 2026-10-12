@@ -8,12 +8,14 @@ import { logEvent } from '../../lib/log-event.js'
 /**
  * Odometer and routine-service upkeep for a vehicle.
  *
- * The Fleet Manager types the odometer, with a photo of the dash, before and
- * after every delivery:
- *   before — at the BLOWBAGETS inspection (truck-inspection.service)
- *   after  — once the driver has stamped the vehicle back in the lot
- *            (recordReturnOdometer). The next BLOWBAGETS is refused until
- *            this reading exists, so a job can't go unmetered.
+ * The odometer is kept apart from the BLOWBAGETS inspection. The Fleet Manager
+ * or Company Administrator types it, with a photo of the dash:
+ *   at creation — the vehicle's first reading
+ *   on return   — once the driver has stamped the vehicle back in the lot. The
+ *                 vehicle can't be assigned again until this reading exists, so
+ *                 a job can't go unmetered.
+ *   any time    — e.g. a multi-trip run paused for weather and the vehicle
+ *                 came back to the parking lot in between.
  */
 
 /** The schedule fields of a truck row, with the `date` column as `YYYY-MM-DD`. */
@@ -63,43 +65,43 @@ export async function assertReturnOdometerRecorded(truck: any): Promise<void> {
   if (returnOdometerDue(truck, lastReturn)) {
     throw new Error(
       `${truck.plate_number} is back from a delivery — record its return odometer ` +
-      'before the next BLOWBAGETS inspection',
+      'before it can be assigned again',
     )
   }
 }
 
-/** The after-delivery reading. */
-export async function recordReturnOdometer(
+/**
+ * Record an odometer reading. When the vehicle is back from a job and still owes
+ * its after-delivery reading, this is that reading, linked to the booking.
+ * Otherwise it is an ad-hoc update.
+ */
+export async function recordOdometerReading(
   truckId: string,
   input: { reading_km: number; photo_url: string },
   actorId?: string | null,
 ) {
   const truck = await TruckModel.findById(truckId)
   if (!truck) throw new Error('Truck not found')
+  if (truck.status === 'archived') throw new Error('An archived vehicle cannot have its odometer updated')
 
-  const lastReturn = await lastFleetReturnFor(truckId)
-  if (!returnOdometerDue(truck, lastReturn)) {
-    throw new Error(
-      `${truck.plate_number} has no delivery waiting for a return reading — ` +
-      'the before-delivery reading is taken with the BLOWBAGETS inspection',
-    )
-  }
   assertReadingPlausible(truck, input.reading_km)
+  const isReturn = returnOdometerDue(truck, await lastFleetReturnFor(truckId))
 
   const reading = await UpkeepModel.insertReading({
     truck_id:    truckId,
     reading_km:  input.reading_km,
-    kind:        'post_trip',
+    kind:        isReturn ? 'post_trip' : 'manual',
     photo_url:   input.photo_url,
-    booking_id:  await UpkeepModel.lastReturnedBookingId(truckId),
+    booking_id:  isReturn ? await UpkeepModel.lastReturnedBookingId(truckId) : null,
     recorded_by: actorId ?? null,
   })
 
   logEvent({
     user_id:     actorId,
     log_type:    'vehicle_activity',
-    action:      'vehicle_odometer_return',
-    description: `Return odometer for ${truck.plate_number}: ${input.reading_km.toLocaleString()} km`,
+    action:      isReturn ? 'vehicle_odometer_return' : 'vehicle_odometer_updated',
+    description: `${isReturn ? 'Return odometer' : 'Odometer updated'} for ${truck.plate_number}: ` +
+      `${input.reading_km.toLocaleString()} km`,
   })
 
   return reading
