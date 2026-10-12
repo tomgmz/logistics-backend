@@ -12,6 +12,7 @@ import { authenticate, verifyCsrfToken } from './middlewares/auth.middleware.js'
 import { moduleGuard } from './middlewares/moduleAccess.middleware.js';
 import clientRoutes from './routes/client.routes.js';
 import routeOptimizationRoutes from './routes/routeOptimization.route.js';
+import supportRoutes from './routes/support.routes.js';
 import authRoutes from './routes/auth.route.js';
 import directionsRouter from './routes/directions.routes.js'
 import driverRoutes from './routes/driver.route.js'
@@ -140,6 +141,9 @@ app.use('/api/admin', authenticate, moduleGuard, adminRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/messaging', messagingRoutes);
 app.use('/api/notifications', notificationsRoutes);
+
+// Client support tickets from the web FAQ chatbot; resolved by email.
+app.use('/api/support', supportRoutes);
 
 // Record locks: who is editing what, so two staff never edit one record at once.
 // The write guard on each mutating route is the real gate — see lib/record-lock.

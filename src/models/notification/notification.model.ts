@@ -65,6 +65,22 @@ export async function listForUser(
   return (data ?? []) as NotificationRow[]
 }
 
+/** One numbered page, newest first, with the total for the pager. */
+export async function pageForUser(
+  userId: string,
+  opts: { page: number; limit: number },
+): Promise<{ items: NotificationRow[]; total: number }> {
+  const from = (opts.page - 1) * opts.limit
+  const { data, error, count } = await supabase
+    .from('notifications')
+    .select('*', { count: 'exact' })
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .range(from, from + opts.limit - 1)
+  if (error) throw error
+  return { items: (data ?? []) as NotificationRow[], total: count ?? 0 }
+}
+
 export async function countUnread(userId: string): Promise<number> {
   const { count, error } = await supabase
     .from('notifications')

@@ -12,6 +12,11 @@ import { driverStopProofSchema } from './booking.schema.js'
 
 export const tripStopProofSchema = driverStopProofSchema
 
+/** The driver's chosen drop-off order for one trip, as trip stop ids. */
+export const tripStopOrderSchema = z.object({
+  trip_stop_ids: z.array(z.string().uuid()).min(1).max(20),
+})
+
 /**
  * Operations' trip plan for a booking: how many runs the truck makes and which
  * drop-offs each run serves.

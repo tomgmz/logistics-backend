@@ -1,5 +1,6 @@
 import { GoogleAuth } from 'google-auth-library'
 import axios from 'axios'
+import { supabase } from '../../lib/supabase.js'
 import { RouteOptimizationModel } from '../../models/maps/routeOptimization.model.js'
 import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from '../../lib/log-system.js'
 import {
@@ -465,7 +466,29 @@ export async function getOptimizedRouteService(
     },
     optimized_stops: stops,
     total_stops:     stops.length,
+    heading_to_destination_id: await headingTo(bookingId),
   }
+}
+
+/**
+ * The drop-off the truck is driving to: the first outstanding stop, in the
+ * run's own order (which follows the driver's choice), on the run that is
+ * loaded. Null before loading, between runs and after the last one.
+ */
+async function headingTo(bookingId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('booking_trips')
+    .select('trip_number, booking_trip_stops ( destination_id, sequence_order, status )')
+    .eq('booking_id', bookingId)
+    .eq('status', 'in_transit')
+    .order('trip_number', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (error || !data) return null
+  const next = ((data as any).booking_trip_stops ?? [])
+    .filter((s: { status: string }) => s.status === 'pending')
+    .sort((a: { sequence_order: number }, b: { sequence_order: number }) => a.sequence_order - b.sequence_order)[0]
+  return next?.destination_id ?? null
 }
 
 export async function geocodeAddressService(address: string): Promise<GeocodeResult> {

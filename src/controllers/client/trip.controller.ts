@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import {
+  driverSetStopOrderService,
   getTripsService,
   setTripPlanService,
   driverConfirmTripPickupService,
@@ -137,6 +138,19 @@ export const driverConfirmTripStop = async (req: Request, res: Response) => {
     res.status(200).json({ status: 'success', data: stop })
   } catch (error: any) {
     stopProofFailure(res, error)
+  }
+}
+
+export const driverSetStopOrder = async (req: Request, res: Response) => {
+  try {
+    const trip = await driverSetStopOrderService(
+      param(req.params.tripId),
+      req.body.trip_stop_ids,
+      driverActor(req),
+    )
+    res.status(200).json({ status: 'success', data: trip })
+  } catch (error: any) {
+    res.status(tripProgressStatus(error.message)).json({ status: 'error', message: error.message })
   }
 }
 

@@ -1875,3 +1875,194 @@ ${emailFooterText(reason)}
     throw new Error(`Failed to send delivery confirmation email: ${error}`)
   }
 }
+
+// ---------------------------------------------------------------------------
+// Client support tickets (raised from the web FAQ chatbot). Resolved by email:
+// the ticket goes to the company inbox with the client as reply-to, so staff
+// answer it from the inbox; the client gets a receipt with the reference, and a
+// short note when staff mark it resolved. Same inbox as the contact form
+// (CONTACT_INBOX_EMAIL), testing mailbox for now.
+// ---------------------------------------------------------------------------
+
+export interface SupportTicketEmailParams {
+  reference:   string
+  clientName:  string
+  companyName: string | null
+  email:       string
+  category:    string
+  subject:     string
+  message:     string
+  bookingRef:  string | null
+  /** What the chatbot showed before the client asked for a person. */
+  transcript:  Array<{ from: 'client' | 'bot'; text: string }>
+}
+
+function supportEmailHtml(title: string, introHtml: string, bodyHtml: string, footerReason: string): string {
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head><meta charset="UTF-8"><title>${escapeHtml(title)}</title></head>
+    <body style="margin:0;padding:0;background-color:#f6f6f6;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
+        <tr>
+          <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0"
+              style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;">
+              <tr>
+                <td style="background-color:#0a0a0a;padding:32px 40px;">
+                  <h1 style="margin:0;font-family:Arial,sans-serif;font-size:22px;color:#ffffff;font-weight:700;letter-spacing:0.05em;">${APP_NAME}</h1>
+                  <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:12px;color:#818181;letter-spacing:0.12em;text-transform:uppercase;">${escapeHtml(title)}</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:36px 40px 12px 40px;">
+                  <p style="margin:0 0 20px 0;font-family:Arial,sans-serif;font-size:16px;color:#333333;line-height:1.6;">${introHtml}</p>
+                  ${bodyHtml}
+                </td>
+              </tr>
+              ${emailFooterHtml(footerReason)}
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+  `
+}
+
+function supportRowsHtml(rows: Array<[string, string]>): string {
+  return `<table cellpadding="0" cellspacing="0" border="0">${rows.map(([label, value]) => `
+    <tr>
+      <td style="padding:6px 16px 6px 0;font-family:Arial,sans-serif;font-size:14px;color:#818181;white-space:nowrap;vertical-align:top;">${label}</td>
+      <td style="padding:6px 0;font-family:Arial,sans-serif;font-size:14px;color:#333333;">${escapeHtml(value)}</td>
+    </tr>`).join('')}</table>`
+}
+
+function supportBlockHtml(label: string, text: string): string {
+  return `<p style="margin:24px 0 8px 0;font-family:Arial,sans-serif;font-size:14px;color:#818181;">${label}</p>
+    <div style="padding:16px;background-color:#f6f6f6;border-radius:6px;font-family:Arial,sans-serif;font-size:14px;color:#333333;line-height:1.6;">${escapeHtml(text).replace(/\r?\n/g, '<br>')}</div>`
+}
+
+async function sendSupportEmail(params: {
+  subject: string; html: string; text: string
+  to: { email: string; name?: string }; replyTo?: { email: string; name?: string }
+  what: string
+}): Promise<void> {
+  if (!process.env.BREVO_API_KEY)      throw new Error('Brevo is not configured. Please set BREVO_API_KEY.')
+  if (!process.env.BREVO_SENDER_EMAIL) throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
+  try {
+    await getBrevoClient().transactionalEmails.sendTransacEmail({
+      subject:     params.subject,
+      htmlContent: params.html,
+      textContent: params.text,
+      sender:      { name: FROM_NAME, email: FROM_EMAIL },
+      to:          [params.to],
+      ...(params.replyTo ? { replyTo: params.replyTo } : {}),
+    })
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err.message : String(err)
+    logSystem({
+      log_level:  'error',
+      event_type: 'email_event',
+      source:     'brevo-mailer',
+      message:    `Failed to send ${params.what}: ${error}`,
+    })
+    throw new Error(`Failed to send ${params.what}: ${error}`)
+  }
+}
+
+/** The new ticket, to the company inbox. Replying answers the client directly. */
+export async function sendSupportTicketEmail(p: SupportTicketEmailParams): Promise<void> {
+  const rows: Array<[string, string]> = [
+    ['Ticket',   p.reference],
+    ['Client',   p.clientName],
+    ['Company',  p.companyName ?? 'Not given'],
+    ['Email',    p.email],
+    ['Topic',    p.category],
+    ['Booking',  p.bookingRef ?? 'None'],
+    ['Received', formatManilaTimestamp()],
+  ]
+  const transcript = p.transcript.length
+    ? p.transcript.map((m) => `${m.from === 'client' ? 'Client' : 'Assistant'}: ${m.text}`).join('\n')
+    : ''
+  const intro = `A client opened a support ticket from the help assistant on the website. Reply to this email to answer them directly, and mark ${p.reference} resolved on the dashboard once it is settled.`
+  const html = supportEmailHtml(
+    'Support Ticket',
+    escapeHtml(intro),
+    supportRowsHtml(rows) +
+      supportBlockHtml(`Subject: ${escapeHtml(p.subject)}`, p.message) +
+      (transcript ? supportBlockHtml('What the assistant already suggested', transcript) : ''),
+    `Sent from the help assistant on the ${APP_NAME} website.`,
+  )
+  const text = [
+    intro,
+    '',
+    ...rows.map(([l, v]) => `${l}: ${v}`),
+    '',
+    `Subject: ${p.subject}`,
+    p.message,
+    ...(transcript ? ['', 'What the assistant already suggested:', transcript] : []),
+    '',
+    '---',
+    emailFooterText(`Sent from the help assistant on the ${APP_NAME} website.`),
+  ].join('\n')
+
+  await sendSupportEmail({
+    subject: `[${p.reference}] ${p.subject}`,
+    html, text,
+    to:      { email: CONTACT_INBOX_EMAIL },
+    replyTo: { email: p.email, name: p.clientName },
+    what:    'support ticket email',
+  })
+}
+
+/** The client's copy: we have it, here is the reference, we answer by email. */
+export async function sendSupportTicketReceiptEmail(p: {
+  reference: string; clientName: string; email: string; subject: string; message: string
+}): Promise<void> {
+  const plain = `Hi ${p.clientName}, we received your support ticket ${p.reference}. Our team will reply to this email address. You can also reply to this email to add details.`
+  const html = supportEmailHtml(
+    'Support Ticket Received',
+    escapeHtml(plain),
+    supportBlockHtml(`Subject: ${escapeHtml(p.subject)}`, p.message),
+    `You opened a support ticket on the ${APP_NAME} website.`,
+  )
+  const text = [
+    plain, '', `Subject: ${p.subject}`, p.message, '', '---',
+    emailFooterText(`You opened a support ticket on the ${APP_NAME} website.`),
+  ].join('\n')
+
+  await sendSupportEmail({
+    subject: `We received your ticket ${p.reference}`,
+    html, text,
+    to:      { email: p.email, name: p.clientName },
+    replyTo: { email: CONTACT_INBOX_EMAIL },
+    what:    'support ticket receipt',
+  })
+}
+
+/** Staff marked the ticket resolved. */
+export async function sendSupportTicketResolvedEmail(p: {
+  reference: string; clientName: string; email: string; subject: string; note: string | null
+}): Promise<void> {
+  const plain = `Hi ${p.clientName}, your support ticket ${p.reference} (${p.subject}) has been marked resolved. If something is still wrong, reply to this email or open a new ticket from the help assistant.`
+  const html = supportEmailHtml(
+    'Support Ticket Resolved',
+    escapeHtml(plain),
+    p.note ? supportBlockHtml('Note from our team', p.note) : '',
+    `You opened a support ticket on the ${APP_NAME} website.`,
+  )
+  const text = [
+    plain,
+    ...(p.note ? ['', 'Note from our team:', p.note] : []),
+    '', '---', emailFooterText(`You opened a support ticket on the ${APP_NAME} website.`),
+  ].join('\n')
+
+  await sendSupportEmail({
+    subject: `Ticket ${p.reference} resolved`,
+    html, text,
+    to:      { email: p.email, name: p.clientName },
+    replyTo: { email: CONTACT_INBOX_EMAIL },
+    what:    'support ticket resolved email',
+  })
+}

@@ -16,7 +16,7 @@ import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 import { logEvent } from '../../lib/log-event.js'
 import { badRequest } from '../../lib/http-error.js'
 import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
-import { isBeforeScheduledDay, phDay } from '../../lib/ph-date.js'
+import { isBeforeScheduledDay, phDay, phDayPlusMonth } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers, emailDeliveryConfirm } from '../notification/notification.service.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { revokeVendorCrewAfterCompletion } from '../auth/driver-enrollment.service.js'
@@ -50,10 +50,11 @@ function validateScheduleDate(scheduleDate: string): void {
     throw badRequest(`Booking must be scheduled at least a day ahead (earliest: ${earliest})`)
   }
 
-  const oneYearOut = new Date()
-  oneYearOut.setFullYear(oneYearOut.getFullYear() + 1)
-  if (scheduled > phDay(oneYearOut)) {
-    throw badRequest('Booking cannot be scheduled more than 1 year in advance')
+  // At most one month ahead (company rule, 2026-10-12): the same calendar day
+  // next month is the last bookable day.
+  const latest = phDayPlusMonth()
+  if (scheduled > latest) {
+    throw badRequest(`Booking cannot be scheduled more than 1 month in advance (latest: ${latest})`)
   }
 }
 

@@ -18,6 +18,10 @@ export function listNotifications(userId: string, opts: { limit: number; before?
   return model.listForUser(userId, opts)
 }
 
+export function pageNotifications(userId: string, opts: { page: number; limit: number }) {
+  return model.pageForUser(userId, opts)
+}
+
 export function getUnreadCount(userId: string) {
   return model.countUnread(userId)
 }

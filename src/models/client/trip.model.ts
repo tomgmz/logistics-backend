@@ -343,7 +343,31 @@ async function setFleetReturn(
   if (error) throw error
 }
 
+/**
+ * Rewrite one trip's drop-off order: `orderedStopIds` first, in that order,
+ * then the rest in their current order. Only the order within the trip moves;
+ * the booking's own drop-off numbering (booking_destinations.sequence_order) is
+ * untouched, so "Drop-off 3" stays drop-off 3.
+ */
+async function setStopOrder(tripId: string, orderedStopIds: string[]): Promise<void> {
+  const trip = await findById(tripId)
+  if (!trip) throw new Error(`Trip with ID ${tripId} not found`)
+
+  const current = trip.booking_trip_stops.map((s) => s.trip_stop_id)
+  const named   = orderedStopIds.filter((id) => current.includes(id))
+  const next    = [...named, ...current.filter((id) => !named.includes(id))]
+
+  for (const [i, id] of next.entries()) {
+    const { error } = await supabase
+      .from('booking_trip_stops')
+      .update({ sequence_order: i + 1, updated_at: new Date().toISOString() })
+      .eq('trip_stop_id', id)
+    if (error) throw error
+  }
+}
+
 export default {
+  setStopOrder,
   findByBookingId,
   findById,
   findStopById,

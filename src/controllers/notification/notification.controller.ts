@@ -15,6 +15,19 @@ export async function list(req: Request, res: Response) {
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(1, limitRaw), 100) : 30
     const before = typeof req.query.before === 'string' && req.query.before ? req.query.before : null
 
+    // Numbered pages for the web bell: ?page=N returns that page plus the total.
+    // Without it the response is the plain list the driver app reads.
+    const pageRaw = parseInt(String(req.query.page ?? ''), 10)
+    if (Number.isFinite(pageRaw) && pageRaw >= 1) {
+      const { items, total } = await service.pageNotifications(userId, { page: pageRaw, limit })
+      res.status(200).json({
+        status: 'success',
+        data:   items,
+        meta:   { page: pageRaw, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+      })
+      return
+    }
+
     const items = await service.listNotifications(userId, { limit, before })
     res.status(200).json({ status: 'success', data: items })
   } catch (error: any) {

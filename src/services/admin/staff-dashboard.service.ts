@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { phDay } from '../../lib/ph-date.js'
 import { getAllTrucks } from './truck.service.js'
+import { listTickets } from '../support/support.service.js'
 
 /**
  * The staff dashboards: what is waiting on each desk, plus the Company
@@ -111,11 +112,12 @@ function lastDays(days: number): string[] {
 }
 
 export async function getStaffDashboard() {
-  const [bookings, trucks, reports, flaggedVendors] = await Promise.all([
+  const [bookings, trucks, reports, flaggedVendors, openTickets] = await Promise.all([
     loadBookings(),
     getAllTrucks(),
     openDriverReports(),
     flaggedVendorDrivers(),
+    listTickets('open'),
   ])
 
   const today    = phDay()
@@ -199,6 +201,21 @@ export async function getStaffDashboard() {
       ...Object.fromEntries(Object.entries(vehicles).map(([k, v]) => [k, { count: v.length, items: v.slice(0, LIST_LIMIT) }])),
     },
     open_driver_reports:    reports,
+    // Client support tickets waiting on a reply (oldest first). Answered by
+    // email; marked resolved from the dashboard.
+    support_tickets: {
+      count: openTickets.length,
+      items: openTickets.slice(0, 8).map((t: any) => ({
+        ticket_id:  t.ticket_id,
+        reference:  t.reference,
+        subject:    t.subject,
+        category:   t.category,
+        client:     (Array.isArray(t.clients) ? t.clients[0] : t.clients)?.company_name ?? null,
+        email:      (Array.isArray(t.opener) ? t.opener[0] : t.opener)?.email ?? null,
+        booking:    (Array.isArray(t.bookings) ? t.bookings[0] : t.bookings)?.reference_number ?? null,
+        created_at: t.created_at,
+      })),
+    },
     flagged_vendor_drivers: flaggedVendors,
     analytics: {
       series:      days.map((d) => ({ day: d, created: created.get(d)!, delivered: delivered.get(d)! })),

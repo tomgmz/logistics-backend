@@ -17,6 +17,22 @@ export function phDay(at: Date | number = Date.now()): string {
   return new Date(ms + PH_OFFSET_MS).toISOString().slice(0, 10)
 }
 
+/**
+ * The same calendar day one month on, in Philippine time, as `YYYY-MM-DD`.
+ * The latest day a booking can be scheduled for. A day that doesn't exist next
+ * month (Jan 31) rolls to the next month's last day rather than overflowing.
+ */
+export function phDayPlusMonth(at: Date | number = Date.now()): string {
+  const ms   = typeof at === 'number' ? at : at.getTime()
+  const d    = new Date(ms + PH_OFFSET_MS)
+  const day  = d.getUTCDate()
+  d.setUTCDate(1)
+  d.setUTCMonth(d.getUTCMonth() + 1)
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()
+  d.setUTCDate(Math.min(day, last))
+  return d.toISOString().slice(0, 10)
+}
+
 /** A `date` value from the database, normalised to `YYYY-MM-DD`. */
 export function asDay(value: string | Date | null | undefined): string | null {
   if (!value) return null

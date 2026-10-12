@@ -286,7 +286,26 @@ async function remainingStops(bookingId: string): Promise<EtaStop[]> {
 
   if (error) throw error
 
-  return (data ?? [])
+  // The run being driven sets the order (the driver may have chosen which
+  // drop-off to do next); anything not on it follows in the office's order.
+  const { data: trip } = await supabase
+    .from('booking_trips')
+    .select('trip_number, booking_trip_stops ( destination_id, sequence_order, status )')
+    .eq('booking_id', bookingId)
+    .eq('status', 'in_transit')
+    .order('trip_number', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  const runOrder = new Map<string, number>(
+    ((trip as any)?.booking_trip_stops ?? [])
+      .filter((s: { status: string }) => s.status === 'pending')
+      .sort((a: { sequence_order: number }, b: { sequence_order: number }) => a.sequence_order - b.sequence_order)
+      .map((s: { destination_id: string }, i: number) => [s.destination_id, i] as const),
+  )
+  const rank = (id: string) => runOrder.get(id) ?? Number.MAX_SAFE_INTEGER
+  const ordered = [...(data ?? [])].sort((a: any, b: any) => rank(a.destination_id) - rank(b.destination_id))
+
+  return ordered
     // A stop the office never geocoded cannot be routed to. Skipping it gives a
     // slightly optimistic ETA for the stops after it, which is better than no
     // ETA at all for any of them.

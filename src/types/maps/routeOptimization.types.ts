@@ -27,6 +27,8 @@ export interface OptimizedStop {
 
 export interface OptimizeRouteResponse {
   booking_id: string
+  /** The drop-off the driver is heading to on the loaded run, in the driver's order. Null when not on the road. */
+  heading_to_destination_id?: string | null
   total_stops: number
   origin: {
     address: string

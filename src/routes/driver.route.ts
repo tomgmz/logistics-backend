@@ -11,7 +11,7 @@ import * as TrackingController from '../controllers/driver/tracking.controller.j
 import * as TripController from '../controllers/client/trip.controller.js'
 import * as ReportController from '../controllers/driver/report.controller.js'
 import { driverAvailabilityDaysSchema, driverLocationPingSchema } from '../schema/client/booking.schema.js'
-import { tripStopProofSchema, fleetReturnSchema, attachStopProofSchema } from '../schema/client/trip.schema.js'
+import { tripStopProofSchema, tripStopOrderSchema, fleetReturnSchema, attachStopProofSchema } from '../schema/client/trip.schema.js'
 import { createDriverReportSchema, enrichDriverReportSchema } from '../schema/driver/report.schema.js'
 import { uploadDeliveryProof } from '../controllers/admin/uploadImage.controller.js'
 
@@ -83,6 +83,10 @@ router.get('/bookings/:bookingId/trips',
 
 router.patch('/trips/:tripId/pickup',
   authenticate, authenticatedLimiter, isAny, validate(tripStopProofSchema), TripController.driverConfirmTripPickup)
+
+// The driver picked which drop-off to do next; saved so the web shows it.
+router.put('/trips/:tripId/stop-order',
+  authenticate, authenticatedLimiter, isAny, validate(tripStopOrderSchema), TripController.driverSetStopOrder)
 
 router.patch('/trip-stops/:tripStopId/delivered',
   authenticate, authenticatedLimiter, isAny, validate(tripStopProofSchema), TripController.driverConfirmTripStop)

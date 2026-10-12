@@ -7,6 +7,7 @@ import { notifyStage } from '../notification/notification.service.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay } from '../../lib/ph-date.js'
 import { invalidateEta } from '../maps/eta.service.js'
+import { broadcast } from '../../lib/realtime.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import {
   assertStopProximity,
@@ -239,6 +240,7 @@ export async function driverConfirmTripPickupService(
 
   // The run's real departure replaces its planned one, and moves every run after it.
   void refreshPlannedEta(trip.booking_id)
+  announceRouteChanged(trip.booking_id)
 
   logEvent({
     user_id:     actor.userId,
@@ -261,6 +263,57 @@ export async function driverConfirmTripPickupService(
   }
 
   return (await TripModel.findById(tripId))!
+}
+
+/**
+ * Tell anyone watching the booking (web Transit Tracking, client tracking, on route:booking:{id}) that
+ * its route changed: a stop confirmed, a run loaded, or the driver re-ordered
+ * the drop-offs. They re-read the route. Best effort.
+ */
+export function announceRouteChanged(bookingId: string): void {
+  void broadcast(`route:booking:${bookingId}`, 'route_changed', { booking_id: bookingId })
+    .catch(() => {})
+}
+
+/* ── The driver's own drop-off order ───────────────────────────────────────── */
+
+/**
+ * The driver chose which drop-off to do next ("Go here next" on the nav map).
+ * The run's stop order is saved so the office and the client see where the
+ * truck is actually heading, and arrival times are worked out in that order.
+ * Only the lead driver of the booking, and only on a run still being driven.
+ */
+export async function driverSetStopOrderService(
+  tripId: string,
+  tripStopIds: string[],
+  actor: DriverActor,
+) {
+  const trip = await TripModel.findById(tripId)
+  if (!trip) throw new Error(`Trip with ID ${tripId} not found`)
+  const booking = await assertLeadDriverOnBooking(trip.booking_id, actor)
+
+  if (trip.status === 'completed' || trip.status === 'cancelled') {
+    throw new Error(`Trip ${trip.trip_number} is already ${trip.status}`)
+  }
+  const onTrip = new Set(trip.booking_trip_stops.map((s) => s.trip_stop_id))
+  if (tripStopIds.some((id) => !onTrip.has(id))) {
+    throw new Error('Those drop-offs are not all on this trip')
+  }
+
+  await TripModel.setStopOrder(tripId, tripStopIds)
+
+  logEvent({
+    user_id:     actor.userId,
+    log_type:    'booking',
+    action:      'driver_stop_order_changed',
+    description: `Driver changed the drop-off order on trip ${trip.trip_number} of booking ${bookingRef(booking)}`,
+  })
+
+  void invalidateEta(trip.booking_id).catch(() => {})
+  void refreshPlannedEta(trip.booking_id)
+  announceRouteChanged(trip.booking_id)
+
+  return TripModel.findById(tripId)
 }
 
 /* ── Unloading at a stop ──────────────────────────────────────────────────── */
@@ -335,6 +388,7 @@ export async function driverConfirmTripStopService(
   // is wrong by however long the driver spent at this bay. Fire-and-forget: a
   // stale ETA is not worth failing a confirmed delivery over.
   void invalidateEta(trip.booking_id).catch(() => {})
+  announceRouteChanged(trip.booking_id)
 
   return updated
 }
