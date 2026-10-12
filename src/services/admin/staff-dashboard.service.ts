@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase.js'
 import { phDay } from '../../lib/ph-date.js'
 import { getAllTrucks } from './truck.service.js'
 import { listTickets } from '../support/support.service.js'
+import { supportInboxEmail } from '../../lib/brevo-mailer.js'
 
 /**
  * The staff dashboards: what is waiting on each desk, plus the Company
@@ -204,6 +205,8 @@ export async function getStaffDashboard() {
     // Client support tickets waiting on a reply (oldest first). Answered by
     // email; marked resolved from the dashboard.
     support_tickets: {
+      // The inbox the tickets were emailed to; the dashboard opens it in Gmail.
+      inbox: supportInboxEmail(),
       count: openTickets.length,
       items: openTickets.slice(0, 8).map((t: any) => ({
         ticket_id:  t.ticket_id,

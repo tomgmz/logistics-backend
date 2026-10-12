@@ -1080,6 +1080,11 @@ ${emailFooterText(`Automatic notice sent whenever any user resets or changes the
 const CONTACT_INBOX_EMAIL =
   process.env.CONTACT_INBOX_EMAIL?.trim() || '8338logisticsservice@gmail.com'
 
+/** The inbox support tickets go to, so the dashboard can open it in Gmail. */
+export function supportInboxEmail(): string {
+  return CONTACT_INBOX_EMAIL
+}
+
 const CONTACT_ROLE_LABELS: Record<string, string> = {
   fmcg:    'FMCG',
   shipper: 'Shipper',
