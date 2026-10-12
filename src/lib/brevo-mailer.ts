@@ -1882,11 +1882,21 @@ ${emailFooterText(reason)}
 }
 
 // ---------------------------------------------------------------------------
-// Client support tickets (raised from the web FAQ chatbot). Resolved by email:
-// the ticket goes to the company inbox with the client as reply-to, so staff
-// answer it from the inbox; the client gets a receipt with the reference, and a
-// short note when staff mark it resolved. Same inbox as the contact form
-// (CONTACT_INBOX_EMAIL), testing mailbox for now.
+// Client support tickets (raised from the web FAQ chatbot). Resolved by email,
+// in ONE thread that both sides share:
+//
+//   the ticket email goes TO the client, CC the support inbox, with replies set
+//   to the support inbox. Both mailboxes hold the same message, so:
+//     staff press "Reply all" in Gmail  -> lands in the client's thread
+//     the client presses "Reply"        -> lands in the inbox's thread
+//
+// It used to be two emails (an inbox copy with the client as reply-to, and a
+// separate receipt to the client), which left every staff answer starting a
+// new conversation for the client — their mailbox never had the message being
+// replied to. The usual fix, In-Reply-To/References headers, isn't available:
+// Brevo does not let the API set standard headers. One shared message is.
+//
+// Same inbox as the contact form (CONTACT_INBOX_EMAIL), testing mailbox for now.
 // ---------------------------------------------------------------------------
 
 export interface SupportTicketEmailParams {
@@ -1951,6 +1961,7 @@ function supportBlockHtml(label: string, text: string): string {
 async function sendSupportEmail(params: {
   subject: string; html: string; text: string
   to: { email: string; name?: string }; replyTo?: { email: string; name?: string }
+  cc?: { email: string; name?: string }
   what: string
 }): Promise<void> {
   if (!process.env.BREVO_API_KEY)      throw new Error('Brevo is not configured. Please set BREVO_API_KEY.')
@@ -1962,6 +1973,7 @@ async function sendSupportEmail(params: {
       textContent: params.text,
       sender:      { name: FROM_NAME, email: FROM_EMAIL },
       to:          [params.to],
+      ...(params.cc ? { cc: [params.cc] } : {}),
       ...(params.replyTo ? { replyTo: params.replyTo } : {}),
     })
   } catch (err: unknown) {
@@ -1976,7 +1988,16 @@ async function sendSupportEmail(params: {
   }
 }
 
-/** The new ticket, to the company inbox. Replying answers the client directly. */
+/** The ticket subject, shared by every email in the thread. */
+export function supportTicketSubject(reference: string, subject: string): string {
+  return `[${reference}] ${subject}`
+}
+
+/**
+ * The ticket itself: one message to the client, CC the support inbox, replies
+ * to the inbox. It is the client's receipt and the team's copy at once, and the
+ * thread everyone answers in.
+ */
 export async function sendSupportTicketEmail(p: SupportTicketEmailParams): Promise<void> {
   const rows: Array<[string, string]> = [
     ['Ticket',   p.reference],
@@ -1990,14 +2011,16 @@ export async function sendSupportTicketEmail(p: SupportTicketEmailParams): Promi
   const transcript = p.transcript.length
     ? p.transcript.map((m) => `${m.from === 'client' ? 'Client' : 'Assistant'}: ${m.text}`).join('\n')
     : ''
-  const intro = `A client opened a support ticket from the help assistant on the website. Reply to this email to answer them directly, and mark ${p.reference} resolved on the dashboard once it is settled.`
+  const intro =
+    `Hi ${p.clientName}, we received your support ticket ${p.reference}. Our team will reply in this ` +
+    'email thread. To add details, simply reply to this email.'
   const html = supportEmailHtml(
     'Support Ticket',
     escapeHtml(intro),
     supportRowsHtml(rows) +
       supportBlockHtml(`Subject: ${escapeHtml(p.subject)}`, p.message) +
-      (transcript ? supportBlockHtml('What the assistant already suggested', transcript) : ''),
-    `Sent from the help assistant on the ${APP_NAME} website.`,
+      (transcript ? supportBlockHtml('Your conversation with the help assistant', transcript) : ''),
+    `You opened a support ticket on the ${APP_NAME} website.`,
   )
   const text = [
     intro,
@@ -2006,43 +2029,19 @@ export async function sendSupportTicketEmail(p: SupportTicketEmailParams): Promi
     '',
     `Subject: ${p.subject}`,
     p.message,
-    ...(transcript ? ['', 'What the assistant already suggested:', transcript] : []),
+    ...(transcript ? ['', 'Your conversation with the help assistant:', transcript] : []),
     '',
     '---',
-    emailFooterText(`Sent from the help assistant on the ${APP_NAME} website.`),
-  ].join('\n')
-
-  await sendSupportEmail({
-    subject: `[${p.reference}] ${p.subject}`,
-    html, text,
-    to:      { email: CONTACT_INBOX_EMAIL },
-    replyTo: { email: p.email, name: p.clientName },
-    what:    'support ticket email',
-  })
-}
-
-/** The client's copy: we have it, here is the reference, we answer by email. */
-export async function sendSupportTicketReceiptEmail(p: {
-  reference: string; clientName: string; email: string; subject: string; message: string
-}): Promise<void> {
-  const plain = `Hi ${p.clientName}, we received your support ticket ${p.reference}. Our team will reply to this email address. You can also reply to this email to add details.`
-  const html = supportEmailHtml(
-    'Support Ticket Received',
-    escapeHtml(plain),
-    supportBlockHtml(`Subject: ${escapeHtml(p.subject)}`, p.message),
-    `You opened a support ticket on the ${APP_NAME} website.`,
-  )
-  const text = [
-    plain, '', `Subject: ${p.subject}`, p.message, '', '---',
     emailFooterText(`You opened a support ticket on the ${APP_NAME} website.`),
   ].join('\n')
 
   await sendSupportEmail({
-    subject: `We received your ticket ${p.reference}`,
+    subject: supportTicketSubject(p.reference, p.subject),
     html, text,
     to:      { email: p.email, name: p.clientName },
+    cc:      { email: CONTACT_INBOX_EMAIL },
     replyTo: { email: CONTACT_INBOX_EMAIL },
-    what:    'support ticket receipt',
+    what:    'support ticket email',
   })
 }
 
@@ -2064,9 +2063,12 @@ export async function sendSupportTicketResolvedEmail(p: {
   ].join('\n')
 
   await sendSupportEmail({
-    subject: `Ticket ${p.reference} resolved`,
+    // Same subject as the ticket thread (Re:), same people (client, inbox CC),
+    // so mail apps that group by subject keep it with the conversation.
+    subject: `Re: ${supportTicketSubject(p.reference, p.subject)}`,
     html, text,
     to:      { email: p.email, name: p.clientName },
+    cc:      { email: CONTACT_INBOX_EMAIL },
     replyTo: { email: CONTACT_INBOX_EMAIL },
     what:    'support ticket resolved email',
   })

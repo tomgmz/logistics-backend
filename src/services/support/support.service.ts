@@ -3,16 +3,17 @@ import { logEvent } from '../../lib/log-event.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import {
   sendSupportTicketEmail,
-  sendSupportTicketReceiptEmail,
   sendSupportTicketResolvedEmail,
 } from '../../lib/brevo-mailer.js'
 
 /**
  * Client support tickets, raised from the web FAQ chatbot when it can't answer.
  *
- * Resolved by email: opening one emails the company inbox (client as reply-to)
- * and sends the client a receipt; staff answer from the inbox, then mark the
- * ticket resolved on their dashboard, which emails the client a short note.
+ * Resolved by email, in one shared thread: opening a ticket sends ONE email to
+ * the client with the support inbox CC'd and replies going to the inbox; staff
+ * answer with "Reply all" so it lands in the client's thread, then mark the
+ * ticket resolved on their dashboard, which emails a short note to the same
+ * people under the same subject.
  * Emails are best effort: the ticket is recorded either way and shows on the
  * dashboard, so a mail outage can't lose a client's problem.
  */
@@ -131,10 +132,7 @@ export async function openTicket(clientId: string, userId: string, input: OpenTi
       message:     ticket.message,
       bookingRef:  booking ? bookingRef(booking) : null,
       transcript,
-    }).catch((err) => console.error('[support] inbox email failed', ticket.reference, err?.message))
-    void sendSupportTicketReceiptEmail({
-      reference: ticket.reference, clientName: name, email, subject: ticket.subject, message: ticket.message,
-    }).catch((err) => console.error('[support] receipt email failed', ticket.reference, err?.message))
+    }).catch((err) => console.error('[support] ticket email failed', ticket.reference, err?.message))
   }
 
   return ticket
