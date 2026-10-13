@@ -130,6 +130,9 @@ function bookingLabel(booking: BookingWithRelations): string {
   return booking.reference_number?.trim() || booking.origin || bookingRef(booking)
 }
 
+// What the client can do about a rejection, appended to both rejection messages.
+const NEXT_STEP_AFTER_REJECTION = 'You can edit the booking and resubmit it for another review, or cancel it.'
+
 function copyFor(
   stage: NotificationStage,
   booking: BookingWithRelations,
@@ -144,10 +147,10 @@ function copyFor(
         ? { title: 'Resubmitted booking awaiting your approval', body: `Booking ${label} was corrected and resubmitted by the client after being rejected, and needs your approval.` }
         : { title: 'New booking awaiting your approval', body: `Booking ${label} was submitted by the client and needs your approval.` }
     case 'rejected_gm':
-      return { title: 'Booking rejected', body: `Your booking ${label} was rejected by the General Manager${reason ? `: ${reason}` : '.'}` }
+      return { title: 'Booking rejected', body: `Your booking ${label} was rejected by the General Manager${reason ? `: ${reason}` : '.'} ${NEXT_STEP_AFTER_REJECTION}` }
     // Turned down by the administrator directly, without going to the GM.
     case 'rejected_admin':
-      return { title: 'Booking rejected', body: `Your booking ${label} was not approved${reason ? `: ${reason}` : '.'}` }
+      return { title: 'Booking rejected', body: `Your booking ${label} was not approved${reason ? `: ${reason}` : '.'} ${NEXT_STEP_AFTER_REJECTION}` }
     case 'approved_gm':
       return {
         title: 'Booking approved',
