@@ -5,6 +5,7 @@ import type {
   MessageRow,
   MessagableUser,
   UserRole,
+  BookingRefRow,
 } from '../../types/messaging.types.js'
 
 export async function findConversationByParticipants(a: string, b: string): Promise<ConversationRow | null> {
@@ -53,16 +54,23 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
   const ids   = convs.map(c => c.conversation_id)
   const other = convs.map(c => c.participant_a_id === userId ? c.participant_b_id : c.participant_a_id)
 
-  const [{ data: usersRaw, error: userErr }, { data: msgsRaw, error: msgErr }] =
+  const bookingIds = [...new Set(convs.map(c => c.booking_id).filter((id): id is string => !!id))]
+
+  const [{ data: usersRaw, error: userErr }, { data: msgsRaw, error: msgErr }, { data: bookingsRaw, error: bookingErr }] =
     await Promise.all([
       supabase.from('users').select('user_id, first_name, last_name, role, email').in('user_id', other),
       supabase.from('messages')
         .select('conversation_id, message_id, content, sent_at, sender_id, deleted_by_sender, deleted_by_receiver')
         .in('conversation_id', ids)
         .order('sent_at', { ascending: false }),
+      bookingIds.length
+        ? supabase.from('bookings').select('booking_id, reference_number').in('booking_id', bookingIds)
+        : Promise.resolve({ data: [] as BookingRefRow[], error: null }),
     ])
   if (userErr) throw userErr
   if (msgErr) throw msgErr
+  if (bookingErr) throw bookingErr
+  const bookingMap = new Map(((bookingsRaw ?? []) as BookingRefRow[]).map(b => [b.booking_id, b]))
 
   type UserRow = { user_id: string; first_name: string | null; last_name: string | null; role: UserRole; email: string }
   const userMap = Object.fromEntries((usersRaw ?? []).map((u: UserRow) => [u.user_id, u]))
@@ -91,7 +99,7 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
     const otherId = c.participant_a_id === userId ? c.participant_b_id : c.participant_a_id
     const user    = userMap[otherId] as UserRow | undefined
     if (!user) return acc
-    acc.push({ ...c, other_user: user, last_message: lastMsgMap[c.conversation_id] ?? null, unread_count: unreadMap[c.conversation_id] ?? 0 })
+    acc.push({ ...c, other_user: user, booking: (c.booking_id && bookingMap.get(c.booking_id)) || null, last_message: lastMsgMap[c.conversation_id] ?? null, unread_count: unreadMap[c.conversation_id] ?? 0 })
     return acc
   }, [])
 }
@@ -240,21 +248,23 @@ export async function findTargetUser(id: string): Promise<{ user_id: string; sta
 export const CLIENT_CHAT_BOOKING_STATUSES = ['assigned', 'in_transit', 'delivered']
 export const CLIENT_MESSAGING_STAFF_ROLES = ['admin', 'operations_manager']
 
-type ClientDriverLink = { client_user_id: string; driver_user_id: string; booking_id: string }
+type ClientDriverLink = { client_user_id: string; driver_user_id: string; booking_id: string; reference_number: string | null }
 
 /** Every (client, driver, booking) link on open bookings, narrowed to one client and/or one driver. */
 async function openClientDriverLinks(filter: { clientUserId?: string; driverUserId?: string }): Promise<ClientDriverLink[]> {
-  let bq = supabase.from('bookings').select('booking_id, clients!inner(user_id)').in('status', CLIENT_CHAT_BOOKING_STATUSES)
+  let bq = supabase.from('bookings').select('booking_id, reference_number, clients!inner(user_id)').in('status', CLIENT_CHAT_BOOKING_STATUSES)
   if (filter.clientUserId) bq = bq.eq('clients.user_id', filter.clientUserId)
   const { data: bookings, error: bErr } = await bq
   if (bErr) throw bErr
   if (!bookings?.length) return []
 
-  type BookingRow = { booking_id: string; clients: { user_id: string } | { user_id: string }[] }
+  type BookingRow = { booking_id: string; reference_number: string | null; clients: { user_id: string } | { user_id: string }[] }
   const clientOf = new Map<string, string>()
+  const refOf    = new Map<string, string | null>()
   for (const b of bookings as unknown as BookingRow[]) {
     const c = Array.isArray(b.clients) ? b.clients[0] : b.clients
     if (c?.user_id) clientOf.set(b.booking_id, c.user_id)
+    refOf.set(b.booking_id, b.reference_number)
   }
   if (!clientOf.size) return []
 
@@ -267,8 +277,20 @@ async function openClientDriverLinks(filter: { clientUserId?: string; driverUser
   return ((assignments ?? []) as unknown as AssignmentRow[]).flatMap((a) => {
     const d = Array.isArray(a.drivers) ? a.drivers[0] : a.drivers
     const c = clientOf.get(a.booking_id)
-    return d?.user_id && c ? [{ client_user_id: c, driver_user_id: d.user_id, booking_id: a.booking_id }] : []
+    return d?.user_id && c
+      ? [{ client_user_id: c, driver_user_id: d.user_id, booking_id: a.booking_id, reference_number: refOf.get(a.booking_id) ?? null }]
+      : []
   })
+}
+
+/** The open booking that links this client and driver, if any (the first, when several do). */
+export async function currentClientDriverBooking(clientUserId: string, driverUserId: string): Promise<string | null> {
+  return (await openClientDriverLinks({ clientUserId, driverUserId }))[0]?.booking_id ?? null
+}
+
+export async function setConversationBooking(conversationId: string, bookingId: string): Promise<void> {
+  const { error } = await supabase.from('conversations').update({ booking_id: bookingId }).eq('conversation_id', conversationId)
+  if (error) throw error
 }
 
 /** True while the driver is crew on one of the client's open bookings. */
@@ -302,6 +324,15 @@ export async function messagingBlockReason(
   return null
 }
 
+/** booking_id (the first, kept for older callers) plus every open booking linking the two. */
+function withLinkedBookings(u: MessagableUser, links: ClientDriverLink[]): MessagableUser {
+  return {
+    ...u,
+    booking_id: links[0]?.booking_id,
+    bookings:   links.map(l => ({ booking_id: l.booking_id, reference_number: l.reference_number })),
+  }
+}
+
 async function activeUsers(opts: { ids?: string[]; withoutClients?: boolean } = {}): Promise<MessagableUser[]> {
   let q = supabase.from('users').select('user_id, first_name, last_name, role, email').eq('status', 'active').order('first_name')
   if (opts.ids) q = q.in('user_id', opts.ids)
@@ -326,7 +357,7 @@ export async function getMessagableUsersForDriver(driverUserId: string): Promise
   const clients   = clientIds.length ? await activeUsers({ ids: clientIds }) : []
   return [
     ...staff.filter(u => u.user_id !== driverUserId),
-    ...clients.map(u => ({ ...u, booking_id: links.find(l => l.client_user_id === u.user_id)?.booking_id })),
+    ...clients.map(u => withLinkedBookings(u, links.filter(l => l.client_user_id === u.user_id))),
   ]
 }
 
@@ -336,5 +367,5 @@ export async function getMessagableDriversForClient(clientUserId: string): Promi
   const driverIds = [...new Set(links.map(l => l.driver_user_id))]
   if (!driverIds.length) return []
   const users = await activeUsers({ ids: driverIds })
-  return users.map(u => ({ ...u, booking_id: links.find(l => l.driver_user_id === u.user_id)?.booking_id }))
+  return users.map(u => withLinkedBookings(u, links.filter(l => l.driver_user_id === u.user_id)))
 }

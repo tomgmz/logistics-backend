@@ -56,8 +56,16 @@ export interface ConversationParticipant {
   email: string
 }
 
+/** A booking a conversation is about, for the reference shown beside a name. */
+export interface BookingRefRow {
+  booking_id: string
+  reference_number: string | null
+}
+
 export interface ConversationWithDetails extends ConversationRow {
   other_user: ConversationParticipant
+  /** The booking the conversation was started for (booking_id), if any. */
+  booking: BookingRefRow | null
   last_message: { message_id: string; content: string; sent_at: string; sender_id: string } | null
   unread_count: number
 }
@@ -69,6 +77,8 @@ export interface MessagableUser {
   role: UserRole
   email: string
   booking_id?: string
+  /** Client <-> driver only: the open bookings that link the two. */
+  bookings?: BookingRefRow[]
 }
 
 export interface GroupRow {
