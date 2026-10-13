@@ -149,3 +149,11 @@ export async function decideMemberRequest(req: Request, res: Response, next: Nex
     res.json({ success: true })
   } catch (err) { fail(res, err) }
 }
+
+export async function hideGroupMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { user_id } = getAuth(req)
+    await service.hideGroupMessage(req.params.groupId as string, req.params.messageId as string, user_id)
+    res.json({ success: true })
+  } catch (err) { fail(res, err) }
+}

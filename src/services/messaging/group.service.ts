@@ -427,7 +427,23 @@ export async function getGroupMessages(
 ): Promise<GroupMessageRow[]> {
   const member = await groupModel.getGroupMember(groupId, userId)
   if (!member || member.status !== 'accepted') throw Object.assign(new Error('Access denied'), { statusCode: 403 })
-  return groupModel.getGroupMessages(groupId, limit, before)
+  return groupModel.getGroupMessages(groupId, userId, limit, before)
+}
+
+/**
+ * Delete a group message for yourself only. Everyone else in the group keeps
+ * seeing it. Any message can be removed from your own view, not only yours.
+ */
+export async function hideGroupMessage(groupId: string, messageId: string, userId: string): Promise<void> {
+  const member = await groupModel.getGroupMember(groupId, userId)
+  if (!member || member.status !== 'accepted') throw Object.assign(new Error('Access denied'), { statusCode: 403 })
+
+  const { data: msg, error } = await admin
+    .from('group_messages').select('message_id').eq('message_id', messageId).eq('group_id', groupId).maybeSingle()
+  if (error) throw error
+  if (!msg) throw Object.assign(new Error('Message not found'), { statusCode: 404 })
+
+  await groupModel.hideGroupMessage(messageId, userId)
 }
 
 export async function markGroupRead(groupId: string, userId: string): Promise<void> {

@@ -72,7 +72,11 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
   const unreadMap:  Record<string, number>    = {}
   const toMs = (iso: string) => new Date(iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`).getTime()
 
+  // A message this member deleted for themselves is neither their preview nor unread.
+  const hidden = await hiddenMessageIds(userId, groupIds)
+
   for (const m of (allMsgs ?? []) as MsgRow[]) {
+    if (hidden.has(m.message_id)) continue
     if (!lastMsgMap[m.group_id]) lastMsgMap[m.group_id] = m
 
     // Your own messages, and group events, never count as unread.
@@ -144,7 +148,33 @@ export async function insertSystemMessage(
   return { ...(data as GroupMessageRow), reply_to: null, reactions: [] }
 }
 
-export async function getGroupMessages(groupId: string, limit: number, before?: string): Promise<GroupMessageRow[]> {
+/**
+ * The group messages a member deleted for themselves. Best effort: if this
+ * cannot be read, nothing is hidden rather than the whole chat failing.
+ */
+export async function hiddenMessageIds(userId: string, groupIds: string[]): Promise<Set<string>> {
+  if (!groupIds.length) return new Set()
+  const { data, error } = await supabase
+    .from('group_message_hidden')
+    .select('message_id, group_messages!inner(group_id)')
+    .eq('user_id', userId)
+    .in('group_messages.group_id', groupIds)
+  if (error) {
+    console.warn('[messaging] could not read hidden group messages', error.message)
+    return new Set()
+  }
+  return new Set((data ?? []).map((r: { message_id: string }) => r.message_id))
+}
+
+/** Hide one group message from one member. Repeating it is harmless. */
+export async function hideGroupMessage(messageId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('group_message_hidden')
+    .upsert({ message_id: messageId, user_id: userId }, { onConflict: 'message_id,user_id', ignoreDuplicates: true })
+  if (error) throw error
+}
+
+export async function getGroupMessages(groupId: string, userId: string, limit: number, before?: string): Promise<GroupMessageRow[]> {
   let q = supabase
     .from('group_messages')
     .select('*, reactions:group_message_reactions(emoji, user_id)')
@@ -156,7 +186,8 @@ export async function getGroupMessages(groupId: string, limit: number, before?: 
   const { data, error } = await q
   if (error) throw error
 
-  const msgs = ((data ?? []) as unknown as GroupMessageRow[]).reverse()
+  const hidden = await hiddenMessageIds(userId, [groupId])
+  const msgs = ((data ?? []) as unknown as GroupMessageRow[]).reverse().filter(m => !hidden.has(m.message_id))
 
   const replyIds = [...new Set(
     msgs.map(m => m.reply_to_message_id).filter((id): id is string => !!id)
