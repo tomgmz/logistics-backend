@@ -19,6 +19,8 @@ export async function subscribe(req: Request, res: Response, next: NextFunction)
       token:       p.data.token,
       keys:        p.data.keys ?? null,
       device_info: p.data.device_info ?? null,
+      // Notifications for this device end when this sign-in does.
+      session_id:  (req as Request & { sessionId?: string }).sessionId ?? null,
     })
     res.status(201).json({ success: true })
   } catch (err) {

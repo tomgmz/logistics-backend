@@ -31,6 +31,7 @@ export async function registerSubscription(
     token:        string
     keys?:        { p256dh: string; auth: string } | null
     device_info?: string | null
+    session_id?:  string | null
   }
 ): Promise<void> {
   await model.upsertSubscription({ user_id: userId, ...input })
