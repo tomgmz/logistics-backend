@@ -119,9 +119,9 @@ export async function addMembers(groupId: string, userId: string, memberIds: str
     'group_invite',
     { group_id: groupId, group_name: group?.name ?? '' },
   )
-  const memberIds = await acceptedMemberIds(groupId)
+  const joinedIds = await acceptedMemberIds(groupId)
   void broadcastMany(
-    [`messaging:group:${groupId}`, ...memberIds.map(uid => `messaging:user:${uid}`)],
+    [`messaging:group:${groupId}`, ...joinedIds.map(uid => `messaging:user:${uid}`)],
     'group_updated',
     { group_id: groupId },
   )
