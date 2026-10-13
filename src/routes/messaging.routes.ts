@@ -10,14 +10,14 @@ const router = Router()
 
 const readLimit = rateLimit({
   windowMs: 60_000, max: 60,
-  keyGenerator: (req) => (req as any).user?.user_id ?? ipKeyGenerator(clientIp(req)),
+  keyGenerator: (req) => (req as any).user?.sub ?? ipKeyGenerator(clientIp(req)),
   standardHeaders: true, legacyHeaders: false,
   message: { success: false, message: 'Too many requests, please slow down' },
 })
 
 const sendLimit = rateLimit({
   windowMs: 60_000, max: 30,
-  keyGenerator: (req) => (req as any).user?.user_id ?? ipKeyGenerator(clientIp(req)),
+  keyGenerator: (req) => (req as any).user?.sub ?? ipKeyGenerator(clientIp(req)),
   standardHeaders: true, legacyHeaders: false,
   message: { success: false, message: 'Message rate limit reached' },
 })

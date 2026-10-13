@@ -12,8 +12,11 @@ export async function enforceClientMessagingPolicy(
   next: NextFunction
 ): Promise<void> {
   const user = (req as any).user
+  // authenticate puts the JWT payload here, so the id is `sub`; read it the
+  // way the messaging controllers do.
+  const userId = (user?.user_id ?? user?.id ?? user?.sub) as string | undefined
 
-  if (!user || !user.role) {
+  if (!user || !user.role || !userId) {
     res.status(401).json({ success: false, message: 'Unauthorized' })
     return
   }
@@ -32,12 +35,12 @@ export async function enforceClientMessagingPolicy(
       return
     }
 
-    if (conversation.participant_a_id !== user.user_id && conversation.participant_b_id !== user.user_id) {
+    if (conversation.participant_a_id !== userId && conversation.participant_b_id !== userId) {
       res.status(403).json({ success: false, message: 'Access denied' })
       return
     }
 
-    await assertCanSendInConversation(conversation, user.user_id, user.role)
+    await assertCanSendInConversation(conversation, userId, user.role)
     next()
   } catch (err) {
     const e = err as { statusCode?: number; message?: string }
