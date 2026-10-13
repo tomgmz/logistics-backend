@@ -17,12 +17,22 @@ async function assertCanMessage(currentUserId: string, currentUserRole: string, 
   const target = await model.findTargetUser(targetUserId)
   if (!target || target.status !== 'active') throw Object.assign(new Error('User not found or inactive'), { statusCode: 404 })
 
-  if (currentUserRole === 'client') {
-    if (target.role !== 'driver') throw Object.assign(new Error('Clients can only message drivers assigned to their bookings'), { statusCode: 403 })
-    const ok = await model.validateClientDriverAccess(currentUserId, targetUserId)
-    if (!ok) throw Object.assign(new Error('No active in-transit booking found with this driver'), { statusCode: 403 })
-  }
+  const blocked = await model.messagingBlockReason({ user_id: currentUserId, role: currentUserRole }, target)
+  if (blocked) throw Object.assign(new Error(blocked), { statusCode: 403 })
   return target
+}
+
+/** The send rules, applied to the other side of an existing conversation. */
+export async function assertCanSendInConversation(
+  conv: { participant_a_id: string; participant_b_id: string },
+  senderId: string,
+  senderRole: string
+): Promise<void> {
+  const receiverId = conv.participant_a_id === senderId ? conv.participant_b_id : conv.participant_a_id
+  const receiver   = await model.findTargetUser(receiverId)
+  if (!receiver || receiver.status !== 'active') throw Object.assign(new Error('User not found or inactive'), { statusCode: 404 })
+  const blocked = await model.messagingBlockReason({ user_id: senderId, role: senderRole }, receiver)
+  if (blocked) throw Object.assign(new Error(blocked), { statusCode: 403 })
 }
 
 async function deliverMessage(
@@ -74,16 +84,7 @@ export async function getOrCreateConversation(
   targetUserId: string,
   bookingId?: string
 ) {
-  if (currentUserId === targetUserId) throw Object.assign(new Error('Cannot create a conversation with yourself'), { statusCode: 400 })
-
-  const target = await model.findTargetUser(targetUserId)
-  if (!target || target.status !== 'active') throw Object.assign(new Error('User not found or inactive'), { statusCode: 404 })
-
-  if (currentUserRole === 'client') {
-    if (target.role !== 'driver') throw Object.assign(new Error('Clients can only message drivers assigned to their bookings'), { statusCode: 403 })
-    const ok = await model.validateClientDriverAccess(currentUserId, targetUserId)
-    if (!ok) throw Object.assign(new Error('No active in-transit booking found with this driver'), { statusCode: 403 })
-  }
+  await assertCanMessage(currentUserId, currentUserRole, targetUserId)
 
   const existing = await model.findConversationByParticipants(currentUserId, targetUserId)
   if (existing) return existing
@@ -108,11 +109,7 @@ export async function sendMessage(
   if (!conv) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 })
   if (conv.participant_a_id !== senderId && conv.participant_b_id !== senderId) throw Object.assign(new Error('Access denied'), { statusCode: 403 })
 
-  const receiverId = conv.participant_a_id === senderId ? conv.participant_b_id : conv.participant_a_id
-  if (senderRole === 'client') {
-    const ok = await model.validateClientDriverAccess(senderId, receiverId)
-    if (!ok) throw Object.assign(new Error('Messaging only allowed while booking is in transit'), { statusCode: 403 })
-  }
+  await assertCanSendInConversation(conv, senderId, senderRole)
 
   return deliverMessage(conv, senderId, content, replyToMessageId)
 }
@@ -203,5 +200,7 @@ export async function toggleReaction(
 }
 
 export async function getMessagableUsers(userId: string, role: string): Promise<MessagableUser[]> {
-  return role === 'client' ? model.getMessagableDriversForClient(userId) : model.getMessagableUsersForStaff(userId)
+  if (role === 'client') return model.getMessagableDriversForClient(userId)
+  if (role === 'driver') return model.getMessagableUsersForDriver(userId)
+  return model.getMessagableUsersForStaff(userId, role)
 }

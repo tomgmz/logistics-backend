@@ -16,19 +16,25 @@ async function broadcastMany(channels: string[], event: string, payload: unknown
 
 export async function createGroup(
   createdBy: string,
+  creatorRole: string,
   name: string,
   memberIds: string[]
 ): Promise<{ group_id: string }> {
+  // Clients talk one-to-one only (see messagingBlockReason): a group would let
+  // them reach staff, and let staff who may not message clients reach them.
+  if (creatorRole === 'client') throw Object.assign(new Error('Clients cannot create group chats'), { statusCode: 403 })
   if (memberIds.length < 1) throw Object.assign(new Error('A group needs at least one other member'), { statusCode: 400 })
   if (memberIds.includes(createdBy)) throw Object.assign(new Error('Do not include yourself in memberIds'), { statusCode: 400 })
 
   const uniqueIds = [...new Set(memberIds)]
   const { data: users, error } = await admin
-    .from('users').select('user_id, status').in('user_id', uniqueIds)
+    .from('users').select('user_id, status, role').in('user_id', uniqueIds)
   if (error) throw error
   const activeIds = new Set((users ?? []).filter(u => u.status === 'active').map(u => u.user_id))
   if (uniqueIds.some(id => !activeIds.has(id)))
     throw Object.assign(new Error('One or more members are invalid or inactive'), { statusCode: 400 })
+  if ((users ?? []).some(u => u.role === 'client'))
+    throw Object.assign(new Error('Clients cannot be added to group chats'), { statusCode: 400 })
 
   const group = await groupModel.createGroup(name, createdBy, uniqueIds)
 

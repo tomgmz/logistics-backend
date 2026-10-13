@@ -39,10 +39,10 @@ const markReadSchema = z.object({})
 
 export async function createGroup(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { user_id } = getAuth(req)
+    const { user_id, role } = getAuth(req)
     const p = createGroupSchema.safeParse(req.body)
     if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
-    res.status(201).json({ success: true, data: await service.createGroup(user_id, p.data.name, p.data.member_ids) })
+    res.status(201).json({ success: true, data: await service.createGroup(user_id, role, p.data.name, p.data.member_ids) })
   } catch (err) { fail(res, err) }
 }
 

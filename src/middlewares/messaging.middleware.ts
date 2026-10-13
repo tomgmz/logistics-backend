@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from 'express'
 import * as messagingModel from '../models/messaging/messaging.model.js'
+import { assertCanSendInConversation } from '../services/messaging/messaging.service.js'
 
+/**
+ * Applies the client messaging rules (see messagingBlockReason) to a write into
+ * an existing conversation, e.g. a reaction. Staff-to-staff conversations pass.
+ */
 export async function enforceClientMessagingPolicy(
   req: Request,
   res: Response,
@@ -10,11 +15,6 @@ export async function enforceClientMessagingPolicy(
 
   if (!user || !user.role) {
     res.status(401).json({ success: false, message: 'Unauthorized' })
-    return
-  }
-
-  if (user.role !== 'client') {
-    next()
     return
   }
 
@@ -32,32 +32,16 @@ export async function enforceClientMessagingPolicy(
       return
     }
 
-    const isParticipant =
-      conversation.participant_a_id === user.user_id ||
-      conversation.participant_b_id === user.user_id
-
-    if (!isParticipant) {
+    if (conversation.participant_a_id !== user.user_id && conversation.participant_b_id !== user.user_id) {
       res.status(403).json({ success: false, message: 'Access denied' })
       return
     }
 
-    const receiverId =
-      conversation.participant_a_id === user.user_id
-        ? conversation.participant_b_id
-        : conversation.participant_a_id
-
-    const canMessage = await messagingModel.validateClientDriverAccess(user.user_id, receiverId)
-
-    if (!canMessage) {
-      res.status(403).json({
-        success: false,
-        message: 'Messaging is only allowed while a booking with this driver is in transit',
-      })
-      return
-    }
-
+    await assertCanSendInConversation(conversation, user.user_id, user.role)
     next()
   } catch (err) {
+    const e = err as { statusCode?: number; message?: string }
+    if (e.statusCode) { res.status(e.statusCode).json({ success: false, message: e.message }); return }
     next(err)
   }
 }
