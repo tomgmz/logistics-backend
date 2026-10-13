@@ -684,6 +684,20 @@ export async function loginWithPassword(
   return buildAuthResponse(user, accessToken, refreshToken, accessExpiresAt, refreshExpiresAt)
 }
 
+/**
+ * A refresh refusal that means the session is really over (bad, expired or
+ * revoked token, inactive user). Only these may sign the browser out; anything
+ * else thrown from a refresh (a database or network hiccup) is temporary and
+ * must leave the session alone.
+ */
+function sessionInvalid(message: string, code?: string): Error {
+  return Object.assign(new Error(message), { sessionInvalid: true, ...(code && { code }) })
+}
+
+export function isSessionInvalidError(err: unknown): boolean {
+  return !!(err as { sessionInvalid?: boolean } | null)?.sessionInvalid
+}
+
 export async function refreshAccessToken(refreshToken: string): Promise<{
   accessToken: string
   accessExpiresAt: string
@@ -692,10 +706,10 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
   try {
     payload = jwt.verify(refreshToken, JWT_REFRESH_SECRET)
   } catch {
-    throw new Error('Invalid or expired refresh token')
+    throw sessionInvalid('Invalid or expired refresh token')
   }
 
-  if (payload.type !== 'refresh') throw new Error('Invalid token type')
+  if (payload.type !== 'refresh') throw sessionInvalid('Invalid token type')
 
   const refreshTokenHash = hashToken(refreshToken)
   const session = await AuthModel.findActiveSessionByRefreshToken(refreshTokenHash)
@@ -705,9 +719,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
     // turn into the right page.
     const reason = await AuthModel.findSessionRevokedReason('refresh_token', refreshTokenHash).catch(() => null)
     if (reason === 'signed_in_elsewhere') {
-      const err = new Error('Your account was signed in on another device.')
-      ;(err as any).code = 'SESSION_REPLACED'
-      throw err
+      throw sessionInvalid('Your account was signed in on another device.', 'SESSION_REPLACED')
     }
 
     // A structurally valid refresh token with no live session means it was
@@ -719,11 +731,11 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
       message:    'Refresh token presented for a revoked or rotated session',
       metadata:   { subject: payload?.sub ?? null },
     })
-    throw new Error('Session expired or revoked')
+    throw sessionInvalid('Session expired or revoked')
   }
 
   const user = await AuthModel.findUserById(payload.sub)
-  if (!user || user.status !== 'active') throw new Error('User not found or inactive')
+  if (!user || user.status !== 'active') throw sessionInvalid('User not found or inactive')
 
   const accessExpiresAt = new Date(Date.now() + parseDuration(JWT_EXPIRES_IN as string))
   const accessToken = jwt.sign(

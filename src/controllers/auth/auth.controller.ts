@@ -174,6 +174,14 @@ export async function refreshToken(req: Request, res: Response) {
       },
     })
   } catch (err: unknown) {
+    // A passing failure (database or network hiccup) is not a dead session:
+    // answer 503 and keep the cookies, so the browser retries instead of
+    // signing the user out. Only a real refusal is a 401.
+    if (!AuthService.isSessionInvalidError(err)) {
+      console.error('TOKEN REFRESH ERROR (temporary):', err)
+      res.status(503).json({ status: 'error', message: 'Could not refresh the session right now. Please try again.' })
+      return
+    }
     const message = err instanceof Error ? err.message : 'Session expired. Please log in again.'
     const code    = (err as { code?: string })?.code === 'SESSION_REPLACED' ? 'SESSION_REPLACED' : undefined
     if (!code) console.error('TOKEN REFRESH ERROR:', err)
