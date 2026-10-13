@@ -139,7 +139,10 @@ function copyFor(
   const reason = extra?.reason
   switch (stage) {
     case 'gm_pending':
-      return { title: 'New booking awaiting your approval', body: `Booking ${label} was submitted by the client and needs your approval.` }
+      // A rejected booking the client corrected comes back through this stage too.
+      return (booking.resubmission_count ?? 0) > 0
+        ? { title: 'Resubmitted booking awaiting your approval', body: `Booking ${label} was corrected and resubmitted by the client after being rejected, and needs your approval.` }
+        : { title: 'New booking awaiting your approval', body: `Booking ${label} was submitted by the client and needs your approval.` }
     case 'rejected_gm':
       return { title: 'Booking rejected', body: `Your booking ${label} was rejected by the General Manager${reason ? `: ${reason}` : '.'}` }
     // Turned down by the administrator directly, without going to the GM.

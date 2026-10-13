@@ -3,6 +3,7 @@ import type { GeofenceOutcome, StopProofPosition } from '../../lib/stop-geofence
 import { pool } from '../../lib/database.js'
 import {
   CreateBookingInput,
+  ResubmitBookingInput,
   UpdateBookingInput,
   UpdateDestinationInput,
   BookingWithRelations,
@@ -48,6 +49,8 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   rejection_reason,
   cancelled_by,
   cancelled_at,
+  client_closed_at,
+  resubmission_count,
   reference_number,
   total_cost,
   estimated_delivery,
@@ -511,6 +514,127 @@ async function create(input: CreateBookingInput): Promise<BookingWithRelations |
     client.release()
   }
 
+  return findById(bookingId)
+}
+
+/**
+ * Put a rejected booking back in front of the General Manager, rewritten with
+ * the client's corrections — as ONE transaction, for the same reason `create`
+ * is one: a half-applied resubmission would leave a pending booking with its
+ * old stops deleted and no new ones behind them.
+ *
+ * Every decision field the rejection left behind is cleared, so the booking
+ * reads exactly like a fresh request; the reason it was turned down last time
+ * stays in the audit log. Guarded on the booking still being a cancelled one
+ * the client has not closed, so two submissions racing each other cannot both
+ * land. Returns null when that guard refused.
+ */
+async function resubmit(bookingId: string, input: ResubmitBookingInput): Promise<BookingWithRelations | null> {
+  const { destinations, cargo_items, ...bookingData } = input
+
+  const client = await pool.connect()
+
+  try {
+    await client.query('BEGIN')
+
+    const columns = BOOKING_INSERT_COLUMNS.filter(
+      (col) => col !== 'client_id' && col !== 'idempotency_key',
+    )
+    const params  = columns.map((col) => (bookingData as Record<string, unknown>)[col] ?? null)
+    const updated = await client.query(
+      `UPDATE bookings
+          SET ${columns.map((col, i) => `${col} = $${i + 2}`).join(', ')},
+              status                      = 'pending',
+              gm_status                   = 'pending',
+              ops_status                  = 'pending',
+              rejection_reason            = NULL,
+              cancelled_by                = NULL,
+              cancelled_at                = NULL,
+              gm_reviewed_by              = NULL,
+              gm_reviewed_at              = NULL,
+              gm_reviewed_role            = NULL,
+              fleet_recheck_day_before_at = NULL,
+              fleet_recheck_day_of_at     = NULL,
+              resubmission_count          = resubmission_count + 1,
+              updated_at                  = now()
+        WHERE booking_id = $1
+          AND status = 'cancelled'
+          AND client_closed_at IS NULL`,
+      [bookingId, ...params],
+    )
+    if (updated.rowCount === 0) {
+      await client.query('ROLLBACK')
+      return null
+    }
+
+    // The stops and cargo are restated in full, so the old ones go first.
+    // Cargo before destinations: a cargo line points at its drop-off.
+    await client.query(`DELETE FROM booking_cargo_items  WHERE booking_id = $1`, [bookingId])
+    await client.query(`DELETE FROM booking_destinations WHERE booking_id = $1`, [bookingId])
+
+    const destinationIdByOrder = new Map<number, string>()
+
+    if (destinations.length > 0) {
+      const rows = destinations.map((d) => ({ ...d, booking_id: bookingId }))
+      const { sql, params: destParams } = bulkValues(rows, DESTINATION_INSERT_COLUMNS)
+      const inserted = await client.query<{ destination_id: string; sequence_order: number }>(
+        `INSERT INTO booking_destinations (${DESTINATION_INSERT_COLUMNS.join(', ')})
+         VALUES ${sql}
+         RETURNING destination_id, sequence_order`,
+        destParams,
+      )
+      for (const row of inserted.rows) {
+        destinationIdByOrder.set(Number(row.sequence_order), row.destination_id)
+      }
+    }
+
+    if (cargo_items && cargo_items.length > 0) {
+      const rows = cargo_items.map((item) => {
+        const { dropoff_sequence_order, ...rest } = item as typeof item & {
+          dropoff_sequence_order?: number
+        }
+        return {
+          ...rest,
+          booking_id:     bookingId,
+          destination_id: dropoff_sequence_order != null
+            ? destinationIdByOrder.get(dropoff_sequence_order) ?? null
+            : null,
+        }
+      })
+      const { sql, params: cargoParams } = bulkValues(rows, CARGO_INSERT_COLUMNS)
+      await client.query(
+        `INSERT INTO booking_cargo_items (${CARGO_INSERT_COLUMNS.join(', ')}) VALUES ${sql}`,
+        cargoParams,
+      )
+    }
+
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+
+  return findById(bookingId)
+}
+
+/**
+ * The client's answer to a rejection when they do not want to correct it: the
+ * booking stays cancelled, and is now closed to resubmission. Guarded the same
+ * way as `resubmit`, so it cannot close a booking that was just resubmitted.
+ */
+async function closeByClient(bookingId: string): Promise<BookingWithRelations | null> {
+  const { data, error } = await supabase
+    .from('bookings')
+    .update({ client_closed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('booking_id', bookingId)
+    .eq('status', 'cancelled')
+    .is('client_closed_at', null)
+    .select('booking_id')
+
+  if (error) throw error
+  if (!data || data.length === 0) return null
   return findById(bookingId)
 }
 
@@ -1148,6 +1272,8 @@ export const BookingModel = {
   update,
   updateStatus,
   cancelBooking,
+  resubmit,
+  closeByClient,
   updateGmStatus,
   setGmStatus,
   updateOpsStatus,

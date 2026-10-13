@@ -1,6 +1,7 @@
 import { BookingModel } from '../../models/client/booking.model.js'
 import {
   CreateBookingRequest,
+  ResubmitBookingInput,
   UpdateBookingInput,
   UpdateDestinationInput,
   BookingWithRelations,
@@ -14,7 +15,7 @@ import { optimizeDestinationsService } from '../maps/routeOptimization.service.j
 import { invalidateEta } from '../maps/eta.service.js'
 import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 import { logEvent } from '../../lib/log-event.js'
-import { badRequest } from '../../lib/http-error.js'
+import { badRequest, conflict, notFound } from '../../lib/http-error.js'
 import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay, phDay, phDayPlusMonth } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers, emailDeliveryConfirm } from '../notification/notification.service.js'
@@ -588,6 +589,102 @@ export async function gmReviewService(
   void notifyStage('approved_gm', advanced ?? booking)
 
   return advanced ?? booking
+}
+
+/**
+ * Whether a booking is an 8338 rejection still waiting on the client: turned
+ * down by the General Manager or cancelled by the Company Administrator, never
+ * crewed, and not yet closed by the client. Only these can be resubmitted or
+ * closed — a booking that had a driver and vehicle on it was cancelled for
+ * operational reasons, and resubmitting it would leave the old delivery record
+ * behind.
+ */
+function isAwaitingClientAfterRejection(booking: BookingWithRelations): boolean {
+  return booking.status === 'cancelled'
+    && !booking.client_closed_at
+    && booking.ops_status !== 'assigned'
+    && (booking.gm_status === 'rejected' || !!booking.cancelled_by)
+}
+
+/**
+ * The client corrected a rejected booking and sends it back for review. It is
+ * rewritten in place (same id, same reference) and goes through the approval
+ * chain exactly as a new booking would — every rule `createBookingService`
+ * applies to a new booking applies here too.
+ */
+export async function resubmitBookingService(
+  bookingId: string,
+  input: ResubmitBookingInput,
+  viewer: BookingViewer,
+  userId?: string | null,
+): Promise<BookingWithRelations> {
+  const existing = await BookingModel.findById(bookingId)
+  if (!existing) throw notFound('Booking not found')
+  assertBookingOwnership(existing, viewer)
+
+  if (!isAwaitingClientAfterRejection(existing)) {
+    throw conflict('Only a rejected booking can be resubmitted')
+  }
+
+  if (!input.destinations || input.destinations.length === 0) {
+    throw badRequest('At least one destination is required')
+  }
+  if (input.destinations.length > MAX_DESTINATIONS_PER_BOOKING) {
+    throw badRequest(`A booking can have at most ${MAX_DESTINATIONS_PER_BOOKING} drop-offs`)
+  }
+
+  validateScheduleDate(input.schedule_date)
+
+  const orders = input.destinations.map((d) => d.sequence_order)
+  if (new Set(orders).size !== orders.length) {
+    throw badRequest('sequence_order must be unique per destination')
+  }
+
+  const booking = await BookingModel.resubmit(bookingId, input)
+  if (!booking) throw conflict('Only a rejected booking can be resubmitted')
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      'booking_resubmitted',
+    description: `Booking ${bookingRef(booking)} corrected and resubmitted by the client` +
+                 (existing.rejection_reason ? ` (previously rejected: ${existing.rejection_reason})` : ''),
+  })
+
+  void routeNewBookingToGm(booking, userId)
+  void reoptimizeBookingStops(booking)
+
+  return booking
+}
+
+/**
+ * The client does not want to correct a rejected booking. It stays cancelled
+ * and is taken off their Needs Your Attention list for good.
+ */
+export async function closeRejectedBookingService(
+  bookingId: string,
+  viewer: BookingViewer,
+  userId?: string | null,
+): Promise<BookingWithRelations> {
+  const existing = await BookingModel.findById(bookingId)
+  if (!existing) throw notFound('Booking not found')
+  assertBookingOwnership(existing, viewer)
+
+  if (!isAwaitingClientAfterRejection(existing)) {
+    throw conflict('Only a rejected booking can be cancelled this way')
+  }
+
+  const booking = await BookingModel.closeByClient(bookingId)
+  if (!booking) throw conflict('Only a rejected booking can be cancelled this way')
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      'booking_closed_by_client',
+    description: `Rejected booking ${bookingRef(booking)} cancelled by the client instead of resubmitted`,
+  })
+
+  return booking
 }
 
 export async function deleteBookingService(

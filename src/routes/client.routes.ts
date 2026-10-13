@@ -6,6 +6,7 @@ import { requireModule }           from '../middlewares/moduleAccess.middleware.
 import { attachClientScope, attachDriverScope }       from '../middlewares/clientScope.middleware.js'
 import {
   createBookingSchema,
+  resubmitBookingSchema,
   updateBookingSchema,
   updateBookingStatusSchema,
   updateDestinationSchema,
@@ -84,6 +85,10 @@ router.get('/:id/live-position', authenticate, trackingLimiter, canViewBookings,
 
 router.post('/',                authenticate, authenticatedLimiter, isClient, attachClientScope, validate(createBookingSchema),       BookingController.createBooking)
 router.patch('/:id',            authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), validate(updateBookingSchema),       BookingController.updateBooking)
+// A booking 8338 turned down goes back to the client: they correct and resubmit
+// it (it re-enters the General Manager's queue), or cancel it for good.
+router.post('/:id/resubmit',    authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), validate(resubmitBookingSchema), BookingController.resubmitBooking)
+router.post('/:id/close',       authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), BookingController.closeRejectedBooking)
 router.patch('/:id/status',     authenticate, authenticatedLimiter, isAdmin,  attachClientScope, canManageBooking, lockGuard('booking', fromParam('id')), validate(updateBookingStatusSchema), BookingController.updateBookingStatus)
 router.delete('/:id',           authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), BookingController.deleteBooking)
 

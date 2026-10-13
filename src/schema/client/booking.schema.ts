@@ -103,6 +103,12 @@ export const createBookingSchema = z.object({
   cargo_items: z.array(createCargoItemSchema).optional(),
 })
 
+// A rejected booking resubmitted by its client: the same full statement as a
+// new booking, minus the fields that only make sense on a first creation (the
+// company comes from the session, and the booking already exists, so there is
+// no attempt to de-duplicate).
+export const resubmitBookingSchema = createBookingSchema.omit({ client_id: true, idempotency_key: true })
+
 export const updateBookingSchema = z.object({
   origin:                z.string().min(1).optional(),
   origin_longitude:      z.number().optional().nullable(),

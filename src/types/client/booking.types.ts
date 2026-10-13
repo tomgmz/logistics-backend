@@ -134,6 +134,10 @@ export interface Booking {
   rejection_reason?:      string | null
   cancelled_by?:          string | null
   cancelled_at?:          Date | null
+  /** The client gave up on a rejected booking instead of resubmitting it. */
+  client_closed_at?:      Date | null
+  /** How many times the client corrected and resubmitted a rejected booking. */
+  resubmission_count?:    number | null
   reference_number?:      string | null
 
   required_volume_cbm?:   number | null
@@ -232,6 +236,13 @@ export interface CreateBookingInput {
  */
 export type CreateBookingRequest =
   Omit<CreateBookingInput, 'client_id'> & { client_id?: string }
+
+/**
+ * A rejected booking, corrected and sent back for review. The whole booking is
+ * restated — route, schedule, cargo and documents — exactly as a new one would
+ * be, but it keeps its id and reference number.
+ */
+export type ResubmitBookingInput = Omit<CreateBookingInput, 'client_id' | 'idempotency_key'>
 
 export interface UpdateBookingInput {
   origin?:                 string

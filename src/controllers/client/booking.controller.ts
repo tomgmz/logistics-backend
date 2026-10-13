@@ -11,6 +11,8 @@ import {
   updateBookingService,
   updateBookingStatusService,
   deleteBookingService,
+  resubmitBookingService,
+  closeRejectedBookingService,
   gmReviewService,
   confirmCompletionService,
   resolveDeliveryIssueService,
@@ -128,6 +130,28 @@ export const updateBooking = async (req: Request, res: Response) => {
         ? 400
         : 500
     res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+// The client's two answers to a rejection: correct it and send it back for
+// review, or let it go.
+export const resubmitBooking = async (req: Request, res: Response) => {
+  try {
+    const { userId } = getRequestMeta(req)
+    const booking = await resubmitBookingService(param(req.params.id), req.body, viewerFrom(req), userId)
+    res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    res.status(statusOf(error)).json({ status: 'error', message: error.message })
+  }
+}
+
+export const closeRejectedBooking = async (req: Request, res: Response) => {
+  try {
+    const { userId } = getRequestMeta(req)
+    const booking = await closeRejectedBookingService(param(req.params.id), viewerFrom(req), userId)
+    res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    res.status(statusOf(error)).json({ status: 'error', message: error.message })
   }
 }
 
