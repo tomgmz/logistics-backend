@@ -39,6 +39,8 @@ router.post('/conversations/:conversationId/messages/:messageId/react', enforceC
 router.post('/groups',                                                          group.createGroup)
 router.get('/groups',                                                           group.getGroups)
 router.patch('/groups/:groupId/invite/respond',                                 group.respondToInvite)
+router.patch('/groups/:groupId',                                                group.renameGroup)
+router.post('/groups/:groupId/members',                                         group.addMembers)
 router.get('/groups/:groupId/messages',                                         group.getGroupMessages)
 router.post('/groups/:groupId/messages',                    sendLimit,          group.sendGroupMessage)
 router.patch('/groups/:groupId/read',                                           group.markGroupRead)

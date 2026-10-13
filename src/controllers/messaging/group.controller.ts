@@ -25,6 +25,14 @@ const createGroupSchema = z.object({
 
 const respondSchema = z.object({ accept: z.boolean() })
 
+const renameGroupSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+})
+
+const addMembersSchema = z.object({
+  member_ids: z.array(z.string().uuid()).min(1).max(50),
+})
+
 const sendGroupMessageSchema = z.object({
   content: z.string().min(1).max(5000).transform(v => v.trim()),
   reply_to_message_id: z.string().uuid().optional(),
@@ -95,5 +103,23 @@ export async function reactToGroupMessage(req: Request, res: Response, next: Nex
     const p = reactSchema.safeParse(req.body)
     if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
     res.json({ success: true, data: await service.toggleGroupReaction(req.params.groupId as string, req.params.messageId as string, user_id, p.data.emoji) })
+  } catch (err) { fail(res, err) }
+}
+
+export async function renameGroup(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { user_id } = getAuth(req)
+    const p = renameGroupSchema.safeParse(req.body)
+    if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
+    res.json({ success: true, data: await service.renameGroup(req.params.groupId as string, user_id, p.data.name) })
+  } catch (err) { fail(res, err) }
+}
+
+export async function addMembers(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { user_id } = getAuth(req)
+    const p = addMembersSchema.safeParse(req.body)
+    if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
+    res.json({ success: true, data: await service.addMembers(req.params.groupId as string, user_id, p.data.member_ids) })
   } catch (err) { fail(res, err) }
 }

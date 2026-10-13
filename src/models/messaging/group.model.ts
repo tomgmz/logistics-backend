@@ -214,3 +214,39 @@ export async function touchGroup(groupId: string): Promise<void> {
   const { error } = await supabase.from('group_conversations').update({ last_message_at: now, updated_at: now }).eq('group_id', groupId)
   if (error) throw error
 }
+export async function renameGroup(groupId: string, name: string): Promise<void> {
+  const { error } = await supabase
+    .from('group_conversations')
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq('group_id', groupId)
+  if (error) throw error
+}
+
+/**
+ * Invite people into an existing group. Someone who once declined already has
+ * a row, so they are re-invited in place rather than inserted twice.
+ */
+export async function addMembers(groupId: string, invitedBy: string, userIds: string[]): Promise<void> {
+  if (!userIds.length) return
+  const { data: existing, error } = await supabase
+    .from('group_members').select('user_id').eq('group_id', groupId).in('user_id', userIds)
+  if (error) throw error
+  const reinvite = new Set((existing ?? []).map((r: { user_id: string }) => r.user_id))
+
+  if (reinvite.size) {
+    const { error: uErr } = await supabase
+      .from('group_members')
+      .update({ status: 'pending', invited_by: invitedBy, joined_at: null })
+      .eq('group_id', groupId)
+      .in('user_id', [...reinvite])
+    if (uErr) throw uErr
+  }
+
+  const fresh = userIds.filter(id => !reinvite.has(id))
+  if (fresh.length) {
+    const { error: iErr } = await supabase.from('group_members').insert(
+      fresh.map(uid => ({ group_id: groupId, user_id: uid, invited_by: invitedBy, status: 'pending', joined_at: null })),
+    )
+    if (iErr) throw iErr
+  }
+}

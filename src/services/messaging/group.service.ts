@@ -47,6 +47,88 @@ export async function createGroup(
   return { group_id: group.group_id }
 }
 
+// A group holds at most this many people, the creator included — the same cap
+// creating a group applies (50 invitees plus the creator).
+const MAX_GROUP_SIZE = 51
+
+async function requireAcceptedMember(groupId: string, userId: string): Promise<void> {
+  const [group, member] = await Promise.all([
+    groupModel.getGroupById(groupId),
+    groupModel.getGroupMember(groupId, userId),
+  ])
+  if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 })
+  if (!member || member.status !== 'accepted') throw Object.assign(new Error('Only group members can do this'), { statusCode: 403 })
+}
+
+async function acceptedMemberIds(groupId: string): Promise<string[]> {
+  const { data } = await admin
+    .from('group_members').select('user_id').eq('group_id', groupId).eq('status', 'accepted')
+  return (data ?? []).map((m: { user_id: string }) => m.user_id)
+}
+
+/** Any member of the group may rename it; everyone in it sees the new name live. */
+export async function renameGroup(groupId: string, userId: string, name: string): Promise<{ name: string }> {
+  await requireAcceptedMember(groupId, userId)
+  await groupModel.renameGroup(groupId, name)
+
+  const memberIds = await acceptedMemberIds(groupId)
+  void broadcastMany(
+    [`messaging:group:${groupId}`, ...memberIds.map(uid => `messaging:user:${uid}`)],
+    'group_updated',
+    { group_id: groupId, name },
+  )
+  return { name }
+}
+
+/**
+ * Any member of the group may invite more people. The same rules as creating a
+ * group apply: active users only, never clients. Invitees join as pending and
+ * accept the way the original members did.
+ */
+export async function addMembers(groupId: string, userId: string, memberIds: string[]): Promise<{ added: number }> {
+  await requireAcceptedMember(groupId, userId)
+
+  const uniqueIds = [...new Set(memberIds)].filter(id => id !== userId)
+  if (!uniqueIds.length) throw Object.assign(new Error('Choose at least one person to add'), { statusCode: 400 })
+
+  const { data: current, error: cErr } = await admin
+    .from('group_members').select('user_id, status').eq('group_id', groupId)
+  if (cErr) throw cErr
+  const inGroup = new Set(
+    (current ?? []).filter((m: { status: string }) => m.status !== 'declined').map((m: { user_id: string }) => m.user_id),
+  )
+  const toAdd = uniqueIds.filter(id => !inGroup.has(id))
+  if (!toAdd.length) throw Object.assign(new Error('Everyone you chose is already in this group'), { statusCode: 400 })
+  if (inGroup.size + toAdd.length > MAX_GROUP_SIZE)
+    throw Object.assign(new Error(`A group can have at most ${MAX_GROUP_SIZE} members`), { statusCode: 400 })
+
+  const { data: users, error } = await admin
+    .from('users').select('user_id, status, role').in('user_id', toAdd)
+  if (error) throw error
+  const activeIds = new Set((users ?? []).filter(u => u.status === 'active').map(u => u.user_id))
+  if (toAdd.some(id => !activeIds.has(id)))
+    throw Object.assign(new Error('One or more members are invalid or inactive'), { statusCode: 400 })
+  if ((users ?? []).some(u => u.role === 'client'))
+    throw Object.assign(new Error('Clients cannot be added to group chats'), { statusCode: 400 })
+
+  await groupModel.addMembers(groupId, userId, toAdd)
+
+  const group = await groupModel.getGroupById(groupId)
+  void broadcastMany(
+    toAdd.map(uid => `messaging:user:${uid}`),
+    'group_invite',
+    { group_id: groupId, group_name: group?.name ?? '' },
+  )
+  const memberIds = await acceptedMemberIds(groupId)
+  void broadcastMany(
+    [`messaging:group:${groupId}`, ...memberIds.map(uid => `messaging:user:${uid}`)],
+    'group_updated',
+    { group_id: groupId },
+  )
+
+  return { added: toAdd.length }
+}
+
 export async function getGroups(userId: string): Promise<GroupWithDetails[]> {
   return groupModel.getGroupsByUserId(userId)
 }
