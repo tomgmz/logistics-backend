@@ -47,7 +47,7 @@ router.post('/groups/:groupId/requests/:requestId/decide',                      
 router.get('/groups/:groupId/messages',                                         group.getGroupMessages)
 router.post('/groups/:groupId/messages',                    sendLimit,          group.sendGroupMessage)
 router.patch('/groups/:groupId/read',                                           group.markGroupRead)
-// Delete for me: hides the message from the caller only.
+// Delete for me hides the message from the caller; ?scope=everyone unsends it (sender only).
 router.delete('/groups/:groupId/messages/:messageId',                            group.hideGroupMessage)
 router.post('/groups/:groupId/messages/:messageId/react',                       group.reactToGroupMessage)
 

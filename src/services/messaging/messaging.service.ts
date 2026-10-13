@@ -202,6 +202,33 @@ export async function deleteMessage(messageId: string, userId: string): Promise<
   })
 }
 
+/**
+ * Unsend for everyone: only the sender can, and it disappears for both people.
+ * Open chats drop it live. Deleting for yourself is `deleteMessage`.
+ */
+export async function unsendMessage(messageId: string, userId: string): Promise<void> {
+  const msg = await model.findMessageById(messageId)
+  if (!msg) throw Object.assign(new Error('Message not found'), { statusCode: 404 })
+  if (msg.sender_id !== userId)
+    throw Object.assign(new Error('Only the person who sent a message can unsend it'), { statusCode: 403 })
+
+  await model.unsendMessage(messageId, userId)
+
+  const payload = { message_id: messageId, conversation_id: msg.conversation_id }
+  void Promise.allSettled([
+    broadcast(`messaging:user:${msg.sender_id}`, 'message_unsent', payload),
+    broadcast(`messaging:user:${msg.receiver_id}`, 'message_unsent', payload),
+    broadcast(`messaging:conv:${msg.conversation_id}`, 'message_unsent', payload),
+  ])
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'admin_activity',
+    action:      'message_unsent',
+    description: `Unsent message ${messageId} for everyone`,
+  })
+}
+
 export async function toggleReaction(
   conversationId: string,
   messageId: string,

@@ -434,6 +434,34 @@ export async function getGroupMessages(
  * Delete a group message for yourself only. Everyone else in the group keeps
  * seeing it. Any message can be removed from your own view, not only yours.
  */
+/**
+ * Unsend for everyone in the group: only the sender can. The message is gone
+ * from every member's history, and open chats drop it live.
+ */
+export async function unsendGroupMessage(groupId: string, messageId: string, userId: string): Promise<void> {
+  const member = await groupModel.getGroupMember(groupId, userId)
+  if (!member || member.status !== 'accepted') throw Object.assign(new Error('Access denied'), { statusCode: 403 })
+
+  const { data: msg, error } = await admin
+    .from('group_messages').select('message_id, sender_id, message_type')
+    .eq('message_id', messageId).eq('group_id', groupId).is('deleted_at', null).maybeSingle()
+  if (error) throw error
+  if (!msg) throw Object.assign(new Error('Message not found'), { statusCode: 404 })
+  if (msg.sender_id !== userId || msg.message_type === 'system')
+    throw Object.assign(new Error('Only the person who sent a message can unsend it'), { statusCode: 403 })
+
+  const { error: uErr } = await admin
+    .from('group_messages').update({ deleted_at: new Date().toISOString() }).eq('message_id', messageId)
+  if (uErr) throw uErr
+
+  const memberIds = await acceptedMemberIds(groupId)
+  void broadcastMany(
+    [`messaging:group:${groupId}`, ...memberIds.map(uid => `messaging:user:${uid}`)],
+    'message_unsent',
+    { message_id: messageId, group_id: groupId },
+  )
+}
+
 export async function hideGroupMessage(groupId: string, messageId: string, userId: string): Promise<void> {
   const member = await groupModel.getGroupMember(groupId, userId)
   if (!member || member.status !== 'accepted') throw Object.assign(new Error('Access denied'), { statusCode: 403 })

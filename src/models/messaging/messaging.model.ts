@@ -202,6 +202,16 @@ export async function findMessageById(id: string): Promise<MessageRow | null> {
   return data as MessageRow | null
 }
 
+/** Unsend: the sender takes the message back from both sides of the conversation. */
+export async function unsendMessage(messageId: string, senderId: string): Promise<void> {
+  const { error } = await supabase
+    .from('messages')
+    .update({ deleted_by_sender: true, deleted_by_receiver: true })
+    .eq('message_id', messageId)
+    .eq('sender_id', senderId)
+  if (error) throw error
+}
+
 export async function softDeleteMessage(messageId: string, userId: string, asSender: boolean): Promise<void> {
   const field = asSender ? 'deleted_by_sender' : 'deleted_by_receiver'
   const owner = asSender ? 'sender_id' : 'receiver_id'

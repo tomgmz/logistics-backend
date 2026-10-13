@@ -88,7 +88,9 @@ export async function markAsRead(req: Request, res: Response, next: NextFunction
 export async function deleteMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { user_id } = getAuth(req)
-    await service.deleteMessage(req.params.messageId as string, user_id)
+    // ?scope=everyone unsends (sender only); otherwise it is deleted for the caller.
+    if (req.query.scope === 'everyone') await service.unsendMessage(req.params.messageId as string, user_id)
+    else await service.deleteMessage(req.params.messageId as string, user_id)
     res.json({ success: true })
   } catch (err) { fail(res, err) }
 }
