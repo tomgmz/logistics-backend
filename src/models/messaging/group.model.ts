@@ -4,6 +4,7 @@ import type {
   GroupMemberRow,
   GroupMessageRow,
   GroupWithDetails,
+  GroupSystemEvent,
 } from '../../types/messaging.types.js'
 
 export async function createGroup(name: string, createdBy: string, memberIds: string[]): Promise<GroupRow> {
@@ -50,7 +51,7 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
       .in('group_id', groupIds),
 
     supabase.from('group_messages')
-      .select('message_id, group_id, content, sent_at, sender_id')
+      .select('message_id, group_id, content, sent_at, sender_id, message_type')
       .in('group_id', groupIds)
       .is('deleted_at', null)
       .order('sent_at', { ascending: false }),
@@ -65,7 +66,7 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
     ;(membersByGroup[row.group_id] ??= []).push(m)
   }
 
-  type MsgRow = { message_id: string; group_id: string; content: string; sent_at: string; sender_id: string }
+  type MsgRow = { message_id: string; group_id: string; content: string; sent_at: string; sender_id: string; message_type?: string }
 
   const lastMsgMap: Record<string, MsgRow>    = {}
   const unreadMap:  Record<string, number>    = {}
@@ -74,7 +75,8 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
   for (const m of (allMsgs ?? []) as MsgRow[]) {
     if (!lastMsgMap[m.group_id]) lastMsgMap[m.group_id] = m
 
-    if (m.sender_id === userId) continue
+    // Your own messages, and group events, never count as unread.
+    if (m.sender_id === userId || m.message_type === 'system') continue
     const readAt   = readAtMap[m.group_id]
     const isUnread = readAt === null || toMs(m.sent_at) > toMs(readAt)
     if (isUnread) unreadMap[m.group_id] = (unreadMap[m.group_id] ?? 0) + 1
@@ -124,6 +126,22 @@ export async function insertGroupMessage(
     .single()
   if (error) throw error
   return data as GroupMessageRow
+}
+
+/** A group event line (renamed, people added) in the message history. */
+export async function insertSystemMessage(
+  groupId: string,
+  actorId: string,
+  content: string,
+  meta: GroupSystemEvent,
+): Promise<GroupMessageRow> {
+  const { data, error } = await supabase
+    .from('group_messages')
+    .insert({ group_id: groupId, sender_id: actorId, content, message_type: 'system', meta })
+    .select()
+    .single()
+  if (error) throw error
+  return { ...(data as GroupMessageRow), reply_to: null, reactions: [] }
 }
 
 export async function getGroupMessages(groupId: string, limit: number, before?: string): Promise<GroupMessageRow[]> {
@@ -249,4 +267,18 @@ export async function addMembers(groupId: string, invitedBy: string, userIds: st
     )
     if (iErr) throw iErr
   }
+}
+
+/**
+ * Take someone out of a group. Their row stays, marked declined, so the group
+ * leaves their list and they lose access while their earlier messages still
+ * show who wrote them. Adding them again re-invites this same row.
+ */
+export async function removeMember(groupId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('group_members')
+    .update({ status: 'declined', joined_at: null })
+    .eq('group_id', groupId)
+    .eq('user_id', userId)
+  if (error) throw error
 }

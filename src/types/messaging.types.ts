@@ -46,7 +46,15 @@ export interface MessageRow {
   reply_to_message_id: string | null
   reply_to: ReplyPreview | null
   reactions: ReactionRow[]
+  /** 'system' = a group event (renamed, people added), rendered as a centered line. */
+  message_type?: 'text' | 'system'
+  meta?: GroupSystemEvent | null
 }
+
+export type GroupSystemEvent =
+  | { event: 'renamed'; name: string; previous_name?: string | null }
+  | { event: 'added'; user_ids: string[]; names: string[] }
+  | { event: 'removed'; user_id: string; name: string }
 
 export interface ConversationParticipant {
   user_id: string

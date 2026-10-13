@@ -123,3 +123,11 @@ export async function addMembers(req: Request, res: Response, next: NextFunction
     res.json({ success: true, data: await service.addMembers(req.params.groupId as string, user_id, p.data.member_ids) })
   } catch (err) { fail(res, err) }
 }
+
+export async function removeMember(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { user_id } = getAuth(req)
+    await service.removeMember(req.params.groupId as string, user_id, req.params.userId as string)
+    res.json({ success: true })
+  } catch (err) { fail(res, err) }
+}

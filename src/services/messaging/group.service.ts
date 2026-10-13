@@ -1,7 +1,7 @@
 import * as groupModel from '../../models/messaging/group.model.js'
 import * as push from './push.service.js'
 import { createClient } from '@supabase/supabase-js'
-import type { GroupWithDetails, GroupMessageRow } from '../../types/messaging.types.js'
+import type { GroupWithDetails, GroupMessageRow, GroupSystemEvent } from '../../types/messaging.types.js'
 
 const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
@@ -66,10 +66,43 @@ async function acceptedMemberIds(groupId: string): Promise<string[]> {
   return (data ?? []).map((m: { user_id: string }) => m.user_id)
 }
 
+/** "A and B", "A, B and C". */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
+
+/**
+ * Record a group event as a system line in the message history and deliver it
+ * like a message, so it shows up in order with the conversation for everyone
+ * already in the group. Best effort: the change itself has already happened.
+ */
+async function postSystemEvent(groupId: string, actorId: string, content: string, meta: GroupSystemEvent): Promise<void> {
+  try {
+    const message = await groupModel.insertSystemMessage(groupId, actorId, content, meta)
+    await groupModel.touchGroup(groupId)
+    const memberIds = await acceptedMemberIds(groupId)
+    void broadcastMany(
+      [`messaging:group:${groupId}`, ...memberIds.map(uid => `messaging:user:${uid}`)],
+      'new_group_message',
+      { ...message, reply_to: null },
+    )
+  } catch (err) {
+    console.error('[messaging] failed to record group event', groupId, meta.event, err)
+  }
+}
+
 /** Any member of the group may rename it; everyone in it sees the new name live. */
 export async function renameGroup(groupId: string, userId: string, name: string): Promise<{ name: string }> {
   await requireAcceptedMember(groupId, userId)
+  const before = await groupModel.getGroupById(groupId)
+  if (before?.name.trim() === name.trim()) return { name }
   await groupModel.renameGroup(groupId, name)
+
+  const actor = await push.getDisplayName(userId)
+  await postSystemEvent(groupId, userId, `${actor} named the group ${name}.`, {
+    event: 'renamed', name, previous_name: before?.name ?? null,
+  })
 
   const memberIds = await acceptedMemberIds(groupId)
   void broadcastMany(
@@ -103,7 +136,7 @@ export async function addMembers(groupId: string, userId: string, memberIds: str
     throw Object.assign(new Error(`A group can have at most ${MAX_GROUP_SIZE} members`), { statusCode: 400 })
 
   const { data: users, error } = await admin
-    .from('users').select('user_id, status, role').in('user_id', toAdd)
+    .from('users').select('user_id, status, role, first_name, last_name').in('user_id', toAdd)
   if (error) throw error
   const activeIds = new Set((users ?? []).filter(u => u.status === 'active').map(u => u.user_id))
   if (toAdd.some(id => !activeIds.has(id)))
@@ -112,6 +145,13 @@ export async function addMembers(groupId: string, userId: string, memberIds: str
     throw Object.assign(new Error('Clients cannot be added to group chats'), { statusCode: 400 })
 
   await groupModel.addMembers(groupId, userId, toAdd)
+
+  const nameOf = new Map((users ?? []).map(u => [u.user_id, `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || 'Someone']))
+  const names  = toAdd.map(id => nameOf.get(id) ?? 'Someone')
+  const actor  = await push.getDisplayName(userId)
+  await postSystemEvent(groupId, userId, `${actor} added ${joinNames(names)} to the group.`, {
+    event: 'added', user_ids: toAdd, names,
+  })
 
   const group = await groupModel.getGroupById(groupId)
   void broadcastMany(
@@ -127,6 +167,38 @@ export async function addMembers(groupId: string, userId: string, memberIds: str
   )
 
   return { added: toAdd.length }
+}
+
+/**
+ * The group's creator takes someone out of it. Members other than the creator
+ * cannot remove anyone, and the creator cannot remove themselves.
+ */
+export async function removeMember(groupId: string, userId: string, targetId: string): Promise<void> {
+  const group = await groupModel.getGroupById(groupId)
+  if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 })
+  if (group.created_by !== userId)
+    throw Object.assign(new Error('Only the person who created the group can remove members'), { statusCode: 403 })
+  if (targetId === userId)
+    throw Object.assign(new Error('You cannot remove yourself from a group you created'), { statusCode: 400 })
+
+  const target = await groupModel.getGroupMember(groupId, targetId)
+  if (!target || target.status === 'declined')
+    throw Object.assign(new Error('That person is not in this group'), { statusCode: 404 })
+
+  await groupModel.removeMember(groupId, targetId)
+
+  const [actor, name] = await Promise.all([push.getDisplayName(userId), push.getDisplayName(targetId)])
+  await postSystemEvent(groupId, userId, `${actor} removed ${name} from the group.`, {
+    event: 'removed', user_id: targetId, name,
+  })
+
+  // The removed person's list drops the group; everyone else's member list refreshes.
+  const joinedIds = await acceptedMemberIds(groupId)
+  void broadcastMany(
+    [`messaging:group:${groupId}`, ...[...joinedIds, targetId].map(uid => `messaging:user:${uid}`)],
+    'group_updated',
+    { group_id: groupId },
+  )
 }
 
 export async function getGroups(userId: string): Promise<GroupWithDetails[]> {

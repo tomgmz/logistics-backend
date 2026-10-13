@@ -41,6 +41,7 @@ router.get('/groups',                                                           
 router.patch('/groups/:groupId/invite/respond',                                 group.respondToInvite)
 router.patch('/groups/:groupId',                                                group.renameGroup)
 router.post('/groups/:groupId/members',                                         group.addMembers)
+router.delete('/groups/:groupId/members/:userId',                               group.removeMember)
 router.get('/groups/:groupId/messages',                                         group.getGroupMessages)
 router.post('/groups/:groupId/messages',                    sendLimit,          group.sendGroupMessage)
 router.patch('/groups/:groupId/read',                                           group.markGroupRead)
