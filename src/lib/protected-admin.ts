@@ -23,7 +23,13 @@ export async function getRootAdminId(): Promise<string | null> {
     return cached?.id ?? null
   }
 
-  cached = { id: data?.user_id ?? null, expires: Date.now() + TTL_MS }
+  // Don't cache "no admin yet": after a full user reset the first Company
+  // Administrator added must become root immediately, not 5 minutes later.
+  if (!data?.user_id) {
+    cached = null
+    return null
+  }
+  cached = { id: data.user_id, expires: Date.now() + TTL_MS }
   return cached.id
 }
 
