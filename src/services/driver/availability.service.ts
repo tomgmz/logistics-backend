@@ -31,6 +31,21 @@ export interface DriverAvailabilityState {
   // Whether the driver is out on a delivery right now. The app shows this; it is
   // not something the driver can change from their side.
   on_delivery: boolean
+  // Whether that delivery has actually left (booking 'in_transit'). Until then
+  // the driver is only crewed onto it, and the app says "Assigned" rather than
+  // "On delivery".
+  in_transit: boolean
+}
+
+/** Whether the driver — main or second — is on a booking that is under way. */
+async function isInTransit(driverId: string): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('deliveries')
+    .select('delivery_id, bookings!inner ( status )', { count: 'exact', head: true })
+    .or(`driver_id.eq.${driverId},second_driver_id.eq.${driverId}`)
+    .eq('bookings.status', 'in_transit')
+  if (error) throw error
+  return (count ?? 0) > 0
 }
 
 async function findDriverByUser(userId: string): Promise<{ driver_id: string; status: string }> {
@@ -51,11 +66,13 @@ async function findDriverByUser(userId: string): Promise<{ driver_id: string; st
 }
 
 export async function getAvailability(userId: string): Promise<DriverAvailabilityState> {
-  const driver = await findDriverByUser(userId)
+  const driver     = await findDriverByUser(userId)
+  const onDelivery = driver.status === 'assigned'
   return {
     driver_id:   driver.driver_id,
     status:      driver.status,
-    on_delivery: driver.status === 'assigned',
+    on_delivery: onDelivery,
+    in_transit:  onDelivery && await isInTransit(driver.driver_id),
   }
 }
 
