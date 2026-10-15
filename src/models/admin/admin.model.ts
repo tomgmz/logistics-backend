@@ -36,6 +36,7 @@ async function create(userId: string, input: CreateAdminInput) {
         suffix:      input.suffix,
         phone:       input.phone,
         created_by:  input.created_by ?? null,
+        must_change_password: true,
     })
 }
 

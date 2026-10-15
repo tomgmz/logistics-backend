@@ -37,10 +37,15 @@ export async function createUserWithProfile(
   user:    BaseUserFields,
   detail?: Record<string, unknown> | null,
 ) {
+  // Every provisioned account starts on a generated password (or an emailed
+  // code), so it must change it at first sign-in. Default to that here rather
+  // than trusting each caller: the Company Administrator create once left the
+  // flag out and the DB default (false) let new admins skip the change. Only a
+  // caller with no password at all (passkey vendor drivers) passes false.
   const { data, error } = await supabase.rpc('create_user_with_profile', {
     p_user_id: userId,
     p_role:    role,
-    p_user:    user,
+    p_user:    { ...user, must_change_password: user.must_change_password ?? true },
     p_detail:  detail ?? null,
   })
   if (error) throw error
