@@ -721,6 +721,10 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
     if (reason === 'signed_in_elsewhere') {
       throw sessionInvalid('Your account was signed in on another device.', 'SESSION_REPLACED')
     }
+    // Ended by deactivating or archiving the account: expected, not a replay.
+    if (reason === 'deactivated') {
+      throw sessionInvalid('Your account is no longer active. Please contact your Administrator.', 'ACCOUNT_INACTIVE')
+    }
 
     // A structurally valid refresh token with no live session means it was
     // already rotated or revoked — replay, not a routine expiry.
@@ -735,7 +739,10 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
   }
 
   const user = await AuthModel.findUserById(payload.sub)
-  if (!user || user.status !== 'active') throw sessionInvalid('User not found or inactive')
+  if (!user) throw sessionInvalid('User not found or inactive')
+  if (user.status !== 'active') {
+    throw sessionInvalid('Your account is no longer active. Please contact your Administrator.', 'ACCOUNT_INACTIVE')
+  }
 
   const accessExpiresAt = new Date(Date.now() + parseDuration(JWT_EXPIRES_IN as string))
   const accessToken = jwt.sign(

@@ -183,7 +183,8 @@ export async function refreshToken(req: Request, res: Response) {
       return
     }
     const message = err instanceof Error ? err.message : 'Session expired. Please log in again.'
-    const code    = (err as { code?: string })?.code === 'SESSION_REPLACED' ? 'SESSION_REPLACED' : undefined
+    const errCode = (err as { code?: string })?.code
+    const code    = errCode === 'SESSION_REPLACED' || errCode === 'ACCOUNT_INACTIVE' ? errCode : undefined
     if (!code) console.error('TOKEN REFRESH ERROR:', err)
     clearAuthCookies(res)
     res.status(401).json({ status: 'error', ...(code && { code }), message })

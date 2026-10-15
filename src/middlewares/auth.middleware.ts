@@ -77,6 +77,16 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
         })
         return
       }
+      // Deactivating or archiving revokes every session; say so, so the client
+      // signs out at once with the right message instead of trying a refresh.
+      if (reason === 'deactivated') {
+        res.status(401).json({
+          status:  'error',
+          code:    'ACCOUNT_INACTIVE',
+          message: 'Your account is no longer active. Please contact your Administrator.',
+        })
+        return
+      }
       res.status(401).json({ status: 'error', message: 'Session expired or revoked' })
       return
     }
