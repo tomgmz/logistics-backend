@@ -99,22 +99,28 @@ const UPPER  = 'ABCDEFGHJKLMNPQRSTUVWXYZ'  // no I, O
 const LOWER  = 'abcdefghjkmnpqrstuvwxyz'    // no i, l, o
 const DIGITS = '23456789'                   // no 0, 1
 
+/**
+ * The temporary password in the welcome email: 6 characters (the user's call,
+ * so it is easy to type), with at least one capital, one small letter and one
+ * digit, and no look-alikes (I/l/1, O/0). The email asks the user to change
+ * it after their first sign-in.
+ */
 export function generateSecurePassword(): string {
   const pick = (charset: string, count: number): string[] =>
     Array.from({ length: count }, () =>
-      charset[crypto.randomBytes(1)[0] % charset.length]
+      charset[crypto.randomInt(charset.length)]
     )
 
   const chars = [
-    ...pick(UPPER,  4),
-    ...pick(LOWER,  6),
-    ...pick(DIGITS, 4),
-    // pad to 16 from combined pool
-    ...pick(UPPER + LOWER + DIGITS, 2),
+    ...pick(UPPER,  2),
+    ...pick(LOWER,  2),
+    ...pick(DIGITS, 1),
+    // pad to 6 from the combined pool
+    ...pick(UPPER + LOWER + DIGITS, 1),
   ]
 
   for (let i = chars.length - 1; i > 0; i--) {
-    const j = crypto.randomBytes(1)[0] % (i + 1)
+    const j = crypto.randomInt(i + 1)
     ;[chars[i], chars[j]] = [chars[j], chars[i]]
   }
 
