@@ -66,15 +66,25 @@ export async function listForUser(
 }
 
 /** One numbered page, newest first, with the total for the pager. */
+/**
+ * The bell's filter: unread only, or one group of types by their prefix
+ * ('booking' → booking.*). Whitelisted so the prefix is never user text.
+ */
+export const NOTIFICATION_FILTERS = ['unread', 'booking', 'driver', 'auth', 'support'] as const
+export type NotificationFilter = typeof NOTIFICATION_FILTERS[number]
+
 export async function pageForUser(
   userId: string,
-  opts: { page: number; limit: number },
+  opts: { page: number; limit: number; filter?: NotificationFilter | null },
 ): Promise<{ items: NotificationRow[]; total: number }> {
   const from = (opts.page - 1) * opts.limit
-  const { data, error, count } = await supabase
+  let q = supabase
     .from('notifications')
     .select('*', { count: 'exact' })
     .eq('user_id', userId)
+  if (opts.filter === 'unread') q = q.is('read_at', null)
+  else if (opts.filter)         q = q.like('type', `${opts.filter}.%`)
+  const { data, error, count } = await q
     .order('created_at', { ascending: false })
     .range(from, from + opts.limit - 1)
   if (error) throw error

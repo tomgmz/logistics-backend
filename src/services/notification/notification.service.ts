@@ -18,7 +18,10 @@ export function listNotifications(userId: string, opts: { limit: number; before?
   return model.listForUser(userId, opts)
 }
 
-export function pageNotifications(userId: string, opts: { page: number; limit: number }) {
+export function pageNotifications(
+  userId: string,
+  opts: { page: number; limit: number; filter?: model.NotificationFilter | null },
+) {
   return model.pageForUser(userId, opts)
 }
 

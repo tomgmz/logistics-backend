@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { param } from '../../lib/controller-utils.js'
 import * as service from '../../services/notification/notification.service.js'
+import { NOTIFICATION_FILTERS, type NotificationFilter } from '../../models/notification/notification.model.js'
 
 function requireUserId(req: Request): string {
   const id = req.user?.sub
@@ -19,11 +20,15 @@ export async function list(req: Request, res: Response) {
     // Without it the response is the plain list the driver app reads.
     const pageRaw = parseInt(String(req.query.page ?? ''), 10)
     if (Number.isFinite(pageRaw) && pageRaw >= 1) {
-      const { items, total } = await service.pageNotifications(userId, { page: pageRaw, limit })
+      // ?filter= narrows the pages (unread, or a type group); anything else is ignored.
+      const filter = NOTIFICATION_FILTERS.includes(req.query.filter as NotificationFilter)
+        ? (req.query.filter as NotificationFilter)
+        : null
+      const { items, total } = await service.pageNotifications(userId, { page: pageRaw, limit, filter })
       res.status(200).json({
         status: 'success',
         data:   items,
-        meta:   { page: pageRaw, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+        meta:   { page: pageRaw, limit, filter, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
       })
       return
     }

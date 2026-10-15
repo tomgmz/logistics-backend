@@ -41,6 +41,10 @@ export type NotificationType =
   // requests to `it_admin` — never both.
   | 'auth.password_reset_requested'   // user is locked out / forgot -> the owning admin group
   | 'auth.password_reset_completed'   // user set a new password -> the admin who sent the link
+  // Client support tickets. Carry `ticket_id` + `reference_number` in `data`;
+  // `booking_id` stays null even when the ticket names a booking.
+  | 'support.ticket_opened'           // client opened a ticket -> Company Administrators
+  | 'support.ticket_resolved'         // staff resolved it -> the client who opened it
 
 export interface NotificationRow {
   notification_id: string

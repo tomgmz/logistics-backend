@@ -5,6 +5,7 @@ import {
   sendSupportTicketEmail,
   sendSupportTicketResolvedEmail,
 } from '../../lib/brevo-mailer.js'
+import { notifyTicketOpened, notifyTicketResolved } from '../notification/support-ticket-notify.service.js'
 
 /**
  * Client support tickets, raised from the web FAQ chatbot when it can't answer.
@@ -120,6 +121,8 @@ export async function openTicket(clientId: string, userId: string, input: OpenTi
     description: `Client opened support ticket ${ticket.reference}: ${ticket.subject}`,
   })
 
+  void notifyTicketOpened(ticket, company?.company_name ? `${name} (${company.company_name})` : name)
+
   if (opener?.email) {
     const email = opener.email
     void sendSupportTicketEmail({
@@ -202,6 +205,8 @@ export async function resolveTicket(ticketId: string, actorId: string, note: str
     action:      'support_ticket_resolved',
     description: `Support ticket ${ticket.reference} marked resolved`,
   })
+
+  void notifyTicketResolved(ticket, (data as any).opened_by)
 
   const opener  = one((data as any).opener) as { first_name: string | null; last_name: string | null; email: string } | null
   const company = one((data as any).clients) as { company_name: string | null } | null
