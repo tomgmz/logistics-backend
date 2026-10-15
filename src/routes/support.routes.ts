@@ -5,13 +5,15 @@ import { authenticatedLimiter } from '../middlewares/rateLimit.middleware.js'
 import { attachClientScope } from '../middlewares/clientScope.middleware.js'
 import { validate } from '../middlewares/validate.middleware.js'
 import * as Support from '../services/support/support.service.js'
+import { supportInboxEmail } from '../lib/brevo-mailer.js'
 
 /**
  * Client support tickets, raised from the web FAQ chatbot.
  *
  *   POST  /support/tickets               client opens one (emails the inbox)
  *   GET   /support/tickets/mine          the client's own tickets
- *   GET   /support/tickets?status=open   staff queue (dashboard)
+ *   GET   /support/tickets?status=open   staff queue (dashboard + the Company
+ *                                        Administrator's Tickets page)
  *   PATCH /support/tickets/:id/resolve   staff mark it resolved (emails the client)
  *
  * Staff = the Company Administrator and the Operations Manager, the desk that
@@ -66,7 +68,8 @@ router.get('/tickets', authenticate, authenticatedLimiter, isSupportDesk,
     try {
       const raw    = String(req.query.status ?? 'open')
       const status = raw === 'resolved' || raw === 'all' ? raw : 'open'
-      res.status(200).json({ status: 'success', data: await Support.listTickets(status) })
+      // The inbox the tickets were emailed to; the Tickets page opens it in Gmail.
+      res.status(200).json({ status: 'success', data: await Support.listTickets(status), inbox: supportInboxEmail() })
     } catch (err) { fail(res, err) }
   })
 
