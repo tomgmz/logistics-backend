@@ -100,7 +100,7 @@ const LOWER  = 'abcdefghjkmnpqrstuvwxyz'    // no i, l, o
 const DIGITS = '23456789'                   // no 0, 1
 
 /**
- * The temporary password in the welcome email: 6 characters (the user's call,
+ * The temporary password in the welcome email: 8 characters (the user's call,
  * so it is easy to type), with at least one capital, one small letter and one
  * digit, and no look-alikes (I/l/1, O/0). The email asks the user to change
  * it after their first sign-in.
@@ -113,9 +113,9 @@ export function generateSecurePassword(): string {
 
   const chars = [
     ...pick(UPPER,  2),
-    ...pick(LOWER,  2),
-    ...pick(DIGITS, 1),
-    // pad to 6 from the combined pool
+    ...pick(LOWER,  3),
+    ...pick(DIGITS, 2),
+    // pad to 8 from the combined pool
     ...pick(UPPER + LOWER + DIGITS, 1),
   ]
 
