@@ -15,6 +15,7 @@ import routeOptimizationRoutes from './routes/routeOptimization.route.js';
 import supportRoutes from './routes/support.routes.js';
 import authRoutes from './routes/auth.route.js';
 import directionsRouter from './routes/directions.routes.js'
+import placesRouter from './routes/places.routes.js'
 import driverRoutes from './routes/driver.route.js'
 import uploadRoutes from './routes/upload.route.js'
 import { globalLimiter } from './middlewares/rateLimit.middleware.js';
@@ -136,6 +137,7 @@ app.use('/api/public', publicRoutes);
 app.use('/api/booking', clientRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
 app.use('/api/directions', directionsRouter);
+app.use('/api/places', placesRouter);
 app.use('/api/driver', driverRoutes)
 app.use('/api/admin', authenticate, moduleGuard, adminRoutes);
 app.use('/api/uploads', uploadRoutes);
