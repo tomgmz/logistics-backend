@@ -22,6 +22,13 @@ export interface PushPayload {
   title: string
   body:  string
   data:  Record<string, unknown>
+  /**
+   * Notifications sharing a tag replace each other on the phone instead of
+   * stacking: one per conversation or group, not one per message. Android uses
+   * the tag, iOS the matching collapse id. The web service worker tags by
+   * conversation on its own.
+   */
+  tag?:  string
 }
 
 export async function registerSubscription(
@@ -48,6 +55,29 @@ export function preview(content: string): string {
 
 export const getDisplayName = model.getDisplayName
 
+/** How many messages one stacked notification lists before summarising. */
+const STACK_LINES = 5
+
+/**
+ * The body of a notification that stands for a whole conversation: the latest
+ * few messages, oldest first, with a count of any earlier ones. Since a tagged
+ * notification replaces the previous one, this is what keeps the earlier
+ * messages visible.
+ */
+export function stackedBody(lines: string[], total: number): string {
+  const shown   = lines.slice(-STACK_LINES).map((l) => preview(l.replace(/\s+/g, ' ')))
+  const earlier = total - shown.length
+  return [
+    ...(earlier > 0 ? [`+${earlier} earlier message${earlier === 1 ? '' : 's'}`] : []),
+    ...shown,
+  ].join('\n')
+}
+
+/** "Name" for one message, "Name (3 messages)" once they stack up. */
+export function stackedTitle(title: string, total: number): string {
+  return total > 1 ? `${title} (${total} messages)` : title
+}
+
 async function sendExpo(subs: model.PushSubscriptionRow[], payload: PushPayload): Promise<string[]> {
   const dead: string[] = []
   const messages: ExpoPushMessage[] = []
@@ -64,6 +94,7 @@ async function sendExpo(subs: model.PushSubscriptionRow[], payload: PushPayload)
       sound: 'default',
       priority: 'high',
       channelId: 'messages',
+      ...(payload.tag && { tag: payload.tag, collapseId: payload.tag }),
     })
   }
 

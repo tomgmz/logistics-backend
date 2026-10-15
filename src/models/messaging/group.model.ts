@@ -21,6 +21,43 @@ export async function createGroup(name: string, createdBy: string, memberIds: st
   return group as GroupRow
 }
 
+/**
+ * What `userId` hasn't read yet in a group, from everyone else, oldest first —
+ * the latest `limit` with their senders, plus the total. Feeds the stacked
+ * push notification.
+ */
+export async function getUnreadForPush(
+  groupId: string,
+  userId: string,
+  limit: number,
+): Promise<{ messages: { sender_id: string; content: string }[]; total: number }> {
+  const { data: member, error: mErr } = await supabase
+    .from('group_members')
+    .select('last_read_at')
+    .eq('group_id', groupId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (mErr) throw mErr
+  const readAt = (member as { last_read_at: string | null } | null)?.last_read_at ?? null
+
+  let q = supabase
+    .from('group_messages')
+    .select('sender_id, content', { count: 'exact' })
+    .eq('group_id', groupId)
+    .neq('sender_id', userId)
+    .is('deleted_at', null)
+    // "X renamed the group" and the like are not messages anyone is waiting on.
+    .neq('message_type', 'system')
+    .order('sent_at', { ascending: false })
+    .limit(limit)
+  if (readAt) q = q.gt('sent_at', readAt)
+
+  const { data, count, error } = await q
+  if (error) throw error
+  const messages = ((data ?? []) as { sender_id: string; content: string }[]).reverse()
+  return { messages, total: count ?? messages.length }
+}
+
 export async function getGroupsByUserId(userId: string): Promise<GroupWithDetails[]> {
   const { data: myData, error: myErr } = await supabase
     .from('group_members')

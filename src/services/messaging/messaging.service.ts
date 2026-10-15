@@ -85,17 +85,36 @@ async function deliverMessage(
     broadcast(`messaging:conv:${conv.conversation_id}`, 'new_message', payload),
   ])
 
-  void push.getDisplayName(senderId).then((title) =>
-    push.sendToUsers([receiverId], {
-      title,
-      body: push.preview(content),
-      data: { type: 'direct', conversation_id: conv.conversation_id, message_id: message.message_id, sender_id: senderId },
-    })
-  )
+  void pushDirect(conv.conversation_id, senderId, receiverId, content, message.message_id)
 
   return payload
 }
 
+
+/**
+ * One notification per conversation: it carries every message the receiver
+ * hasn't read yet and replaces the previous one, instead of a new notification
+ * for each message. Falls back to just this message if the unread read fails.
+ */
+async function pushDirect(
+  conversationId: string,
+  senderId: string,
+  receiverId: string,
+  content: string,
+  messageId: string,
+): Promise<void> {
+  const [name, unread] = await Promise.all([
+    push.getDisplayName(senderId),
+    model.getUnreadForPush(conversationId, receiverId, 5).catch(() => null),
+  ])
+  const total = Math.max(unread?.total ?? 1, 1)
+  await push.sendToUsers([receiverId], {
+    title: push.stackedTitle(name, total),
+    body:  unread?.contents.length ? push.stackedBody(unread.contents, total) : push.preview(content),
+    data:  { type: 'direct', conversation_id: conversationId, message_id: messageId, sender_id: senderId },
+    tag:   `conv:${conversationId}`,
+  })
+}
 
 export async function getConversations(userId: string): Promise<ConversationWithDetails[]> {
   return model.getConversationsByUserId(userId)

@@ -77,6 +77,43 @@ function joinNames(names: string[]): string {
  * like a message, so it shows up in order with the conversation for everyone
  * already in the group. Best effort: the change itself has already happened.
  */
+/**
+ * One notification per group: each recipient's carries every message they
+ * haven't read yet ("Name: text" lines) and replaces their previous one for
+ * this group. Built per recipient because each has read up to a different
+ * point; falls back to just this message if the unread read fails.
+ */
+async function pushGroup(
+  groupId: string,
+  groupName: string,
+  senderId: string,
+  recipients: string[],
+  content: string,
+  messageId: string,
+): Promise<void> {
+  const names = new Map<string, Promise<string>>()
+  const nameOf = (id: string) => {
+    if (!names.has(id)) names.set(id, push.getDisplayName(id))
+    return names.get(id)!
+  }
+  const data = { type: 'group', group_id: groupId, message_id: messageId, sender_id: senderId }
+  const tag  = `group:${groupId}`
+
+  await Promise.allSettled(recipients.map(async (uid) => {
+    const unread = await groupModel.getUnreadForPush(groupId, uid, 5).catch(() => null)
+    const total  = Math.max(unread?.total ?? 1, 1)
+    const lines  = unread?.messages.length
+      ? await Promise.all(unread.messages.map(async (m) => `${await nameOf(m.sender_id)}: ${m.content}`))
+      : [`${await nameOf(senderId)}: ${content}`]
+    await push.sendToUsers([uid], {
+      title: push.stackedTitle(groupName, total),
+      body:  push.stackedBody(lines, total),
+      data,
+      tag,
+    })
+  }))
+}
+
 async function postSystemEvent(groupId: string, actorId: string, content: string, meta: GroupSystemEvent): Promise<void> {
   try {
     const message = await groupModel.insertSystemMessage(groupId, actorId, content, meta)
@@ -407,13 +444,7 @@ export async function sendGroupMessage(
 
   const recipients = memberIds.filter((uid: string) => uid !== senderId)
   if (recipients.length) {
-    void push.getDisplayName(senderId).then((sender) =>
-      push.sendToUsers(recipients, {
-        title: `${sender} • ${group.name}`,
-        body:  push.preview(content),
-        data:  { type: 'group', group_id: groupId, message_id: message.message_id, sender_id: senderId },
-      })
-    )
+    void pushGroup(groupId, group.name, senderId, recipients, content, message.message_id)
   }
 
   return payload

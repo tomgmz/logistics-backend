@@ -196,6 +196,41 @@ export async function markMessagesRead(conversationId: string, userId: string): 
   return readAt
 }
 
+/**
+ * What `receiverId` hasn't read yet from the other side of a conversation,
+ * oldest first — the latest `limit` of them plus the total. Feeds the stacked
+ * push notification.
+ */
+export async function getUnreadForPush(
+  conversationId: string,
+  receiverId: string,
+  limit: number,
+): Promise<{ contents: string[]; total: number }> {
+  const { data: conv, error: convErr } = await supabase
+    .from('conversations')
+    .select('participant_a_id, participant_a_last_read_at, participant_b_last_read_at')
+    .eq('conversation_id', conversationId)
+    .single()
+  if (convErr) throw convErr
+  const c = conv as { participant_a_id: string; participant_a_last_read_at: string | null; participant_b_last_read_at: string | null }
+  const readAt = c.participant_a_id === receiverId ? c.participant_a_last_read_at : c.participant_b_last_read_at
+
+  let q = supabase
+    .from('messages')
+    .select('content', { count: 'exact' })
+    .eq('conversation_id', conversationId)
+    .eq('receiver_id', receiverId)
+    .eq('deleted_by_receiver', false)
+    .order('sent_at', { ascending: false })
+    .limit(limit)
+  if (readAt) q = q.gt('sent_at', readAt)
+
+  const { data, count, error } = await q
+  if (error) throw error
+  const contents = ((data ?? []) as { content: string }[]).map((m) => m.content).reverse()
+  return { contents, total: count ?? contents.length }
+}
+
 export async function findMessageById(id: string): Promise<MessageRow | null> {
   const { data, error } = await supabase.from('messages').select('*').eq('message_id', id).maybeSingle()
   if (error) throw error
