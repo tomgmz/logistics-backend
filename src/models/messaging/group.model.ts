@@ -1,3 +1,4 @@
+import type { MessageBodyColumns } from '../../services/messaging/photo.service.js'
 import { supabase } from '../../lib/supabase.js'
 import type {
   GroupRow,
@@ -157,12 +158,12 @@ export async function updateMemberStatus(groupId: string, userId: string, status
 export async function insertGroupMessage(
   groupId: string,
   senderId: string,
-  content: string,
+  body: MessageBodyColumns,
   replyToMessageId?: string
 ): Promise<GroupMessageRow> {
   const { data, error } = await supabase
     .from('group_messages')
-    .insert({ group_id: groupId, sender_id: senderId, content, reply_to_message_id: replyToMessageId ?? null })
+    .insert({ group_id: groupId, sender_id: senderId, ...body, reply_to_message_id: replyToMessageId ?? null })
     .select()
     .single()
   if (error) throw error

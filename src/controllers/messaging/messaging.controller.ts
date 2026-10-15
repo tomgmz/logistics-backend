@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import * as service from '../../services/messaging/messaging.service.js'
+import { uploadChatPhoto } from '../../services/messaging/photo.service.js'
 import {
   createConversationSchema,
   resolveConversationSchema,
@@ -55,7 +56,7 @@ export async function sendDirectMessage(req: Request, res: Response, next: NextF
     const { user_id, role } = getAuth(req)
     const p = sendDirectMessageSchema.safeParse(req.body)
     if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
-    res.status(201).json({ success: true, data: await service.sendDirectMessage(user_id, role, p.data.target_user_id, p.data.content, p.data.reply_to_message_id, p.data.booking_id) })
+    res.status(201).json({ success: true, data: await service.sendDirectMessage(user_id, role, p.data.target_user_id, p.data.content, p.data.reply_to_message_id, p.data.booking_id, p.data.attachment_url) })
   } catch (err) { fail(res, err) }
 }
 
@@ -73,7 +74,7 @@ export async function sendMessage(req: Request, res: Response, next: NextFunctio
     const { user_id, role } = getAuth(req)
     const p = sendMessageSchema.safeParse(req.body)
     if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
-    res.status(201).json({ success: true, data: await service.sendMessage(req.params.conversationId as string, user_id, role, p.data.content, p.data.reply_to_message_id) })
+    res.status(201).json({ success: true, data: await service.sendMessage(req.params.conversationId as string, user_id, role, p.data.content, p.data.reply_to_message_id, p.data.attachment_url) })
   } catch (err) { fail(res, err) }
 }
 
@@ -109,4 +110,13 @@ export async function getMessagableUsers(req: Request, res: Response, next: Next
     const { user_id, role } = getAuth(req)
     res.json({ success: true, data: await service.getMessagableUsers(user_id, role) })
   } catch (err) { next(err) }
+}
+
+/** A chat photo, stamped or plain (see services/messaging/photo.service.ts). */
+export async function uploadPhoto(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { user_id } = getAuth(req)
+    if (!req.file) { res.status(400).json({ success: false, message: 'No photo was attached' }); return }
+    res.status(201).json({ success: true, data: await uploadChatPhoto(req.file.buffer, req.body, user_id) })
+  } catch (err) { fail(res, err) }
 }

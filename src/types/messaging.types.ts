@@ -46,8 +46,11 @@ export interface MessageRow {
   reply_to_message_id: string | null
   reply_to: ReplyPreview | null
   reactions: ReactionRow[]
-  /** 'system' = a group event (renamed, people added), rendered as a centered line. */
-  message_type?: 'text' | 'system'
+  /** 'system' = a group event (renamed, people added), rendered as a centered line. 'image' = a photo. */
+  message_type?: 'text' | 'image' | 'system'
+  /** The photo of an 'image' message; `content` is then its caption (or the "📷 Photo" placeholder). */
+  attachment_url?: string | null
+  attachment_stamped?: boolean
   meta?: GroupSystemEvent | null
 }
 
@@ -129,6 +132,9 @@ export interface GroupMessageRow {
   reply_to_message_id: string | null
   reply_to: ReplyPreview | null
   reactions: ReactionRow[]
+  message_type?: 'text' | 'image' | 'system'
+  attachment_url?: string | null
+  attachment_stamped?: boolean
 }
 
 export interface GroupWithDetails extends GroupRow {

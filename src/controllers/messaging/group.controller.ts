@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import * as service from '../../services/messaging/group.service.js'
 import { z } from 'zod'
-import { reactSchema } from '../../schema/messaging/messaging.schema.js'
+import { reactSchema, messageBody } from '../../schema/messaging/messaging.schema.js'
 
 function getAuth(req: Request): { user_id: string; role: string } {
   const u = (req as Request & { user?: Record<string, unknown> }).user
@@ -35,10 +35,8 @@ const addMembersSchema = z.object({
   member_ids: z.array(z.string().uuid()).min(1).max(50),
 })
 
-const sendGroupMessageSchema = z.object({
-  content: z.string().min(1).max(5000).transform(v => v.trim()),
-  reply_to_message_id: z.string().uuid().optional(),
-})
+const sendGroupMessageSchema = z.object(messageBody)
+  .refine(v => v.content.length > 0 || !!v.attachment_url, { message: 'Type a message or add a photo', path: ['content'] })
 
 const getMessagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -78,7 +76,7 @@ export async function sendGroupMessage(req: Request, res: Response, next: NextFu
     const { user_id } = getAuth(req)
     const p = sendGroupMessageSchema.safeParse(req.body)
     if (!p.success) { res.status(400).json({ success: false, errors: p.error.flatten().fieldErrors }); return }
-    res.status(201).json({ success: true, data: await service.sendGroupMessage(req.params.groupId as string, user_id, p.data.content, p.data.reply_to_message_id) })
+    res.status(201).json({ success: true, data: await service.sendGroupMessage(req.params.groupId as string, user_id, p.data.content, p.data.reply_to_message_id, p.data.attachment_url) })
   } catch (err) { fail(res, err) }
 }
 

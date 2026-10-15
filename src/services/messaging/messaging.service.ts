@@ -3,6 +3,8 @@ import * as push from './push.service.js'
 import { createClient } from '@supabase/supabase-js'
 import type { ConversationWithDetails, MessageRow, MessagableUser } from '../../types/messaging.types.js'
 import { logEvent } from '../../lib/log-event.js'
+import { messageBodyColumns } from './photo.service.js'
+import { PHOTO_PLACEHOLDER } from '../../schema/messaging/messaging.schema.js'
 
 const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
@@ -62,9 +64,11 @@ async function deliverMessage(
   conv: { conversation_id: string; participant_a_id: string; participant_b_id: string },
   senderId: string,
   content: string,
-  replyToMessageId?: string
+  replyToMessageId?: string,
+  attachmentUrl?: string
 ): Promise<MessageRow> {
   const receiverId = conv.participant_a_id === senderId ? conv.participant_b_id : conv.participant_a_id
+  const body       = messageBodyColumns(content, attachmentUrl, PHOTO_PLACEHOLDER)
 
   let reply_to: { message_id: string; content: string; sender_id: string } | null = null
   if (replyToMessageId) {
@@ -74,7 +78,7 @@ async function deliverMessage(
     reply_to = { message_id: ref.message_id, content: ref.content, sender_id: ref.sender_id }
   }
 
-  const message = await model.insertMessage(conv.conversation_id, senderId, receiverId, content, replyToMessageId)
+  const message = await model.insertMessage(conv.conversation_id, senderId, receiverId, body, replyToMessageId)
   await model.touchConversation(conv.conversation_id)
 
   const payload = { ...message, reply_to }
@@ -85,7 +89,7 @@ async function deliverMessage(
     broadcast(`messaging:conv:${conv.conversation_id}`, 'new_message', payload),
   ])
 
-  void pushDirect(conv.conversation_id, senderId, receiverId, content, message.message_id)
+  void pushDirect(conv.conversation_id, senderId, receiverId, body.content, message.message_id)
 
   return payload
 }
@@ -145,7 +149,8 @@ export async function sendMessage(
   senderId: string,
   senderRole: string,
   content: string,
-  replyToMessageId?: string
+  replyToMessageId?: string,
+  attachmentUrl?: string
 ): Promise<MessageRow> {
   const conv = await model.findConversationById(conversationId)
   if (!conv) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 })
@@ -154,7 +159,7 @@ export async function sendMessage(
   const receiver = await assertCanSendInConversation(conv, senderId, senderRole)
   await linkToCurrentBooking(conv, { user_id: senderId, role: senderRole }, receiver)
 
-  return deliverMessage(conv, senderId, content, replyToMessageId)
+  return deliverMessage(conv, senderId, content, replyToMessageId, attachmentUrl)
 }
 
 export async function resolveConversation(
@@ -173,7 +178,8 @@ export async function sendDirectMessage(
   targetUserId: string,
   content: string,
   replyToMessageId?: string,
-  bookingId?: string
+  bookingId?: string,
+  attachmentUrl?: string
 ): Promise<MessageRow> {
   const target = await assertCanMessage(currentUserId, currentUserRole, targetUserId)
 
@@ -186,7 +192,7 @@ export async function sendDirectMessage(
     )
   await linkToCurrentBooking(conv, { user_id: currentUserId, role: currentUserRole }, target)
 
-  return deliverMessage(conv, currentUserId, content, replyToMessageId)
+  return deliverMessage(conv, currentUserId, content, replyToMessageId, attachmentUrl)
 }
 
 export async function markConversationAsRead(conversationId: string, userId: string): Promise<void> {

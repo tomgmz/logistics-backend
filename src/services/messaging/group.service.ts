@@ -3,6 +3,9 @@ import * as push from './push.service.js'
 import { createClient } from '@supabase/supabase-js'
 import type { GroupWithDetails, GroupMessageRow, GroupSystemEvent } from '../../types/messaging.types.js'
 
+import { messageBodyColumns } from './photo.service.js'
+import { PHOTO_PLACEHOLDER } from '../../schema/messaging/messaging.schema.js'
+
 const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 async function broadcast(channel: string, event: string, payload: unknown): Promise<void> {
@@ -402,8 +405,10 @@ export async function sendGroupMessage(
   groupId: string,
   senderId: string,
   content: string,
-  replyToMessageId?: string
+  replyToMessageId?: string,
+  attachmentUrl?: string
 ): Promise<GroupMessageRow> {
+  const body = messageBodyColumns(content, attachmentUrl, PHOTO_PLACEHOLDER)
   const [group, member] = await Promise.all([
     groupModel.getGroupById(groupId),
     groupModel.getGroupMember(groupId, senderId),
@@ -424,7 +429,7 @@ export async function sendGroupMessage(
     reply_to = ref as { message_id: string; content: string; sender_id: string }
   }
 
-  const message = await groupModel.insertGroupMessage(groupId, senderId, content, replyToMessageId)
+  const message = await groupModel.insertGroupMessage(groupId, senderId, body, replyToMessageId)
   await groupModel.touchGroup(groupId)
 
   const payload = { ...message, reply_to }
@@ -444,7 +449,7 @@ export async function sendGroupMessage(
 
   const recipients = memberIds.filter((uid: string) => uid !== senderId)
   if (recipients.length) {
-    void pushGroup(groupId, group.name, senderId, recipients, content, message.message_id)
+    void pushGroup(groupId, group.name, senderId, recipients, body.content, message.message_id)
   }
 
   return payload

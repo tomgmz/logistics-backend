@@ -7,6 +7,7 @@ import type {
   UserRole,
   BookingRefRow,
 } from '../../types/messaging.types.js'
+import type { MessageBodyColumns } from '../../services/messaging/photo.service.js'
 
 export async function findConversationByParticipants(a: string, b: string): Promise<ConversationRow | null> {
   const { data, error } = await supabase
@@ -151,12 +152,12 @@ export async function insertMessage(
   conversationId: string,
   senderId: string,
   receiverId: string,
-  content: string,
+  body: MessageBodyColumns,
   replyToMessageId?: string
 ): Promise<MessageRow> {
   const { data, error } = await supabase
     .from('messages')
-    .insert({ conversation_id: conversationId, sender_id: senderId, receiver_id: receiverId, content, reply_to_message_id: replyToMessageId ?? null })
+    .insert({ conversation_id: conversationId, sender_id: senderId, receiver_id: receiverId, ...body, reply_to_message_id: replyToMessageId ?? null })
     .select()
     .single()
   if (error) throw error

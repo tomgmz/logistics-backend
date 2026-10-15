@@ -66,6 +66,8 @@ export interface ProofStampData {
   accuracyM?:   number | null
   bookingRef?:  string | null
   driverName?:  string | null
+  /** The word before the name in the footer; "Driver" unless a chat photo says otherwise. */
+  nameLabel?:   string | null
   /** The photo was added to a stop already confirmed — not taken at the moment of confirming. */
   addedLater?:  boolean
 }
@@ -282,7 +284,7 @@ function buildOverlay(width: number, height: number, data: ProofStampData): stri
   const footW = contentW - logoW - 30
 
   const footLines: string[] = []
-  const who = [data.bookingRef && `Booking ${data.bookingRef}`, data.driverName && `Driver ${data.driverName}`]
+  const who = [data.bookingRef && `Booking ${data.bookingRef}`, data.driverName && `${data.nameLabel ?? 'Driver'} ${data.driverName}`]
     .filter(Boolean).join('  ·  ')
   if (who) footLines.push(who)
   if (data.receivedAt && Math.abs(data.receivedAt.getTime() - data.takenAt.getTime()) > LATE_UPLOAD_MS) {

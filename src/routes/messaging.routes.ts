@@ -3,6 +3,7 @@ import { authenticate } from '../middlewares/auth.middleware.js'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import { clientIp } from '../lib/client-ip.js'
 import { enforceClientMessagingPolicy } from '../middlewares/messaging.middleware.js'
+import { uploadChatPhoto } from '../middlewares/upload.middleware.js'
 import * as dm    from '../controllers/messaging/messaging.controller.js'
 import * as group from '../controllers/messaging/group.controller.js'
 
@@ -24,6 +25,19 @@ const sendLimit = rateLimit({
 
 router.use(authenticate)
 router.use(readLimit)
+
+// A photo for a chat message (multipart, field `image`, up to 10 MB). `stamp=1`
+// plus taken_at / latitude / longitude / accuracy_m burns in the time-and-place
+// stamp; without it the photo is stored plain. Returns the URL to send as the
+// message's attachment_url.
+router.post('/photos', sendLimit, (req, res, next) => {
+  uploadChatPhoto(req, res, (err: unknown) => {
+    if (!err) return next()
+    const e = err as { code?: string; message?: string }
+    const message = e.code === 'LIMIT_FILE_SIZE' ? 'Photos can be up to 10 MB' : e.message ?? 'Upload failed'
+    res.status(400).json({ success: false, message })
+  })
+}, dm.uploadPhoto)
 
 router.get('/users',                                                            dm.getMessagableUsers)
 router.get('/conversations',                                                    dm.getConversations)

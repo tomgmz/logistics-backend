@@ -9,17 +9,29 @@ export const resolveConversationSchema = z.object({
   target_user_id: z.string().uuid(),
 })
 
+/** Stands in for the caption of a photo sent without one, so previews read "📷 Photo". */
+export const PHOTO_PLACEHOLDER = '📷 Photo'
+
+/**
+ * Text, a photo (attachment_url from POST /messaging/photos) with an optional
+ * caption, or both. The URL itself is checked by the service.
+ */
+export const messageBody = {
+  content: z.string().max(5000).optional().default('').transform(v => v.trim()),
+  attachment_url: z.string().url().max(1000).optional(),
+  reply_to_message_id: z.string().uuid().optional(),
+}
+
+const needsContent = (v: { content: string; attachment_url?: string }) => v.content.length > 0 || !!v.attachment_url
+
 export const sendDirectMessageSchema = z.object({
   target_user_id: z.string().uuid(),
-  content: z.string().min(1).max(5000).transform(v => v.trim()),
-  reply_to_message_id: z.string().uuid().optional(),
+  ...messageBody,
   booking_id: z.string().uuid().optional(),
-})
+}).refine(needsContent, { message: 'Type a message or add a photo', path: ['content'] })
 
-export const sendMessageSchema = z.object({
-  content: z.string().min(1).max(5000).transform(v => v.trim()),
-  reply_to_message_id: z.string().uuid().optional(),
-})
+export const sendMessageSchema = z.object(messageBody)
+  .refine(needsContent, { message: 'Type a message or add a photo', path: ['content'] })
 
 export const getMessagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
