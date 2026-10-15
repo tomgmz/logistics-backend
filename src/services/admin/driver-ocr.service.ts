@@ -21,12 +21,26 @@ export interface LicenseOCRResult {
   last_name:       string | null
   middle_name:     string | null
   suffix:          string | null
+  name_n_checks:   NameNCheck[]
   dl_codes:        string[]
   restriction_codes: string[]
   vehicle_eligibility: VehicleEligibility
 }
 
-const VALID_SUFFIXES    = ['Jr.', 'Sr.', 'II', 'III', 'IV', 'V']
+// A name word whose "N" Vision read with low confidence. A worn or smudged
+// tilde makes Vision read Ñ as a plain N (and no language hint changes that),
+// so the form asks the admin whether `word` should be `suggested`.
+export interface NameNCheck {
+  field:     'first_name' | 'last_name' | 'middle_name'
+  word:      string
+  suggested: string
+}
+
+// Below this, an "N" may really be an Ñ. A clear N reads at 0.9+; the
+// smudged Ñ on a real license came back at 0.34.
+const N_CONFIDENCE_MIN = 0.6
+
+const VALID_SUFFIXES   = ['Jr.', 'Sr.', 'II', 'III', 'IV', 'V']
 const LTO_LICENSE_RE    = /\b([A-Z]\d{2}-\d{2}-\d{6})\b/i
 const DATE_RE           = /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}|\d{4}[\/\-]\d{2}[\/\-]\d{2})\b/g
 const EXPIRY_LABEL_RE   = /expir(?:y|ation|es?)[:\s]*/i
@@ -211,6 +225,42 @@ function deriveEligibility(dl_codes: string[], restriction_codes: string[]): Veh
   }
 }
 
+interface VisionSymbol { text: string; confidence?: number }
+
+// Uppercased word → indexes of the N letters in it Vision was unsure of.
+function findUncertainNs(annotation: any): Map<string, number[]> {
+  const out = new Map<string, number[]>()
+  for (const page of annotation?.pages ?? [])
+    for (const block of page.blocks ?? [])
+      for (const para of block.paragraphs ?? [])
+        for (const word of para.words ?? []) {
+          const symbols: VisionSymbol[] = word.symbols ?? []
+          const idx = symbols.flatMap((s, i) =>
+            s.text.toUpperCase() === 'N' && (s.confidence ?? 1) < N_CONFIDENCE_MIN ? [i] : [])
+          // Vision keeps the comma in "OLIVEROS,"; trailing marks don't shift the indexes.
+          if (idx.length) out.set(symbols.map(s => s.text).join('').replace(/[,.]+$/, '').toUpperCase(), idx)
+        }
+  return out
+}
+
+function nameNChecks(
+  name: Pick<LicenseOCRResult, 'first_name' | 'last_name' | 'middle_name'>,
+  uncertain: Map<string, number[]>,
+): NameNCheck[] {
+  if (uncertain.size === 0) return []
+  const checks: NameNCheck[] = []
+  for (const field of ['first_name', 'last_name', 'middle_name'] as const) {
+    for (const word of name[field]?.split(' ') ?? []) {
+      const idx = uncertain.get(word.toUpperCase())
+      if (!idx) continue
+      const chars = [...word]
+      for (const i of idx) chars[i] = chars[i] === 'n' ? 'ñ' : 'Ñ'
+      checks.push({ field, word, suggested: chars.join('') })
+    }
+  }
+  return checks
+}
+
 export async function extractLicenseData(buffer: Buffer): Promise<LicenseOCRResult> {
   const compressed = await sharp(buffer)
     .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
@@ -241,19 +291,22 @@ export async function extractLicenseData(buffer: Buffer): Promise<LicenseOCRResu
     throw err
   })
 
-  const fullText = data.responses?.[0]?.fullTextAnnotation?.text ?? ''
+  const annotation = data.responses?.[0]?.fullTextAnnotation
+  const fullText   = annotation?.text ?? ''
   const lines    = fullText.split('\n').map((l: string) => l.trim()).filter(Boolean)
 
   const licenseMatch              = fullText.match(LTO_LICENSE_RE)
   const nameLine                  = findNameLine(lines)
   const { dl_codes, restriction_codes } = extractDLCodes(lines)
+  const name = nameLine
+    ? parseName(nameLine)
+    : { first_name: null, last_name: null, middle_name: null, suffix: null }
 
   return {
     license_number:  licenseMatch ? licenseMatch[1].toUpperCase() : null,
     license_expiry:  findExpiryDate(lines),
-    ...(nameLine
-      ? parseName(nameLine)
-      : { first_name: null, last_name: null, middle_name: null, suffix: null }),
+    ...name,
+    name_n_checks:   nameNChecks(name, findUncertainNs(annotation)),
     dl_codes,
     restriction_codes,
     vehicle_eligibility: deriveEligibility(dl_codes, restriction_codes),
