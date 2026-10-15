@@ -1,8 +1,24 @@
 import { supabase } from '../../lib/supabase.js'
 import { logEvent } from '../../lib/log-event.js'
+import { revokeAllUserSessions } from '../../models/auth/auth.model.js'
 
 /** Effectively permanent ban (~100 years). Supabase requires a duration string. */
 const BAN_DURATION = '876000h'
+
+/**
+ * Sign the user out everywhere, right now. The Supabase ban alone doesn't do
+ * it: this app issues its own JWTs and `authenticate` checks only the session
+ * row, never users.status, so without this an archived or deactivated account
+ * keeps a working access token for up to 15 minutes. The revoke also
+ * broadcasts session_revoked, so open browsers and phones sign out without
+ * waiting for their next request. Logged, not thrown: the status change has
+ * already landed by the time this runs.
+ */
+async function signOutEverywhere(userId: string) {
+  await revokeAllUserSessions(userId, 'deactivated').catch((err) =>
+    console.error(`[user-auth-status] session revoke failed for ${userId}`, err),
+  )
+}
 
 export type BanManagedUserRole =
   | 'admin'
@@ -24,6 +40,8 @@ export type BanManagedUserRole =
  * Throws: a delete that leaves a usable login behind is not a delete.
  */
 export async function banArchivedAuthUser(userId: string) {
+  await signOutEverywhere(userId)
+
   const { error } = await supabase.auth.admin.updateUserById(userId, {
     ban_duration: BAN_DURATION,
   })
@@ -68,6 +86,8 @@ export async function deactivateUserWithBan(
 
   if (error) throw error
   if (!data) throw new Error(`${entityLabel} not found or could not be deactivated`)
+
+  await signOutEverywhere(userId)
 
   const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
     ban_duration: BAN_DURATION,

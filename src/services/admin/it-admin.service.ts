@@ -182,15 +182,8 @@ export async function deactivateITAdmin(
   assertNotSelf(userId, actorId)
   await assertNotLastActive(userId)
 
+  // deactivateUserWithBan also signs them out everywhere.
   const result = await deactivateUserWithBan(userId, 'it_admin', 'it_admin_deactivated', 'IT Administrator', actorId)
-
-  // deactivateUserWithBan flips the status and bans the Supabase Auth identity,
-  // but this app issues its own JWTs and `authenticate` only checks the session
-  // row — never users.status. Without this, a deactivated IT Admin keeps a working
-  // access token until it expires (15 minutes by default).
-  await revokeAllUserSessions(userId, 'deactivated').catch((err) =>
-    console.error(`[it-admin] session revoke failed for deactivated ${userId}`, err),
-  )
   invalidateUserPermissions(userId)
 
   return result
