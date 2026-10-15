@@ -34,7 +34,8 @@ export function hasActiveUsersWithRoles(roles: string[]) {
   return model.hasActiveUsersWithRoles(roles)
 }
 
-// Whether anyone can act on the GM approval stage — an active general manager.
+// Whether anyone can act on the GM approval stage — an active general manager
+// or Company Administrator.
 export async function hasGmApprovers(): Promise<boolean> {
   return (await model.resolveGmApprovers()).length > 0
 }

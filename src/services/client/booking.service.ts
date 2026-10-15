@@ -375,7 +375,8 @@ async function reoptimizeBookingStops(booking: BookingWithRelations): Promise<vo
 /**
  * Send a freshly created booking into the approval chain. Normally that means
  * notifying the GM stage; with nobody staffed to approve (no active general
- * manager) the stage is auto-cleared and the booking goes straight to ops.
+ * manager and no active Company Administrator) the stage is auto-cleared and
+ * the booking goes straight to ops.
  */
 async function routeNewBookingToGm(
   booking: BookingWithRelations,
@@ -393,7 +394,7 @@ async function routeNewBookingToGm(
       user_id:     userId,
       log_type:    'booking',
       action:      'gm_auto_approved',
-      description: `Booking ${bookingRef(booking)} General Manager stage auto-cleared (no General Manager staffed)`,
+      description: `Booking ${bookingRef(booking)} General Manager stage auto-cleared (no General Manager or Company Administrator staffed)`,
     })
     await notifyStage('ops_pending', advanced ?? booking)
   } catch (err) {

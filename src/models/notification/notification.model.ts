@@ -123,7 +123,10 @@ export async function resolveGmApprovers(): Promise<{ user_id: string; role: str
   const { data, error } = await supabase
     .from('users')
     .select('user_id, role')
-    .eq('role', 'general_manager')
+    // The Company Administrator approves on the same authority (isGmApprover
+    // below), so a booking waits for whichever of the two exists. Counting only
+    // general managers auto-approved every booking whenever no GM was on staff.
+    .in('role', ['general_manager', 'admin'])
     .eq('status', 'active')
   if (error) throw error
   return (data ?? []) as { user_id: string; role: string }[]
