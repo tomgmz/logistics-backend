@@ -149,6 +149,11 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
       truck_models ( vehicle_type, name )
     )
   ),
+  deliveries (
+    is_vendor_supplied,
+    vendor_vehicle_plate,
+    vendor_vehicle_type
+  ),
   driver_assignments (
     assignment_id,
     driver_id,

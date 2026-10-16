@@ -80,18 +80,25 @@ async function linkReport(pauseId: string, reportId: string): Promise<void> {
   if (error) throw error
 }
 
+/**
+ * Close a pause. True only for the call that actually closed it: the driver and
+ * the office can end the same pause at the same instant, both having read it as
+ * open, and only one of them should announce it.
+ */
 async function close(pauseId: string, fields: {
   resumed_at:  string
   resumed_by:  string | null
   resumed_via: ResumedVia
   resume_note: string | null
-}): Promise<void> {
-  const { error } = await supabase
+}): Promise<boolean> {
+  const { data, error } = await supabase
     .from('booking_pauses')
     .update(fields)
     .eq('pause_id', pauseId)
     .is('resumed_at', null)
+    .select('pause_id')
   if (error) throw error
+  return (data ?? []).length > 0
 }
 
 /** Mirror the pause in force onto the booking, or clear it (all nulls). */

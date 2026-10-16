@@ -530,7 +530,7 @@ export async function findUserWithDriver(userId: string): Promise<AuthUser | nul
     .from('users')
     .select(`
       user_id, email, first_name, last_name, role, status, must_change_password,
-      drivers (driver_id, license_number, license_expiry, status)
+      drivers (driver_id, license_number, license_expiry, status, is_external)
     `)
     .eq('user_id', userId)
     .single()

@@ -43,6 +43,9 @@ function driverActor(req: Request) {
 function tripProgressStatus(message: string): number {
   if (message.includes('not assigned'))    return 403
   if (message.includes('not found'))       return 404
+  // A malformed id in the URL reaches Postgres as an invalid uuid. That is the
+  // caller's mistake, not ours: 400, not 500.
+  if (message.includes('invalid input syntax for type uuid')) return 400
   if (
     message.includes('Cannot ')        ||
     message.includes('Confirm the ')   ||
@@ -192,6 +195,7 @@ export const driverConfirmFleetReturn = async (req: Request, res: Response) => {
 function pauseStatus(message: string): number {
   if (message.includes('not assigned') || message.includes('not allowed') || message.includes('Only the main driver')) return 403
   if (message.includes('not found'))  return 404
+  if (message.includes('invalid input syntax for type uuid')) return 400
   if (message.includes('Cannot '))    return 409
   return 500
 }

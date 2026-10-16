@@ -246,6 +246,7 @@ export const updateDestinationStatus = async (req: Request, res: Response) => {
 function driverProgressStatus(message: string): number {
   if (message.includes('not assigned'))  return 403
   if (message.includes('not found'))     return 404
+  if (message.includes('invalid input syntax for type uuid')) return 400
   if (
     message.includes('Cannot ') ||
     message.includes('Confirm the pickup') ||

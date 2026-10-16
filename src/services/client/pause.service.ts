@@ -204,12 +204,16 @@ async function endPause(
     : new Date().toISOString()
   const note = opts.note?.trim() || null
 
-  await PauseModel.close(open.pause_id, {
+  const closedHere = await PauseModel.close(open.pause_id, {
     resumed_at:  resumedAt,
     resumed_by:  actor.userId ?? null,
     resumed_via: opts.via,
     resume_note: note,
   })
+  // Someone else ended it a moment ago; they cleared the booking and told
+  // everyone. Hand back what stands rather than announcing it twice.
+  if (!closedHere) return (await BookingModel.findById(booking.booking_id)) ?? booking
+
   await PauseModel.setBookingPause(booking.booking_id, {
     paused_at: null, pause_reason: null, pause_note: null,
   })
