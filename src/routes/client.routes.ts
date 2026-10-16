@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { validate }                from '../middlewares/validate.middleware.js'
 import { authenticate, authorize } from '../middlewares/auth.middleware.js'
 import { authenticatedLimiter, trackingLimiter } from '../middlewares/rateLimit.middleware.js'
-import { requireModule }           from '../middlewares/moduleAccess.middleware.js'
+import { requireModule, requireModuleFlag } from '../middlewares/moduleAccess.middleware.js'
 import { attachClientScope, attachDriverScope }       from '../middlewares/clientScope.middleware.js'
 import {
   createBookingSchema,
@@ -97,7 +97,7 @@ router.delete('/:id',           authenticate, authenticatedLimiter, isClient, at
 // the driver and the fleet manager — there is no separate fleet approval step.
 //
 // `requireGmApprover` admits the general manager, admins, and any user the IT
-router.patch('/:id/gm-review', authenticate, authenticatedLimiter, requireGmApprover, lockGuard('booking', fromParam('id')), validate(gmReviewSchema), BookingController.gmReview)
+router.patch('/:id/gm-review', authenticate, authenticatedLimiter, requireGmApprover, canManageBooking, lockGuard('booking', fromParam('id')), validate(gmReviewSchema), BookingController.gmReview)
 
 // Completion is the client's call once the driver has finished, and only
 // theirs: staff cannot confirm on the client's behalf. A problem the client
@@ -106,7 +106,7 @@ router.patch('/:id/gm-review', authenticate, authenticatedLimiter, requireGmAppr
 // lockGuard on these: each is a single guarded transition, and a staff member
 // merely viewing the booking must not lock the client out of confirming it.
 router.post('/:id/confirm-completion', authenticate, authenticatedLimiter, authorize('client'), attachClientScope, BookingController.confirmCompletion)
-router.post('/:id/resolve-issue',      authenticate, authenticatedLimiter, authorize('admin', 'operations_manager'), BookingController.resolveDeliveryIssue)
+router.post('/:id/resolve-issue',      authenticate, authenticatedLimiter, authorize('admin', 'operations_manager'), requireModuleFlag('booking-management', 'can_edit'), BookingController.resolveDeliveryIssue)
 router.post('/:id/report-issue',       authenticate, authenticatedLimiter, authorize('client'), attachClientScope, validate(reportDeliveryIssueSchema), BookingController.reportDeliveryIssue)
 
 // Same story one level down: `isAdmin` admits clients, so these need the stop's

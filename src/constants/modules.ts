@@ -156,7 +156,11 @@ export function defaultPermissionsForRole(
 const MODULE_ROUTE_MAP: { prefix: string; module: ModuleKey }[] = [
   { prefix: '/truck-models',      module: 'vehicle-management' },
   { prefix: '/trucks',            module: 'vehicle-management' },
-  { prefix: '/drivers',           module: 'vehicle-management' },
+  // '/drivers' is deliberately absent: the roster is read by the booking
+  // crew picker (role-gated), while creating/editing/archiving a driver happens
+  // in User Management, so those routes carry requireModule('user-management').
+  // Same for '/clients' (its GET also feeds other screens) and
+  // '/external-drivers' (managed from User Management AND Booking Management).
   { prefix: '/assignments',       module: 'booking-management' },
   // Driver incident queue: reading needs can_view, acknowledge/resolve can_edit.
   { prefix: '/driver-reports',    module: 'reports' },

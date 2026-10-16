@@ -29,7 +29,7 @@ import { setReportStatusSchema, classifyReportSchema } from '../schema/driver/re
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as PasswordResetController from '../controllers/admin/password-reset.controller.js'
 import * as ExternalDriverController from '../controllers/admin/external-driver.controller.js'
-import { requireModuleFlag } from '../middlewares/moduleAccess.middleware.js'
+import { requireModule, requireModuleFlag, requireAnyModuleFlag } from '../middlewares/moduleAccess.middleware.js'
 import * as AuditLogController from '../controllers/admin/audit-logs.controller.js'
 import * as SystemLogController from '../controllers/admin/system-logs.controller.js'
 import * as ItDashboardController from '../controllers/admin/it-dashboard.controller.js'
@@ -52,6 +52,16 @@ import { uploadStaffDocumentsSchema, reviewDocumentSchema } from '../schema/admi
 import { uploadDocuments } from '../middlewares/uploadDocuments.middleware.js'
 
 const router = Router()
+
+// Module tiers for routes moduleGuard can't resolve from the path alone (see
+// MODULE_ROUTE_MAP in constants/modules.ts). Method picks the flag.
+const canManageUsers    = requireModule('user-management')
+const canEditCrewAccess = requireAnyModuleFlag(['user-management', 'booking-management'], 'can_edit')
+const canEditCrew       = requireAnyModuleFlag(['booking-management', 'vehicle-management'], 'can_edit')
+// Vehicles and models are archived, never deleted, but archiving is the
+// destructive action the "All" tier exists for; as a POST it would otherwise
+// only need can_create.
+const canArchiveFleet   = requireModuleFlag('vehicle-management', 'can_delete')
 
 // Role groups
 const isAdmin = authorize('admin', 'it_admin')
@@ -99,29 +109,29 @@ router.delete('/admins/:id', authenticate, isAdmin, lockGuard('user', fromParam(
 //Clients
 router.get('/clients',        authenticate, isOperations, ClientController.getAllClients)
 router.get('/clients/:id',    authenticate, isOperations, ClientController.getClientById)
-router.post('/clients',       authenticate, isAdmin,  validate(createClientSchema), ClientController.createClient)
-router.patch('/clients/:id',  authenticate, isAdmin,  lockGuard('user', fromParam('id')), validate(updateClientSchema), ClientController.updateClient)
-router.patch('/clients/:id/deactivate', authenticate, isAdmin, lockGuard('user', fromParam('id')), ClientController.deactivateClient)
-router.patch('/clients/:id/activate',   authenticate, isAdmin, lockGuard('user', fromParam('id')), ClientController.activateClient)
-router.delete('/clients/:id', authenticate, isAdmin,  lockGuard('user', fromParam('id')), ClientController.deleteClient)
+router.post('/clients',       authenticate, isAdmin,  canManageUsers, validate(createClientSchema), ClientController.createClient)
+router.patch('/clients/:id',  authenticate, isAdmin,  canManageUsers, lockGuard('user', fromParam('id')), validate(updateClientSchema), ClientController.updateClient)
+router.patch('/clients/:id/deactivate', authenticate, isAdmin, canManageUsers, lockGuard('user', fromParam('id')), ClientController.deactivateClient)
+router.patch('/clients/:id/activate',   authenticate, isAdmin, canManageUsers, lockGuard('user', fromParam('id')), ClientController.activateClient)
+router.delete('/clients/:id', authenticate, isAdmin,  canManageUsers, lockGuard('user', fromParam('id')), ClientController.deleteClient)
 
 // Drivers
 router.get('/drivers',                     authenticate, isFleetRead, DriverController.getAllDrivers)
-router.post('/drivers/scan-license',       authenticate, isFleet, uploadSingle, DriverOCRController.scanDriverLicense)
+router.post('/drivers/scan-license',       authenticate, isFleet, canManageUsers, uploadSingle, DriverOCRController.scanDriverLicense)
 // Who can be crewed onto a booking scheduled for ?date — the driver calendar
 // decides, so this cannot be answered without one. Before /:id so 'assignable'
 // is never read as a driver id.
 router.get('/drivers/assignable',          authenticate, isFleetRead, DriverController.getAssignableDrivers)
 router.get('/drivers/:id',                 authenticate, isFleetRead, DriverController.getDriverById)
-router.post('/drivers',                    authenticate, isFleet, uploadSingle, validate(createDriverSchema), DriverController.createDriver)
-router.patch('/drivers/:id',               authenticate, isFleet, lockGuard('user', fromParam('id')), uploadSingle, validate(updateDriverSchema), DriverController.updateDriver)
-router.patch('/drivers/:id/deactivate',    authenticate, isFleet, lockGuard('user', fromParam('id')), DriverController.deactivateDriver)
-router.patch('/drivers/:id/activate',      authenticate, isFleet, lockGuard('user', fromParam('id')), DriverController.activateDriver)
+router.post('/drivers',                    authenticate, isFleet, canManageUsers, uploadSingle, validate(createDriverSchema), DriverController.createDriver)
+router.patch('/drivers/:id',               authenticate, isFleet, canManageUsers, lockGuard('user', fromParam('id')), uploadSingle, validate(updateDriverSchema), DriverController.updateDriver)
+router.patch('/drivers/:id/deactivate',    authenticate, isFleet, canManageUsers, lockGuard('user', fromParam('id')), DriverController.deactivateDriver)
+router.patch('/drivers/:id/activate',      authenticate, isFleet, canManageUsers, lockGuard('user', fromParam('id')), DriverController.activateDriver)
 // Recovery hatch for a driver left reserved against a delivery that is gone.
 // Operations is included because they are the ones who hit the wall — the driver
 // silently drops out of the assignment dropdowns and cannot put themselves back.
-router.patch('/drivers/:id/stand-down',    authenticate, isCrewRelease, lockGuard('user', fromParam('id')), DriverController.standDownDriver)
-router.delete('/drivers/:id',              authenticate, isFleet, lockGuard('user', fromParam('id')), DriverController.deleteDriver)
+router.patch('/drivers/:id/stand-down',    authenticate, isCrewRelease, canEditCrew, lockGuard('user', fromParam('id')), DriverController.standDownDriver)
+router.delete('/drivers/:id',              authenticate, isFleet, canManageUsers, lockGuard('user', fromParam('id')), DriverController.deleteDriver)
 
 //Assignments
 router.get('/assignments',                    authenticate, isOperations, AssignmentController.getAllAssignments)
@@ -174,14 +184,14 @@ router.post('/trucks/:id/services', authenticate, isFleetUpkeep, lockGuard('truc
 router.get('/trucks/:id/upkeep',    authenticate, isCrewRelease, TruckController.getUpkeepHistory)
 router.post('/trucks',       authenticate, isFleet, validate(createTruckSchema), TruckController.createTruck)
 router.patch('/trucks/:id',  authenticate, isFleet, lockGuard('truck', fromParam('id')), validate(updateTruckSchema), TruckController.updateTruck)
-router.post('/trucks/:id/archive', authenticate, isFleet, lockGuard('truck', fromParam('id')), TruckController.archiveTruck)
+router.post('/trucks/:id/archive', authenticate, isFleet, canArchiveFleet, lockGuard('truck', fromParam('id')), TruckController.archiveTruck)
 
 //Truck Models
 router.get('/truck-models',        authenticate, isFleet, TruckModelController.getAllTruckModels)
 router.get('/truck-models/:id',    authenticate, isFleet, TruckModelController.getTruckModelById)
 router.post('/truck-models',       authenticate, isFleet, validate(createTruckModelSchema), TruckModelController.createTruckModel)
 router.patch('/truck-models/:id',  authenticate, isFleet, lockGuard('truck_model', fromParam('id')), validate(updateTruckModelSchema), TruckModelController.updateTruckModel)
-router.post('/truck-models/:id/archive', authenticate, isFleet, lockGuard('truck_model', fromParam('id')), TruckModelController.archiveTruckModel)
+router.post('/truck-models/:id/archive', authenticate, isFleet, canArchiveFleet, lockGuard('truck_model', fromParam('id')), TruckModelController.archiveTruckModel)
 
 
 //General Managers
@@ -244,9 +254,9 @@ router.patch('/password-resets/:id/cancel', authenticate, isAdmin, lockGuard('pa
 // dispatcher can do the moment a vendor is stood down.
 router.get('/external-drivers',                  authenticate, isCrewRelease, ExternalDriverController.list)
 router.get('/external-drivers/:userId/access',   authenticate, isCrewRelease, ExternalDriverController.getAccessStatus)
-router.post('/external-drivers/:userId/reinvite', authenticate, isCrewRelease, lockGuard('user', fromParam('userId')), ExternalDriverController.reinvite)
-router.post('/external-drivers/:userId/revoke',   authenticate, isCrewRelease, lockGuard('user', fromParam('userId')), ExternalDriverController.revoke)
-router.post('/external-drivers/:userId/restore',  authenticate, isCrewRelease, lockGuard('user', fromParam('userId')), ExternalDriverController.restore)
+router.post('/external-drivers/:userId/reinvite', authenticate, isCrewRelease, canEditCrewAccess, lockGuard('user', fromParam('userId')), ExternalDriverController.reinvite)
+router.post('/external-drivers/:userId/revoke',   authenticate, isCrewRelease, canEditCrewAccess, lockGuard('user', fromParam('userId')), ExternalDriverController.revoke)
+router.post('/external-drivers/:userId/restore',  authenticate, isCrewRelease, canEditCrewAccess, lockGuard('user', fromParam('userId')), ExternalDriverController.restore)
 
 //Module permissions (RBAC) — managed by admin / it_admin
 router.get('/users/:id/permissions', authenticate, isAdmin, PermissionsController.getUserPermissions)

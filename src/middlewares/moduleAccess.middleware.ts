@@ -167,3 +167,48 @@ export function requireModuleFlag(
 ) {
   return moduleFlagGate(moduleKey, () => flag)
 }
+
+// For an action reachable from more than one module's screen (e.g. a vendor
+// driver's app access, managed from both User Management and Booking
+// Management): passes when ANY of the modules grants the flag.
+export function requireAnyModuleFlag(
+  moduleKeys: ModuleKey[],
+  flag: keyof ModulePermissionFlags,
+) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user
+      if (!user) return next() // authenticate handles the 401
+
+      if (isBypassRole(user.role)) return next()
+      if (!isManagedRole(user.role)) return next()
+      if (await isProtectedAdmin(user.sub)) return next()
+
+      const rows = await getUserPermissions(user.sub)
+      if (rows.length === 0) return next() // no custom permissions -> role default
+
+      if (rows.some((r) => moduleKeys.includes(r.module_name as ModuleKey) && r[flag])) return next()
+
+      logEvent({
+        user_id:     user.sub,
+        log_type:    'access_control',
+        action:      'module_access_denied',
+        description: `${user.role} denied ${flag} on ${moduleKeys.join('|')} (${req.method} ${req.originalUrl})`,
+      })
+      res.status(403).json({
+        status:  'error',
+        message: 'You do not have permission to perform this action on this module.',
+      })
+    } catch (err) {
+      console.error('REQUIRE ANY MODULE ERROR:', err)
+      logSystem({
+        log_level:  'error',
+        event_type: 'server_error',
+        source:     'moduleAccess.requireAnyModuleFlag',
+        message:    (err as Error)?.message ?? 'Authorization check failed',
+        metadata:   { stack: (err as Error)?.stack },
+      })
+      res.status(500).json({ status: 'error', message: 'Authorization error' })
+    }
+  }
+}
