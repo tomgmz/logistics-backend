@@ -24,7 +24,7 @@ import * as ITAdminController from '../controllers/admin/it-admin.controller.js'
 import * as AssignmentController from '../controllers/admin/assignment.controller.js'
 import * as TripController from '../controllers/client/trip.controller.js'
 import * as ReportController from '../controllers/driver/report.controller.js'
-import { setTripPlanSchema } from '../schema/client/trip.schema.js'
+import { setTripPlanSchema, staffResumeTripSchema } from '../schema/client/trip.schema.js'
 import { setReportStatusSchema, classifyReportSchema } from '../schema/driver/report.schema.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as PasswordResetController from '../controllers/admin/password-reset.controller.js'
@@ -81,6 +81,8 @@ const isCrewRelease = authorize('admin', 'it_admin', 'fleet_manager', 'general_m
 // the report service). Classifying an unspecified alert is the desk's call.
 const isReportsDesk   = authorize('admin', 'it_admin', 'operations_manager', 'fleet_manager')
 const isReportsTriage = authorize('admin', 'it_admin', 'operations_manager')
+// Ending a driver's pause from the web (see the pause routes below).
+const isPauseDesk     = authorize('admin', 'it_admin', 'operations_manager')
 // Vehicle upkeep records (odometer readings, services): the Company
 // Administrator and the Fleet Manager. Staff only — isFleet admits 'client'.
 const isFleetUpkeep = authorize('admin', 'it_admin', 'fleet_manager')
@@ -153,6 +155,15 @@ router.patch('/assignments/:bookingId/status', authenticate, isOperations, lockG
 // (admin, IT, fleet, GM, operations) and nobody else.
 router.get('/assignments/:bookingId/trips',  authenticate, isCrewRelease, TripController.getTrips)
 router.put('/assignments/:bookingId/trips',  authenticate, isCrewRelease, lockGuard('booking', fromParam('bookingId')), validate(setTripPlanSchema), TripController.setTripPlan)
+
+// Pauses the driver put on the delivery (weather, breakdown, closed stop…).
+// Staff-only for the same reason as the trips above — isOperations admits
+// 'client', and the driver's notes here are never shown to the client. Ending a
+// pause from the office is the Operations Manager's and the Company
+// Administrator's, with booking edit rights.
+router.get('/assignments/:bookingId/pauses',   authenticate, isCrewRelease, TripController.listPauses)
+router.patch('/assignments/:bookingId/resume', authenticate, isPauseDesk, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(staffResumeTripSchema), TripController.staffResumeTrip)
 
 // Incidents raised by drivers from the road — the Reports module. It used to be
 // readable by isFleetRead, which admits 'client': a client could read every

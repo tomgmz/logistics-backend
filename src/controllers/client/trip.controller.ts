@@ -8,6 +8,12 @@ import {
   driverConfirmFleetReturnService,
   attachStopProofService,
 } from '../../services/client/trip.service.js'
+import {
+  pauseTripService,
+  driverResumeTripService,
+  staffResumeTripService,
+  listPausesService,
+} from '../../services/client/pause.service.js'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import {
   StopTooFarError,
@@ -177,5 +183,59 @@ export const driverConfirmFleetReturn = async (req: Request, res: Response) => {
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
     res.status(tripProgressStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+/* ── Pausing a delivery ───────────────────────────────────────────────────── */
+
+/** 403 for the wrong person, 404 for a missing booking, 409 for a booking that can't be paused. */
+function pauseStatus(message: string): number {
+  if (message.includes('not assigned') || message.includes('not allowed') || message.includes('Only the main driver')) return 403
+  if (message.includes('not found'))  return 404
+  if (message.includes('Cannot '))    return 409
+  return 500
+}
+
+export const driverPauseTrip = async (req: Request, res: Response) => {
+  try {
+    const booking = await pauseTripService(param(req.params.bookingId), req.body, driverActor(req))
+    res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    res.status(pauseStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+export const driverResumeTrip = async (req: Request, res: Response) => {
+  try {
+    const booking = await driverResumeTripService(
+      param(req.params.bookingId),
+      driverActor(req),
+      req.body?.resumed_at ?? null,
+    )
+    res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    res.status(pauseStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+export const staffResumeTrip = async (req: Request, res: Response) => {
+  try {
+    const booking = await staffResumeTripService(
+      param(req.params.bookingId),
+      driverActor(req),
+      req.body?.note ?? null,
+    )
+    res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    res.status(pauseStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+export const listPauses = async (req: Request, res: Response) => {
+  try {
+    const pauses = await listPausesService(param(req.params.bookingId))
+    res.status(200).json({ status: 'success', data: pauses })
+  } catch (error: any) {
+    res.status(pauseStatus(error.message)).json({ status: 'error', message: error.message })
   }
 }

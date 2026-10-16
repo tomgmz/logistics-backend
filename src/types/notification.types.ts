@@ -21,6 +21,11 @@ export type NotificationType =
   | 'booking.delivery_confirm_reminder' // day before auto-complete -> client
   | 'booking.delivery_issue'       // client reported a problem -> ops + admins
   | 'booking.delivery_issue_resolved' // staff resolved it, 3 days restart -> client
+  | 'booking.trip_paused'          // driver paused the delivery -> client (reason only)
+  | 'booking.trip_paused_staff'    // driver paused the delivery -> ops + admins (with the note)
+  | 'booking.trip_resumed'         // delivery moving again -> client
+  | 'booking.trip_resumed_staff'   // driver resumed -> ops + admins
+  | 'booking.trip_resumed_by_staff' // the office ended the pause -> assigned driver(s)
   // Legacy types, still present on historical rows. No longer emitted: accounting
   // was removed from the chain and the fleet stage no longer gates dispatch.
   | 'booking.accounting_pending'
@@ -84,3 +89,8 @@ export type NotificationStage =
   | 'delivery_confirm_reminder'
   | 'delivery_issue'
   | 'delivery_issue_resolved'
+  | 'trip_paused'
+  | 'trip_paused_staff'
+  | 'trip_resumed'
+  | 'trip_resumed_staff'
+  | 'trip_resumed_by_staff'

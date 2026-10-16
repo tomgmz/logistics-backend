@@ -62,6 +62,8 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
     schedule_date,
     truck_type_needed,
     fleet_return_at,
+    paused_at,
+    pause_reason,
     clients (
       company_name
     )

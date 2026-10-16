@@ -91,6 +91,13 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   delivery_confirm_reminder: { type: 'booking.delivery_confirm_reminder', audience: 'client' },
   delivery_issue:            { type: 'booking.delivery_issue',            roles: ['operations_manager'] },
   delivery_issue_resolved:   { type: 'booking.delivery_issue_resolved',   audience: 'client' },
+  // The driver paused the delivery. The client is told the reason category
+  // only; the driver's note goes to the office.
+  trip_paused:           { type: 'booking.trip_paused',           audience: 'client' },
+  trip_paused_staff:     { type: 'booking.trip_paused_staff',     roles: ['operations_manager'] },
+  trip_resumed:          { type: 'booking.trip_resumed',          audience: 'client' },
+  trip_resumed_staff:    { type: 'booking.trip_resumed_staff',    roles: ['operations_manager'] },
+  trip_resumed_by_staff: { type: 'booking.trip_resumed_by_staff', audience: 'drivers' },
 }
 
 // Route map per role so a notification tap lands on the right dashboard page.
@@ -219,6 +226,30 @@ function copyFor(
           : `${extra?.vehicleLabel ?? 'The vehicle'} on booking ${label} was marked ${extra?.statusLabel ?? 'out of service'}. ` +
             'Choose another vehicle before it is loaded.',
       }
+    case 'trip_paused':
+      return {
+        title: 'Delivery paused',
+        body:  `Your delivery ${label} is paused: ${extra?.pauseLabel ?? 'the driver had to stop'}. ` +
+               'We will let you know as soon as it is moving again.',
+      }
+    case 'trip_paused_staff':
+      return {
+        title: `Delivery paused — ${extra?.pauseLabel ?? 'reason not given'}`,
+        body:  `The driver paused booking ${label}${reason ? `: ${reason}` : '.'}`,
+      }
+    case 'trip_resumed':
+      return { title: 'Delivery moving again', body: `Your delivery ${label} is on its way again.` }
+    case 'trip_resumed_staff':
+      return {
+        title: 'Delivery resumed',
+        body:  `Booking ${label} is moving again` +
+               (extra?.pausedFor ? ` after being paused for ${extra.pausedFor}.` : '.'),
+      }
+    case 'trip_resumed_by_staff':
+      return {
+        title: 'Your delivery was resumed by the office',
+        body:  `Operations marked booking ${label} as moving again${reason ? `: ${reason}` : '.'}`,
+      }
   }
 }
 
@@ -263,6 +294,9 @@ export interface NotifyExtra {
   // had already left with the cargo.
   statusLabel?:  string
   onTheRoad?:    boolean
+  // For the pause stages: the reason category in words, and how long it lasted.
+  pauseLabel?:   string
+  pausedFor?:    string
 }
 
 /**

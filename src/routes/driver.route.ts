@@ -11,7 +11,14 @@ import * as TrackingController from '../controllers/driver/tracking.controller.j
 import * as TripController from '../controllers/client/trip.controller.js'
 import * as ReportController from '../controllers/driver/report.controller.js'
 import { driverAvailabilityDaysSchema, driverLocationPingSchema } from '../schema/client/booking.schema.js'
-import { tripStopProofSchema, tripStopOrderSchema, fleetReturnSchema, attachStopProofSchema } from '../schema/client/trip.schema.js'
+import {
+  tripStopProofSchema,
+  tripStopOrderSchema,
+  fleetReturnSchema,
+  attachStopProofSchema,
+  pauseTripSchema,
+  resumeTripSchema,
+} from '../schema/client/trip.schema.js'
 import { createDriverReportSchema, enrichDriverReportSchema } from '../schema/driver/report.schema.js'
 import { uploadDeliveryProof } from '../controllers/admin/uploadImage.controller.js'
 
@@ -100,6 +107,15 @@ router.patch('/trip-stops/:tripStopId/proof',
 // The job ends when the truck is home, not when the last box is off it.
 router.patch('/bookings/:bookingId/fleet-return',
   authenticate, authenticatedLimiter, isAny, validate(fleetReturnSchema), TripController.driverConfirmFleetReturn)
+
+// The driver stops the delivery for a reason that isn't an emergency — weather,
+// a breakdown, a closed pickup or drop-off — and says why; the web shows it on
+// the booking until they resume. Both are idempotent: the app sends them through
+// the offline queue. Main driver only, like every other trip write.
+router.patch('/bookings/:bookingId/pause',
+  authenticate, authenticatedLimiter, isAny, validate(pauseTripSchema), TripController.driverPauseTrip)
+router.patch('/bookings/:bookingId/resume',
+  authenticate, authenticatedLimiter, isAny, validate(resumeTripSchema), TripController.driverResumeTrip)
 
 // ── Reports ─────────────────────────────────────────────────────────────────
 //

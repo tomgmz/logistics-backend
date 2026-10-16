@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { driverStopProofSchema } from './booking.schema.js'
+import { PAUSE_REASONS } from '../../types/client/pause.types.js'
 
 /**
  * Validation for the multi-trip driver flow.
@@ -61,4 +62,28 @@ export const fleetReturnSchema = z.object({
  */
 export const attachStopProofSchema = z.object({
   proof_photo_url: z.string().url('A proof photo is required'),
+})
+
+/**
+ * The driver pauses the delivery. The note is required: "paused" with no word
+ * on why is exactly the phone call this replaces. `paused_at` is the phone's
+ * own time — the service bounds it, since a pause can sit in the offline queue.
+ */
+export const pauseTripSchema = z.object({
+  reason:     z.enum(PAUSE_REASONS),
+  note:       z.string().trim().min(3, 'Say why the delivery is paused').max(500),
+  paused_at:  z.string().datetime().optional().nullable(),
+  latitude:   z.number().min(-90).max(90).optional().nullable(),
+  longitude:  z.number().min(-180).max(180).optional().nullable(),
+  accuracy_m: z.number().min(0).optional().nullable(),
+})
+
+/** The driver presses Resume. Only when, as the phone recorded it. */
+export const resumeTripSchema = z.object({
+  resumed_at: z.string().datetime().optional().nullable(),
+})
+
+/** Operations ends the pause from the web, optionally saying why. */
+export const staffResumeTripSchema = z.object({
+  note: z.string().trim().max(500).optional().nullable(),
 })

@@ -77,6 +77,8 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   client_issue_note,
   client_issue_reported_at,
   client_issue_resolved_at,
+  paused_at,
+  pause_reason,
   created_at,
   updated_at,
   clients (
