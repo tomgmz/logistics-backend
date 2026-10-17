@@ -1,6 +1,9 @@
 import { z } from 'zod'
 
-const PLATE_REGEX = /^(?:[A-ZÑ]{3} ?\d{4}|[A-ZÑ]{2,3} ?\d{2,3})$/
+// PH plate: ABC 1234, ABC 123 or AB 123. Shared with the vendor vehicle on an
+// assignment (assignment.schema.ts) and mirrored by the web lib/validation/plate.ts.
+export const PLATE_REGEX = /^(?:[A-ZÑ]{3} ?\d{4}|[A-ZÑ]{2,3} ?\d{2,3})$/
+export const PLATE_ERROR = 'Invalid PH plate format (e.g. ABC 1234). Only letters, and numbers are allowed.'
 
 const km       = z.number().int('Whole kilometres only').min(0).max(5_000_000)
 const day      = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date')

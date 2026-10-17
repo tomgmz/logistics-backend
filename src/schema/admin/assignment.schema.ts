@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PLATE_REGEX, PLATE_ERROR } from './truck.schema.js'
 
 // A booking can be crewed two ways:
 //  - company path: pick a registered driver + truck (driver_id + truck_id)
@@ -12,7 +13,8 @@ export const assignBookingSchema = z.object({
 
   is_vendor_supplied:    z.boolean().optional().default(false),
   vendor_driver_user_id: z.string().uuid('Choose a vendor driver').optional(),
-  vendor_vehicle_plate:  z.string().trim().max(30).optional(),
+  // Same rule as a fleet vehicle's plate (truck.schema.ts).
+  vendor_vehicle_plate:  z.string().trim().toUpperCase().regex(PLATE_REGEX, PLATE_ERROR).optional(),
   vendor_vehicle_type:   z.string().trim().max(60).optional(),
 
   // Optional second driver, from the same kind of pool as the main one. null
