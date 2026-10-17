@@ -66,7 +66,7 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
   // password and a welcome email. Same details otherwise, so they show up in the
   // license reminder and the Driver Management flag like any company driver.
   if (dto.is_external) {
-    if (!dto.vendor_name?.trim()) throw new Error('Vendor name is required for a vendor driver')
+    if (!dto.vendor_name?.trim()) throw new Error('Company name is required for a vendor driver')
     const { userId } = await createExternalDriver({
       email:             dto.email,
       first_name:        dto.first_name,

@@ -11,7 +11,7 @@ import {
 const multipartBoolean = () =>
   z.preprocess((v) => (v === 'true' ? true : v === 'false' ? false : v), z.boolean())
 
-const vendorNameField    = () => z.string().trim().min(1, 'Vendor name is required').max(120)
+const vendorNameField    = () => z.string().trim().min(1, 'Company name is required').max(120)
 const vendorContactField = () => z.string().trim().max(120)
 
 // One form, two kinds of driver:
@@ -30,7 +30,7 @@ export const createDriverSchema = z.object({
 }).superRefine((data, ctx) => {
   if (data.is_external && !data.vendor_name) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['vendor_name'],
-      message: 'Vendor name is required for a vendor driver' })
+      message: 'Company name is required for a vendor driver' })
   }
   // A company driver has no vendor; accepting one and storing it would make the
   // driver look vendor-supplied wherever the field is shown.
