@@ -8,7 +8,13 @@ export async function assignBooking(req: Request, res: Response) {
     const data = await AssignmentService.assignBookingService(param(req.params.bookingId), req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (error: any) {
-    const status = /not found/i.test(error.message) ? 404 : 500
+    // The service refuses with a plain sentence (driver busy, vehicle not back,
+    // service overdue…): a conflict with the current state, not a fault. A
+    // database or programming error carries a code or is a TypeError — 500.
+    const status =
+      /not found/i.test(error.message)                    ? 404 :
+      error?.code || !(error instanceof Error) || error instanceof TypeError ? 500 :
+      409
     res.status(status).json({ status: 'error', message: error.message })
   }
 }
