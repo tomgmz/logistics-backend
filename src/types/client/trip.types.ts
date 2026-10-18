@@ -66,15 +66,37 @@ export interface BookingTripStop {
     BookingDestination,
     'destination_id' | 'address' | 'sequence_order' | 'latitude' | 'longitude' | 'notes' | 'status'
   > | null
+  /** How much of each cargo line this stop unloads on this trip (see 20261018000000_trip_cargo). */
+  booking_trip_cargo?: BookingTripCargo[]
+}
+
+/** One cargo line's share of one trip. */
+export interface BookingTripCargo {
+  trip_cargo_id: string
+  item_id:       string
+  planned_qty:   number
+  /** Null until the trip is loaded; 0 when it was left behind at the pickup. */
+  loaded_qty:    number | null
+}
+
+/** One cargo line's quantity on a stop, as the planner and the driver send it. */
+export interface CargoQuantity {
+  item_id:  string
+  quantity: number
 }
 
 export interface TripWithStops extends BookingTrip {
   booking_trip_stops: BookingTripStop[]
 }
 
-/** One run as operations plans it: which bays it serves, in what order. */
+/**
+ * One run as operations plans it: which bays it serves, in what order — and,
+ * when `stops` is given, how much of each cargo line goes on it. `destination_ids`
+ * alone (no quantities) is the older whole-drop-off plan.
+ */
 export interface TripPlanInput {
   trip_number?:    number
   destination_ids: string[]
+  stops?:          Array<{ destination_id: string; items: CargoQuantity[] }>
   notes?:          string | null
 }

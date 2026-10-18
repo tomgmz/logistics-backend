@@ -13,6 +13,20 @@ import { PAUSE_REASONS } from '../../types/client/pause.types.js'
 
 export const tripStopProofSchema = driverStopProofSchema
 
+/** One cargo line's quantity — on a planned stop, or as loaded at a pickup. */
+const cargoQuantity = z.object({
+  item_id:  z.string().uuid(),
+  quantity: z.number().min(0).max(1_000_000),
+})
+
+/**
+ * A run's pickup: the same evidence, plus what the driver actually loaded when
+ * it differs from the plan. Omitted means "exactly as planned".
+ */
+export const tripPickupProofSchema = driverStopProofSchema.extend({
+  loaded: z.array(cargoQuantity).max(200).optional(),
+})
+
 /** The driver's chosen drop-off order for one trip, as trip stop ids. */
 export const tripStopOrderSchema = z.object({
   trip_stop_ids: z.array(z.string().uuid()).min(1).max(20),
@@ -34,6 +48,12 @@ export const setTripPlanSchema = z.object({
       .min(1, 'Every trip must serve at least one drop-off')
       // A single run cannot unload at more bays than the booking has.
       .max(10),
+    // How much of each cargo line this run carries, per drop-off. Optional: a
+    // plan without it is the older whole-drop-off plan.
+    stops: z.array(z.object({
+      destination_id: z.string().uuid(),
+      items:          z.array(cargoQuantity).max(100),
+    })).max(10).optional(),
     notes: z.string().max(500).optional().nullable(),
   }))
     .min(1, 'A booking needs at least one trip')

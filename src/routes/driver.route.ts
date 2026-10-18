@@ -13,6 +13,7 @@ import * as ReportController from '../controllers/driver/report.controller.js'
 import { driverAvailabilityDaysSchema, driverLocationPingSchema } from '../schema/client/booking.schema.js'
 import {
   tripStopProofSchema,
+  tripPickupProofSchema,
   tripStopOrderSchema,
   fleetReturnSchema,
   attachStopProofSchema,
@@ -89,13 +90,21 @@ router.get('/bookings/:bookingId/trips',
   authenticate, authenticatedLimiter, isAny, TripController.getTrips)
 
 router.patch('/trips/:tripId/pickup',
-  authenticate, authenticatedLimiter, isAny, validate(tripStopProofSchema), TripController.driverConfirmTripPickup)
+  authenticate, authenticatedLimiter, isAny, validate(tripPickupProofSchema), TripController.driverConfirmTripPickup)
 
 // The driver picked which drop-off to do next; saved so the web shows it.
 router.put('/trips/:tripId/stop-order',
   authenticate, authenticatedLimiter, isAny, validate(tripStopOrderSchema), TripController.driverSetStopOrder)
 
 router.patch('/trip-stops/:tripStopId/delivered',
+  authenticate, authenticatedLimiter, isAny, validate(tripStopProofSchema), TripController.driverConfirmTripStop)
+
+// The same two confirmations naming the trip by its number: when the driver
+// loads less than planned while offline, the phone moves the rest onto the next
+// trip (or a new one) itself, and those have no server id until it syncs.
+router.patch('/bookings/:bookingId/trips/:tripNumber/pickup',
+  authenticate, authenticatedLimiter, isAny, validate(tripPickupProofSchema), TripController.driverConfirmTripPickup)
+router.patch('/bookings/:bookingId/trips/:tripNumber/destinations/:destinationId/delivered',
   authenticate, authenticatedLimiter, isAny, validate(tripStopProofSchema), TripController.driverConfirmTripStop)
 
 // Evidence that arrives late. The delivery was confirmed at the bay; the photo

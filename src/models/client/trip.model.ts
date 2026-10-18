@@ -6,6 +6,7 @@ import type {
   TripWithStops,
   TripPlanInput,
 } from '../../types/client/trip.types.js'
+import { lineTotal, type PlanTrip } from '../../lib/trip-cargo.js'
 
 /**
  * The runs a truck makes for one booking.
@@ -57,6 +58,12 @@ const TRIP_WITH_STOPS_SELECT = `
       longitude,
       notes,
       status
+    ),
+    booking_trip_cargo (
+      trip_cargo_id,
+      item_id,
+      planned_qty,
+      loaded_qty
     )
   )
 `
@@ -127,65 +134,179 @@ async function findStopsByDestinationId(destinationId: string): Promise<BookingT
   return (data ?? []) as BookingTripStop[]
 }
 
-/**
- * Replace a booking's trip plan wholesale.
- *
- * Ops sets how many runs the truck makes and which bays each run serves. This
- * is a replace rather than a diff because the plan is small, is set as a whole
- * in one screen, and a partial apply would leave a booking half-planned — a
- * state the driver app has no way to render.
- *
- * Refuses once any trip has been started, which is the guard that matters: a
- * driver holding a truck loaded against trip 2 must not have trip 2 redefined
- * underneath them. Re-planning an in-flight booking is a support action that
- * goes through the trips individually, not through this.
- */
-async function replacePlan(bookingId: string, plan: TripPlanInput[]): Promise<TripWithStops[]> {
-  const existing = await findByBookingId(bookingId)
-  const started  = existing.filter((t) => t.status !== 'pending' && t.status !== 'cancelled')
-  if (started.length > 0) {
-    throw new Error(
-      `Cannot re-plan trips: trip ${started[0].trip_number} has already started. ` +
-      `Adjust the remaining trips individually instead.`,
-    )
-  }
+/** A trip the truck has loaded (or finished): its plan is history and is kept. */
+export const isStartedTrip = (t: { status: string }) => t.status === 'in_transit' || t.status === 'completed'
 
-  if (existing.length > 0) {
-    // Stops go with them: booking_trip_stops cascades on trip delete.
-    const { error } = await supabase
-      .from('booking_trips')
-      .delete()
-      .eq('booking_id', bookingId)
+/**
+ * Replace the not-yet-loaded part of a booking's trip plan.
+ *
+ * Ops sets how many runs the truck makes, which bays each serves and — with
+ * `stops` — how much of each cargo line goes on each. A replace rather than a
+ * diff: the plan is small and is set as a whole in one screen.
+ *
+ * Trips already loaded or run are KEPT exactly as they are: a driver holding a
+ * truck loaded against trip 2 must not have trip 2 redefined underneath them.
+ * Plan entries numbered like a started trip are ignored; every other trip is
+ * deleted and re-created from `plan`. The service validates the plan first and
+ * numbers it, so this only writes.
+ */
+async function replacePlan(
+  bookingId: string,
+  plan: TripPlanInput[],
+  { insertOnly = false }: { insertOnly?: boolean } = {},
+): Promise<TripWithStops[]> {
+  const existing       = insertOnly ? [] : await findByBookingId(bookingId)
+  const startedNumbers = new Set(existing.filter(isStartedTrip).map((t) => t.trip_number))
+
+  const replaceable = existing.filter((t) => !isStartedTrip(t)).map((t) => t.trip_id)
+  if (replaceable.length > 0) {
+    // Stops and cargo go with them: both cascade on trip delete.
+    const { error } = await supabase.from('booking_trips').delete().in('trip_id', replaceable)
     if (error) throw error
   }
 
+  const fresh = plan
+    .map((t, i) => ({ ...t, trip_number: t.trip_number ?? i + 1 }))
+    .filter((t) => !startedNumbers.has(t.trip_number))
+  if (fresh.length === 0) return findByBookingId(bookingId)
+
   const { data: trips, error: tripErr } = await supabase
     .from('booking_trips')
-    .insert(plan.map((t, i) => ({
-      booking_id:  bookingId,
-      trip_number: t.trip_number ?? i + 1,
-      notes:       t.notes ?? null,
-    })))
+    .insert(fresh.map((t) => ({ booking_id: bookingId, trip_number: t.trip_number, notes: t.notes ?? null })))
     .select('trip_id, trip_number')
-
   if (tripErr) throw tripErr
 
   const byNumber = new Map((trips ?? []).map((t: any) => [t.trip_number as number, t.trip_id as string]))
 
-  const stopRows = plan.flatMap((t, i) =>
+  const stopRows = fresh.flatMap((t) =>
     t.destination_ids.map((destinationId, j) => ({
-      trip_id:        byNumber.get(t.trip_number ?? i + 1)!,
+      trip_id:        byNumber.get(t.trip_number)!,
       destination_id: destinationId,
       sequence_order: j + 1,
     })),
   )
+  if (stopRows.length === 0) return findByBookingId(bookingId)
 
-  if (stopRows.length > 0) {
-    const { error: stopErr } = await supabase.from('booking_trip_stops').insert(stopRows)
-    if (stopErr) throw stopErr
+  const { data: stops, error: stopErr } = await supabase
+    .from('booking_trip_stops')
+    .insert(stopRows)
+    .select('trip_stop_id, trip_id, destination_id')
+  if (stopErr) throw stopErr
+
+  // How much of each cargo line each stop carries, when the plan says.
+  const stopId = new Map((stops ?? []).map((s: any) => [`${s.trip_id}:${s.destination_id}`, s.trip_stop_id as string]))
+  const cargoRows = fresh.flatMap((t) => {
+    const tripId = byNumber.get(t.trip_number)!
+    return (t.stops ?? []).flatMap((st) => st.items
+      .filter((it) => it.quantity > 0 && stopId.has(`${tripId}:${st.destination_id}`))
+      .map((it) => ({
+        booking_id:   bookingId,
+        trip_id:      tripId,
+        trip_stop_id: stopId.get(`${tripId}:${st.destination_id}`)!,
+        item_id:      it.item_id,
+        planned_qty:  it.quantity,
+      })))
+  })
+  if (cargoRows.length > 0) {
+    const { error: cargoErr } = await supabase.from('booking_trip_cargo').insert(cargoRows)
+    if (cargoErr) throw cargoErr
   }
 
   return findByBookingId(bookingId)
+}
+
+/**
+ * Write a reshaped cargo plan (trip-cargo `rollCargo`) over the current one,
+ * in place: existing trips and stops keep their ids — the phone may already
+ * hold them in its offline queue — and only what changed is touched. Trips
+ * past the end are created, trips that are gone (always the last) deleted.
+ */
+async function applyCargoPlan(
+  bookingId: string,
+  current:   TripWithStops[],
+  next:      PlanTrip[],
+): Promise<void> {
+  const now      = new Date().toISOString()
+  const byNumber = new Map(current.map((t) => [t.trip_number, t]))
+
+  for (const plan of next) {
+    if (plan.started) continue
+    let trip = byNumber.get(plan.trip_number)
+    let tripId = trip?.trip_id
+    if (!tripId) {
+      const { data, error } = await supabase
+        .from('booking_trips')
+        .insert({ booking_id: bookingId, trip_number: plan.trip_number })
+        .select('trip_id')
+        .single()
+      if (error) throw error
+      tripId = (data as any).trip_id as string
+    }
+    const stops = trip?.booking_trip_stops ?? []
+    let order   = stops.reduce((n, s) => Math.max(n, s.sequence_order), 0)
+
+    for (const ps of plan.stops) {
+      let stop   = stops.find((s) => s.destination_id === ps.destination_id)
+      let stopId = stop?.trip_stop_id
+      if (!stopId) {
+        const { data, error } = await supabase
+          .from('booking_trip_stops')
+          .insert({ trip_id: tripId, destination_id: ps.destination_id, sequence_order: ++order })
+          .select('trip_stop_id')
+          .single()
+        if (error) throw error
+        stopId = (data as any).trip_stop_id as string
+      }
+      const rows = stop?.booking_trip_cargo ?? []
+      for (const c of ps.cargo) {
+        const row = rows.find((r) => r.item_id === c.item_id)
+        if (!row) {
+          const { error } = await supabase.from('booking_trip_cargo').insert({
+            booking_id: bookingId, trip_id: tripId, trip_stop_id: stopId,
+            item_id: c.item_id, planned_qty: c.planned_qty, loaded_qty: c.loaded_qty,
+          })
+          if (error) throw error
+        } else if (Number(row.planned_qty) !== c.planned_qty || (row.loaded_qty == null ? null : Number(row.loaded_qty)) !== c.loaded_qty) {
+          const { error } = await supabase.from('booking_trip_cargo')
+            .update({ planned_qty: c.planned_qty, loaded_qty: c.loaded_qty, updated_at: now })
+            .eq('trip_cargo_id', row.trip_cargo_id)
+          if (error) throw error
+        }
+      }
+      const gone = rows.filter((r) => !ps.cargo.some((c) => c.item_id === r.item_id)).map((r) => r.trip_cargo_id)
+      if (gone.length > 0) {
+        const { error } = await supabase.from('booking_trip_cargo').delete().in('trip_cargo_id', gone)
+        if (error) throw error
+      }
+    }
+
+    const goneStops = stops
+      .filter((s) => s.status === 'pending' && !plan.stops.some((p) => p.destination_id === s.destination_id))
+      .map((s) => s.trip_stop_id)
+    if (goneStops.length > 0) {
+      const { error } = await supabase.from('booking_trip_stops').delete().in('trip_stop_id', goneStops)
+      if (error) throw error
+    }
+  }
+
+  const keep      = new Set(next.map((t) => t.trip_number))
+  const goneTrips = current.filter((t) => !isStartedTrip(t) && !keep.has(t.trip_number)).map((t) => t.trip_id)
+  if (goneTrips.length > 0) {
+    const { error } = await supabase.from('booking_trips').delete().in('trip_id', goneTrips)
+    if (error) throw error
+  }
+}
+
+/** One trip by its number on the booking — how the phone names a trip it planned offline. */
+async function findByNumber(bookingId: string, tripNumber: number): Promise<TripWithStops | null> {
+  const { data, error } = await supabase
+    .from('booking_trips')
+    .select('trip_id')
+    .eq('booking_id', bookingId)
+    .eq('trip_number', tripNumber)
+    .maybeSingle()
+  if (error) throw error
+  return data ? findById((data as any).trip_id) : null
 }
 
 /**
@@ -195,8 +316,28 @@ async function replacePlan(bookingId: string, plan: TripPlanInput[]): Promise<Tr
  * trips existed — or one whose plan was never set — still opens in the driver
  * app instead of showing an empty route. Idempotent: does nothing when the
  * booking already has trips.
+ *
+ * Callers race: assigning a booking refreshes its planned ETA (which reads the
+ * plan) while the web reads it too. Concurrent calls for one booking share one
+ * creation, and a creation that loses to another process (the unique trip
+ * number) reads back the winner's plan instead of failing.
  */
-async function ensurePlan(bookingId: string): Promise<TripWithStops[]> {
+const creatingPlan = new Map<string, Promise<TripWithStops[]>>()
+
+function ensurePlan(bookingId: string): Promise<TripWithStops[]> {
+  const inFlight = creatingPlan.get(bookingId)
+  if (inFlight) return inFlight
+  const run = createDefaultPlan(bookingId)
+    .catch(async (err: any) => {
+      if (err?.code === '23505') return findByBookingId(bookingId)
+      throw err
+    })
+    .finally(() => creatingPlan.delete(bookingId))
+  creatingPlan.set(bookingId, run)
+  return run
+}
+
+async function createDefaultPlan(bookingId: string): Promise<TripWithStops[]> {
   const existing = await findByBookingId(bookingId)
   if (existing.length > 0) return existing
 
@@ -209,10 +350,24 @@ async function ensurePlan(bookingId: string): Promise<TripWithStops[]> {
   if (error) throw error
   if (!destinations?.length) return []
 
+  // Every cargo line, all of it, on the one trip.
+  const { data: cargo, error: cargoErr } = await supabase
+    .from('booking_cargo_items')
+    .select('item_id, destination_id, quantity')
+    .eq('booking_id', bookingId)
+  if (cargoErr) throw cargoErr
+
+  const destinationIds = destinations.map((d: any) => d.destination_id as string)
   return replacePlan(bookingId, [{
     trip_number:     1,
-    destination_ids: destinations.map((d: any) => d.destination_id as string),
-  }])
+    destination_ids: destinationIds,
+    stops: destinationIds.map((destination_id) => ({
+      destination_id,
+      items: (cargo ?? [])
+        .filter((c: any) => c.destination_id === destination_id)
+        .map((c: any) => ({ item_id: c.item_id as string, quantity: lineTotal(c.quantity == null ? null : Number(c.quantity)) })),
+    })),
+  }], { insertOnly: true })
 }
 
 /** Record the driver's proof of loading for one trip and put it on the road. */
@@ -373,6 +528,8 @@ export default {
   findStopById,
   findStopsByDestinationId,
   replacePlan,
+  applyCargoPlan,
+  findByNumber,
   ensurePlan,
   setTripPickupProof,
   updateTripStatus,

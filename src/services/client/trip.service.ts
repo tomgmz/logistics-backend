@@ -21,7 +21,16 @@ import {
   driverCompleteBookingService,
   type DriverActor,
 } from './booking.service.js'
-import type { TripPlanInput, TripWithStops } from '../../types/client/trip.types.js'
+import type { CargoQuantity, TripPlanInput, TripWithStops } from '../../types/client/trip.types.js'
+import { isStartedTrip } from '../../models/client/trip.model.js'
+import {
+  CargoLoadError,
+  checkPlanQuantities,
+  lineTotal,
+  rollCargo,
+  type CargoLine,
+  type PlanTrip,
+} from '../../lib/trip-cargo.js'
 import type { BookingWithRelations } from '../../types/client/booking.types.js'
 
 /**
@@ -120,7 +129,20 @@ export async function setTripPlanService(
   const destinations = await BookingModel.findDestinationsByBookingId(bookingId) ?? []
   const valid        = new Set(destinations.map((d) => d.destination_id))
 
-  const named = new Set<string>()
+  // Loaded and finished runs are kept as they are; the plan covers the rest.
+  // Whatever numbers the planner sent, the runs still to come follow on from the
+  // last started one, in the order given.
+  const existing     = await TripModel.findByBookingId(bookingId)
+  const started      = existing.filter(isStartedTrip)
+  const startedNums  = new Set(started.map((t) => t.trip_number))
+  const firstFree    = started.reduce((n, t) => Math.max(n, t.trip_number), 0) + 1
+  plan = plan
+    .filter((t) => t.trip_number == null || !startedNums.has(t.trip_number))
+    .map((t, i) => ({ ...t, trip_number: firstFree + i }))
+  if (plan.length === 0 && started.length === 0) throw new Error('A booking needs at least one trip')
+  if (started.length + plan.length > 10) throw new Error('A booking cannot be planned as more than 10 trips')
+
+  const named = new Set<string>(started.flatMap((t) => t.booking_trip_stops.map((s) => s.destination_id)))
   for (const trip of plan) {
     if (trip.destination_ids.length === 0) {
       throw new Error('Every trip must serve at least one drop-off')
@@ -143,6 +165,25 @@ export async function setTripPlanService(
     )
   }
 
+  // Quantities, when the planner sends them (it always does now; a plan without
+  // is the older whole-drop-off one and still accepted).
+  if (plan.some((t) => t.stops)) {
+    if (!plan.every((t) => t.stops)) throw new Error('Every trip must say how much it carries')
+    for (const t of plan) {
+      const ids = new Set(t.destination_ids)
+      if (t.stops!.length !== ids.size || t.stops!.some((s) => !ids.has(s.destination_id))) {
+        throw new Error(`Trip ${t.trip_number}'s quantities must match its drop-offs`)
+      }
+    }
+    const { lines, labels, raw } = await cargoLines(bookingId)
+    const problem = checkPlanQuantities(
+      toPlanTrips(started),
+      plan.map((t) => ({ trip_number: t.trip_number!, stops: t.stops! })),
+      lines, labels, raw,
+    )
+    if (problem) throw new PlanQuantityError(problem)
+  }
+
   const trips = await TripModel.replacePlan(bookingId, plan)
   void refreshPlannedEta(bookingId)
 
@@ -156,6 +197,80 @@ export async function setTripPlanService(
   })
 
   return trips
+}
+
+/** A planner save whose quantities don't add up — always a 400. */
+export class PlanQuantityError extends Error {}
+
+/** The booking's cargo lines as the split rules see them, plus names for messages. */
+async function cargoLines(bookingId: string) {
+  const items  = await BookingModel.findCargoItemsByBookingId(bookingId) ?? []
+  const lines: CargoLine[] = []
+  const labels = new Map<string, string>()
+  const raw    = new Map<string, number | null>()
+  for (const it of items as any[]) {
+    if (!it.destination_id) continue
+    const q = it.quantity == null ? null : Number(it.quantity)
+    lines.push({ item_id: it.item_id, destination_id: it.destination_id, total: lineTotal(q) })
+    labels.set(it.item_id, it.products?.name || it.product_text || it.commodities?.name || it.commodity_text || 'A cargo line')
+    raw.set(it.item_id, q)
+  }
+  return { lines, labels, raw }
+}
+
+/** The stored trips in the shape trip-cargo works on. */
+function toPlanTrips(trips: TripWithStops[]): PlanTrip[] {
+  return trips
+    .filter((t) => t.status !== 'cancelled')
+    .map((t) => ({
+      trip_number: t.trip_number,
+      started:     isStartedTrip(t),
+      stops: t.booking_trip_stops.map((s) => ({
+        destination_id: s.destination_id,
+        cargo: (s.booking_trip_cargo ?? []).map((c) => ({
+          item_id:     c.item_id,
+          planned_qty: Number(c.planned_qty),
+          loaded_qty:  c.loaded_qty == null ? null : Number(c.loaded_qty),
+        })),
+      })),
+    }))
+}
+
+/**
+ * The driver loaded something other than the plan for this run: record it and
+ * move the difference onto the runs after it. Only for a plan that has
+ * quantities for every cargo line — an older whole-drop-off plan has nothing to
+ * move. Returns whether anything changed.
+ */
+async function applyLoadedCargo(
+  trip:    TripWithStops,
+  trips:   TripWithStops[],
+  loaded:  CargoQuantity[] | undefined,
+): Promise<boolean> {
+  const { lines } = await cargoLines(trip.booking_id)
+  const plan      = toPlanTrips(trips)
+  const covered   = new Set(plan.flatMap((t) => t.stops.flatMap((s) => s.cargo.map((c) => c.item_id))))
+  if (lines.length === 0 || !lines.every((l) => covered.has(l.item_id))) return false
+
+  const valid = new Set(lines.map((l) => l.item_id))
+  const map   = new Map<string, number>()
+  for (const l of loaded ?? []) {
+    if (!valid.has(l.item_id)) throw new CargoLoadError('Cannot load a cargo line that is not on this booking')
+    map.set(l.item_id, l.quantity)
+  }
+
+  let next: PlanTrip[]
+  try {
+    next = rollCargo(plan, lines, trip.trip_number, map)
+  } catch (err) {
+    // The message reads "Cannot load …" so the queue treats it as a 409.
+    if (err instanceof CargoLoadError) throw new Error(err.message.startsWith('Cannot ') ? err.message : `Cannot load this trip: ${err.message}`)
+    throw err
+  }
+  if (next.length > 10) throw new Error('Cannot load this little: the rest would need more than 10 trips')
+
+  await TripModel.applyCargoPlan(trip.booking_id, trips, next)
+  return true
 }
 
 /* ── Loading a run ────────────────────────────────────────────────────────── */
@@ -174,6 +289,7 @@ export async function driverConfirmTripPickupService(
   actor: DriverActor,
   earlyStart = false,
   position?: StopProofPosition | null,
+  loaded?: CargoQuantity[],
 ): Promise<TripWithStops> {
   const trip = await TripModel.findById(tripId)
   if (!trip) throw new Error(`Trip with ID ${tripId} not found`)
@@ -225,6 +341,10 @@ export async function driverConfirmTripPickupService(
     position,
     'pickup point',
   )
+
+  // What actually went on the truck, and the rest moved to the later runs —
+  // before the run is marked loaded, while it is still reshapeable.
+  await applyLoadedCargo(trip, trips, loaded)
 
   await TripModel.setTripPickupProof(tripId, proofPhotoUrl, position, fence)
   // Loading a run means the truck is moving again, whatever the driver forgot.
@@ -584,4 +704,27 @@ async function holdReturnedVehicle(booking: BookingWithRelations): Promise<void>
   } catch (err) {
     console.error('[trip] failed to hold returned vehicle', booking.booking_id, err)
   }
+}
+
+/* ── Trips and stops the phone named offline ──────────────────────────────── */
+
+/** The trip id for booking + trip number. "not found" (404) when there is none. */
+export async function resolveTripByNumber(bookingId: string, tripNumber: number): Promise<string> {
+  if (!Number.isInteger(tripNumber) || tripNumber < 1) throw new Error('Trip not found')
+  const trip = await TripModel.findByNumber(bookingId, tripNumber)
+  if (!trip) throw new Error(`Trip ${tripNumber} not found on this booking`)
+  return trip.trip_id
+}
+
+/** The trip stop id for booking + trip number + drop-off. */
+export async function resolveTripStopByDestination(
+  bookingId: string,
+  tripNumber: number,
+  destinationId: string,
+): Promise<string> {
+  if (!Number.isInteger(tripNumber) || tripNumber < 1) throw new Error('Trip not found')
+  const trip = await TripModel.findByNumber(bookingId, tripNumber)
+  const stop = trip?.booking_trip_stops.find((s) => s.destination_id === destinationId)
+  if (!stop) throw new Error(`That drop-off was not found on trip ${tripNumber}`)
+  return stop.trip_stop_id
 }

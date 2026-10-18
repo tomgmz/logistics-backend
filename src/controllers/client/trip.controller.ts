@@ -7,6 +7,9 @@ import {
   driverConfirmTripStopService,
   driverConfirmFleetReturnService,
   attachStopProofService,
+  resolveTripByNumber,
+  resolveTripStopByDestination,
+  PlanQuantityError,
 } from '../../services/client/trip.service.js'
 import {
   pauseTripService,
@@ -110,12 +113,16 @@ export const setTripPlan = async (req: Request, res: Response) => {
     res.status(200).json({ status: 'success', data: trips })
   } catch (error: any) {
     const status =
+      error instanceof PlanQuantityError        ? 400 :
       error.message.includes('not allowed')     ? 403 :
       error.message.includes('not found')      ? 404 :
       error.message.includes('already started') ? 409 :
       error.message.includes('not on this booking') ||
       error.message.includes('must serve')      ||
       error.message.includes('must be served')  ||
+      error.message.includes('must say how much') ||
+      error.message.includes('must match')      ||
+      error.message.includes('more than 10')    ||
       error.message.includes('at least one')    ? 400 : 500
     res.status(status).json({ status: 'error', message: error.message })
   }
@@ -123,12 +130,18 @@ export const setTripPlan = async (req: Request, res: Response) => {
 
 export const driverConfirmTripPickup = async (req: Request, res: Response) => {
   try {
+    // A trip the phone added offline (cargo rolled over to a new last trip) has
+    // no id it knows of yet; it names the trip by booking + number instead.
+    const tripId = req.params.tripNumber
+      ? await resolveTripByNumber(param(req.params.bookingId), Number(req.params.tripNumber))
+      : param(req.params.tripId)
     const trip = await driverConfirmTripPickupService(
-      param(req.params.tripId),
+      tripId,
       req.body.proof_photo_url,
       driverActor(req),
       req.body.early_start === true,
       stopProofPosition(req),
+      req.body.loaded,
     )
     res.status(200).json({ status: 'success', data: trip })
   } catch (error: any) {
@@ -138,8 +151,13 @@ export const driverConfirmTripPickup = async (req: Request, res: Response) => {
 
 export const driverConfirmTripStop = async (req: Request, res: Response) => {
   try {
+    // Likewise a stop the phone added offline: booking + trip number + drop-off.
+    const tripStopId = req.params.tripNumber
+      ? await resolveTripStopByDestination(
+          param(req.params.bookingId), Number(req.params.tripNumber), param(req.params.destinationId))
+      : param(req.params.tripStopId)
     const stop = await driverConfirmTripStopService(
-      param(req.params.tripStopId),
+      tripStopId,
       req.body.proof_photo_url,
       driverActor(req),
       stopProofPosition(req),

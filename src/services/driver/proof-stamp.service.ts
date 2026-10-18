@@ -30,6 +30,28 @@ export interface StampFields {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// A trip or stop the driver app created offline (cargo rolled onto a later
+// trip) has no server id when its photo is taken: `local:<booking>:<trip number>`
+// or `local:<booking>:<trip number>:<destination>`. Resolved at upload time —
+// the pickup that created it has synced by then (the queue is FIFO).
+const U = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+const LOCAL_REF = new RegExp(`^local:(${U}):([0-9]+)(?::(${U}))?$`, 'i')
+
+/** A local ref → the real trip / trip stop id, or null when it doesn't exist (yet). */
+async function resolveRef(fields: StampFields): Promise<string | null> {
+  const m = LOCAL_REF.exec(fields.refId)
+  if (!m) return fields.refId
+  const [, bookingId, n, destinationId] = m
+  const result = fields.stop === 'trip_pickup'
+    ? await pool.query<{ id: string }>(
+        `SELECT trip_id AS id FROM booking_trips WHERE booking_id = $1 AND trip_number = $2`,
+        [bookingId, Number(n)])
+    : await pool.query<{ id: string }>(
+        `SELECT s.trip_stop_id AS id FROM booking_trip_stops s JOIN booking_trips t ON t.trip_id = s.trip_id
+          WHERE t.booking_id = $1 AND t.trip_number = $2 AND s.destination_id = $3`,
+        [bookingId, Number(n), destinationId ?? null])
+  return result.rows[0]?.id ?? null
+}
 
 const num = (v: unknown): number | null => {
   if (v == null || v === '') return null
@@ -42,7 +64,7 @@ export function stampFieldsFrom(body: Record<string, unknown> | undefined): Stam
   if (!body) return null
   const stop  = body.stamp_stop
   const refId = typeof body.stamp_ref === 'string' ? body.stamp_ref : ''
-  if ((stop !== 'trip_pickup' && stop !== 'trip_stop') || !UUID.test(refId)) return null
+  if ((stop !== 'trip_pickup' && stop !== 'trip_stop') || !(UUID.test(refId) || LOCAL_REF.test(refId))) return null
 
   const lat = num(body.latitude)
   const lng = num(body.longitude)
@@ -79,6 +101,8 @@ interface StopContext {
 }
 
 async function stopContext(fields: StampFields): Promise<StopContext | null> {
+  const refId = await resolveRef(fields)
+  if (!refId) return null
   // Trip counts leave out cancelled runs: "trip 2 of 3" must not count a run
   // that is never going to happen. The plate is the delivery's — the company
   // truck, or the vendor vehicle snapshotted onto it at assignment.
@@ -106,7 +130,7 @@ async function stopContext(fields: StampFields): Promise<StopContext | null> {
               WHERE dl.booking_id = t.booking_id
               ORDER BY dl.created_at DESC LIMIT 1)                                       AS plate
        FROM target t JOIN bookings b ON b.booking_id = t.booking_id`,
-    [fields.refId],
+    [refId],
   )
   const row = result.rows[0]
   if (!row) return null
