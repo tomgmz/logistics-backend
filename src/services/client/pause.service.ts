@@ -7,6 +7,8 @@ import { broadcast } from '../../lib/realtime.js'
 import { supabase } from '../../lib/supabase.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { createReportService } from '../driver/report.service.js'
+import { refreshPlannedEta } from '../maps/planned-eta.service.js'
+import { invalidateEta } from '../maps/eta.service.js'
 import { assertLeadDriverOnBooking, type DriverActor } from './booking.service.js'
 import {
   PAUSE_REASON_LABEL,
@@ -59,6 +61,24 @@ function durationLabel(fromIso: string, toIso: string): string {
   const m = minutes % 60
   if (h === 0) return `${m} min`
   return m === 0 ? `${h} h` : `${h} h ${m} min`
+}
+
+/** A delay this long or longer earns the client a new expected arrival in the resume notice. */
+const NOTIFY_SHIFT_MIN = 30
+
+/**
+ * "4:35 – 5:05 PM", or "Oct 18, 4:35 – 5:05 PM" when not today — the same
+ * 30-minute window (start rounded down to 5 min) the web shows, in Manila time.
+ */
+function arrivalWindowPh(iso: string): string {
+  const ROUND = 5 * 60_000
+  const start = new Date(Math.floor(Date.parse(iso) / ROUND) * ROUND)
+  const end   = new Date(start.getTime() + 30 * 60_000)
+  const opts  = { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' } as const
+  const day   = (d: Date) => d.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' })
+  const today = day(new Date())
+  const range = `${start.toLocaleTimeString('en-US', opts)} – ${end.toLocaleTimeString('en-US', opts)}`
+  return day(start) === today ? range : `${day(start)}, ${range}`
 }
 
 /**
@@ -147,6 +167,10 @@ export async function pauseTripService(
     void fileBreakdownReport(pause, booking, actor)
   }
 
+  // The cached live ETA was "now + drive time" from a moving truck. Drop it: the
+  // screens show "Paused", and a fresh one is bought after the resume.
+  void invalidateEta(bookingId).catch(() => {})
+
   void notifyStage('trip_paused', booking, { pauseLabel: label })
   void notifyStage('trip_paused_staff', booking, { pauseLabel: label, reason: note })
   announcePauseChanged(bookingId)
@@ -230,7 +254,18 @@ async function endPause(
       (note ? `: ${note}` : ''),
   })
 
-  void notifyStage('trip_resumed', booking)
+  // The pause moved every arrival after it. Re-plan (pause time is added in
+  // refreshPlannedEta) and let the next ping buy a fresh live ETA.
+  const before = (booking as { estimated_delivery?: string | null }).estimated_delivery ?? null
+  await refreshPlannedEta(booking.booking_id)
+  void invalidateEta(booking.booking_id).catch(() => {})
+  const replanned = await BookingModel.findById(booking.booking_id)
+  const after = (replanned as { estimated_delivery?: string | null } | null)?.estimated_delivery ?? null
+  const shiftMin = before && after ? (Date.parse(after) - Date.parse(before)) / 60_000 : 0
+
+  void notifyStage('trip_resumed', replanned ?? booking, {
+    newArrival: after && shiftMin >= NOTIFY_SHIFT_MIN ? arrivalWindowPh(after) : undefined,
+  })
   if (opts.via === 'staff') {
     void notifyStage('trip_resumed_by_staff', booking, { reason: note })
   } else {

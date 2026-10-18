@@ -214,8 +214,15 @@ export async function recordDriverPositionService(
   // Google, which is slow and can fail. The driver's position must be recorded
   // and pushed on its own schedule regardless. Most pings find a fresh cached
   // ETA and return without doing anything.
-  void maybeRefreshEta(driverId, bookingId, position)
-    .catch((e) => console.warn(`[tracking] eta refresh failed for booking ${bookingId}:`, e?.message))
+  //
+  // Not while the delivery is paused: "now + drive time" from a parked truck
+  // would read as an arrival that is not going to happen. The screens show
+  // "Paused" instead, and the first ping after the resume buys a fresh ETA (the
+  // resume invalidates the cached one).
+  if (!(booking as { paused_at?: string | null }).paused_at) {
+    void maybeRefreshEta(driverId, bookingId, position)
+      .catch((e) => console.warn(`[tracking] eta refresh failed for booking ${bookingId}:`, e?.message))
+  }
 
   return { recorded: true, position }
 }

@@ -238,7 +238,11 @@ function copyFor(
         body:  `The driver paused booking ${label}${reason ? `: ${reason}` : '.'}`,
       }
     case 'trip_resumed':
-      return { title: 'Delivery moving again', body: `Your delivery ${label} is on its way again.` }
+      return {
+        title: 'Delivery moving again',
+        body:  `Your delivery ${label} is on its way again.` +
+               (extra?.newArrival ? ` New expected arrival: ${extra.newArrival}.` : ''),
+      }
     case 'trip_resumed_staff':
       return {
         title: 'Delivery resumed',
@@ -297,6 +301,9 @@ export interface NotifyExtra {
   // For the pause stages: the reason category in words, and how long it lasted.
   pauseLabel?:   string
   pausedFor?:    string
+  // For `trip_resumed`: the new expected arrival window, when a pause moved it
+  // by 30 minutes or more.
+  newArrival?:   string
 }
 
 /**

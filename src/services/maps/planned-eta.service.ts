@@ -46,6 +46,61 @@ const MINUTE_MS = 60_000
 
 interface Point { latitude: number; longitude: number }
 
+/**
+ * A pause the driver put on the delivery, as a stretch of time. An open pause
+ * (still in force) runs to "now"; it is re-planned again when it ends.
+ */
+interface PauseSpan { start: number; end: number }
+
+/**
+ * Push `at` back by every pause that starts at or before it and has not been
+ * counted yet. Shifting can bring a later pause into range, so it loops.
+ */
+function shiftByPauses(at: number, pauses: PauseSpan[], counted: Set<PauseSpan>): number {
+  let t = at
+  for (let moved = true; moved; ) {
+    moved = false
+    for (const p of pauses) {
+      if (!counted.has(p) && p.start <= t) {
+        t += p.end - p.start
+        counted.add(p)
+        moved = true
+      }
+    }
+  }
+  return t
+}
+
+/**
+ * When the truck can start loading, given it is ready at `at`: if a pause is in
+ * force then, it waits for the pause to end (and for any pause running then).
+ * A pause that ended before `at` is already in `at` — not counted again.
+ */
+function holdUntilUnpaused(at: number, pauses: PauseSpan[]): number {
+  let t = at
+  for (let moved = true; moved; ) {
+    moved = false
+    for (const p of pauses) {
+      if (p.start <= t && p.end > t) { t = p.end; moved = true }
+    }
+  }
+  return t
+}
+
+async function loadPauses(bookingId: string): Promise<PauseSpan[]> {
+  const { data, error } = await supabase
+    .from('booking_pauses')
+    .select('paused_at, resumed_at')
+    .eq('booking_id', bookingId)
+    .order('paused_at', { ascending: true })
+  if (error) throw error
+  const now = Date.now()
+  return (data ?? []).map((p: { paused_at: string; resumed_at: string | null }) => ({
+    start: Date.parse(p.paused_at),
+    end:   p.resumed_at ? Date.parse(p.resumed_at) : now,
+  })).filter((p) => p.end > p.start)
+}
+
 interface PlannedStop { trip_stop_id: string; planned_arrival_at: string }
 interface PlannedTrip {
   trip_id:              string
@@ -140,8 +195,17 @@ function sortedStops(trip: TripWithStops) {
   return (trip.booking_trip_stops ?? []).slice().sort((a, b) => a.sequence_order - b.sequence_order)
 }
 
-/** One run, planned from its departure. Null if a stop has no coordinates or Google fails. */
-async function planTrip(trip: TripWithStops, origin: Point, departAt: Date): Promise<PlannedTrip | null> {
+/**
+ * One run, planned from its departure. Null if a stop has no coordinates or
+ * Google fails. Pauses during the run (after `departAt`) push back every arrival
+ * after them, and the return: the truck sat still for that long.
+ */
+async function planTrip(
+  trip: TripWithStops,
+  origin: Point,
+  departAt: Date,
+  pauses: PauseSpan[] = [],
+): Promise<PlannedTrip | null> {
   const stops  = sortedStops(trip)
   const points = stops.map((s) => toPoint(s.booking_destinations?.latitude, s.booking_destinations?.longitude))
   if (stops.length === 0 || points.some((p) => !p)) return null
@@ -149,14 +213,19 @@ async function planTrip(trip: TripWithStops, origin: Point, departAt: Date): Pro
   const legs = await legDurations(origin, points as Point[], origin, departAt)
   if (!legs) return null
 
+  // Only pauses that began once the truck left belong to this run; one before
+  // it is already in the departure time.
+  const during  = pauses.filter((p) => p.start >= departAt.getTime())
+  const counted = new Set<PauseSpan>()
+
   let cursor = departAt.getTime()
   const planned: PlannedStop[] = stops.map((stop, i) => {
-    cursor += legs[i] * 1000
+    cursor = shiftByPauses(cursor + legs[i] * 1000, during, counted)
     const arrival = new Date(cursor).toISOString()
     cursor += UNLOAD_MINUTES_PER_STOP * MINUTE_MS
     return { trip_stop_id: stop.trip_stop_id, planned_arrival_at: arrival }
   })
-  cursor += legs[legs.length - 1] * 1000
+  cursor = shiftByPauses(cursor + legs[legs.length - 1] * 1000, during, counted)
 
   return {
     trip_id:              trip.trip_id,
@@ -241,6 +310,9 @@ export async function refreshPlannedEta(bookingId: string): Promise<void> {
       .sort((a, b) => a.trip_number - b.trip_number)
     if (trips.length === 0) return
 
+    // Time the driver had the delivery paused: it moves every arrival after it.
+    const pauses = await loadPauses(bookingId)
+
     // When the truck is next free at the origin to load. Trip 1 starts from the
     // call time; every later trip from the one before it.
     let readyAt: Date | null = callAt
@@ -269,16 +341,20 @@ export async function refreshPlannedEta(bookingId: string): Promise<void> {
         // Loaded: the real departure replaces the planned one. Already planned
         // from it? Nothing changed, so don't pay for the same answer again.
         departAt = new Date(t.pickup_proof_at)
-        if (t.planned_departure_at && Date.parse(t.planned_departure_at) === departAt.getTime() && t.planned_return_at) {
+        const pausedOnTheRoad = pauses.some((p) => p.start >= departAt!.getTime())
+        if (!pausedOnTheRoad && t.planned_departure_at && Date.parse(t.planned_departure_at) === departAt.getTime() && t.planned_return_at) {
           lastArrival = t.planned_arrival_at ?? lastArrival
           readyAt     = new Date(t.planned_return_at)
           continue
         }
       } else {
-        departAt = readyAt ? new Date(readyAt.getTime() + LOAD_MINUTES_PER_TRIP * MINUTE_MS) : null
+        // Not loaded yet: a pause before loading (the pickup point was closed,
+        // say) holds the truck at the origin, so loading starts after it.
+        const ready = readyAt ? new Date(holdUntilUnpaused(readyAt.getTime(), pauses)) : null
+        departAt = ready ? new Date(ready.getTime() + LOAD_MINUTES_PER_TRIP * MINUTE_MS) : null
       }
 
-      const plan = departAt ? await planTrip(t, origin, departAt) : null
+      const plan = departAt ? await planTrip(t, origin, departAt, pauses) : null
       if (!plan) {
         // Can't place this run, so nothing after it can be placed either. Clear
         // rather than leave a stale time from an older plan on screen.
