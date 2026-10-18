@@ -5,6 +5,7 @@ import { BookingModel } from '../../models/client/booking.model.js'
 import { reverseGeocode } from '../maps/routeOptimization.service.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import type { DriverActor } from '../client/booking.service.js'
+import { fromDeviceClock } from '../../lib/device-clock.js'
 
 /**
  * Everything the stamp on a proof photo says, gathered server-side.
@@ -70,7 +71,9 @@ export function stampFieldsFrom(body: Record<string, unknown> | undefined): Stam
   const lng = num(body.longitude)
   const located = lat != null && lng != null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
 
-  const taken = typeof body.taken_at === 'string' ? new Date(body.taken_at) : null
+  // When the photo was taken by the phone's clock, corrected to ours.
+  const takenMs = typeof body.taken_at === 'string' ? fromDeviceClock(body.taken_at) : null
+  const taken   = takenMs != null ? new Date(takenMs) : null
 
   return {
     stop,
@@ -154,6 +157,11 @@ async function driverName(userId: string | null | undefined): Promise<string | n
  * otherwise a driver could learn another job's plate and number by naming its
  * stop id. Time and place are printed regardless; they are the uploader's own.
  */
+/** The uploader is not on the crew of the booking the photo is for. */
+export class ProofNotOnCrewError extends Error {
+  constructor() { super('You are not assigned to this booking') }
+}
+
 export async function buildStampData(
   fields: StampFields,
   actor: DriverActor,
@@ -172,6 +180,10 @@ export async function buildStampData(
     const allowed = actor.role === 'admin' ||
       (!!actor.userId && !!(await BookingModel.driverCrewRole(context.booking_id, actor.userId).catch(() => null)))
     if (allowed) job = context
+    // A driver photographing a stop of a booking they are no longer on — the
+    // office re-crewed it while the camera was open. The confirmation would be
+    // refused anyway; refusing the upload too keeps the photo off Cloudinary.
+    else if (actor.role === 'driver') throw new ProofNotOnCrewError()
   }
 
   const drift   = fields.takenAt ? receivedAt.getTime() - fields.takenAt.getTime() : 0
@@ -226,6 +238,7 @@ export async function proofPhotoBytes(
     const data = await buildStampData(fields, actor, new Date())
     return { buffer: await stampProofPhoto(original, data), stamped: true }
   } catch (err) {
+    if (err instanceof ProofNotOnCrewError) throw err
     console.error('[proof-stamp] stamping failed, storing the original', err)
     logSystemThrottled('proof-stamp.render', 60_000, {
       log_level:  'error',

@@ -75,6 +75,7 @@ router.get('/:id',              authenticate, authenticatedLimiter, canViewBooki
 router.get('/:id/destinations', authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getDestinationsByBooking)
 // The client's transaction history: their attachments, every proof photo, and
 // approved staff paperwork. Same scoping as the booking read above.
+router.get('/:id/timeline',     authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getBookingTimeline)
 router.get('/:id/documents',    authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getBookingDocuments)
 
 // Where the truck is now. The map subscribes to a realtime channel for updates;

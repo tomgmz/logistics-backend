@@ -107,3 +107,39 @@ export const resumeTripSchema = z.object({
 export const staffResumeTripSchema = z.object({
   note: z.string().trim().max(500).optional().nullable(),
 })
+
+/** Start Navigation: the booking goes in transit. `early_start` is the driver's
+ *  deliberate "start before the scheduled day", as on a pickup. */
+export const startDeliverySchema = z.object({
+  early_start: z.boolean().optional(),
+}).strict()
+
+/** The new driver moved the load across after a crew replacement. Photo +
+ *  position, exactly like a stop confirmation. */
+export const loadTransferSchema = driverStopProofSchema
+
+const MILESTONE_STAGE = z.enum(['arrived_parking', 'docked', 'started', 'departed'])
+
+/** A driver's tap at a stop. The trip (and drop-off) by id, or by number +
+ *  drop-off for ones the phone created offline. `at` is the phone's
+ *  server-corrected time, used only when the tap was queued. */
+export const recordMilestoneSchema = z.object({
+  stage:          MILESTONE_STAGE,
+  trip_id:        z.string().uuid().optional().nullable(),
+  trip_number:    z.number().int().min(1).optional().nullable(),
+  trip_stop_id:   z.string().uuid().optional().nullable(),
+  destination_id: z.string().uuid().optional().nullable(),
+  at:             z.string().datetime().optional().nullable(),
+  latitude:       z.number().min(-90).max(90).optional().nullable(),
+  longitude:      z.number().min(-180).max(180).optional().nullable(),
+  accuracy_m:     z.number().min(0).optional().nullable(),
+}).refine((b) => !!b.trip_id || !!b.trip_number, { message: 'trip_id or trip_number is required' })
+
+/** The office fills in or corrects one stop time. */
+export const staffSetMilestoneSchema = z.object({
+  trip_id:      z.string().uuid(),
+  trip_stop_id: z.string().uuid().optional().nullable(),
+  stage:        MILESTONE_STAGE,
+  at:           z.string().datetime({ offset: true }),
+  note:         z.string().trim().min(3, 'Say why the time is being changed').max(500),
+}).strict()

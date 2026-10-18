@@ -19,6 +19,9 @@ import {
   attachStopProofSchema,
   pauseTripSchema,
   resumeTripSchema,
+  startDeliverySchema,
+  loadTransferSchema,
+  recordMilestoneSchema,
 } from '../schema/client/trip.schema.js'
 import { createDriverReportSchema, enrichDriverReportSchema } from '../schema/driver/report.schema.js'
 import { uploadDeliveryProof } from '../controllers/admin/uploadImage.controller.js'
@@ -89,6 +92,11 @@ router.patch('/bookings/:bookingId/complete',
 router.get('/bookings/:bookingId/trips',
   authenticate, authenticatedLimiter, isAny, TripController.getTrips)
 
+// Start / Resume Navigation: the booking is in transit from here, and its crew
+// can no longer be swapped from the web. Idempotent; the queue may re-send it.
+router.post('/bookings/:bookingId/start',
+  authenticate, authenticatedLimiter, isAny, validate(startDeliverySchema), TripController.driverStartDelivery)
+
 router.patch('/trips/:tripId/pickup',
   authenticate, authenticatedLimiter, isAny, validate(tripPickupProofSchema), TripController.driverConfirmTripPickup)
 
@@ -112,6 +120,19 @@ router.patch('/bookings/:bookingId/trips/:tripNumber/destinations/:destinationId
 // assignment screen once signal returns, or after the booking is done.
 router.patch('/trip-stops/:tripStopId/proof',
   authenticate, authenticatedLimiter, isAny, validate(attachStopProofSchema), TripController.attachStopProof)
+
+// After the office replaced the vehicle on the road with the load aboard the old
+// one: the new driver moves it across and confirms with a photo. Drop-offs are
+// refused until then.
+router.get('/bookings/:bookingId/load-transfer',
+  authenticate, authenticatedLimiter, isAny, TripController.getLoadTransfer)
+router.patch('/bookings/:bookingId/load-transfer',
+  authenticate, authenticatedLimiter, isAny, validate(loadTransferSchema), TripController.driverConfirmLoadTransfer)
+
+// The steps around each stop: arrived at the parking, docked, started loading /
+// unloading, departed (the finish is the proof confirmation). Through the queue.
+router.post('/bookings/:bookingId/milestones',
+  authenticate, authenticatedLimiter, isAny, validate(recordMilestoneSchema), TripController.driverRecordMilestone)
 
 // The job ends when the truck is home, not when the last box is off it.
 router.patch('/bookings/:bookingId/fleet-return',

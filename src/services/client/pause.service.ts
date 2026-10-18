@@ -18,6 +18,7 @@ import {
   type ResumedVia,
 } from '../../types/client/pause.types.js'
 import type { BookingWithRelations } from '../../types/client/booking.types.js'
+import { fromDeviceClock } from '../../lib/device-clock.js'
 
 /**
  * The driver pauses a delivery — weather, a breakdown, a closed pickup or
@@ -45,7 +46,8 @@ const MAX_DELAY_MS       = 24 * 60 * 60 * 1000
 
 function deviceTime(iso: string | null | undefined, notBefore?: string): string {
   const now  = Date.now()
-  const at   = iso ? Date.parse(iso) : NaN
+  // The phone's clock, corrected by how far off it was when it sent this.
+  const at   = fromDeviceClock(iso) ?? NaN
   let   when = Number.isFinite(at) && at <= now + MAX_FUTURE_SKEW_MS && at >= now - MAX_DELAY_MS
     ? Math.min(at, now)
     : now

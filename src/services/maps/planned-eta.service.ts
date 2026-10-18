@@ -37,7 +37,7 @@ const UNLOAD_MINUTES_PER_STOP = 30
  * trip 1: call time is when the truck reports to the warehouse, not when it
  * leaves loaded.
  */
-const LOAD_MINUTES_PER_TRIP = 45
+export const LOAD_MINUTES_PER_TRIP = 45
 
 /** PH is a fixed UTC+8 with no DST. */
 const PH_OFFSET = '+08:00'

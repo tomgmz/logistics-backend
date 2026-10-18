@@ -37,6 +37,12 @@ async function assertBookingAssignable(bookingId: string): Promise<{ scheduleDat
   if (error) throw error
   if (!data) throw new Error(`Booking with ID ${bookingId} not found`)
 
+  // Once the driver has started, the crew is fixed: a problem on the road is
+  // handled by replacing the crew, which keeps the first one on the record. The
+  // model re-checks this under the booking row lock; this is the early answer.
+  if (data.status === 'in_transit') {
+    throw new Error('Cannot change the driver or vehicle: the driver has already started this delivery.')
+  }
   const nonAssignable = ['delivered', 'completed', 'cancelled']
   if (nonAssignable.includes(data.status)) {
     throw new Error(`Cannot assign a booking with status '${data.status}'`)

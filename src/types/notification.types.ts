@@ -26,6 +26,11 @@ export type NotificationType =
   | 'booking.trip_resumed'         // delivery moving again -> client
   | 'booking.trip_resumed_staff'   // driver resumed -> ops + admins
   | 'booking.trip_resumed_by_staff' // the office ended the pause -> assigned driver(s)
+  | 'booking.delivery_started'     // driver started navigation, booking in transit -> client
+  | 'booking.crew_replaced_off'    // office replaced the crew on the road -> the driver taken off
+  | 'booking.crew_replaced_on'     // ... -> the crew now on it (continue where it stopped)
+  | 'booking.crew_replaced_client' // ... -> client
+  | 'booking.crew_replaced_fleet'  // the vehicle was swapped -> fleet + admins (the old one is out there)
   // Legacy types, still present on historical rows. No longer emitted: accounting
   // was removed from the chain and the fleet stage no longer gates dispatch.
   | 'booking.accounting_pending'
@@ -94,3 +99,8 @@ export type NotificationStage =
   | 'trip_resumed'
   | 'trip_resumed_staff'
   | 'trip_resumed_by_staff'
+  | 'delivery_started'
+  | 'crew_replaced_off'
+  | 'crew_replaced_on'
+  | 'crew_replaced_client'
+  | 'crew_replaced_fleet'

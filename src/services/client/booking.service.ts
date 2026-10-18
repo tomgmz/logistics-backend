@@ -28,6 +28,8 @@ import {
   type GeofenceOutcome,
   type StopProofPosition,
 } from '../../lib/stop-geofence.js'
+import { claimDeliveryStart } from '../driver/start-delivery.service.js'
+import { assertNoPendingLoadTransfer } from '../driver/crew-actor.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -867,8 +869,10 @@ export async function driverConfirmPickupService(
 ): Promise<BookingWithRelations> {
   const booking = await assertLeadDriverOnBooking(bookingId, actor)
 
-  if (booking.status === 'in_transit' || booking.status === 'delivered' || booking.status === 'completed') return booking
-  if (booking.status !== 'assigned') {
+  // Already loaded (a queue retry), or long past it. 'in_transit' alone no longer
+  // means loaded: Start Navigation puts the booking there on the way TO the pickup.
+  if (booking.pickup_proof_photo_url || booking.status === 'delivered' || booking.status === 'completed') return booking
+  if (booking.status !== 'assigned' && booking.status !== 'in_transit') {
     throw new Error(`Cannot confirm pickup while the booking is '${booking.status}'`)
   }
   if (!proofPhotoUrl) {
@@ -899,8 +903,11 @@ export async function driverConfirmPickupService(
     'pickup point',
   )
 
+  // Settles the crew under the booking row lock and moves the booking to
+  // 'in_transit' if Start Navigation has not already — see claimDeliveryStart.
+  await claimDeliveryStart(bookingId, actor)
   await BookingModel.setPickupProof(bookingId, proofPhotoUrl, position, fence)
-  const updated = await BookingModel.updateStatus(bookingId, 'in_transit')
+  const updated = await BookingModel.findById(bookingId)
   if (!updated) throw new Error('Failed to update booking status')
 
   if (fence.override_reason) {
@@ -911,10 +918,6 @@ export async function driverConfirmPickupService(
       description: `Driver confirmed pickup for booking ${bookingRef(updated)} about ${fence.distance_m} m from the origin — reason given: ${fence.override_reason}`,
     })
   }
-
-  // The delivery record tracks the same trip and has to move with it — it is
-  // what operations reads to see who is actually on the road.
-  await BookingModel.settleDelivery(bookingId, 'in_transit')
 
   logEvent({
     user_id:     actor.userId,
@@ -947,9 +950,12 @@ export async function driverConfirmDeliveryService(
     throw new Error(`Destination with ID ${destinationId} not found on this booking`)
   }
   if (destination.status === 'delivered') return destination
-  if (booking.status !== 'in_transit' && booking.status !== 'delivered' && booking.status !== 'completed') {
+  const loaded = booking.status === 'delivered' || booking.status === 'completed' ||
+    (booking.status === 'in_transit' && !!booking.pickup_proof_photo_url)
+  if (!loaded) {
     throw new Error('Confirm the pickup before marking a drop-off as delivered')
   }
+  await assertNoPendingLoadTransfer(bookingId)
   if (!proofPhotoUrl) {
     throw new Error('A proof-of-delivery photo is required to confirm this drop-off')
   }

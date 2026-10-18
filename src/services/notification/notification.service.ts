@@ -98,6 +98,15 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   trip_resumed:          { type: 'booking.trip_resumed',          audience: 'client' },
   trip_resumed_staff:    { type: 'booking.trip_resumed_staff',    roles: ['operations_manager'] },
   trip_resumed_by_staff: { type: 'booking.trip_resumed_by_staff', audience: 'drivers' },
+  // The driver set off. Ops sees it live on the board; the client is told.
+  delivery_started:      { type: 'booking.delivery_started',      audience: 'client' },
+  // The office replaced the driver and/or vehicle of a delivery on the road. The
+  // driver taken off is no longer on the crew, so they are named explicitly
+  // (NotifyExtra.onlyUserIds); 'drivers' resolves to the crew now on it.
+  crew_replaced_off:     { type: 'booking.crew_replaced_off',     audience: 'drivers' },
+  crew_replaced_on:      { type: 'booking.crew_replaced_on',      audience: 'drivers' },
+  crew_replaced_client:  { type: 'booking.crew_replaced_client',  audience: 'client' },
+  crew_replaced_fleet:   { type: 'booking.crew_replaced_fleet',   roles: ['fleet_manager'], target: 'vehicle' },
 }
 
 // Route map per role so a notification tap lands on the right dashboard page.
@@ -254,6 +263,35 @@ function copyFor(
         title: 'Your delivery was resumed by the office',
         body:  `Operations marked booking ${label} as moving again${reason ? `: ${reason}` : '.'}`,
       }
+    case 'crew_replaced_off':
+      return {
+        title: 'You were taken off a delivery',
+        body:  `The office handed booking ${label} to another ${extra?.swapped ?? 'driver'}${reason ? `: ${reason}` : '.'} ` +
+               'You no longer need to continue it.',
+      }
+    case 'crew_replaced_on':
+      return {
+        title: `Continue delivery ${label}`,
+        body:  extra?.transfer
+          ? `Booking ${label} is yours to finish. First move the load from ${extra?.vehicleLabel ?? 'the old vehicle'} to your vehicle and confirm it with a photo, then continue to the remaining drop-offs.`
+          : `Booking ${label} is yours to finish. Continue from where it stopped.`,
+      }
+    case 'crew_replaced_client':
+      return {
+        title: 'Your delivery continues',
+        body:  `Your delivery ${label} continues with a new ${extra?.swapped ?? 'driver'}. We will keep you posted on the arrival time.`,
+      }
+    case 'crew_replaced_fleet':
+      return {
+        title: 'Vehicle replaced on the road',
+        body:  `${extra?.vehicleLabel ?? 'A vehicle'} was replaced on booking ${label}${reason ? `: ${reason}` : '.'} ` +
+               'It is no longer on the booking — set its status once it has been recovered or checked.',
+      }
+    case 'delivery_started':
+      return {
+        title: 'Your delivery is on its way',
+        body:  `The driver has started booking ${label} and is heading to the pickup point. You can follow the truck live.`,
+      }
   }
 }
 
@@ -304,6 +342,13 @@ export interface NotifyExtra {
   // For `trip_resumed`: the new expected arrival window, when a pause moved it
   // by 30 minutes or more.
   newArrival?:   string
+  // Send to exactly these users (all drivers) instead of the stage's audience —
+  // e.g. a driver who was just taken off the booking and so isn't on its crew.
+  onlyUserIds?:  string[]
+  // For the crew-replacement stages: what changed ('driver', 'vehicle',
+  // 'driver and vehicle'), and whether the load has to be moved across.
+  swapped?:      string
+  transfer?:     boolean
 }
 
 /**
@@ -316,8 +361,13 @@ export async function notifyStage(
   booking: BookingWithRelations,
   extra?: NotifyExtra,
 ): Promise<void> {
+  // QA scripts that drive real services against the live database set this, so
+  // a test run never pushes to real phones. Never set on a deployed server.
+  if (process.env.SUPPRESS_NOTIFICATIONS === '1') return
   try {
-    const recipients = await resolveRecipients(stage, booking)
+    const recipients = extra?.onlyUserIds
+      ? extra.onlyUserIds.map((user_id) => ({ user_id, role: 'driver' }))
+      : await resolveRecipients(stage, booking)
     if (recipients.length === 0) return
 
     const cfg = STAGE_CONFIG[stage]

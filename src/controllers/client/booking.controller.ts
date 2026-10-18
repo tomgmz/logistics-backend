@@ -35,6 +35,7 @@ import {
   STOP_PROOF_RADIUS_M,
   type StopProofPosition,
 } from '../../lib/stop-geofence.js'
+import { bookingTimeline } from '../../services/client/milestone.service.js'
 
 /**
  * Who is asking, for the ownership checks in the service.
@@ -81,6 +82,23 @@ export const getBookingById = async (req: Request, res: Response) => {
   try {
     const booking = await getBookingByIdService(param(req.params.id), viewerFrom(req))
     res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404 : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+/**
+ * The times at each stop (arrival, docking, start, finish, departure) and the
+ * total loaded per run. Same readers as the booking itself — the client, its
+ * crew, staff — checked by reading the booking first. Staff correction notes
+ * are left out here; staff read them from the admin route.
+ */
+export const getBookingTimeline = async (req: Request, res: Response) => {
+  try {
+    const id = param(req.params.id)
+    await getBookingByIdService(id, viewerFrom(req))
+    res.status(200).json({ status: 'success', data: await bookingTimeline(id) })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
     res.status(status).json({ status: 'error', message: error.message })
@@ -250,6 +268,7 @@ function driverProgressStatus(message: string): number {
   if (
     message.includes('Cannot ') ||
     message.includes('Confirm the pickup') ||
+    message.includes('Confirm the load transfer') ||
     message.includes('still pending') ||
     message.includes('no destinations') ||
     message.includes('taken out of service')

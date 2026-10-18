@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { broadcast } from '../../lib/realtime.js'
 import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from '../../lib/log-system.js'
+import { LOAD_MINUTES_PER_TRIP } from './planned-eta.service.js'
 
 /**
  * How long until the truck reaches each remaining stop.
@@ -242,10 +243,49 @@ export async function maybeRefreshEta(
     return
   }
 
-  const etas = await computeLegEtas(position, stops)
-  if (!etas) return
+  // Not loaded yet — on the way to the pickup after Start Navigation, or back to
+  // it between runs: the route runs through the origin, and loading takes time
+  // there, before any drop-off can be reached.
+  const pickup = await pickupLegIfNotLoaded(bookingId)
+  const route  = pickup ? [pickup, ...stops] : stops
+
+  const legs = await computeLegEtas(position, route)
+  if (!legs) return
+
+  const loadS = pickup ? LOAD_MINUTES_PER_TRIP * 60 : 0
+  const etas  = (pickup ? legs.slice(1) : legs).map((e) => ({
+    ...e,
+    eta_seconds: e.eta_seconds + loadS,
+    eta_at:      new Date(Date.parse(e.eta_at) + loadS * 1000).toISOString(),
+  }))
 
   await writeEta(driverId, bookingId, etas, position)
+}
+
+/**
+ * The origin as a first leg, when no run is loaded right now; null while one is.
+ * A booking only reaches the ETA path once it is in transit, so "no loaded run"
+ * means the truck is still heading to (or back to) the pickup.
+ */
+async function pickupLegIfNotLoaded(bookingId: string): Promise<EtaStop | null> {
+  const { data: loaded } = await supabase
+    .from('booking_trips')
+    .select('trip_id')
+    .eq('booking_id', bookingId)
+    .eq('status', 'in_transit')
+    .limit(1)
+    .maybeSingle()
+  if (loaded) return null
+
+  const { data: booking } = await supabase
+    .from('bookings')
+    .select('origin_latitude, origin_longitude')
+    .eq('booking_id', bookingId)
+    .maybeSingle()
+  const lat = Number(booking?.origin_latitude)
+  const lng = Number(booking?.origin_longitude)
+  if (!booking?.origin_latitude || !booking?.origin_longitude || !Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return { destination_id: '__pickup__', latitude: lat, longitude: lng }
 }
 
 async function writeEta(

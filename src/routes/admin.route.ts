@@ -11,7 +11,7 @@ import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../s
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
 import { createITAdminSchema, updateITAdminSchema, transitionITAdminSchema }   from '../schema/admin/it-admin.schema.js'
-import { assignBookingSchema, updateDeliveryStatusSchema } from '../schema/admin/assignment.schema.js'
+import { assignBookingSchema, replaceCrewSchema, updateDeliveryStatusSchema } from '../schema/admin/assignment.schema.js'
 import * as AdminController           from '../controllers/admin/admin.controller.js'
 import * as ClientController          from '../controllers/admin/client.controller.js'
 import * as DriverController          from '../controllers/admin/driver.controller.js'
@@ -24,7 +24,7 @@ import * as ITAdminController from '../controllers/admin/it-admin.controller.js'
 import * as AssignmentController from '../controllers/admin/assignment.controller.js'
 import * as TripController from '../controllers/client/trip.controller.js'
 import * as ReportController from '../controllers/driver/report.controller.js'
-import { setTripPlanSchema, staffResumeTripSchema } from '../schema/client/trip.schema.js'
+import { setTripPlanSchema, staffResumeTripSchema, staffSetMilestoneSchema } from '../schema/client/trip.schema.js'
 import { setReportStatusSchema, classifyReportSchema } from '../schema/driver/report.schema.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as PasswordResetController from '../controllers/admin/password-reset.controller.js'
@@ -164,6 +164,19 @@ router.put('/assignments/:bookingId/trips',  authenticate, isCrewRelease, lockGu
 router.get('/assignments/:bookingId/pauses',   authenticate, isCrewRelease, TripController.listPauses)
 router.patch('/assignments/:bookingId/resume', authenticate, isPauseDesk, requireModuleFlag('booking-management', 'can_edit'),
   lockGuard('booking', fromParam('bookingId')), validate(staffResumeTripSchema), TripController.staffResumeTrip)
+
+// Replacing the driver and/or vehicle of a delivery already on the road. Only
+// while the driver has it paused; the booking stays in transit and keeps its
+// record. Same desk and rights as ending a pause.
+router.get('/assignments/:bookingId/replacements', authenticate, isCrewRelease, AssignmentController.listCrewReplacements)
+router.post('/assignments/:bookingId/replace-crew', authenticate, isPauseDesk, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(replaceCrewSchema), AssignmentController.replaceCrew)
+
+// Times at each stop (arrival, docking, start, finish, departure), with the
+// office's corrections. Filling in / correcting one: the pause desk's call.
+router.get('/assignments/:bookingId/timeline', authenticate, isCrewRelease, TripController.staffGetTimeline)
+router.put('/assignments/:bookingId/timeline', authenticate, isPauseDesk, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(staffSetMilestoneSchema), TripController.staffSetMilestone)
 
 // Incidents raised by drivers from the road — the Reports module. It used to be
 // readable by isFleetRead, which admits 'client': a client could read every

@@ -376,6 +376,8 @@ async function setTripPickupProof(
   proofPhotoUrl: string,
   position?: StopProofPosition | null,
   fence?: GeofenceOutcome | null,
+  // drivers.driver_id of who loaded it, so it stays theirs after a crew change.
+  confirmedBy?: string | null,
 ): Promise<BookingTrip> {
   const now = new Date().toISOString()
   const { data, error } = await supabase
@@ -385,6 +387,7 @@ async function setTripPickupProof(
       pickup_proof_photo_url: proofPhotoUrl,
       pickup_proof_at:        now,
       updated_at:             now,
+      ...(confirmedBy ? { pickup_confirmed_by: confirmedBy } : {}),
       ...proofPositionColumns('pickup_proof', position, fence),
     })
     .eq('trip_id', tripId)
@@ -414,12 +417,15 @@ async function setStopProof(
   proofPhotoUrl: string,
   position?: StopProofPosition | null,
   fence?: GeofenceOutcome | null,
+  // drivers.driver_id of who unloaded it, so it stays theirs after a crew change.
+  confirmedBy?: string | null,
 ): Promise<BookingTripStop> {
   const now = new Date().toISOString()
   const { data, error } = await supabase
     .from('booking_trip_stops')
     .update({
       status,
+      ...(confirmedBy ? { confirmed_by: confirmedBy } : {}),
       delivered_at: status === 'delivered' ? now : null,
       updated_at:   now,
       proof_photo_url: proofPhotoUrl,

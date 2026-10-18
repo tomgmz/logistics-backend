@@ -73,5 +73,15 @@ export const updateDeliveryStatusSchema = z.object({
   delivery_time: z.string().datetime().optional(),
 })
 
+// Replacing the crew of a delivery already on the road (paused). Company fleet
+// only: the full new crew, with the current members re-sent where they stay.
+export const replaceCrewSchema = z.object({
+  driver_id:        z.string().uuid('driver_id must be a valid UUID'),
+  truck_id:         z.string().uuid('truck_id must be a valid UUID'),
+  second_driver_id: z.string().uuid('second_driver_id must be a valid UUID').nullable().optional(),
+  helper_name:      z.string().trim().max(120, 'Helper name is too long').nullable().optional(),
+  reason_note:      z.string().trim().min(3, 'Say why the crew is being replaced').max(500),
+}).strict()
+
 export type AssignBookingInput       = z.infer<typeof assignBookingSchema>
 export type UpdateDeliveryStatusInput = z.infer<typeof updateDeliveryStatusSchema>

@@ -24,6 +24,13 @@ export interface RequestContext {
   requestId?: string
   path?:      string
   method?:    string
+  /**
+   * Server clock minus the phone's clock at the moment the phone sent this
+   * request (its `X-Device-Time` header). Times the phone recorded earlier —
+   * a tap queued offline, a pause, a photo — are corrected by it: see
+   * lib/device-clock. Undefined when the caller sent no such header (web).
+   */
+  deviceSkewMs?: number
 }
 
 const storage = new AsyncLocalStorage<RequestContext>()
@@ -38,12 +45,25 @@ export function setContextUser(userId: string): void {
   if (store) store.userId = userId
 }
 
+/** A phone a week or more off is not a skewed clock but a broken header. */
+const MAX_SKEW_MS = 7 * 24 * 60 * 60 * 1000
+
+function skewFrom(header: string | string[] | undefined): number | undefined {
+  const raw = Array.isArray(header) ? header[0] : header
+  if (!raw) return undefined
+  const device = Date.parse(raw)
+  if (!Number.isFinite(device)) return undefined
+  const skew = Date.now() - device
+  return Math.abs(skew) <= MAX_SKEW_MS ? skew : undefined
+}
+
 export function requestContext(req: Request, res: Response, next: NextFunction) {
   storage.run(
     {
       requestId: (req.headers['x-request-id'] as string | undefined) ?? crypto.randomUUID(),
       path:      req.originalUrl,
       method:    req.method,
+      deviceSkewMs: skewFrom(req.headers['x-device-time']),
     },
     () => next(),
   )

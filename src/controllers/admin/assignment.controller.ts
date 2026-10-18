@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as AssignmentService from '../../services/admin/assignment.service.js'
+import { replaceCrewService, listCrewReplacementsService } from '../../services/admin/crew-replacement.service.js'
 
 export async function assignBooking(req: Request, res: Response) {
   try {
@@ -66,5 +67,30 @@ export async function getAssignmentHistory(req: Request, res: Response) {
   } catch (error: any) {
     const status = /not found/i.test(error.message) ? 404 : 500
     res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+/** Replace the driver and/or vehicle of a paused delivery on the road. */
+export async function replaceCrew(req: Request, res: Response) {
+  try {
+    const { userId } = getRequestMeta(req)
+    const data = await replaceCrewService(param(req.params.bookingId), req.body, { userId, role: req.user?.role ?? null })
+    res.status(201).json({ status: 'success', data })
+  } catch (error: any) {
+    const status =
+      /not found/i.test(error.message)                    ? 404 :
+      error?.code || !(error instanceof Error) || error instanceof TypeError ? 500 :
+      409
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+/** The booking's crew replacements, oldest first. */
+export async function listCrewReplacements(req: Request, res: Response) {
+  try {
+    const data = await listCrewReplacementsService(param(req.params.bookingId))
+    res.status(200).json({ status: 'success', data })
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message })
   }
 }

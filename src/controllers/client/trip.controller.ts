@@ -17,6 +17,9 @@ import {
   staffResumeTripService,
   listPausesService,
 } from '../../services/client/pause.service.js'
+import { driverStartDeliveryService } from '../../services/driver/start-delivery.service.js'
+import { driverRecordMilestoneService, staffSetMilestoneService, bookingTimeline } from '../../services/client/milestone.service.js'
+import { driverConfirmLoadTransferService, driverPendingLoadTransferService } from '../../services/admin/crew-replacement.service.js'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import {
   StopTooFarError,
@@ -149,6 +152,59 @@ export const driverConfirmTripPickup = async (req: Request, res: Response) => {
   }
 }
 
+/**
+ * Start (or Resume) Navigation. 403 when the caller is no longer on the crew —
+ * the office re-assigned the booking — so the phone stops and re-reads; 409 when
+ * the booking cannot start (cancelled, vehicle pulled, before its day).
+ */
+export const driverStartDelivery = async (req: Request, res: Response) => {
+  try {
+    const { booking, started } = await driverStartDeliveryService(
+      param(req.params.bookingId),
+      driverActor(req),
+      req.body?.early_start === true,
+    )
+    res.status(200).json({ status: 'success', data: { booking, started } })
+  } catch (error: any) {
+    res.status(tripProgressStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+/** A step at a stop: arrived at parking, docked, started, departed. */
+export const driverRecordMilestone = async (req: Request, res: Response) => {
+  try {
+    const data = await driverRecordMilestoneService(param(req.params.bookingId), req.body ?? {}, driverActor(req))
+    res.status(200).json({ status: 'success', data })
+  } catch (error: any) {
+    res.status(tripProgressStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+/** After a crew replacement: what the load transfer needs, or null. */
+export const getLoadTransfer = async (req: Request, res: Response) => {
+  try {
+    const data = await driverPendingLoadTransferService(param(req.params.bookingId), driverActor(req))
+    res.status(200).json({ status: 'success', data })
+  } catch (error: any) {
+    res.status(tripProgressStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+/** The new driver moved the load onto their vehicle, with a photo. */
+export const driverConfirmLoadTransfer = async (req: Request, res: Response) => {
+  try {
+    const data = await driverConfirmLoadTransferService(
+      param(req.params.bookingId),
+      req.body.proof_photo_url,
+      driverActor(req),
+      stopProofPosition(req),
+    )
+    res.status(200).json({ status: 'success', data })
+  } catch (error: any) {
+    stopProofFailure(res, error)
+  }
+}
+
 export const driverConfirmTripStop = async (req: Request, res: Response) => {
   try {
     // Likewise a stop the phone added offline: booking + trip number + drop-off.
@@ -259,5 +315,25 @@ export const listPauses = async (req: Request, res: Response) => {
     res.status(200).json({ status: 'success', data: pauses })
   } catch (error: any) {
     res.status(pauseStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+/** Staff: the stop times with correction notes. */
+export const staffGetTimeline = async (req: Request, res: Response) => {
+  try {
+    res.status(200).json({ status: 'success', data: await bookingTimeline(param(req.params.bookingId), { withNotes: true }) })
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message })
+  }
+}
+
+/** Staff: fill in or correct one stop time, with a reason. */
+export const staffSetMilestone = async (req: Request, res: Response) => {
+  try {
+    const { userId } = getRequestMeta(req)
+    const data = await staffSetMilestoneService(param(req.params.bookingId), req.body, { userId })
+    res.status(200).json({ status: 'success', data })
+  } catch (error: any) {
+    res.status(tripProgressStatus(error.message)).json({ status: 'error', message: error.message })
   }
 }

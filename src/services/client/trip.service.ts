@@ -32,6 +32,8 @@ import {
   type PlanTrip,
 } from '../../lib/trip-cargo.js'
 import type { BookingWithRelations } from '../../types/client/booking.types.js'
+import { claimDeliveryStart } from '../driver/start-delivery.service.js'
+import { assertNoPendingLoadTransfer, driverIdOf } from '../driver/crew-actor.js'
 
 /**
  * Driver progress across a MULTI-TRIP booking.
@@ -342,11 +344,18 @@ export async function driverConfirmTripPickupService(
     'pickup point',
   )
 
+  // Settle the crew before anything is written: under the booking row lock this
+  // re-checks that the caller is still the main driver (the office may have
+  // re-crewed the booking a moment ago) and moves an 'assigned' booking to
+  // 'in_transit', after which it can no longer be re-assigned. Usually Start
+  // Navigation already did it; a start made offline lands here.
+  await claimDeliveryStart(trip.booking_id, actor)
+
   // What actually went on the truck, and the rest moved to the later runs —
   // before the run is marked loaded, while it is still reshapeable.
   await applyLoadedCargo(trip, trips, loaded)
 
-  await TripModel.setTripPickupProof(tripId, proofPhotoUrl, position, fence)
+  await TripModel.setTripPickupProof(tripId, proofPhotoUrl, position, fence, await driverIdOf(actor))
   // Loading a run means the truck is moving again, whatever the driver forgot.
   await endPauseOnProgress(trip.booking_id, actor)
 
@@ -355,10 +364,6 @@ export async function driverConfirmTripPickupService(
   // so they are stamped once, by the first run, and left alone after that.
   if (isFirstRun) {
     await BookingModel.setPickupProof(trip.booking_id, proofPhotoUrl, position, fence)
-    if (booking.status === 'assigned') {
-      await BookingModel.updateStatus(trip.booking_id, 'in_transit')
-      await BookingModel.settleDelivery(trip.booking_id, 'in_transit')
-    }
   }
 
   // The run's real departure replaces its planned one, and moves every run after it.
@@ -467,6 +472,9 @@ export async function driverConfirmTripStopService(
   if (!proofPhotoUrl) {
     throw new Error('A proof-of-delivery photo is required to confirm this drop-off')
   }
+  // The crew was replaced with the load still on the old vehicle: nothing is
+  // unloaded from the new one until the transfer onto it is on record.
+  await assertNoPendingLoadTransfer(trip.booking_id)
 
   const destinations = await BookingModel.findDestinationsByBookingId(trip.booking_id) ?? []
   const destination  = destinations.find((d) => d.destination_id === stop.destination_id)
@@ -478,7 +486,7 @@ export async function driverConfirmTripStopService(
     'drop-off',
   )
 
-  const updated = await TripModel.setStopProof(tripStopId, 'delivered', proofPhotoUrl, position, fence)
+  const updated = await TripModel.setStopProof(tripStopId, 'delivered', proofPhotoUrl, position, fence, await driverIdOf(actor))
   // Unloading at a bay ends any pause — before the booking can complete under it.
   await endPauseOnProgress(trip.booking_id, actor)
 

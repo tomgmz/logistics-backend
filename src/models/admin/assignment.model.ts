@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { withBookingRowLock } from '../../lib/booking-row-lock.js'
 import type {
   AssignmentWithRelations,
   AssignBookingInput,
@@ -104,6 +105,9 @@ async function findAll(): Promise<AssignmentWithRelations[]> {
   return (data ?? []) as unknown as AssignmentWithRelations[]
 }
 
+/** Statuses a crew may still be set or changed in: anything before the start. */
+const CREWABLE_STATUSES = ['pending', 'approved', 'assigned']
+
 async function assign(
   bookingId:  string,
   input:      AssignBookingInput,
@@ -148,29 +152,20 @@ async function assign(
     helper_name:           input.helper_name?.trim() || null,
   }
 
-  const { data: existing } = await supabase
-    .from('deliveries')
-    .select('delivery_id')
-    .eq('booking_id', bookingId)
-    .maybeSingle()
-
-  if (existing?.delivery_id) {
-    const { error: updateErr } = await supabase
-      .from('deliveries')
-      .update({ ...deliveryFields, updated_at: now })
-      .eq('delivery_id', existing.delivery_id)
-    if (updateErr) throw updateErr
-  } else {
-    const { error: insertErr } = await supabase
-      .from('deliveries')
-      .insert({
-        booking_id: bookingId,
-        ...deliveryFields,
-        status:     'pending',
-        created_at: now,
-        updated_at: now,
-      })
-    if (insertErr) throw insertErr
+  // The model of the vehicle becomes the booking's vehicle type: the client no
+  // longer names one when booking, operations picks it here. A vendor vehicle has
+  // no model row; its typed-in type stands in, when given. Read before the lock.
+  let truckType: string | null = null
+  if (isVendor) {
+    truckType = input.vendor_vehicle_type?.trim() || null
+  } else if (truckId) {
+    const { data: truckRow } = await supabase
+      .from('trucks')
+      .select('truck_models ( name )')
+      .eq('truck_id', truckId)
+      .maybeSingle()
+    const model = (truckRow as { truck_models?: { name?: string | null } | null } | null)?.truck_models
+    truckType = model?.name ?? null
   }
 
   // truck_assignments references a registered fleet row (NOT NULL FK), so it
@@ -187,76 +182,69 @@ async function assign(
   // crewOnBooking reads to drive reserveCrew/releaseCrew, and a subcontractor has
   // no business in the company fleet-reservation state machine.
   //
-  // Always clear prior rows first.
-  const { error: delDriverErr } = await supabase
-    .from('driver_assignments')
-    .delete()
-    .eq('booking_id', bookingId)
-  if (delDriverErr) throw delDriverErr
+  // Every crew write happens in one transaction holding the booking row lock,
+  // the same lock the driver's start takes (lib/booking-row-lock). So a start and
+  // a re-assign can never interleave: whichever commits first wins, and the other
+  // reads what it left. A booking that has started is refused here — a crew
+  // change on the road goes through the replacement flow, which keeps the record.
+  await withBookingRowLock(bookingId, async (client, booking) => {
+    if (!CREWABLE_STATUSES.includes(booking.status)) {
+      throw new Error(
+        booking.status === 'in_transit'
+          ? 'Cannot change the driver or vehicle: the driver has already started this delivery.'
+          : `Cannot assign a booking with status '${booking.status}'`,
+      )
+    }
 
-  const { error: delTruckErr } = await supabase
-    .from('truck_assignments')
-    .delete()
-    .eq('booking_id', bookingId)
-  if (delTruckErr) throw delTruckErr
+    const cols = Object.keys(deliveryFields)
+    const vals = cols.map((c) => (deliveryFields as Record<string, unknown>)[c])
+    const { rowCount } = await client.query(
+      `UPDATE deliveries SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')}, updated_at = $${cols.length + 2}
+        WHERE booking_id = $1`,
+      [bookingId, ...vals, now],
+    )
+    if (!rowCount) {
+      await client.query(
+        `INSERT INTO deliveries (booking_id, ${cols.join(', ')}, status, created_at, updated_at)
+         VALUES ($1, ${cols.map((_, i) => `$${i + 2}`).join(', ')}, 'pending', $${cols.length + 2}, $${cols.length + 2})`,
+        [bookingId, ...vals, now],
+      )
+    }
 
-  const crewRows = [
-    crewDriverId   ? { driver_id: crewDriverId,   crew_role: 'lead'   } : null,
-    secondDriverId ? { driver_id: secondDriverId, crew_role: 'second' } : null,
-  ].filter((r): r is { driver_id: string; crew_role: string } => r !== null)
+    // Always clear prior rows first.
+    await client.query('DELETE FROM driver_assignments WHERE booking_id = $1', [bookingId])
+    await client.query('DELETE FROM truck_assignments  WHERE booking_id = $1', [bookingId])
 
-  if (crewRows.length > 0) {
-    const { error: insDriverErr } = await supabase
-      .from('driver_assignments')
-      .insert(crewRows.map((r) => ({
-        booking_id:  bookingId,
-        ...r,
-        assigned_at: now,
-        assigned_by: assignedBy,
-      })))
-    if (insDriverErr) throw insDriverErr
-  }
+    const crewRows = [
+      crewDriverId   ? { driver_id: crewDriverId,   crew_role: 'lead'   } : null,
+      secondDriverId ? { driver_id: secondDriverId, crew_role: 'second' } : null,
+    ].filter((r): r is { driver_id: string; crew_role: string } => r !== null)
 
-  if (!isVendor) {
-    const { error: insTruckErr } = await supabase
-      .from('truck_assignments')
-      .insert({
-        booking_id:  bookingId,
-        truck_id:    truckId,
-        assigned_at: now,
-        assigned_by: assignedBy,
-      })
-    if (insTruckErr) throw insTruckErr
-  }
+    for (const r of crewRows) {
+      await client.query(
+        `INSERT INTO driver_assignments (booking_id, driver_id, crew_role, assigned_at, assigned_by)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [bookingId, r.driver_id, r.crew_role, now, assignedBy],
+      )
+    }
 
-  // The client no longer names a vehicle type when booking — operations picks
-  // the vehicle here, so its model becomes the booking's vehicle type. A vendor
-  // vehicle has no model row; its typed-in type stands in, when given.
-  let truckType: string | null = null
-  if (isVendor) {
-    truckType = input.vendor_vehicle_type?.trim() || null
-  } else if (truckId) {
-    const { data: truckRow } = await supabase
-      .from('trucks')
-      .select('truck_models ( name )')
-      .eq('truck_id', truckId)
-      .maybeSingle()
-    const model = (truckRow as { truck_models?: { name?: string | null } | null } | null)?.truck_models
-    truckType = model?.name ?? null
-  }
+    if (!isVendor) {
+      await client.query(
+        `INSERT INTO truck_assignments (booking_id, truck_id, assigned_at, assigned_by)
+         VALUES ($1, $2, $3, $4)`,
+        [bookingId, truckId, now, assignedBy],
+      )
+    }
 
-  const { error: bookingErr } = await supabase
-    .from('bookings')
-    .update({
-      status: 'assigned',
-      ...(truckType && { truck_type_needed: truckType }),
-      updated_at: now,
-    })
-    .eq('booking_id', bookingId)
-    // Allow updating booking status to 'assigned' regardless of prior intermediate
-    // approval status so admin or other roles that assign after approval
-    // correctly transition the booking.
-  if (bookingErr) throw bookingErr
+    await client.query(
+      `UPDATE bookings
+          SET status = 'assigned',
+              truck_type_needed = COALESCE($2, truck_type_needed),
+              updated_at = $3
+        WHERE booking_id = $1`,
+      [bookingId, truckType, now],
+    )
+  })
 
   return findByBookingId(bookingId)
 }

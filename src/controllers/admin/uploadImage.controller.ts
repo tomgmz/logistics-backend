@@ -1,6 +1,6 @@
 import { Request, Response } from 'express'
 import { cloudinary } from '../../lib/cloudinary.js'
-import { proofPhotoBytes } from '../../services/driver/proof-stamp.service.js'
+import { proofPhotoBytes, ProofNotOnCrewError } from '../../services/driver/proof-stamp.service.js'
 
 export async function uploadImage(req: Request, res: Response) {
   try {
@@ -67,7 +67,7 @@ export async function uploadDeliveryProof(req: Request, res: Response) {
 
     res.status(200).json({ status: 'success', data: { url: result.secure_url } })
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message })
+    res.status(err instanceof ProofNotOnCrewError ? 403 : 500).json({ status: 'error', message: err.message })
   }
 }
 
