@@ -31,6 +31,7 @@ export async function getMyAvailabilityDays(req: Request, res: Response) {
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
     const status = err.message?.includes('No driver profile') ? 404
+      : err.message === AvailabilityService.VENDOR_NO_SCHEDULE ? 403
       : err.message?.includes('Invalid month') ? 400
       : 500
     res.status(status).json({ status: 'error', message: err.message })
@@ -45,7 +46,9 @@ export async function setMyAvailabilityDays(req: Request, res: Response) {
     const data = await AvailabilityService.setAvailabilityDays(userId, req.body.month, req.body.days)
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
-    const status = err.message?.includes('No driver profile') ? 404 : 400
+    const status = err.message?.includes('No driver profile') ? 404
+      : err.message === AvailabilityService.VENDOR_NO_SCHEDULE ? 403
+      : 400
     res.status(status).json({ status: 'error', message: err.message })
   }
 }

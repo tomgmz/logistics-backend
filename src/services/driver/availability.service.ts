@@ -35,7 +35,13 @@ export interface DriverAvailabilityState {
   // the driver is only crewed onto it, and the app says "Assigned" rather than
   // "On delivery".
   in_transit: boolean
+  // A vendor's driver: crewed booking by booking, never in the company pool, so
+  // there is no schedule to keep and the app shows no calendar at all.
+  vendor: boolean
 }
+
+/** Thrown for a vendor driver reaching the work-schedule calendar. */
+export const VENDOR_NO_SCHEDULE = 'Vendor drivers do not set a work schedule'
 
 /** Whether the driver — main or second — is on a booking that is under way. */
 async function isInTransit(driverId: string): Promise<boolean> {
@@ -48,10 +54,10 @@ async function isInTransit(driverId: string): Promise<boolean> {
   return (count ?? 0) > 0
 }
 
-async function findDriverByUser(userId: string): Promise<{ driver_id: string; status: string }> {
+async function findDriverByUser(userId: string): Promise<{ driver_id: string; status: string; is_external: boolean }> {
   const { data, error } = await supabase
     .from('drivers')
-    .select('driver_id, status')
+    .select('driver_id, status, is_external')
     .eq('user_id', userId)
     .maybeSingle()
 
@@ -61,8 +67,12 @@ async function findDriverByUser(userId: string): Promise<{ driver_id: string; st
   // 'assigned' locks this driver out of every path below, so it has to be true
   // before it is acted on. A reservation with no delivery behind it is cleared
   // here rather than trapping the driver in a state only a DBA could undo.
-  const driver = data as { driver_id: string; status: string }
-  return { ...driver, status: await reconcileDriverStatus(driver.driver_id, driver.status) }
+  const driver = data as { driver_id: string; status: string; is_external: boolean | null }
+  return {
+    ...driver,
+    is_external: driver.is_external === true,
+    status: await reconcileDriverStatus(driver.driver_id, driver.status),
+  }
 }
 
 export async function getAvailability(userId: string): Promise<DriverAvailabilityState> {
@@ -73,6 +83,7 @@ export async function getAvailability(userId: string): Promise<DriverAvailabilit
     status:      driver.status,
     on_delivery: onDelivery,
     in_transit:  onDelivery && await isInTransit(driver.driver_id),
+    vendor:      driver.is_external,
   }
 }
 
@@ -124,6 +135,7 @@ export async function getAvailabilityDays(
   month:  string,
 ): Promise<DriverAvailabilityMonth> {
   const driver = await findDriverByUser(userId)
+  if (driver.is_external) throw new Error(VENDOR_NO_SCHEDULE)
   const { first, nextFirst } = monthRange(month)
 
   const { data, error } = await supabase
@@ -158,6 +170,7 @@ export async function setAvailabilityDays(
   days:   string[],
 ): Promise<DriverAvailabilityMonth> {
   const driver = await findDriverByUser(userId)
+  if (driver.is_external) throw new Error(VENDOR_NO_SCHEDULE)
   const { first, nextFirst } = monthRange(month)
   const today = phDay()
 
