@@ -397,7 +397,97 @@ async function findForExport(f: TransactionFilters, cap: number): Promise<Export
   }))
 }
 
+/**
+ * One row of the dispatch sheet: one trip's visit to one drop-off, in the
+ * columns operations keeps in Excel (Dispatched Date, Vendor Name, Plate
+ * Number, Driver's ID, Fleet Type, Drivers Name, Assigned Call Time, Origin,
+ * Trip Sequence, Destination). A booking with no trip plan yet gives one row
+ * per drop-off with no trip number.
+ */
+export interface DispatchRow {
+  booking_id:      string
+  dispatched_date: string | null   // YYYY-MM-DD, the scheduled day
+  vendor_name:     string | null   // the vendor, or 8338's own name for company crew; null when uncrewed
+  plate_number:    string | null
+  driver_id:       string | null   // the driver's license number
+  fleet_type:      string | null
+  driver_name:     string | null
+  call_time:       string | null   // HH:MM
+  origin:          string | null
+  trip_number:     number | null
+  destination:     string | null
+}
+
+/** How 8338's own crew reads in the Vendor Name column. */
+export const OWN_FLEET_NAME = '8338 LOGISTICS SERVICES'
+
+async function findDispatchRows(f: TransactionFilters, cap: number): Promise<{ rows: DispatchRow[]; bookings: number }> {
+  const { whereSql, params } = buildWhere(f)
+
+  // The cap is on bookings (as the screen counts them), not on sheet rows.
+  const result = await pool.query<DispatchRow & { trip_number: string | null }>(
+    `WITH picked AS (
+       SELECT b.booking_id, b.created_at
+       ${FROM_SQL}
+       ${whereSql}
+       ORDER BY b.created_at DESC
+       LIMIT $${params.length + 1}
+     ),
+     visits AS (
+       -- Every trip's stop, or every drop-off for a booking without a plan.
+       SELECT t.booking_id, t.trip_number, s.sequence_order AS seq, d.address
+         FROM booking_trips t
+         JOIN booking_trip_stops s     ON s.trip_id = t.trip_id
+         LEFT JOIN booking_destinations d ON d.destination_id = s.destination_id
+        WHERE t.booking_id IN (SELECT booking_id FROM picked) AND t.status <> 'cancelled'
+       UNION ALL
+       SELECT d.booking_id, NULL, d.sequence_order, d.address
+         FROM booking_destinations d
+        WHERE d.booking_id IN (SELECT booking_id FROM picked)
+          AND NOT EXISTS (SELECT 1 FROM booking_trips t
+                           WHERE t.booking_id = d.booking_id AND t.status <> 'cancelled')
+     )
+     SELECT b.booking_id,
+            to_char(b.schedule_date, 'YYYY-MM-DD')              AS dispatched_date,
+            crew.vendor_name, crew.plate_number, crew.driver_id, crew.driver_name,
+            COALESCE(crew.fleet_type, b.truck_type_needed)      AS fleet_type,
+            to_char(b.call_time, 'HH24:MI')                     AS call_time,
+            b.origin,
+            v.trip_number,
+            v.address                                           AS destination
+       FROM picked p
+       JOIN bookings b ON b.booking_id = p.booking_id
+       LEFT JOIN visits v ON v.booking_id = b.booking_id
+       LEFT JOIN LATERAL (
+         SELECT CASE WHEN dl.is_vendor_supplied THEN dl.vendor_name
+                     WHEN dl.driver_id IS NOT NULL OR dl.truck_id IS NOT NULL THEN '${OWN_FLEET_NAME}' END AS vendor_name,
+                CASE WHEN dl.is_vendor_supplied THEN dl.vendor_vehicle_plate ELSE t.plate_number END AS plate_number,
+                CASE WHEN dl.is_vendor_supplied THEN dl.vendor_driver_license ELSE dr.license_number END AS driver_id,
+                CASE WHEN dl.is_vendor_supplied THEN dl.vendor_driver_name
+                     ELSE NULLIF(TRIM(CONCAT_WS(' ', du.first_name, du.last_name)), '') END AS driver_name,
+                CASE WHEN dl.is_vendor_supplied THEN dl.vendor_vehicle_type ELSE tm.vehicle_type END AS fleet_type
+           FROM deliveries dl
+           LEFT JOIN drivers dr      ON dr.driver_id = dl.driver_id
+           LEFT JOIN users du        ON du.user_id   = dr.user_id
+           LEFT JOIN trucks t        ON t.truck_id   = dl.truck_id
+           LEFT JOIN truck_models tm ON tm.model_id  = t.model_id
+          WHERE dl.booking_id = b.booking_id
+          ORDER BY dl.created_at DESC
+          LIMIT 1
+       ) crew ON true
+      ORDER BY p.created_at DESC, v.trip_number NULLS FIRST, v.seq`,
+    [...params, cap],
+  )
+
+  const bookings = new Set(result.rows.map((r) => r.booking_id)).size
+  return {
+    rows: result.rows.map((r) => ({ ...r, trip_number: r.trip_number == null ? null : Number(r.trip_number) })),
+    bookings,
+  }
+}
+
 export const TransactionHistoryModel = {
+  findDispatchRows,
   findTransactions,
   summarize,
   countByStatus,

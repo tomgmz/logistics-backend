@@ -233,14 +233,15 @@ async function main() {
   // ---------------------------------------------------------------------
   heading('7. Export matches the filtered set')
   const exported = await exportTransactionsService(baseFilters)
-  check('export row count equals the filtered total',
-    exported.rows.length === Math.min(baseSummary.total, 5000),
-    `export=${exported.rows.length} total=${baseSummary.total} truncated=${exported.truncated}`)
+  const exportedBookings = new Set(exported.rows.map((r) => r.booking_id)).size
+  check('export covers every booking in the filtered set',
+    exportedBookings === Math.min(baseSummary.total, 5000),
+    `bookings=${exportedBookings} total=${baseSummary.total} rows=${exported.rows.length} truncated=${exported.truncated}`)
   if (exported.rows.length > 0) {
     const r = exported.rows[0]
-    check('export rows carry a company name', !!r.company_name, `e.g. "${r.company_name}"`)
-    check('export rows carry the three dates as columns',
-      'booked_date' in r && 'schedule_date' in r && 'completed_date' in r)
+    check('export rows carry the dispatch sheet columns',
+      ['dispatched_date', 'vendor_name', 'plate_number', 'driver_id', 'fleet_type', 'driver_name',
+       'call_time', 'origin', 'trip_number', 'destination'].every((k) => k in r))
   }
 
   // ---------------------------------------------------------------------

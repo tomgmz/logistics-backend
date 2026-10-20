@@ -3,7 +3,7 @@ import {
   type TransactionFilters,
   type TransactionListQuery,
   type CompanyBreakdownRow,
-  type ExportRow,
+  type DispatchRow,
 } from '../../models/admin/transaction-history.model.js'
 import type { BookingWithRelations } from '../../types/client/booking.types.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -113,22 +113,28 @@ export async function listTransactionCompaniesService() {
 
 export async function exportTransactionsService(
   filters: TransactionFilters,
-): Promise<{ rows: ExportRow[]; truncated: boolean }> {
-  // Ask for one past the cap so a full page tells us there was more behind it.
-  const rows = await TransactionHistoryModel.findForExport(filters, EXPORT_ROW_CAP + 1)
-  const truncated = rows.length > EXPORT_ROW_CAP
-  const exported  = truncated ? EXPORT_ROW_CAP : rows.length
+): Promise<{ rows: DispatchRow[]; truncated: boolean }> {
+  // Ask for one booking past the cap so a full set tells us there was more.
+  const { rows, bookings } = await TransactionHistoryModel.findDispatchRows(filters, EXPORT_ROW_CAP + 1)
+  const truncated = bookings > EXPORT_ROW_CAP
+  let kept = rows
+  if (truncated) {
+    const allowed = new Set<string>()
+    for (const r of rows) { if (allowed.size < EXPORT_ROW_CAP) allowed.add(r.booking_id) }
+    kept = rows.filter((r) => allowed.has(r.booking_id))
+  }
+  const exported = truncated ? EXPORT_ROW_CAP : bookings
 
-  // Thousands of rows of financial history leaving the system in one click is
-  // exactly what an audit trail is for, and it was previously invisible. The
-  // actor comes from the ambient request context.
+  // Thousands of rows of delivery history leaving the system in one click is
+  // exactly what an audit trail is for. The actor comes from the ambient
+  // request context.
   logEvent({
     log_type:    'data_export',
     action:      'transactions_exported',
-    description: `Exported ${exported} transaction row(s)${truncated ? ` (capped at ${EXPORT_ROW_CAP})` : ''}; filters: ${JSON.stringify(filters)}`,
+    description: `Exported ${exported} booking(s) as ${kept.length} dispatch row(s)${truncated ? ` (capped at ${EXPORT_ROW_CAP} bookings)` : ''}; filters: ${JSON.stringify(filters)}`,
   })
 
-  return { rows: truncated ? rows.slice(0, EXPORT_ROW_CAP) : rows, truncated }
+  return { rows: kept, truncated }
 }
 
 export interface TransactionRecord {
