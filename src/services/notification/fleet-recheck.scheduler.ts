@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { BookingModel } from '../../models/client/booking.model.js'
 import { notifyStage } from './notification.service.js'
+import { crewNamesOnBooking } from '../admin/fleet-availability.service.js'
 import { logSystem, logSystemError } from '../../lib/log-system.js'
 
 /**
@@ -67,26 +68,6 @@ async function findCandidates(): Promise<DueBookingRow[]> {
   return (data ?? []) as DueBookingRow[]
 }
 
-/** Plate + model of the vehicle on this booking, for the reminder copy. */
-async function vehicleLabelFor(bookingId: string): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('deliveries')
-    .select('vendor_vehicle_plate, trucks ( plate_number, truck_models ( name, vehicle_type ) )')
-    .eq('booking_id', bookingId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (error || !data) return null
-
-  const truck = (data as any).trucks
-  if (truck?.plate_number) {
-    const name = truck.truck_models?.name ?? truck.truck_models?.vehicle_type ?? null
-    return name ? `${truck.plate_number} · ${name}` : String(truck.plate_number)
-  }
-  return (data as any).vendor_vehicle_plate ?? null
-}
-
 async function sendReminder(
   bookingId: string,
   window: 'day_before' | 'day_of',
@@ -94,8 +75,9 @@ async function sendReminder(
   const booking = await BookingModel.findById(bookingId)
   if (!booking) return
 
-  const vehicleLabel = await vehicleLabelFor(bookingId)
-  await notifyStage('fleet_recheck', booking, { window, vehicleLabel })
+  const { plateNumber, vehicleName, driverName } = await crewNamesOnBooking(bookingId)
+  const vehicleLabel = plateNumber && vehicleName ? `${plateNumber} · ${vehicleName}` : plateNumber
+  await notifyStage('fleet_recheck', booking, { window, vehicleLabel, plateNumber, driverName })
   // Stamped only after the fan-out resolves, so a failed send is retried next tick.
   await BookingModel.markFleetRecheckSent(bookingId, window)
 }

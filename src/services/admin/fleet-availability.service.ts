@@ -350,6 +350,39 @@ export interface CrewOnBooking {
 }
 
 /** The crew currently recorded on a booking, if any. */
+/**
+ * The plate and the main driver's name on a booking's latest delivery, for
+ * notifications about the vehicle. A vendor vehicle has no truck row, so its
+ * typed plate is used.
+ */
+export async function crewNamesOnBooking(
+  bookingId: string,
+): Promise<{ plateNumber: string | null; vehicleName: string | null; driverName: string | null }> {
+  const { data, error } = await supabase
+    .from('deliveries')
+    .select(`vendor_vehicle_plate,
+      trucks ( plate_number, truck_models ( name, vehicle_type ) ),
+      drivers!deliveries_driver_id_fkey ( users ( first_name, last_name ) )`)
+    .eq('booking_id', bookingId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error || !data) return { plateNumber: null, vehicleName: null, driverName: null }
+
+  const row: any  = data
+  const one       = (v: any) => (Array.isArray(v) ? v[0] : v)
+  const truck     = one(row.trucks)
+  const model     = one(truck?.truck_models)
+  const user      = one(one(row.drivers)?.users)
+  const name      = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim()
+  return {
+    plateNumber: truck?.plate_number ?? row.vendor_vehicle_plate ?? null,
+    vehicleName: model?.name ?? model?.vehicle_type ?? null,
+    driverName:  name || null,
+  }
+}
+
 export async function crewOnBooking(bookingId: string): Promise<CrewOnBooking> {
   const { data, error } = await supabase
     .from('deliveries')

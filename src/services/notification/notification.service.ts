@@ -330,6 +330,10 @@ export interface NotifyExtra {
   reason?:       string | null
   // Plate/model of the vehicle a fleet notification is about.
   vehicleLabel?: string | null
+  // The vehicle's plate and the driver who drove it, shown as their own fields
+  // (first) in the notification's details. Set by the vehicle re-check stages.
+  plateNumber?:  string | null
+  driverName?:   string | null
   // Which re-check nudge this is, for the `fleet_recheck` stage.
   window?:       'day_before' | 'day_of'
   // For `vehicle_out_of_service`: the status in words, and whether the vehicle
@@ -376,6 +380,10 @@ export async function notifyStage(
     // Each recipient gets their own row + action_url so the tap deep-links them
     // to their own module page focused on this booking.
     const baseData = {
+      // Ahead of the reference: the details list follows this order, and a
+      // vehicle notification is acted on by plate and driver.
+      ...(extra?.plateNumber ? { plate_number: extra.plateNumber } : {}),
+      ...(extra?.driverName  ? { driver_name:  extra.driverName }  : {}),
       type:             cfg.type,
       stage,
       booking_id:       booking.booking_id,
