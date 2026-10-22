@@ -173,13 +173,21 @@ export async function markCompleted(requestId: string): Promise<PasswordResetReq
   return (data ?? null) as PasswordResetRequestRow | null
 }
 
-export async function cancel(requestId: string): Promise<PasswordResetRequestRow | null> {
+/**
+ * `statuses` narrows what may be cancelled. The system's own clean-ups use the
+ * default; an admin's Reject passes ['pending'] so a request whose link has
+ * gone out can't be withdrawn, even if the send lands between read and write.
+ */
+export async function cancel(
+  requestId: string,
+  statuses:  ResetRequestStatus[] = CANCELLABLE_STATUSES,
+): Promise<PasswordResetRequestRow | null> {
   const nowIso = new Date().toISOString()
   const { data, error } = await supabase
     .from('password_reset_requests')
     .update({ status: 'cancelled', token_hash: null, updated_at: nowIso })
     .eq('request_id', requestId)
-    .in('status', CANCELLABLE_STATUSES)
+    .in('status', statuses)
     .select()
     .maybeSingle()
 

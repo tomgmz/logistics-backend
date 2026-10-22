@@ -707,7 +707,11 @@ export async function verifyItAdminOtp(input: {
   return { token, expires_at: expiresAt.toISOString() }
 }
 
-/** Dismiss a request without sending anything. */
+/**
+ * Reject a request without sending anything. Only an untouched ('pending')
+ * request can be rejected: once a link has gone out the decision is final, so
+ * a sent (or since expired) link can't be withdrawn from the queue.
+ */
 export async function cancelRequest(
   requestId: string,
   actor:     ResetActor,
@@ -717,8 +721,19 @@ export async function cancelRequest(
 
   assertOwnsRequest(request, actor)
 
-  const cancelled = await ResetModel.cancel(requestId)
-  if (!cancelled) throw new Error(`This request is already ${request.status}.`)
+  if (request.status === 'sent' || request.status === 'expired') {
+    throw new Error('A reset link has already been sent for this request, so it can no longer be rejected.')
+  }
+
+  const cancelled = await ResetModel.cancel(requestId, ['pending'])
+  if (!cancelled) {
+    const now = await ResetModel.findById(requestId)
+    throw new Error(
+      now?.status === 'sent'
+        ? 'A reset link has already been sent for this request, so it can no longer be rejected.'
+        : `This request is already ${now?.status ?? request.status}.`,
+    )
+  }
 
   logEvent({
     user_id:     actor.user_id,
