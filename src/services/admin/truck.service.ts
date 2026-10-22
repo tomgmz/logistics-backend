@@ -94,20 +94,25 @@ export async function getAllTrucks() {
 }
 
 /**
- * Why a vehicle is on the Maintenance tab. A truck can carry several at once
- * (a failed inspection also sets under_maintenance, for instance).
+ * What a vehicle needs before it can go out — the Upkeep tab, one row per
+ * reason. A truck can carry several at once (a failed inspection also sets
+ * under_maintenance, for instance).
  *
+ *   return_odometer_due — back from a job, the after-delivery odometer is still owed
+ *   recheck_due       — back from a job since its last pass: post-trip BLOWBAGETS
+ *   never_inspected   — no BLOWBAGETS on record yet
  *   under_maintenance — someone took it out of service
  *   failed_inspection — its latest BLOWBAGETS failed
  *   driver_report     — a driver has an unresolved breakdown/accident open on it
  *
  *   service_*         — routine service overdue / due soon / not set up
  *
- * BLOWBAGETS re-checks (never inspected, back from a job) are NOT maintenance:
- * the vehicle is fine, it just needs a look, and the Vehicles tab already
- * offers "Approve Vehicle" for those.
+ * Archived and inactive vehicles are parked, so nothing is owed on them.
  */
 export type MaintenanceReason =
+  | 'return_odometer_due'
+  | 'recheck_due'
+  | 'never_inspected'
   | 'under_maintenance'
   | 'failed_inspection'
   | 'driver_report'
@@ -130,10 +135,19 @@ export async function getMaintenanceQueue() {
   }
 
   return trucks
+    .filter((t: any) => t.status !== 'archived' && t.status !== 'inactive')
     .map((t: any) => {
       const reasons: MaintenanceReason[] = []
+      if (t.return_odometer_due) reasons.push('return_odometer_due')
+      const latest = t.latest_inspection
+      if (!latest) reasons.push('never_inspected')
+      // A pass that predates the truck's last homecoming is spent (same rule as isRoadworthy).
+      else if (
+        latest.passed && t.last_fleet_return_at &&
+        new Date(latest.inspected_at).getTime() <= new Date(t.last_fleet_return_at).getTime()
+      ) reasons.push('recheck_due')
       if (t.status === 'under_maintenance') reasons.push('under_maintenance')
-      if (t.latest_inspection && !t.latest_inspection.passed) reasons.push('failed_inspection')
+      if (latest && !latest.passed) reasons.push('failed_inspection')
       const open = reportsByTruck.get(t.truck_id) ?? []
       if (open.length > 0) reasons.push('driver_report')
       const service = t.service_status?.state
