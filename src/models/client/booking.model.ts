@@ -236,6 +236,11 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
   )
   const total = parseInt(countResult.rows[0]?.n ?? '0', 10) || 0
 
+  // Staff work the queue first in, first out: the oldest booking sits on top,
+  // under every status filter and search too. A client listing their own
+  // bookings still sees the newest first. booking_id breaks created_at ties so
+  // a row can't jump between pages.
+  const orderSql  = q.clientId ? 'b.created_at DESC, b.booking_id DESC' : 'b.created_at ASC, b.booking_id ASC'
   const limitIdx  = params.length + 1
   const offsetIdx = params.length + 2
   const idsResult = await pool.query<{ booking_id: string }>(
@@ -243,7 +248,7 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
      FROM bookings b
      LEFT JOIN clients c ON c.client_id = b.client_id
      ${whereSql}
-     ORDER BY b.created_at DESC
+     ORDER BY ${orderSql}
      LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
     [...params, limit, offset],
   )
