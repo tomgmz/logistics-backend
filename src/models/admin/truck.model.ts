@@ -45,7 +45,12 @@ async function findAllPaginated(q: TruckListQuery) {
     where.push(`t.status = 'archived'`)
   } else {
     where.push(`t.status != 'archived'`)
-    if (status !== 'all') {
+    if (status === 'available') {
+      // The web app no longer shows a Re-check Due status: a vehicle back from a
+      // job reads as Available (its inspection still blocks assignment), so the
+      // Available filter has to find it too.
+      where.push(`t.status IN ('available', 'recheck_due')`)
+    } else if (status !== 'all') {
       params.push(status)
       where.push(`t.status = $${params.length}`)
     }
