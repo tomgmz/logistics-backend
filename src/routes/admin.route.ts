@@ -48,6 +48,8 @@ import {
 import * as CargoCatalogController from '../controllers/admin/cargo-catalog.controller.js'
 import { createLandlinePrefixSchema, updateLandlinePrefixSchema } from '../schema/admin/landline-prefix.schema.js'
 import * as LandlinePrefixController from '../controllers/admin/landline-prefix.controller.js'
+import { createVehicleTypeSchema, updateVehicleTypeSchema } from '../schema/admin/vehicle-type.schema.js'
+import * as VehicleTypeController from '../controllers/admin/vehicle-type.controller.js'
 import * as DocumentsController from '../controllers/admin/documents.controller.js'
 import { uploadStaffDocumentsSchema, reviewDocumentSchema } from '../schema/admin/documents.schema.js'
 import { uploadDocuments } from '../middlewares/uploadDocuments.middleware.js'
@@ -365,5 +367,16 @@ router.get('/landline-prefixes/:id',    authenticate, isOperations, LandlinePref
 router.post('/landline-prefixes',       authenticate, isAdmin, validate(createLandlinePrefixSchema), LandlinePrefixController.createLandlinePrefix)
 router.patch('/landline-prefixes/:id',  authenticate, isAdmin, lockGuard('landline_prefix', fromParam('id')), validate(updateLandlinePrefixSchema), LandlinePrefixController.updateLandlinePrefix)
 router.delete('/landline-prefixes/:id', authenticate, isAdmin, lockGuard('landline_prefix', fromParam('id')), LandlinePrefixController.deleteLandlinePrefix)
+
+// Vehicle types: managed on System Maintenance (admin), read by the truck model
+// form and vehicle form (fleet) and the vendor-vehicle picker (operations), so
+// reads are staff-wide and only the writes carry the system-maintenance tier.
+// Deliberately not in MODULE_ROUTE_MAP, which would gate the reads too.
+const isStaffRead = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager', 'operations_manager')
+router.get('/vehicle-types',        authenticate, isStaffRead, VehicleTypeController.getAllVehicleTypes)
+router.get('/vehicle-types/:id',    authenticate, isStaffRead, VehicleTypeController.getVehicleTypeById)
+router.post('/vehicle-types',       authenticate, isAdmin, requireModuleFlag('system-maintenance', 'can_create'), validate(createVehicleTypeSchema), VehicleTypeController.createVehicleType)
+router.patch('/vehicle-types/:id',  authenticate, isAdmin, requireModuleFlag('system-maintenance', 'can_edit'), lockGuard('vehicle_type', fromParam('id')), validate(updateVehicleTypeSchema), VehicleTypeController.updateVehicleType)
+router.delete('/vehicle-types/:id', authenticate, isAdmin, requireModuleFlag('system-maintenance', 'can_delete'), lockGuard('vehicle_type', fromParam('id')), VehicleTypeController.deleteVehicleType)
 
 export default router

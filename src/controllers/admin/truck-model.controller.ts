@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
+import { statusOf } from '../../lib/http-error.js'
 import * as TruckModelService from '../../services/admin/truck-model.service.js'
 
 export async function getAllTruckModels(req: Request, res: Response) {
@@ -27,7 +28,7 @@ export async function createTruckModel(req: Request, res: Response) {
     const data = await TruckModelService.createTruckModel(req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message })
+    res.status(statusOf(err)).json({ status: 'error', message: err.message })
   }
 }
 
@@ -37,7 +38,7 @@ export async function updateTruckModel(req: Request, res: Response) {
     const data = await TruckModelService.updateTruckModel(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
-    const status = err.message === 'Truck model not found' ? 404 : 500
+    const status = err.message === 'Truck model not found' ? 404 : statusOf(err)
     res.status(status).json({ status: 'error', message: err.message })
   }
 }

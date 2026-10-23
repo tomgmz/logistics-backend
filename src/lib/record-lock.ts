@@ -42,6 +42,7 @@ export const LOCK_TYPES = [
   'commodity',
   'product',
   'landline_prefix',
+  'vehicle_type',
 ] as const
 
 export type LockType = (typeof LOCK_TYPES)[number]
@@ -198,6 +199,7 @@ const NOUN: Record<LockType, string> = {
   commodity:       'this commodity',
   product:         'this product',
   landline_prefix: 'this landline prefix',
+  vehicle_type:    'this vehicle type',
 }
 
 export function lockedError(type: LockType, holderName: string | null): HttpError {

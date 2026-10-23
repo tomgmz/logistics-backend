@@ -1,6 +1,7 @@
 import { TruckModelModel } from '../../models/admin/truck-models.model.js'
 import { CreateTruckModelInput, UpdateTruckModelInput } from '../../types/truck-model.types.js'
 import { logEvent } from '../../lib/log-event.js'
+import { resolveModelVehicleType } from './vehicle-type.service.js'
 
 export async function getAllTruckModels() {
   return TruckModelModel.findAll()
@@ -13,7 +14,8 @@ export async function getTruckModelById(modelId: string) {
 }
 
 export async function createTruckModel(input: CreateTruckModelInput, actorId?: string | null) {
-  const result = await TruckModelModel.create(input)
+  const vehicle_type = await resolveModelVehicleType(input.vehicle_type)
+  const result = await TruckModelModel.create({ ...input, vehicle_type })
 
   logEvent({
     user_id:     actorId,
@@ -30,6 +32,9 @@ export async function updateTruckModel(modelId: string, input: UpdateTruckModelI
   const existing = await TruckModelModel.findById(modelId)
   if (!existing) throw new Error('Truck model not found')
 
+  if (input.vehicle_type !== undefined) {
+    input = { ...input, vehicle_type: await resolveModelVehicleType(input.vehicle_type, existing.vehicle_type) }
+  }
   const result = await TruckModelModel.update(modelId, input)
 
   logEvent({

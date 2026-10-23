@@ -43,6 +43,7 @@ const MODULE_OF: Partial<Record<LockType, ModuleKey>> = {
   commodity:       'system-maintenance',
   product:         'system-maintenance',
   landline_prefix: 'system-maintenance',
+  vehicle_type:    'system-maintenance',
   driver_report:   'reports',
   // 'user' spans user-management (staff) and vehicle-management (drivers), so
   // it relies on the role gate.
