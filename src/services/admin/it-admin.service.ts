@@ -5,12 +5,10 @@ import { CreateITAdminInput, TransitionITAdminInput, UpdateITAdminInput } from '
 import { logEvent } from '../../lib/log-event.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
-import { revokeAllUserSessions } from '../../models/auth/auth.model.js'
 import { invalidateUserPermissions } from '../../middlewares/moduleAccess.middleware.js'
 import * as ResetModel from '../../models/auth/password-reset.model.js'
-
-/** Matches deactivateUserWithBan — a ban long enough to be permanent in practice. */
-const BAN_DURATION = '876000h'
+import { assertPhoneAvailable } from '../../lib/phone-unique.js'
+import { errorMessage } from '../../lib/error-message.js'
 
 /** An error the controller can turn into a specific status code. */
 function coded(message: string, code: string): Error {
@@ -19,8 +17,12 @@ function coded(message: string, code: string): Error {
   return err
 }
 
+/** How long an outgoing IT Admin stays active after handing the role over. */
+export const RENDER_DAYS = 30
+
 /**
- * Refuse to leave the system with no active IT Admin.
+ * Refuse to take the seat holder (the active IT Admin not serving a render
+ * period) out of service.
  *
  * This is not bureaucratic tidiness. Every staff password reset routes to the
  * 'it_admin' queue, a Company Admin is refused on those rows by
@@ -28,16 +30,15 @@ function coded(message: string, code: string): Error {
  * with nobody active, staff resets become invisible AND unactionable, with only a
  * console.error to show for it.
  *
- * The transition flow is the sanctioned exception: it takes the last active IT
- * Admin out of service only while putting a replacement in, inside one
- * transaction.
+ * The seat only changes hands through the handover. A predecessor still serving
+ * their render period may be deactivated early: the seat holder covers the queue.
  */
-async function assertNotLastActive(userId: string): Promise<void> {
-  const others = await ITAdminModel.countOtherActive(userId)
-  if (others === 0) {
+async function assertNotSeatHolder(userId: string): Promise<void> {
+  const seat = await ITAdminModel.findSeatHolders()
+  if (seat.some((s) => s.user_id === userId)) {
     throw coded(
-      'This is the only active IT Administrator. Use the transition flow to hand the role ' +
-      'to a successor — removing them outright would leave every staff password ' +
+      'This is the current IT Administrator. The role changes hands only when they hand it ' +
+      'over to a successor — removing them outright would leave every staff password ' +
       'reset with nobody able to action it.',
       'LAST_IT_ADMIN',
     )
@@ -74,15 +75,17 @@ export async function createITAdmin(
   input:    CreateITAdminInput,
   actorId?: string | null,
 ) {
+  await assertPhoneAvailable(input.phone)
+
   // Checked before touching Supabase Auth. `users_one_active_it_admin` is the
   // race-proof backstop, but letting it be the only guard would mean creating an
   // Auth identity and then rolling it back on a 23505 — this way the common case
   // is a clean refusal that never creates anything.
-  const active = await ITAdminModel.findActive()
+  const active = await ITAdminModel.findSeatHolders()
   if (active.length > 0) {
     throw coded(
       `An active IT Administrator already exists (${active[0].email}). The system allows ` +
-      'only one. Use the transition flow to replace them.',
+      'only one. They hand the role over to a successor from their own portal.',
       'IT_ADMIN_EXISTS',
     )
   }
@@ -108,7 +111,7 @@ export async function createITAdmin(
       role:      'it_admin',
       password,
     }).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
       console.error(`WELCOME_EMAIL_FAILED for it_admin ${userId}:`, msg)
     })
@@ -122,7 +125,7 @@ export async function createITAdmin(
 
     return result
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errorMessage(err)
     console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
     console.error('IT Admin creation failed, rolling back auth user...', msg)
     const ok = await deleteAuthUserSafely(userId)
@@ -136,6 +139,8 @@ export async function updateITAdmin(
   input:    UpdateITAdminInput,
   actorId?: string | null,
 ) {
+  await assertPhoneAvailable(input.phone, userId)
+
   if (input.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
       email: input.email,
@@ -160,7 +165,7 @@ export async function deleteITAdmin(
   actorId?: string | null,
 ) {
   assertNotSelf(userId, actorId)
-  await assertNotLastActive(userId)
+  await assertNotSeatHolder(userId)
 
   const result = await ITAdminModel.remove(userId)
   await banArchivedAuthUser(userId)
@@ -180,7 +185,7 @@ export async function deactivateITAdmin(
   actorId?: string | null,
 ) {
   assertNotSelf(userId, actorId)
-  await assertNotLastActive(userId)
+  await assertNotSeatHolder(userId)
 
   // deactivateUserWithBan also signs them out everywhere.
   const result = await deactivateUserWithBan(userId, 'it_admin', 'it_admin_deactivated', 'IT Administrator', actorId)
@@ -197,16 +202,31 @@ export async function activateITAdmin(
 }
 
 /**
- * Hand the IT Admin role from the incumbent to a successor.
+ * Where the caller stands in a handover: their own render end (null while they
+ * hold the seat) and every other active IT Admin, so the portal can show either
+ * "Hand over the role" or "Your account is deactivated on …".
+ */
+export async function getHandoverStatus(actorId: string) {
+  const active = await ITAdminModel.findActive()
+  const me     = active.find((a) => a.user_id === actorId) ?? null
+  return {
+    render_days:    RENDER_DAYS,
+    render_ends_at: me?.render_ends_at ?? null,
+    others:         active.filter((a) => a.user_id !== actorId),
+  }
+}
+
+/**
+ * The IT Admin hands their role to a successor they create here.
  *
- * The whole point is that the two halves — retiring the outgoing account and
- * installing the incoming one — commit together. Done as two API calls there is
- * a window with no active IT Admin, and in that window every staff password
- * reset is invisible (recipient lookups filter on status='active') and
- * unactionable (a Company Admin is refused by assertOwnsRequest). The
- * transition_it_admin() RPC is what makes the window not exist.
+ * Run by the outgoing IT Admin on themselves. The successor's account is
+ * created and becomes the seat holder at once; the outgoing account stays active
+ * for a RENDER_DAYS render period (to hand over the work) and is then
+ * deactivated by the it-admin-render scheduler.
  *
- * The Supabase Auth identity is the one step that cannot be inside that
+ * Both halves commit together in transition_it_admin(), so there is never a
+ * moment without a seat holder — the staff password reset queue has no other
+ * staff. The Supabase Auth identity is the one step that cannot be inside that
  * transaction, so it is created first and deleted again if the RPC raises — the
  * same compensation createITAdmin uses.
  */
@@ -214,24 +234,17 @@ export async function transitionITAdmin(
   input:    TransitionITAdminInput,
   actorId?: string | null,
 ) {
-  const active = await ITAdminModel.findActive()
-  if (active.length === 0) {
+  await assertPhoneAvailable(input.phone)
+
+  const seat     = await ITAdminModel.findSeatHolders()
+  const outgoing = seat.find((s) => s.user_id === actorId)
+  if (!outgoing) {
     throw coded(
-      'There is no active IT Administrator to transition from. Create one instead.',
-      'NO_ACTIVE_IT_ADMIN',
-    )
-  }
-  // Impossible once users_one_active_it_admin exists, but a pre-migration
-  // database could hold duplicates and picking one arbitrarily would silently
-  // leave the other in place.
-  if (active.length > 1) {
-    throw coded(
-      `Found ${active.length} active IT Administrators. Resolve that before transitioning.`,
-      'MULTIPLE_ACTIVE_IT_ADMINS',
+      'Only the current IT Administrator can hand the role over, and only once.',
+      'NOT_SEAT_HOLDER',
     )
   }
 
-  const outgoing = active[0]
   const password = generateSecurePassword()
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -254,6 +267,7 @@ export async function transitionITAdmin(
     p_suffix:      input.suffix ?? null,
     p_phone:       input.phone ?? null,
     p_created_by:  actorId ?? null,
+    p_render_days: RENDER_DAYS,
   })
 
   if (rpcError) {
@@ -267,22 +281,9 @@ export async function transitionITAdmin(
 
   // Past this point the handover is durable. Everything below is best effort and
   // logged individually — none of it may throw, because failing now would report
-  // a completed transition as an error.
-
-  // The one that matters most: sign-in and refresh are already gated on
-  // status='active', but `authenticate` checks only the session row, so without
-  // this the outgoing IT Admin keeps a live access token for up to 15 minutes.
-  await revokeAllUserSessions(outgoing.user_id, 'deactivated').catch((err) =>
-    console.error(`[it-admin] session revoke failed for outgoing ${outgoing.user_id}`, err),
-  )
-  invalidateUserPermissions(outgoing.user_id)
-
-  await supabase.auth.admin
-    .updateUserById(outgoing.user_id, { ban_duration: BAN_DURATION })
-    .then(({ error }) => {
-      if (error) console.error(`[it-admin] auth ban failed for outgoing ${outgoing.user_id}`, error.message)
-    })
-    .catch((err) => console.error(`[it-admin] auth ban threw for outgoing ${outgoing.user_id}`, err))
+  // a completed transition as an error. The outgoing IT Admin stays signed in:
+  // the render period is theirs to work, and the scheduler ends it.
+  const renderEndsAt = new Date(Date.now() + RENDER_DAYS * 24 * 60 * 60 * 1000).toISOString()
 
   // These sweeps only ever run opportunistically inside a reset request, so a
   // handover — which changes who reads that queue — is a sensible moment to make
@@ -300,7 +301,7 @@ export async function transitionITAdmin(
     role:      'it_admin',
     password,
   }).catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errorMessage(err)
     // Not fatal, and not a dead end: the incoming IT Admin can get in through the
     // self-service OTP reset at /auth/it-admin/forgot-password without anyone's help.
     console.error(`WELCOME_EMAIL_FAILED for incoming it_admin ${incomingId}:`, msg)
@@ -311,12 +312,29 @@ export async function transitionITAdmin(
     log_type:    'user_management',
     action:      'it_admin_transitioned',
     description:
-      `IT Administrator role transitioned from ${outgoing.email} (${outgoing.user_id}, now deactivated) ` +
-      `to ${input.email} (${incomingId}). Reason: ${input.reason}`,
+      `IT Administrator role handed over by ${outgoing.email} (${outgoing.user_id}) ` +
+      `to ${input.email} (${incomingId}). The outgoing account renders for ${RENDER_DAYS} days ` +
+      `and is deactivated after ${renderEndsAt}. Reason: ${input.reason}`,
   })
 
   return {
-    outgoing: { user_id: outgoing.user_id, email: outgoing.email, status: 'deactivated' },
+    outgoing: { user_id: outgoing.user_id, email: outgoing.email, status: 'active', render_ends_at: renderEndsAt },
     incoming: created,
   }
+}
+
+/**
+ * End every render period that has run out: deactivate, sign out everywhere and
+ * lock the login (deactivateUserWithBan does all three). Driven by the
+ * it-admin-render scheduler; returns how many accounts it closed.
+ */
+export async function deactivateEndedRenders(now = new Date()): Promise<number> {
+  const ended = await ITAdminModel.findRenderEnded(now)
+  let closed = 0
+  for (const u of ended) {
+    await deactivateUserWithBan(u.user_id, 'it_admin', 'it_admin_render_ended', 'IT Administrator', null)
+    invalidateUserPermissions(u.user_id)
+    closed++
+  }
+  return closed
 }

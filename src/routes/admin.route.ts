@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { validate }                  from '../middlewares/validate.middleware.js'
 import { lockGuard, fromParam }      from '../lib/record-lock.js'
-import { authenticate, authorize, isRootAdmin }   from '../middlewares/auth.middleware.js'
+import { authenticate, authorize }   from '../middlewares/auth.middleware.js'
 import { createAdminSchema, updateAdminSchema }                       from '../schema/admin/admin.schema.js'
 import { createClientSchema, updateClientSchema }                     from '../schema/admin/client.schema.js'
 import { createDriverSchema, updateDriverSchema }                     from '../schema/admin/driver.schema.js'
@@ -25,7 +25,7 @@ import * as AssignmentController from '../controllers/admin/assignment.controlle
 import * as TripController from '../controllers/client/trip.controller.js'
 import * as ReportController from '../controllers/driver/report.controller.js'
 import * as EmergencyCallController from '../controllers/driver/emergency-call.controller.js'
-import { setTripPlanSchema, staffResumeTripSchema, staffSetMilestoneSchema } from '../schema/client/trip.schema.js'
+import { setTripPlanSchema, staffPauseTripSchema, staffResumeTripSchema, staffSetMilestoneSchema } from '../schema/client/trip.schema.js'
 import { setReportStatusSchema, classifyReportSchema } from '../schema/driver/report.schema.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as UserRestoreController from '../controllers/admin/user-restore.controller.js'
@@ -88,8 +88,11 @@ const isCrewRelease = authorize('admin', 'it_admin', 'fleet_manager', 'general_m
 // the report service). Classifying an unspecified alert is the desk's call.
 const isReportsDesk   = authorize('admin', 'it_admin', 'operations_manager', 'fleet_manager')
 const isReportsTriage = authorize('admin', 'it_admin', 'operations_manager')
-// Ending a driver's pause from the web (see the pause routes below).
+// Replacing the crew on the road and correcting stop times (see below).
 const isPauseDesk     = authorize('admin', 'it_admin', 'operations_manager')
+// Pausing and resuming a delivery in transit: the Company Administrator and the
+// Operations Manager only — not the driver, not IT.
+const isPauseControl  = authorize('admin', 'operations_manager')
 // Vehicle upkeep records (odometer readings, services): the Company
 // Administrator and the Fleet Manager. Staff only — isFleet admits 'client'.
 const isFleetUpkeep = authorize('admin', 'it_admin', 'fleet_manager')
@@ -166,17 +169,19 @@ router.patch('/assignments/:bookingId/status', authenticate, isOperations, lockG
 router.get('/assignments/:bookingId/trips',  authenticate, isCrewRelease, TripController.getTrips)
 router.put('/assignments/:bookingId/trips',  authenticate, isCrewRelease, lockGuard('booking', fromParam('bookingId')), validate(setTripPlanSchema), TripController.setTripPlan)
 
-// Pauses the driver put on the delivery (weather, breakdown, closed stop…).
-// Staff-only for the same reason as the trips above — isOperations admits
-// 'client', and the driver's notes here are never shown to the client. Ending a
-// pause from the office is the Operations Manager's and the Company
-// Administrator's, with booking edit rights.
+// Pauses on a delivery in transit (weather, breakdown, closed stop…). Reading:
+// staff-only for the same reason as the trips above — isOperations admits
+// 'client', and the notes here are never shown to the client. Pausing and
+// ending a pause: the Operations Manager and the Company Administrator, with
+// booking edit rights. The driver can do neither.
 router.get('/assignments/:bookingId/pauses',   authenticate, isCrewRelease, TripController.listPauses)
-router.patch('/assignments/:bookingId/resume', authenticate, isPauseDesk, requireModuleFlag('booking-management', 'can_edit'),
+router.patch('/assignments/:bookingId/pause',  authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(staffPauseTripSchema), TripController.staffPauseTrip)
+router.patch('/assignments/:bookingId/resume', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
   lockGuard('booking', fromParam('bookingId')), validate(staffResumeTripSchema), TripController.staffResumeTrip)
 
 // Replacing the driver and/or vehicle of a delivery already on the road. Only
-// while the driver has it paused; the booking stays in transit and keeps its
+// while the delivery is paused; the booking stays in transit and keeps its
 // record. Same desk and rights as ending a pause.
 router.get('/assignments/:bookingId/replacements', authenticate, isCrewRelease, AssignmentController.listCrewReplacements)
 router.post('/assignments/:bookingId/replace-crew', authenticate, isPauseDesk, requireModuleFlag('booking-management', 'can_edit'),
@@ -268,12 +273,14 @@ router.post('/operations-admins/:id/restore', authenticate, isAdmin, canRestoreU
 
 //IT Admins
 router.get('/it-admins',        authenticate, isAdmin, ITAdminController.getAllITAdmins)
+router.get('/it-admins/handover', authenticate, isItAdmin, ITAdminController.getHandoverStatus)
 router.get('/it-admins/:id',    authenticate, isAdmin, ITAdminController.getITAdminById)
 router.post('/it-admins',       authenticate, isAdmin, validate(createITAdminSchema), ITAdminController.createITAdmin)
 // Handing the role to a successor is narrower than the rest of this group: only
 // the root admin, never an IT Admin. A resigning office-holder must not be able
 // to appoint their own replacement, and `isAdmin` above would let them.
-router.post('/it-admins/transition', authenticate, authorize('admin'), isRootAdmin, validate(transitionITAdminSchema), ITAdminController.transitionITAdmin)
+// Run by the outgoing IT Admin on themselves: creates the successor, starts a 30-day render period.
+router.post('/it-admins/transition', authenticate, isItAdmin, validate(transitionITAdminSchema), ITAdminController.transitionITAdmin)
 router.patch('/it-admins/:id',  authenticate, isAdmin, lockGuard('user', fromParam('id')), validate(updateITAdminSchema), ITAdminController.updateITAdmin)
 router.patch('/it-admins/:id/deactivate', authenticate, isAdmin, lockGuard('user', fromParam('id')), ITAdminController.deactivateITAdmin)
 router.patch('/it-admins/:id/activate',   authenticate, isAdmin, lockGuard('user', fromParam('id')), ITAdminController.activateITAdmin)

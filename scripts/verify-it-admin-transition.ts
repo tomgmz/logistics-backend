@@ -134,18 +134,20 @@ async function main() {
       : bad('must_change_password was not set on the incoming account')
 
     const { rows: [after] } = await client.query(
-      `select status from public.users where user_id = $1`, [outgoing.user_id],
+      `select status, render_ends_at from public.users where user_id = $1`, [outgoing.user_id],
     )
-    after.status === 'deactivated'
-      ? ok('the outgoing account is deactivated, not archived — the handover stays reversible')
-      : bad(`outgoing account is ${after.status}`)
+    after.status === 'active' && after.render_ends_at
+      && Math.abs(new Date(after.render_ends_at).getTime() - Date.now() - 30 * 86_400_000) < 3_600_000
+      ? ok('the outgoing account stays active with a 30-day render period')
+      : bad(`outgoing account is ${after.status}, render_ends_at ${after.render_ends_at}`)
 
     const { rows: [{ n: postCount }] } = await client.query(
-      `select count(*)::int as n from public.users where role = 'it_admin' and status = 'active'`,
+      `select count(*)::int as n from public.users
+        where role = 'it_admin' and status = 'active' and render_ends_at is null`,
     )
     postCount === 1
-      ? ok('still exactly one active IT Admin — the count never dipped to zero or rose to two')
-      : bad(`after the swap there are ${postCount} active IT Admins`)
+      ? ok('still exactly one seat holder — the count never dipped to zero or rose to two')
+      : bad(`after the swap there are ${postCount} seat holders`)
 
     console.log('\n4. The RPC refuses a bad outgoing account')
     try {
@@ -155,11 +157,11 @@ async function main() {
         `select * from public.transition_it_admin($1, $2, $3, 'Verify', 'Twice', null, null, null, null)`,
         [outgoing.user_id, againId, `verify-again-${againId}@example.com`],
       )
-      bad('transitioning an already-deactivated account was allowed')
+      bad('handing over twice from a rendering account was allowed')
     } catch (e: any) {
       await client.query('ROLLBACK TO SAVEPOINT s1')
-      e.message.includes('OUTGOING_NOT_ACTIVE')
-        ? ok('an already-deactivated outgoing account is refused (OUTGOING_NOT_ACTIVE)')
+      e.message.includes('OUTGOING_ALREADY_RENDERING')
+        ? ok('an outgoing account already rendering is refused (OUTGOING_ALREADY_RENDERING)')
         : bad(`refused, but with: ${e.message}`)
     }
 
@@ -234,10 +236,10 @@ async function main() {
     'IT_ADMIN_EXISTS',
   )
 
-  const countOthers = await ITAdminModel.countOtherActive(outgoing.user_id)
-  countOthers === 0
-    ? ok('countOtherActive() sees no replacement waiting, which is what the guard reads')
-    : bad(`countOtherActive() returned ${countOthers}`)
+  const seat = await ITAdminModel.findSeatHolders()
+  seat.length === 1 && seat[0].user_id === outgoing.user_id
+    ? ok('findSeatHolders() returns the real IT Admin, which is what the guards read')
+    : bad(`findSeatHolders() returned ${seat.length} row(s)`)
 
   return finish()
 }

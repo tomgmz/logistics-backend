@@ -55,12 +55,22 @@ export async function createITAdmin(req: Request, res: Response) {
   }
 }
 
+/** The caller's place in a handover: seat holder, or rendering until a date. */
+export async function getHandoverStatus(req: Request, res: Response) {
+  try {
+    const { userId } = getRequestMeta(req)
+    const data = await ITAdminService.getHandoverStatus(userId!)
+    res.status(200).json({ status: 'success', data })
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+}
+
 /**
- * Hand the IT Admin role to a successor.
+ * The IT Admin hands their role to a successor.
  *
- * The outgoing account is not named in the request — the system permits exactly
- * one active IT Admin, so the service resolves it. That also means a stale id
- * sitting in a form cannot retire the wrong person.
+ * The outgoing account is the caller — never named in the request — so a stale
+ * id sitting in a form cannot hand over someone else's seat.
  */
 export async function transitionITAdmin(req: Request, res: Response) {
   try {
@@ -68,12 +78,13 @@ export async function transitionITAdmin(req: Request, res: Response) {
     const data = await ITAdminService.transitionITAdmin(req.body, userId)
     res.status(201).json({
       status:  'success',
-      message: 'IT Administrator role transitioned. The outgoing account has been deactivated.',
+      message: `IT Administrator role handed over. Your account stays active for ${ITAdminService.RENDER_DAYS} days.`,
       data,
     })
   } catch (err: any) {
     console.error('IT ADMIN TRANSITION ERROR:', err)
-    res.status(statusForError(err)).json({ status: 'error', code: err.code, message: err.message })
+    const status = err?.code === 'NOT_SEAT_HOLDER' ? 403 : statusForError(err)
+    res.status(status).json({ status: 'error', code: err.code, message: err.message })
   }
 }
 

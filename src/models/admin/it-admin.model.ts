@@ -42,7 +42,7 @@ async function findById(userId: string) {
 async function findActive() {
   const { data, error } = await supabase
     .from('users')
-    .select('user_id, email, first_name, last_name, status')
+    .select('user_id, email, first_name, last_name, status, render_ends_at')
     .eq('role', 'it_admin')
     .eq('status', 'active')
 
@@ -50,17 +50,35 @@ async function findActive() {
   return data ?? []
 }
 
-/** Active IT Admins other than this one — "would anyone be left?" */
-async function countOtherActive(excludeUserId: string) {
-  const { count, error } = await supabase
+/**
+ * The seat holder: the active IT Admin who is NOT serving a render period.
+ * `users_one_active_it_admin` allows at most one. A predecessor still rendering
+ * is active too, but has already handed the role over.
+ */
+async function findSeatHolders() {
+  const { data, error } = await supabase
     .from('users')
-    .select('user_id', { count: 'exact', head: true })
+    .select('user_id, email, first_name, last_name, status, render_ends_at')
     .eq('role', 'it_admin')
     .eq('status', 'active')
-    .neq('user_id', excludeUserId)
+    .is('render_ends_at', null)
 
   if (error) throw error
-  return count ?? 0
+  return data ?? []
+}
+
+/** Active IT Admins whose render period has run out. */
+async function findRenderEnded(now: Date) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id, email, render_ends_at')
+    .eq('role', 'it_admin')
+    .eq('status', 'active')
+    .not('render_ends_at', 'is', null)
+    .lte('render_ends_at', now.toISOString())
+
+  if (error) throw error
+  return data ?? []
 }
 
 async function create(userId: string, input: CreateITAdminInput) {
@@ -106,4 +124,4 @@ async function remove(userId: string) {
   return true
 }
 
-export { findAll, findById, findActive, countOtherActive, create, update, remove }
+export { findAll, findById, findActive, findSeatHolders, findRenderEnded, create, update, remove }

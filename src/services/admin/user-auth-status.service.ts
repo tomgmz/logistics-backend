@@ -55,8 +55,8 @@ export async function banArchivedAuthUser(userId: string) {
  * account is never shown as active while its login is still locked.
  *
  * Only one IT Administrator may be active (users_one_active_it_admin), so an
- * archived one cannot come back while another holds the seat; hand it over
- * with the transition instead.
+ * archived one cannot come back while another holds the seat; the seat holder
+ * hands it over from their own portal instead.
  */
 export async function restoreArchivedUser(
   userId: string,
@@ -82,9 +82,10 @@ export async function restoreArchivedUser(
       .select('user_id', { count: 'exact', head: true })
       .eq('role', 'it_admin')
       .eq('status', 'active')
+      .is('render_ends_at', null)
     if (cntErr) throw cntErr
     if ((count ?? 0) > 0) {
-      throw new Error('Only one IT Administrator can be active. Use Transition IT Administrator to hand the role over instead.')
+      throw new Error('Only one IT Administrator can be active. The current one hands the role over from their own portal.')
     }
   }
 
@@ -95,6 +96,7 @@ export async function restoreArchivedUser(
       locked_until:          null,
       failed_login_attempts: 0,
       lockup_count:          0,
+      ...(role === 'it_admin' ? { render_ends_at: null } : {}),
     })
     .eq('user_id', userId)
     .eq('role', role)
@@ -104,7 +106,7 @@ export async function restoreArchivedUser(
 
   // Another IT Administrator became active between the check and the update.
   if (error?.code === '23505' && role === 'it_admin') {
-    throw new Error('Only one IT Administrator can be active. Use Transition IT Administrator to hand the role over instead.')
+    throw new Error('Only one IT Administrator can be active. The current one hands the role over from their own portal.')
   }
   if (error) throw error
   if (!data) throw new Error(`${entityLabel} not found or could not be restored`)
@@ -215,6 +217,9 @@ export async function activateUserWithUnban(
       locked_until:          null,
       failed_login_attempts: 0,
       lockup_count:          0,
+      // A returning IT Admin comes back as the seat holder, not mid-render (a
+      // stale end date would also let them slip past users_one_active_it_admin).
+      ...(role === 'it_admin' ? { render_ends_at: null } : {}),
     })
     .eq('user_id', userId)
     .eq('role', role)
@@ -222,6 +227,9 @@ export async function activateUserWithUnban(
     .select('user_id, status')
     .maybeSingle()
 
+  if (error?.code === '23505' && role === 'it_admin') {
+    throw new Error('Only one IT Administrator can be active. The current one hands the role over from their own portal.')
+  }
   if (error) throw error
   if (!data) throw new Error(`${entityLabel} not found or could not be activated`)
 

@@ -27,6 +27,7 @@ import publicRoutes from './routes/public.routes.js'
 import { startFleetRecheckScheduler } from './services/notification/fleet-recheck.scheduler.js'
 import { startCompletionScheduler } from './services/notification/completion.scheduler.js'
 import { startLicenseExpiryScheduler } from './services/notification/license-expiry.scheduler.js'
+import { startItAdminRenderScheduler } from './services/admin/it-admin-render.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
 import { reportEmailLinkBaseUrl } from './lib/brevo-mailer.js'
 import { reportWebauthnConfig } from './lib/webauthn-config.js'
@@ -210,11 +211,19 @@ app.listen(PORT, '0.0.0.0', () => {
   reportEmailLinkBaseUrl();
   reportWebauthnConfig();
 
+  // A local copy pointed at the production database (test runs) must not run
+  // the production jobs a second time.
+  if (process.env.DISABLE_SCHEDULERS === '1') {
+    console.log('Schedulers disabled (DISABLE_SCHEDULERS=1)');
+    return;
+  }
+
   // Reminds the fleet manager to re-run BLOWBAGETS the day before a booking
   // dispatches and again on the day itself.
   startFleetRecheckScheduler();
   startCompletionScheduler();
   startLicenseExpiryScheduler();
+  startItAdminRenderScheduler();
 
   // Drops driver position breadcrumbs past their retention window. The live
   // position table is one row per driver and never needs pruning; the history

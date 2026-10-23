@@ -24,9 +24,8 @@ export async function setUserPermissions(req: Request, res: Response) {
   } catch (err: any) {
     const msg = err.message ?? 'Error'
     const status = msg === 'User not found' ? 404
-      : msg.startsWith('protected:') ? 403
       : msg.includes('managed staff') ? 422
       : 500
-    res.status(status).json({ status: 'error', message: msg.replace(/^protected:\s*/, '') })
+    res.status(status).json({ status: 'error', message: msg })
   }
 }

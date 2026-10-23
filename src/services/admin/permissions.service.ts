@@ -1,7 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import * as PermissionsModel from '../../models/admin/permissions.model.js'
 import { invalidateUserPermissions } from '../../middlewares/moduleAccess.middleware.js'
-import { isProtectedAdmin } from '../../lib/protected-admin.js'
 import { logEvent } from '../../lib/log-event.js'
 import { isManagedRole, pickFlags, MODULES_BY_ROLE, ManagedRole } from '../../constants/modules.js'
 import {
@@ -29,7 +28,6 @@ async function getTargetUser(userId: string): Promise<{ user_id: string; role: s
 export async function getUserPermissions(userId: string): Promise<{
   role:        string
   modules:     string[]
-  protected:   boolean
   permissions: ModulePermissionSummary[]
 }> {
   const target = await getTargetUser(userId)
@@ -39,7 +37,6 @@ export async function getUserPermissions(userId: string): Promise<{
     // Only the modules this role actually has pages for are assignable.
     role:        target.role,
     modules:     isManagedRole(target.role) ? MODULES_BY_ROLE[target.role as ManagedRole] : [],
-    protected:   await isProtectedAdmin(userId),
     permissions: rows.map(toSummary),
   }
 }
@@ -53,10 +50,6 @@ export async function setUserPermissions(
 
   if (!isManagedRole(target.role)) {
     throw new Error('Module permissions can only be assigned to managed staff roles.')
-  }
-
-  if (await isProtectedAdmin(userId)) {
-    throw new Error('protected: The primary Administrator account cannot be restricted.')
   }
 
   // Only persist modules this role actually has pages for; drop anything else so

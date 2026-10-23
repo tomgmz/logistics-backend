@@ -820,20 +820,12 @@ export async function getMe(userId: string) {
     case 'client':
       return AuthModel.findUserWithClient(userId)
     default: {
-      // Travels with the session so the web app can hide actions reserved for the
-      // root administrator — the IT Admin handover being the first of them. The
-      // API enforces this independently via the isRootAdmin middleware; this flag
-      // only spares the user a button that would 403.
-      const is_root_admin = await isProtectedAdmin(userId)
-
-      // Attach per-module permissions so the web app can gate UI for managed
-      // staff. The root administrator is never restricted, so leave their
-      // session with no permission matrix (full role-default access).
-      if (isManagedRole(user.role) && !is_root_admin) {
+      // Attach per-module permissions so the web app can gate UI for managed staff.
+      if (isManagedRole(user.role)) {
         const module_permissions = await getSessionPermissions(userId)
-        return { ...user, is_root_admin, module_permissions }
+        return { ...user, module_permissions }
       }
-      return { ...user, is_root_admin }
+      return user
     }
   }
 }

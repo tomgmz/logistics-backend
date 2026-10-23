@@ -46,6 +46,12 @@ const SCHEDULERS = [
     interval_minutes: 60,
   },
   {
+    source:           'it-admin-render.scheduler',
+    label:            'IT Administrator handover',
+    description:      'Deactivates the outgoing IT Administrator when their 30-day render period ends.',
+    interval_minutes: 60,
+  },
+  {
     source:           'tracking.pruneLocationHistory',
     label:            'Location history cleanup',
     description:      'Deletes truck position history past its retention period.',

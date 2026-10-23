@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import * as PermissionsModel from '../models/admin/permissions.model.js'
 import { ModulePermissionRow } from '../types/permissions.types.js'
-import { isProtectedAdmin } from '../lib/protected-admin.js'
 import {
   isBypassRole,
   isManagedRole,
@@ -43,8 +42,8 @@ export function invalidateUserPermissions(userId: string): void {
 // `admin` IS a managed role — see MANAGED_ROLES in constants/modules.ts. This
 // comment used to pair it with it_admin as "never restricted", which is wrong
 // and is the sort of thing someone reads when deciding whether a permission
-// actually bites. Only the root administrator is exempt among admins, via the
-// isProtectedAdmin check below.
+// actually bites. No Company Administrator is exempt: the IT Admin (a bypass
+// role) is the one who can always undo a bad permission config.
 export async function moduleGuard(req: Request, res: Response, next: NextFunction) {
   try {
     const user = req.user
@@ -52,9 +51,6 @@ export async function moduleGuard(req: Request, res: Response, next: NextFunctio
 
     if (isBypassRole(user.role)) return next()
     if (!isManagedRole(user.role)) return next()
-
-    // The root administrator is never restricted.
-    if (await isProtectedAdmin(user.sub)) return next()
 
     const moduleKey = moduleForPath(req.path)
     if (!moduleKey) return next()
@@ -110,7 +106,6 @@ function moduleFlagGate(
 
       if (isBypassRole(user.role)) return next()
       if (!isManagedRole(user.role)) return next()
-      if (await isProtectedAdmin(user.sub)) return next()
 
       const rows = await getUserPermissions(user.sub)
       if (rows.length === 0) return next() // no custom permissions -> role default
@@ -182,7 +177,6 @@ export function requireAnyModuleFlag(
 
       if (isBypassRole(user.role)) return next()
       if (!isManagedRole(user.role)) return next()
-      if (await isProtectedAdmin(user.sub)) return next()
 
       const rows = await getUserPermissions(user.sub)
       if (rows.length === 0) return next() // no custom permissions -> role default
