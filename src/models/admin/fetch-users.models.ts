@@ -49,11 +49,13 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
       )
     `
     )
-    .neq('role', 'admin')
     .order('last_name', { ascending: true })
 
+  // Company Administrators are left out of an unfiltered list, but a caller that
+  // names the role (Administrator Management's "All Administrators") gets them.
   if (roleFilters?.length === 1) q = q.eq('role', roleFilters[0])
   else if (roleFilters?.length)  q = q.in('role', roleFilters)
+  else                           q = q.neq('role', 'admin')
   if (query.status) q = q.eq('status', query.status)
   else              q = q.neq('status', 'archived')
 
@@ -86,9 +88,10 @@ export async function countUsersByStatus(roles?: string[], excludeId?: string): 
   let q = supabase
     .from('users')
     .select('status')
-    .neq('role', 'admin')
 
+  // Same rule as findAllUsers: admins count only when the caller names the role.
   if (roles?.length)  q = q.in('role', roles)
+  else                q = q.neq('role', 'admin')
   if (excludeId)      q = q.neq('user_id', excludeId)
 
   const { data, error } = await q
