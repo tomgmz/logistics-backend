@@ -5,6 +5,8 @@ import { CreateClientInput, UpdateClientInput } from '../../types/client.types.j
 import { logEvent } from '../../lib/log-event.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
+import { assertPhoneAvailable } from '../../lib/phone-unique.js'
+import { errorMessage } from '../../lib/error-message.js'
 
 export async function getAllClient() {
   return ClientModel.findAll()
@@ -20,6 +22,8 @@ export async function createClient(
   input:   CreateClientInput,
   actorId?: string | null,
 ) {
+  await assertPhoneAvailable(input.phone)
+
   const password = generateSecurePassword()
 
   // 1. Create Supabase Auth user with the generated password
@@ -44,7 +48,7 @@ export async function createClient(
       role:      'client',
       password,
     }).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
       console.error(`WELCOME_EMAIL_FAILED for client ${userId}:`, msg)
     })
@@ -60,7 +64,7 @@ export async function createClient(
     return result
   } catch (err: unknown) {
     // Roll back the Supabase Auth user so no orphan is left
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errorMessage(err)
     console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
     console.error('Client creation failed, rolling back auth user...', msg)
     const ok = await deleteAuthUserSafely(userId)
@@ -74,6 +78,8 @@ export async function updateClient(
   input:    UpdateClientInput,
   actorId?: string | null,
 ) {
+  await assertPhoneAvailable(input.phone, userId)
+
   if (input.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, {
       email: input.email,

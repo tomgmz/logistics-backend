@@ -11,6 +11,8 @@ import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import { createExternalDriver } from '../auth/driver-enrollment.service.js'
 import { requestLicenseExpiryCheck } from '../notification/license-expiry.scheduler.js'
+import { assertPhoneAvailable } from '../../lib/phone-unique.js'
+import { errorMessage } from '../../lib/error-message.js'
 
 export async function getAllDrivers() {
   return DriverModel.findAll()
@@ -62,6 +64,8 @@ export async function getDriverById(userId: string) {
 }
 
 export async function createDriver(dto: CreateDriverDTO, actorId?: string | null) {
+  await assertPhoneAvailable(dto.phone)
+
   // A vendor driver gets a passkey-only account and a setup link instead of a
   // password and a welcome email. Same details otherwise, so they show up in the
   // license reminder and the Driver Management flag like any company driver.
@@ -86,7 +90,8 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
   }
 
   const password  = generateSecurePassword()
-  const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
+  // Already +639XXXXXXXXX (mobileField). Prefixing +63 again stored 6363… in Auth.
+  const e164Phone = dto.phone || undefined
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         dto.email,
@@ -108,7 +113,7 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
       role:      'driver',
       password,
     }).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       console.error(`WELCOME_EMAIL_FAILED for driver ${userId}:`, msg)
     })
 
@@ -133,6 +138,8 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
 }
 
 export async function updateDriver(userId: string, dto: UpdateDriverDTO, actorId?: string | null) {
+  await assertPhoneAvailable(dto.phone, userId)
+
   if (dto.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: dto.email })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)

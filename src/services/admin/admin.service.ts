@@ -5,6 +5,8 @@ import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } fro
 import { CreateAdminInput, UpdateAdminInput } from '../../types/admin.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
+import { assertPhoneAvailable } from '../../lib/phone-unique.js'
+import { errorMessage } from '../../lib/error-message.js'
 
 export async function getAllAdmin() {
   return AdminModel.findAll()
@@ -17,7 +19,10 @@ export async function getAdminById(userId: string) {
 }
 
 export async function createAdmin(input: CreateAdminInput, actorId?: string | null) {
-  const e164Phone = input.phone ? '+63' + input.phone.slice(1) : undefined
+  await assertPhoneAvailable(input.phone)
+
+  // Already +639XXXXXXXXX (mobileField). Prefixing +63 again stored 6363… in Auth.
+  const e164Phone = input.phone || undefined
   const password  = generateSecurePassword()
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -40,7 +45,7 @@ export async function createAdmin(input: CreateAdminInput, actorId?: string | nu
       role:      'admin',
       password,
     }).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
       console.error(`WELCOME_EMAIL_FAILED for admin ${userId}:`, msg)
     })
@@ -63,6 +68,8 @@ export async function createAdmin(input: CreateAdminInput, actorId?: string | nu
 }
 
 export async function updateAdmin(userId: string, input: UpdateAdminInput, actorId?: string | null) {
+  await assertPhoneAvailable(input.phone, userId)
+
   if (input.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: input.email })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)

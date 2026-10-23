@@ -5,6 +5,8 @@ import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
+import { assertPhoneAvailable } from '../../lib/phone-unique.js'
+import { errorMessage } from '../../lib/error-message.js'
 
 interface UpdateGeneralManagerDTO {
   first_name?: string
@@ -26,8 +28,11 @@ export async function getGeneralManagerById(userId: string) {
 }
 
 export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string | null) {
+  await assertPhoneAvailable(dto.phone)
+
   const password = generateSecurePassword()
-  const e164Phone = dto.phone ? '+63' + dto.phone.slice(1) : undefined
+  // Already +639XXXXXXXXX (mobileField). Prefixing +63 again stored 6363… in Auth.
+  const e164Phone = dto.phone || undefined
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email:         dto.email,
@@ -49,7 +54,7 @@ export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string 
       role:      'general_manager',
       password,
     }).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = errorMessage(err)
       console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
       console.error(`WELCOME_EMAIL_FAILED for general_manager ${userId}:`, msg)
     })
@@ -64,7 +69,7 @@ export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string 
 
     return result
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
+    const msg = errorMessage(err)
     console.error('RAW DB ERROR:', JSON.stringify(err, null, 2))
     console.error('General Manager creation failed, rolling back auth user...', msg)
     const ok = await deleteAuthUserSafely(userId)
@@ -74,6 +79,8 @@ export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string 
 }
 
 export async function updateGeneralManager(userId: string, dto: UpdateGeneralManagerDTO, actorId?: string | null) {
+  await assertPhoneAvailable(dto.phone, userId)
+
   if (dto.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: dto.email })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)
