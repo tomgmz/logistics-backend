@@ -33,6 +33,25 @@ export function phDayPlusMonth(at: Date | number = Date.now()): string {
   return d.toISOString().slice(0, 10)
 }
 
+/**
+ * Same-day bookings close at 12:00 noon, Manila time, so the office (Monday to
+ * Saturday, 8 AM – 5 PM) still has the afternoon to review and dispatch them.
+ * Sunday has no office, so it never offers today.
+ */
+export const SAME_DAY_CUTOFF_HOUR = 12
+
+export function sameDayBookingOpen(at: Date | number = Date.now()): boolean {
+  const ms = typeof at === 'number' ? at : at.getTime()
+  const ph = new Date(ms + PH_OFFSET_MS)
+  return ph.getUTCDay() !== 0 && ph.getUTCHours() < SAME_DAY_CUTOFF_HOUR
+}
+
+/** The current Manila wall-clock time as `HH:MM`, comparable with `call_time`. */
+export function phTimeHHMM(at: Date | number = Date.now()): string {
+  const ms = typeof at === 'number' ? at : at.getTime()
+  return new Date(ms + PH_OFFSET_MS).toISOString().slice(11, 16)
+}
+
 /** A `date` value from the database, normalised to `YYYY-MM-DD`. */
 export function asDay(value: string | Date | null | undefined): string | null {
   if (!value) return null

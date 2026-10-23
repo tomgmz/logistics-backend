@@ -17,7 +17,7 @@ import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 import { logEvent } from '../../lib/log-event.js'
 import { badRequest, conflict, notFound } from '../../lib/http-error.js'
 import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
-import { isBeforeScheduledDay, phDay, phDayPlusMonth } from '../../lib/ph-date.js'
+import { isBeforeScheduledDay, phDay, phDayPlusMonth, phTimeHHMM, sameDayBookingOpen } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers, emailDeliveryConfirm } from '../notification/notification.service.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { revokeVendorCrewAfterCompletion } from '../auth/driver-enrollment.service.js'
@@ -31,26 +31,35 @@ import {
 import { claimDeliveryStart } from '../driver/start-delivery.service.js'
 import { assertNoPendingLoadTransfer } from '../driver/crew-actor.js'
 
-const DAY_MS = 24 * 60 * 60 * 1000
-
 /**
- * How far ahead a client has to book: tomorrow at the earliest, a year out at
- * the latest.
+ * How far ahead a client has to book: today until 12:00 noon (Monday to
+ * Saturday, see sameDayBookingOpen), otherwise tomorrow at the earliest; one
+ * month out at the latest.
  *
  * Compared in Philippine calendar days, matching the `date` column — the
- * server's own timezone must not decide what "tomorrow" means to a client in
+ * server's own timezone must not decide what "today" means to a client in
  * Manila.
  *
  * Every day of the week is open for transit, Sundays included. Office hours
- * (Monday to Saturday, 8 AM – 5 PM) only govern when bookings are reviewed,
- * never which days a truck can run, so they are not checked here.
+ * only decide whether today is still offered, never which days a truck can run.
  */
-function validateScheduleDate(scheduleDate: string): void {
+function validateScheduleDate(scheduleDate: string, callTime?: string): void {
   const scheduled = scheduleDate.slice(0, 10)
+  const today     = phDay()
 
-  const earliest = phDay(Date.now() + DAY_MS)
-  if (scheduled < earliest) {
-    throw badRequest(`Booking must be scheduled at least a day ahead (earliest: ${earliest})`)
+  if (scheduled === today) {
+    if (!sameDayBookingOpen()) {
+      throw badRequest('Same-day bookings close at 12:00 noon, Monday to Saturday. Please pick a later date.')
+    }
+    // A same-day call time already gone is no booking at all.
+    if (callTime && callTime.slice(0, 5) <= phTimeHHMM()) {
+      throw badRequest('For a same-day booking, the call time must be later than now')
+    }
+    return
+  }
+
+  if (scheduled < today) {
+    throw badRequest('Booking date cannot be in the past')
   }
 
   // At most one month ahead (company rule, 2026-10-12): the same calendar day
@@ -281,7 +290,7 @@ export async function createBookingService(
     throw badRequest(`A booking can have at most ${MAX_DESTINATIONS_PER_BOOKING} drop-offs`)
   }
 
-  validateScheduleDate(input.schedule_date)
+  validateScheduleDate(input.schedule_date, input.call_time)
 
   const orders = input.destinations.map((d) => d.sequence_order)
   if (new Set(orders).size !== orders.length) {
@@ -415,7 +424,7 @@ export async function updateBookingService(
   assertBookingOwnership(existing, viewer)
 
   if (input.schedule_date) {
-    validateScheduleDate(input.schedule_date)
+    validateScheduleDate(input.schedule_date, input.call_time ?? existing.call_time ?? undefined)
   }
 
   const booking = await BookingModel.update(bookingId, input)
@@ -636,7 +645,7 @@ export async function resubmitBookingService(
     throw badRequest(`A booking can have at most ${MAX_DESTINATIONS_PER_BOOKING} drop-offs`)
   }
 
-  validateScheduleDate(input.schedule_date)
+  validateScheduleDate(input.schedule_date, input.call_time)
 
   const orders = input.destinations.map((d) => d.sequence_order)
   if (new Set(orders).size !== orders.length) {
