@@ -10,6 +10,7 @@ import * as AvailabilityController from '../controllers/driver/availability.cont
 import * as TrackingController from '../controllers/driver/tracking.controller.js'
 import * as TripController from '../controllers/client/trip.controller.js'
 import * as ReportController from '../controllers/driver/report.controller.js'
+import * as EmergencyCallController from '../controllers/driver/emergency-call.controller.js'
 import { driverAvailabilityDaysSchema, driverLocationPingSchema } from '../schema/client/booking.schema.js'
 import {
   tripStopProofSchema,
@@ -24,6 +25,7 @@ import {
   recordMilestoneSchema,
 } from '../schema/client/trip.schema.js'
 import { createDriverReportSchema, enrichDriverReportSchema } from '../schema/driver/report.schema.js'
+import { startEmergencyCallSchema, endEmergencyCallSchema } from '../schema/driver/emergency-call.schema.js'
 import { uploadDeliveryProof } from '../controllers/admin/uploadImage.controller.js'
 
 const router = Router()
@@ -162,6 +164,15 @@ router.post('/reports',             authenticate, emergencyLimiter, isAny, valid
 // Filling in a quick alert after the fact, so the one-tap signal grows into a
 // full report instead of the driver filing a second, duplicate one.
 router.patch('/reports/:reportId',  authenticate, authenticatedLimiter, isAny, validate(enrichDriverReportSchema), ReportController.enrichReport)
+// The number a quick alert phones after it is sent (Operations Manager on duty,
+// else the Company Administrator). The app prefetches and caches it so the call
+// still works when the driver has signal but no data.
+router.get('/emergency-contact',    authenticate, authenticatedLimiter, isAny, ReportController.getEmergencyContact)
+// The in-app voice call (LiveKit) that follows a quick alert. Rings every
+// Operations Manager's browser at once (Company Administrators when there are
+// none). The phone falls back to its dialer when this fails or goes unanswered.
+router.post('/emergency-calls',               authenticate, emergencyLimiter, isAny, validate(startEmergencyCallSchema), EmergencyCallController.startCall)
+router.post('/emergency-calls/:callId/end',   authenticate, emergencyLimiter, isAny, validate(endEmergencyCallSchema), EmergencyCallController.endCallAsDriver)
 
 // Live position while the booking is in transit — the highest-frequency route in
 // the system, on its own rate-limit budget because the shared one is sized for a

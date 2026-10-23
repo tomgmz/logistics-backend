@@ -50,6 +50,7 @@ async function create(driverId: string, input: CreateDriverReportInput): Promise
       longitude:  input.longitude  ?? null,
       accuracy_m: input.accuracy_m ?? null,
       address:    input.address    ?? null,
+      speed_kmh:  input.speed_kmh  ?? null,
 
       // Stamped here rather than trusting a device clock: the check is evidence,
       // and a phone's time is the driver's to set.
@@ -167,8 +168,55 @@ async function update(reportId: string, patch: Partial<DriverReport>): Promise<D
   return data as unknown as DriverReport
 }
 
+/**
+ * Who a driver's quick alert phones: the Operations Manager on duty, else the
+ * Company Administrator on duty.
+ *
+ * There is no shift roster, so "on duty" means the active account with a phone
+ * number whose live session was used most recently. Someone signed in and
+ * clicking around right now is the best guess at someone who will pick up.
+ * Accounts with no live session still count, behind the ones that have one — a
+ * number that might ring out beats no number at all.
+ */
+async function findOnDutyContact(): Promise<{ role: string; phone: string } | null> {
+  for (const role of ['operations_manager', 'admin']) {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('user_id, phone')
+      .eq('role', role)
+      .eq('status', 'active')
+      .not('phone', 'is', null)
+      .neq('phone', '')
+
+    if (error) throw error
+    const withPhone = (users ?? []) as { user_id: string; phone: string }[]
+    if (withPhone.length === 0) continue
+
+    const { data: sessions, error: sessionError } = await supabase
+      .from('active_sessions')
+      .select('user_id, last_active_at')
+      .in('user_id', withPhone.map((u) => u.user_id))
+      .gt('expires_at', new Date().toISOString())
+
+    if (sessionError) throw sessionError
+
+    const lastActive = new Map<string, number>()
+    for (const s of (sessions ?? []) as { user_id: string; last_active_at: string | null }[]) {
+      const at = s.last_active_at ? Date.parse(s.last_active_at) : 0
+      if (at > (lastActive.get(s.user_id) ?? -1)) lastActive.set(s.user_id, at)
+    }
+
+    const pick = [...withPhone].sort(
+      (a, b) => (lastActive.get(b.user_id) ?? -1) - (lastActive.get(a.user_id) ?? -1),
+    )[0]
+    return { role, phone: pick.phone.trim() }
+  }
+  return null
+}
+
 export default {
   create,
+  findOnDutyContact,
   findByDriverId,
   findById,
   findAll,

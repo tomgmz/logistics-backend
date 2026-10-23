@@ -4,7 +4,7 @@ import { z } from 'zod'
  * Validation for the driver's Reports module.
  *
  * The quick alert is intentionally the loosest schema in this codebase: it is
- * sent in one tap under a 20-second countdown, and every field it might carry is
+ * sent with a single Yes and no form, and every field it might carry is
  * optional. Refusing an emergency signal for a missing field would defeat the
  * feature. The DETAILED form is where the requirements live, and they are
  * enforced in the service rather than here, so the same rule applies to a quick
@@ -53,6 +53,8 @@ export const createDriverReportSchema = z.object({
   longitude:  z.number().min(-180).max(180).optional().nullable(),
   accuracy_m: z.number().min(0).optional().nullable(),
   address:    z.string().max(500).optional().nullable(),
+  // From the phone's GPS. Capped well above any truck so a glitch can't be stored as a fact.
+  speed_kmh:  z.number().min(0).max(300).optional().nullable(),
 
   blowbagets_items:  blowbagetsItemsSchema.optional().nullable(),
   trip_can_continue: z.boolean().optional().nullable(),

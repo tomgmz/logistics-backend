@@ -24,6 +24,7 @@ import * as ITAdminController from '../controllers/admin/it-admin.controller.js'
 import * as AssignmentController from '../controllers/admin/assignment.controller.js'
 import * as TripController from '../controllers/client/trip.controller.js'
 import * as ReportController from '../controllers/driver/report.controller.js'
+import * as EmergencyCallController from '../controllers/driver/emergency-call.controller.js'
 import { setTripPlanSchema, staffResumeTripSchema, staffSetMilestoneSchema } from '../schema/client/trip.schema.js'
 import { setReportStatusSchema, classifyReportSchema } from '../schema/driver/report.schema.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
@@ -186,6 +187,14 @@ router.get('/driver-reports',                 authenticate, isReportsDesk, Repor
 router.get('/driver-reports/:reportId',       authenticate, isReportsDesk, ReportController.getReport)
 router.patch('/driver-reports/:reportId/status', authenticate, isReportsDesk, lockGuard('driver_report', fromParam('reportId')), validate(setReportStatusSchema), ReportController.setReportStatus)
 router.patch('/driver-reports/:reportId/classify', authenticate, isReportsTriage, lockGuard('driver_report', fromParam('reportId')), validate(classifyReportSchema), ReportController.classifyReport)
+
+// A driver's in-app emergency call. Operations Managers are rung (Company
+// Administrators when there are none); the first to answer gets it. The service
+// also checks the caller was one of the people rung.
+const isCallDesk = authorize('admin', 'operations_manager')
+router.get('/emergency-calls/ringing',          authenticate, isCallDesk, EmergencyCallController.listRinging)
+router.post('/emergency-calls/:callId/answer',  authenticate, isCallDesk, EmergencyCallController.answerCall)
+router.post('/emergency-calls/:callId/end',     authenticate, isCallDesk, EmergencyCallController.endCallAsStaff)
 
 // Trucks
 router.get('/trucks',        authenticate, isFleetRead, TruckController.getAllTrucks)

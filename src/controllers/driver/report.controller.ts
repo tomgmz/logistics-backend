@@ -9,6 +9,7 @@ import {
   enrichReportService,
   setReportStatusService,
   classifyReportService,
+  getEmergencyContactService,
 } from '../../services/driver/report.service.js'
 import { reportScopeForRole, type ReportStatus } from '../../types/driver/report.types.js'
 
@@ -68,14 +69,25 @@ export const createReport = async (req: Request, res: Response) => {
       longitude:         typeof req.body.longitude  === 'number' ? req.body.longitude  : null,
       accuracy_m:        typeof req.body.accuracy_m === 'number' ? req.body.accuracy_m : null,
       address:           req.body.address ?? null,
+      speed_kmh:         typeof req.body.speed_kmh === 'number' ? req.body.speed_kmh : null,
       blowbagets_items:  req.body.blowbagets_items ?? null,
       trip_can_continue: typeof req.body.trip_can_continue === 'boolean' ? req.body.trip_can_continue : null,
     }, reportActor(req))
 
-    res.status(201).json({ status: 'success', data: report })
+    // A quick alert is followed by a phone call, so hand back a fresh number in
+    // the same round trip rather than making the phone ask for it separately.
+    const call_contact = report.source === 'quick' ? await getEmergencyContactService() : undefined
+
+    res.status(201).json({ status: 'success', data: report, ...(call_contact !== undefined ? { call_contact } : {}) })
   } catch (error: any) {
     res.status(reportStatus(error.message)).json({ status: 'error', message: error.message })
   }
+}
+
+/** The on-duty number for the quick alert's call; the app caches it for no-data moments. */
+export const getEmergencyContact = async (_req: Request, res: Response) => {
+  const contact = await getEmergencyContactService()
+  res.status(200).json({ status: 'success', data: contact })
 }
 
 export const listMyReports = async (req: Request, res: Response) => {

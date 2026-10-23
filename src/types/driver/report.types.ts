@@ -60,6 +60,8 @@ export interface DriverReport {
   longitude:  number | null
   accuracy_m: number | null
   address:    string | null
+  /** GPS speed when the alert was sent. */
+  speed_kmh?: number | null
 
   blowbagets_check:  DriverBlowbagetsCheck | null
   trip_can_continue: boolean | null
@@ -96,6 +98,7 @@ export interface CreateDriverReportInput {
   longitude?:         number | null
   accuracy_m?:        number | null
   address?:           string | null
+  speed_kmh?:         number | null
   blowbagets_items?:  BlowbagetsItems | null
   trip_can_continue?: boolean | null
 }

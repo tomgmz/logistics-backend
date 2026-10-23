@@ -17,8 +17,8 @@ import type { CreateNotificationInput, NotificationRow } from '../../types/notif
 /**
  * Driver reports — the "Reports" module in the driver app.
  *
- * Two gestures, one record. The quick alert is sent in one tap under a countdown
- * and may carry nothing but a position; the detailed form is the same row with
+ * Two gestures, one record. The quick alert is sent after a single Yes/No, is
+ * followed by a phone call to the desk, and may carry nothing but a position; the detailed form is the same row with
  * everything the driver had time to type. Keeping them together means operations
  * reads one queue, and a driver who sends the alert first can open it again and
  * add the detail rather than filing a second, duplicate report.
@@ -106,6 +106,22 @@ export async function createReportService(
   void notifyResponders(report)
 
   return report
+}
+
+/**
+ * The number a driver's quick alert dials. Only a role and a phone go back —
+ * the driver is told "Operations", never a staff member's name.
+ *
+ * Never throws: the alert is the thing that must land, and a failed lookup just
+ * means the phone falls back to the number it cached last time.
+ */
+export async function getEmergencyContactService(): Promise<{ role: string; phone: string } | null> {
+  try {
+    return await ReportModel.findOnDutyContact()
+  } catch (e: any) {
+    console.warn('[reports] could not resolve the on-duty contact', e?.message)
+    return null
+  }
 }
 
 /** Which truck is out on this booking right now. Null when nothing is assigned. */

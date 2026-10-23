@@ -90,6 +90,12 @@ const SERVICES: { key: string; label: string; description: string; filter: (q: a
     description: "Reads driver's licence details from a photo.",
     filter:      (q) => q.like('source', 'google-vision.%'),
   },
+  {
+    key:         'livekit',
+    label:       'Emergency voice calls (LiveKit)',
+    description: "The driver's in-app call to Operations after a quick alert.",
+    filter:      (q) => q.like('source', 'livekit.%'),
+  },
 ]
 
 /** Sign-outs a person chose themselves are not a security signal. */
