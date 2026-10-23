@@ -32,10 +32,23 @@ export const RP_NAME = (process.env.WEBAUTHN_RP_NAME ?? '8338 Logistics').trim()
  * The https origin is included for a future web enrolment path; it is harmless
  * until then.
  */
-export const ALLOWED_ORIGINS: string[] = (process.env.WEBAUTHN_ALLOWED_ORIGINS ?? '')
+const ENV_ORIGINS: string[] = (process.env.WEBAUTHN_ALLOWED_ORIGINS ?? '')
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean)
+
+/**
+ * The iPhone app is added automatically. Unlike Android, iOS reports the RP's
+ * own website (`https://<rp id>`) as the origin of a native passkey ceremony,
+ * because Associated Domains has already tied the app to that domain. It is the
+ * one origin implied by the RP ID itself, so it should not depend on someone
+ * remembering to list it. It only counts when the env list is non-empty, so a
+ * server with no origins configured still reports itself as unconfigured.
+ */
+export const ALLOWED_ORIGINS: string[] =
+  RP_ID && ENV_ORIGINS.length > 0
+    ? [...new Set([...ENV_ORIGINS, `https://${RP_ID}`])]
+    : ENV_ORIGINS
 
 /** Are passkeys configured well enough to run a ceremony at all? */
 export function isPasskeyConfigured(): boolean {
