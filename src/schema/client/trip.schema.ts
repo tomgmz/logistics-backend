@@ -85,22 +85,12 @@ export const attachStopProofSchema = z.object({
 })
 
 /**
- * The driver pauses the delivery. The note is required: "paused" with no word
- * on why is exactly the phone call this replaces. `paused_at` is the phone's
- * own time — the service bounds it, since a pause can sit in the offline queue.
+ * Operations pauses the delivery. The note is required: the driver and the rest
+ * of the office need to know why.
  */
-export const pauseTripSchema = z.object({
-  reason:     z.enum(PAUSE_REASONS),
-  note:       z.string().trim().min(3, 'Say why the delivery is paused').max(500),
-  paused_at:  z.string().datetime().optional().nullable(),
-  latitude:   z.number().min(-90).max(90).optional().nullable(),
-  longitude:  z.number().min(-180).max(180).optional().nullable(),
-  accuracy_m: z.number().min(0).optional().nullable(),
-})
-
-/** The driver presses Resume. Only when, as the phone recorded it. */
-export const resumeTripSchema = z.object({
-  resumed_at: z.string().datetime().optional().nullable(),
+export const staffPauseTripSchema = z.object({
+  reason: z.enum(PAUSE_REASONS),
+  note:   z.string().trim().min(3, 'Say why the delivery is paused').max(500),
 })
 
 /** Operations ends the pause from the web, optionally saying why. */

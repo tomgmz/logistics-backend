@@ -9,7 +9,6 @@ import { isBeforeScheduledDay } from '../../lib/ph-date.js'
 import { invalidateEta } from '../maps/eta.service.js'
 import { broadcast } from '../../lib/realtime.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
-import { endPauseOnProgress } from './pause.service.js'
 import {
   assertStopProximity,
   stopCoordinates,
@@ -356,8 +355,6 @@ export async function driverConfirmTripPickupService(
   await applyLoadedCargo(trip, trips, loaded)
 
   await TripModel.setTripPickupProof(tripId, proofPhotoUrl, position, fence, await driverIdOf(actor))
-  // Loading a run means the truck is moving again, whatever the driver forgot.
-  await endPauseOnProgress(trip.booking_id, actor)
 
   // The booking-level pickup columns are what the web app and the client's
   // booking detail read. They keep meaning "the first loading",
@@ -487,8 +484,6 @@ export async function driverConfirmTripStopService(
   )
 
   const updated = await TripModel.setStopProof(tripStopId, 'delivered', proofPhotoUrl, position, fence, await driverIdOf(actor))
-  // Unloading at a bay ends any pause — before the booking can complete under it.
-  await endPauseOnProgress(trip.booking_id, actor)
 
   logEvent({
     user_id:     actor.userId,

@@ -12,8 +12,7 @@ import {
   PlanQuantityError,
 } from '../../services/client/trip.service.js'
 import {
-  pauseTripService,
-  driverResumeTripService,
+  staffPauseTripService,
   staffResumeTripService,
   listPausesService,
 } from '../../services/client/pause.service.js'
@@ -274,22 +273,21 @@ function pauseStatus(message: string): number {
   return 500
 }
 
-export const driverPauseTrip = async (req: Request, res: Response) => {
-  try {
-    const booking = await pauseTripService(param(req.params.bookingId), req.body, driverActor(req))
-    res.status(200).json({ status: 'success', data: booking })
-  } catch (error: any) {
-    res.status(pauseStatus(error.message)).json({ status: 'error', message: error.message })
-  }
+/**
+ * The driver app's old Pause / Resume. Pausing is the office's call now. 410,
+ * not 403: an older app's offline queue drops a 410 but holds the whole queue
+ * behind a 403, which would stall the stop confirmations queued after it.
+ */
+export const driverPauseRetired = (_req: Request, res: Response) => {
+  res.status(410).json({
+    status: 'error',
+    message: 'Only Operations or the Company Administrator can pause or resume a delivery. Call the office.',
+  })
 }
 
-export const driverResumeTrip = async (req: Request, res: Response) => {
+export const staffPauseTrip = async (req: Request, res: Response) => {
   try {
-    const booking = await driverResumeTripService(
-      param(req.params.bookingId),
-      driverActor(req),
-      req.body?.resumed_at ?? null,
-    )
+    const booking = await staffPauseTripService(param(req.params.bookingId), req.body, driverActor(req))
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
     res.status(pauseStatus(error.message)).json({ status: 'error', message: error.message })

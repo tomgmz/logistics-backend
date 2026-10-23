@@ -91,10 +91,11 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   delivery_confirm_reminder: { type: 'booking.delivery_confirm_reminder', audience: 'client' },
   delivery_issue:            { type: 'booking.delivery_issue',            roles: ['operations_manager'] },
   delivery_issue_resolved:   { type: 'booking.delivery_issue_resolved',   audience: 'client' },
-  // The driver paused the delivery. The client is told the reason category
-  // only; the driver's note goes to the office.
+  // The office paused the delivery. The client is told the reason category
+  // only; the note goes to the driver and the rest of the office.
   trip_paused:           { type: 'booking.trip_paused',           audience: 'client' },
   trip_paused_staff:     { type: 'booking.trip_paused_staff',     roles: ['operations_manager'] },
+  trip_paused_by_staff:  { type: 'booking.trip_paused_by_staff',  audience: 'drivers' },
   trip_resumed:          { type: 'booking.trip_resumed',          audience: 'client' },
   trip_resumed_staff:    { type: 'booking.trip_resumed_staff',    roles: ['operations_manager'] },
   trip_resumed_by_staff: { type: 'booking.trip_resumed_by_staff', audience: 'drivers' },
@@ -238,13 +239,19 @@ function copyFor(
     case 'trip_paused':
       return {
         title: 'Delivery paused',
-        body:  `Your delivery ${label} is paused: ${extra?.pauseLabel ?? 'the driver had to stop'}. ` +
+        body:  `Your delivery ${label} is paused: ${extra?.pauseLabel ?? 'the truck had to stop'}. ` +
                'We will let you know as soon as it is moving again.',
       }
     case 'trip_paused_staff':
       return {
         title: `Delivery paused — ${extra?.pauseLabel ?? 'reason not given'}`,
-        body:  `The driver paused booking ${label}${reason ? `: ${reason}` : '.'}`,
+        body:  `The office paused booking ${label}${reason ? `: ${reason}` : '.'}`,
+      }
+    case 'trip_paused_by_staff':
+      return {
+        title: `Delivery paused by the office — ${extra?.pauseLabel ?? 'reason not given'}`,
+        body:  `Operations paused booking ${label}${reason ? `: ${reason}` : '.'} ` +
+               'Wait until the office resumes it before continuing.',
       }
     case 'trip_resumed':
       return {

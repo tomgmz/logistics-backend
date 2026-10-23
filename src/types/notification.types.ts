@@ -21,10 +21,11 @@ export type NotificationType =
   | 'booking.delivery_confirm_reminder' // day before auto-complete -> client
   | 'booking.delivery_issue'       // client reported a problem -> ops + admins
   | 'booking.delivery_issue_resolved' // staff resolved it, 3 days restart -> client
-  | 'booking.trip_paused'          // driver paused the delivery -> client (reason only)
-  | 'booking.trip_paused_staff'    // driver paused the delivery -> ops + admins (with the note)
+  | 'booking.trip_paused'          // office paused the delivery -> client (reason only)
+  | 'booking.trip_paused_staff'    // office paused the delivery -> ops + admins (with the note)
+  | 'booking.trip_paused_by_staff' // office paused the delivery -> assigned driver(s) (with the note)
   | 'booking.trip_resumed'         // delivery moving again -> client
-  | 'booking.trip_resumed_staff'   // driver resumed -> ops + admins
+  | 'booking.trip_resumed_staff'   // pause ended -> ops + admins
   | 'booking.trip_resumed_by_staff' // the office ended the pause -> assigned driver(s)
   | 'booking.delivery_started'     // driver started navigation, booking in transit -> client
   | 'booking.crew_replaced_off'    // office replaced the crew on the road -> the driver taken off
@@ -96,6 +97,7 @@ export type NotificationStage =
   | 'delivery_issue_resolved'
   | 'trip_paused'
   | 'trip_paused_staff'
+  | 'trip_paused_by_staff'
   | 'trip_resumed'
   | 'trip_resumed_staff'
   | 'trip_resumed_by_staff'

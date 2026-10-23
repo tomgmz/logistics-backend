@@ -10,7 +10,6 @@ import { notifyStage } from '../notification/notification.service.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { invalidateEta } from '../maps/eta.service.js'
 import { getRouteDistance } from '../maps/route-distance.service.js'
-import { endPauseOnProgress } from '../client/pause.service.js'
 import { assertLeadDriverOnBooking, type DriverActor } from '../client/booking.service.js'
 import { driverIdOf, pendingLoadTransfer } from '../driver/crew-actor.js'
 import {
@@ -335,8 +334,7 @@ export async function driverConfirmLoadTransferService(
     .is('transfer_confirmed_at', null)
   if (error) throw error
 
-  // The load is aboard the new truck: it is moving again.
-  await endPauseOnProgress(bookingId, actor)
+  // The load is aboard the new truck. The pause stays until the office ends it.
 
   const booking = await BookingModel.findById(bookingId)
   logEvent({

@@ -18,8 +18,6 @@ import {
   tripStopOrderSchema,
   fleetReturnSchema,
   attachStopProofSchema,
-  pauseTripSchema,
-  resumeTripSchema,
   startDeliverySchema,
   loadTransferSchema,
   recordMilestoneSchema,
@@ -140,14 +138,10 @@ router.post('/bookings/:bookingId/milestones',
 router.patch('/bookings/:bookingId/fleet-return',
   authenticate, authenticatedLimiter, isAny, validate(fleetReturnSchema), TripController.driverConfirmFleetReturn)
 
-// The driver stops the delivery for a reason that isn't an emergency — weather,
-// a breakdown, a closed pickup or drop-off — and says why; the web shows it on
-// the booking until they resume. Both are idempotent: the app sends them through
-// the offline queue. Main driver only, like every other trip write.
-router.patch('/bookings/:bookingId/pause',
-  authenticate, authenticatedLimiter, isAny, validate(pauseTripSchema), TripController.driverPauseTrip)
-router.patch('/bookings/:bookingId/resume',
-  authenticate, authenticatedLimiter, isAny, validate(resumeTripSchema), TripController.driverResumeTrip)
+// Pausing and resuming a delivery is the office's call (see admin.route.ts).
+// These answer older app builds, whose offline queue may still hold one.
+router.patch('/bookings/:bookingId/pause',  authenticate, TripController.driverPauseRetired)
+router.patch('/bookings/:bookingId/resume', authenticate, TripController.driverPauseRetired)
 
 // ── Reports ─────────────────────────────────────────────────────────────────
 //
