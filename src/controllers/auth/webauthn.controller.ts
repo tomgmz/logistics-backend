@@ -114,6 +114,46 @@ export async function authVerify(req: Request, res: Response) {
   }
 }
 
+/** Shared by the two signed-in enrolment endpoints. */
+function sendSelfRegistrationError(res: Response, err: any, label: string, fallback: string) {
+  if (err?.code === 'PASSKEY_NOT_CONFIGURED') {
+    console.error(`${label} — NOT CONFIGURED:`, err.message)
+    res.status(503).json({
+      status:  'error',
+      message: 'Passkey setup is unavailable on this server. Please contact your Administrator.',
+    })
+    return
+  }
+  if (err?.code === 'PASSKEY_SELF_ENROLL_REFUSED') {
+    res.status(403).json({ status: 'error', message: err.message })
+    return
+  }
+  console.error(`${label} ERROR:`, err)
+  res.status(400).json({ status: 'error', message: err?.message ?? fallback })
+}
+
+export async function registerOptions(req: Request, res: Response) {
+  try {
+    const options = await WebauthnService.startSelfRegistration(req.user!.sub)
+    res.status(200).json({ status: 'success', data: options })
+  } catch (err: any) {
+    sendSelfRegistrationError(res, err, 'PASSKEY REGISTER OPTIONS', 'Could not start passkey setup. Please try again.')
+  }
+}
+
+export async function registerVerify(req: Request, res: Response) {
+  try {
+    await WebauthnService.finishSelfRegistration(
+      req.user!.sub,
+      req.body.credential,
+      req.body.device_label ?? null,
+    )
+    res.status(201).json({ status: 'success' })
+  } catch (err: any) {
+    sendSelfRegistrationError(res, err, 'PASSKEY REGISTER VERIFY', 'Could not complete passkey setup.')
+  }
+}
+
 export async function listMine(req: Request, res: Response) {
   try {
     const rows = await WebauthnService.listMyPasskeys(req.user!.sub)

@@ -14,6 +14,7 @@ export interface WebauthnCredentialRow {
   rp_id:           string
   device_label:    string | null
   last_used_at:    string | null
+  created_at:      string
   revoked_at:      string | null
 }
 

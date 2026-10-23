@@ -25,6 +25,7 @@ import {
   enrollOptionsSchema,
   enrollVerifySchema,
   authVerifySchema,
+  registerVerifySchema,
 } from '../schema/auth/webauthn.schema.js'
 import * as AuthController from '../controllers/auth/auth.controller.js'
 import * as PasswordResetController from '../controllers/auth/password-reset.controller.js'
@@ -81,6 +82,10 @@ router.post('/passkey/authenticate/options', passkeyAuthLimiter, WebauthnControl
 router.post('/passkey/authenticate/verify',  passkeyAuthLimiter, validate(authVerifySchema), WebauthnController.authVerify)
 
 // Protected
+// Signed-in enrolment, for 8338's own drivers: they already have a session, so
+// the session authorises the ceremony instead of an emailed invite.
+router.post('/passkey/register/options', authenticate, authenticatedLimiter, WebauthnController.registerOptions)
+router.post('/passkey/register/verify',  authenticate, authenticatedLimiter, validate(registerVerifySchema), WebauthnController.registerVerify)
 router.get('/passkey/credentials',                 authenticate, authenticatedLimiter, WebauthnController.listMine)
 router.delete('/passkey/credentials/:credentialPk', authenticate, authenticatedLimiter, WebauthnController.removeMine)
 router.post('/logout',     authenticate, authenticatedLimiter, AuthController.logout)

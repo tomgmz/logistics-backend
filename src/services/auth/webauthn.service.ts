@@ -18,6 +18,7 @@ import {
 } from '../../lib/webauthn-config.js'
 import * as WebauthnModel from '../../models/auth/webauthn.model.js'
 import * as InviteModel from '../../models/auth/driver-invite.model.js'
+import * as AuthModel from '../../models/auth/auth.model.js'
 import { hashToken, issueVerifiedSession } from './auth.service.js'
 import type { AuthResponse } from '../../types/auth.types.js'
 
@@ -97,6 +98,20 @@ export async function startRegistration(token: string) {
   const user = await loadUser(invite.user_id)
   if (!user || user.status !== 'active') throw invalidInvite()
 
+  return buildRegistrationOptions(user)
+}
+
+/**
+ * The registration options and their challenge row, shared by the invite path
+ * and the signed-in path. Only what authorises the ceremony differs between the
+ * two; what the authenticator is asked for must not.
+ */
+async function buildRegistrationOptions(user: {
+  user_id:    string
+  email:      string
+  first_name: string | null
+  last_name:  string | null
+}) {
   const handle   = await WebauthnModel.ensureUserHandle(user.user_id)
   const existing = await WebauthnModel.listCredentialsForUser(user.user_id)
 
@@ -154,26 +169,54 @@ export async function finishRegistration(
   const user = await loadUser(invite.user_id)
   if (!user || user.status !== 'active') throw invalidInvite()
 
+  await verifyAndStoreRegistration(user, response, deviceLabel)
+
+  await InviteModel.consumeInvite(invite.invite_id)
+
+  // Signed in on the spot. The driver has just proved a single-use emailed token
+  // and completed a user-verified registration; a second sign-in immediately
+  // afterwards would be friction with no security value.
+  return issueVerifiedSession(user as any, deviceInfo)
+}
+
+/** Read the challenge out of clientDataJSON; a body that is not a WebAuthn response gets the generic failure. */
+function challengeOf(response: any, failure: () => Error): string {
+  try {
+    const clientData = JSON.parse(
+      Buffer.from(response?.response?.clientDataJSON ?? '', 'base64url').toString('utf8'),
+    )
+    if (typeof clientData?.challenge !== 'string' || !clientData.challenge) throw failure()
+    return clientData.challenge
+  } catch {
+    throw failure()
+  }
+}
+
+/** Burn the registration challenge, verify the attestation and store the credential. */
+async function verifyAndStoreRegistration(
+  user:         { user_id: string; email: string },
+  response:     any,
+  deviceLabel?: string | null,
+): Promise<void> {
+  const expired = () => new Error('This setup attempt expired. Please start again.')
+
   // Recover the challenge from the client data and burn it. Doing it this way
   // round means a response carrying someone else's or a replayed challenge finds
   // nothing to consume.
-  const clientData = JSON.parse(
-    Buffer.from(response?.response?.clientDataJSON ?? '', 'base64url').toString('utf8'),
-  )
-  const consumed = await WebauthnModel.consumeChallenge(
-    hashToken(clientData.challenge),
-    'registration',
-  )
-  if (!consumed || consumed.user_id !== user.user_id) {
-    throw new Error('This setup attempt expired. Please start again.')
-  }
+  const challenge = challengeOf(response, expired)
+  const consumed  = await WebauthnModel.consumeChallenge(hashToken(challenge), 'registration')
+  if (!consumed || consumed.user_id !== user.user_id) throw expired()
 
+  // Thrown and unverified results are one failure to the driver; the detail is logged.
   const verification = await verifyRegistrationResponse({
     response,
-    expectedChallenge: clientData.challenge,
+    expectedChallenge: challenge,
     expectedOrigin:    ALLOWED_ORIGINS,
     expectedRPID:      RP_ID,
     requireUserVerification: true,
+  }).catch((err: unknown) => {
+    console.error('PASSKEY REGISTRATION VERIFY ERROR:', err)
+    return { verified: false, registrationInfo: undefined } as Awaited<ReturnType<typeof verifyRegistrationResponse>>
   })
 
   if (!verification.verified || !verification.registrationInfo) {
@@ -196,19 +239,51 @@ export async function finishRegistration(
     deviceLabel:    deviceLabel ?? null,
   })
 
-  await InviteModel.consumeInvite(invite.invite_id)
-
   logEvent({
     user_id:     user.user_id,
     log_type:    'auth',
     action:      'passkey_registered',
     description: `Passkey enrolled for ${user.email}${deviceLabel ? ` on ${deviceLabel}` : ''}`,
   })
+}
 
-  // Signed in on the spot. The driver has just proved a single-use emailed token
-  // and completed a user-verified registration; a second sign-in immediately
-  // afterwards would be friction with no security value.
-  return issueVerifiedSession(user as any, deviceInfo)
+// ---------------------------------------------------------------------------
+// Signed-in enrolment, for 8338's own drivers
+//
+// A company driver already has a way in (emailed code or password), so there is
+// no invite to authorise the ceremony: the live session is the authorisation,
+// exactly as it is for listing and removing passkeys. They keep the code and
+// password routes as well; the passkey is a faster door, not the only one.
+
+function selfEnrolRefused(): Error {
+  const err = new Error('Passkey sign-in is only available to drivers.')
+  ;(err as any).code = 'PASSKEY_SELF_ENROLL_REFUSED'
+  return err
+}
+
+/** A signed-in driver may add a passkey; the mobile app is the driver's app, so no other role is offered one. */
+async function loadSelfEnrolUser(userId: string) {
+  const user = await loadUser(userId)
+  if (!user || user.status !== 'active') throw selfEnrolRefused()
+  if (user.role !== 'driver') throw selfEnrolRefused()
+  return user
+}
+
+export async function startSelfRegistration(userId: string) {
+  assertPasskeyConfigured()
+  const user = await loadSelfEnrolUser(userId)
+  return buildRegistrationOptions(user)
+}
+
+/** Unlike the invite path this mints no session: the driver is already signed in. */
+export async function finishSelfRegistration(
+  userId:       string,
+  response:     any,
+  deviceLabel?: string | null,
+): Promise<void> {
+  assertPasskeyConfigured()
+  const user = await loadSelfEnrolUser(userId)
+  await verifyAndStoreRegistration(user, response, deviceLabel)
 }
 
 // ---------------------------------------------------------------------------
@@ -245,13 +320,8 @@ export async function finishAuthentication(
 
   const failed = () => new Error('Could not sign you in with that passkey.')
 
-  const clientData = JSON.parse(
-    Buffer.from(response?.response?.clientDataJSON ?? '', 'base64url').toString('utf8'),
-  )
-  const consumed = await WebauthnModel.consumeChallenge(
-    hashToken(clientData.challenge),
-    'authentication',
-  )
+  const challenge = challengeOf(response, failed)
+  const consumed  = await WebauthnModel.consumeChallenge(hashToken(challenge), 'authentication')
   if (!consumed) throw failed()
 
   const credential = await WebauthnModel.findCredentialById(response?.id)
@@ -266,27 +336,47 @@ export async function finishAuthentication(
       user_id:    credential.user_id,
       metadata:   { credential_id: credential.credential_id.slice(0, 12) },
     })
-    throw new Error('This passkey has been revoked. Ask your dispatcher to send a new setup link.')
+    // A company driver still has their email code and password, so they are
+    // pointed there; a vendor driver has no way in but a new setup link.
+    throw new Error(
+      await AuthModel.isExternalDriver(credential.user_id)
+        ? 'This passkey has been revoked. Ask your dispatcher to send a new setup link.'
+        : 'This passkey has been removed. Sign in with your email instead, then set up a new one.',
+    )
   }
 
   const user = await loadUser(credential.user_id)
   if (!user) throw failed()
+  if (user.status === 'permanently_locked') {
+    throw new Error('Account permanently locked. Request a password reset to regain access.')
+  }
   if (user.status !== 'active') {
     throw new Error('This account is no longer active. Please contact your dispatcher.')
   }
 
+  // The library throws, rather than answering verified: false, for most bad
+  // assertions (wrong origin, wrong RP ID, malformed signature). Its messages are
+  // for IT, not the driver, so both outcomes take the same path below.
   const verification = await verifyAuthenticationResponse({
     response,
-    expectedChallenge: clientData.challenge,
+    expectedChallenge: challenge,
     expectedOrigin:    ALLOWED_ORIGINS,
     expectedRPID:      RP_ID,
     requireUserVerification: true,
     credential: {
       id:        credential.credential_id,
       publicKey: WebauthnModel.publicKeyOf(credential),
-      counter:   Number(credential.counter),
+      // Zero on purpose. The library's own counter check runs BEFORE it checks
+      // the signature and simply throws, so with the stored value here a
+      // regression never reached the revoke below, and acting on that throw
+      // would let an unsigned assertion revoke a driver's passkey. Our check
+      // below runs only once the signature has verified.
+      counter:   0,
       transports: credential.transports as any,
     },
+  }).catch((err: unknown) => {
+    console.error('PASSKEY ASSERTION VERIFY ERROR:', err)
+    return { verified: false } as Awaited<ReturnType<typeof verifyAuthenticationResponse>>
   })
 
   if (!verification.verified) {
@@ -367,6 +457,7 @@ export async function listMyPasskeys(userId: string) {
     device_label:  r.device_label,
     backed_up:     r.backup_state,
     last_used_at:  r.last_used_at,
+    created_at:    r.created_at,
   }))
 }
 
@@ -375,9 +466,10 @@ export async function removeMyPasskey(userId: string, credentialPk: string): Pro
   const target = rows.find((r) => r.credential_pk === credentialPk)
   if (!target) throw new Error('Passkey not found')
 
-  // Removing the only passkey would lock the driver out of an account that has
-  // no other way in, and the re-invite has to come from an admin.
-  if (rows.length === 1) {
+  // Removing the only passkey would lock a vendor driver out of an account that
+  // has no other way in, and the re-invite has to come from an admin. A company
+  // driver still has the email code and password, so theirs can go.
+  if (rows.length === 1 && await AuthModel.isExternalDriver(userId)) {
     throw new Error('This is your only passkey. Add another device before removing this one.')
   }
 

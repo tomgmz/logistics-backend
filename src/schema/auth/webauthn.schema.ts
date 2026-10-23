@@ -27,7 +27,14 @@ export const authVerifySchema = z.object({
   credential: z.object({}).passthrough(),
 })
 
+// Signed-in enrolment: the session authorises it, so there is no token.
+export const registerVerifySchema = z.object({
+  credential:   z.object({}).passthrough(),
+  device_label: z.string().trim().max(80).optional(),
+})
+
 export type VerifyInviteInput  = z.infer<typeof verifyInviteSchema>
 export type EnrollOptionsInput = z.infer<typeof enrollOptionsSchema>
 export type EnrollVerifyInput  = z.infer<typeof enrollVerifySchema>
 export type AuthVerifyInput    = z.infer<typeof authVerifySchema>
+export type RegisterVerifyInput = z.infer<typeof registerVerifySchema>
