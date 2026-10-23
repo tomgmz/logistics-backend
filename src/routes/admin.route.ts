@@ -37,6 +37,8 @@ import * as SystemLogController from '../controllers/admin/system-logs.controlle
 import * as ItDashboardController from '../controllers/admin/it-dashboard.controller.js'
 import * as StaffDashboardController from '../controllers/admin/staff-dashboard.controller.js'
 import * as PermissionsController from '../controllers/admin/permissions.controller.js'
+import * as AppReleaseController from '../controllers/admin/app-release.controller.js'
+import { appReleaseUploadUrlSchema, publishAppReleaseSchema } from '../schema/admin/app-release.schema.js'
 import { replacePermissionsSchema } from '../schema/admin/permissions.schema.js'
 import { uploadSingle }    from '../middlewares/upload.middleware.js'
 import * as UploadController from '../controllers/admin/uploadImage.controller.js'
@@ -337,6 +339,12 @@ router.patch('/system-logs/:id/resolve', authenticate, isItAdmin, SystemLogContr
 // IT Admin dashboard — system health, sign-in security and the account roster
 // in one read. IT Admin only, for the same reason as the system logs above.
 router.get('/it-dashboard', authenticate, isItAdmin, ItDashboardController.getSummary)
+
+// Driver app releases (the APK on the website's /download page). IT Admin only.
+// The browser uploads to the presigned R2 URL, then publishes the version.
+router.get('/app-releases',             authenticate, isItAdmin, AppReleaseController.listReleases)
+router.post('/app-releases/upload-url', authenticate, isItAdmin, validate(appReleaseUploadUrlSchema), AppReleaseController.createUploadUrl)
+router.post('/app-releases',            authenticate, isItAdmin, validate(publishAppReleaseSchema), AppReleaseController.publishRelease)
 // Staff dashboards — each desk's queues, plus the Company Administrator's
 // analytics. Counts and short reference lists only.
 router.get('/dashboard', authenticate, authorize('admin', 'it_admin', 'general_manager', 'operations_manager', 'fleet_manager'), StaffDashboardController.getSummary)

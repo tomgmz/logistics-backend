@@ -13,7 +13,7 @@ export const updateITAdminSchema = z.object({
  * A handover: the successor's details, and why.
  *
  * `created_by` is dropped from the core fields on purpose — on this route the
- * actor is the root admin resolved from the session, and accepting a client-
+ * actor is the outgoing IT Admin resolved from the session, and accepting a client-
  * supplied value would let the audit trail be written by the caller.
  */
 export const transitionITAdminSchema = z.object({

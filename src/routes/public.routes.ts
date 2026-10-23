@@ -5,12 +5,14 @@ import { getPublicMetrics } from '../services/public/metrics.service.js'
 import { logSystem } from '../lib/log-system.js'
 import { sendContactInquiryEmail } from '../lib/brevo-mailer.js'
 import { contactInquirySchema, type ContactInquiryInput } from '../schema/public/contact.schema.js'
+import { latestRelease } from '../services/admin/app-release.service.js'
 
 /**
  * Unauthenticated, read-only endpoints for the marketing site.
  *
  *   GET  /api/public/metrics   aggregate delivery figures for the landing page
  *   POST /api/public/contact   the landing page's contact form, emailed to the company inbox
+ *   GET  /api/public/app-release  the driver app version the /download page offers
  *
  * Aggregates only — nothing here may ever return a record, a name or an id.
  * The contact form only sends; it stores nothing and returns nothing back.
@@ -31,6 +33,24 @@ router.get('/metrics', globalLimiter, async (_req: Request, res: Response) => {
       message:    (err as Error)?.message ?? 'Failed to compute public metrics',
     })
     res.status(500).json({ status: 'error', message: 'Metrics are unavailable right now.' })
+  }
+})
+
+// The driver app version /download offers. A public file URL and a version
+// number, nothing about who uploaded it.
+router.get('/app-release', globalLimiter, async (_req: Request, res: Response) => {
+  try {
+    const data = await latestRelease()
+    res.set('Cache-Control', 'public, max-age=60')
+    res.status(200).json({ status: 'success', data })
+  } catch (err) {
+    logSystem({
+      log_level:  'error',
+      event_type: 'server_error',
+      source:     'public.app-release',
+      message:    (err as Error)?.message ?? 'Failed to read the latest app release',
+    })
+    res.status(500).json({ status: 'error', message: 'The download is unavailable right now.' })
   }
 })
 

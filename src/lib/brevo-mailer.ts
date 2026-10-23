@@ -200,8 +200,8 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams): Promise<void
     const brevo = getBrevoClient()
     await brevo.transactionalEmails.sendTransacEmail({
       subject:     `Welcome to ${APP_NAME} — Your account is ready`,
-      htmlContent: generateWelcomeEmailHtml(name, to, roleLabel, password),
-      textContent: generateWelcomeEmailText(name, to, roleLabel, password),
+      htmlContent: generateWelcomeEmailHtml(name, to, roleLabel, password, role === 'driver'),
+      textContent: generateWelcomeEmailText(name, to, roleLabel, password, role === 'driver'),
       sender:      { name: FROM_NAME, email: FROM_EMAIL },
       to:          [{ email: to, name: firstName ?? undefined }],
     })
@@ -532,12 +532,15 @@ function generateWelcomeEmailHtml(
   email:     string,
   roleLabel: string,
   password:  string,
+  isDriver = false,
 ): string {
   const year       = new Date().getFullYear()
   // Falls back to '#' only if nothing is configured — the credentials above are
   // still useful without a working button, so this one degrades rather than throws.
   const base       = appBaseUrl()
   const loginUrl   = base ? `${base}/` : '#'
+  // Drivers work in the Android app, which is not on the Play Store.
+  const downloadUrl = base ? `${base}/download` : null
 
   return `
     <!DOCTYPE html>
@@ -648,6 +651,20 @@ function generateWelcomeEmailHtml(
                 </td>
               </tr>
 
+              ${isDriver && downloadUrl ? `
+              <!-- Driver app -->
+              <tr>
+                <td style="padding:0 40px 32px 40px;">
+                  <p style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:15px;color:#333333;line-height:1.6;">
+                    <strong>Get the driver app.</strong> It is not on the Play Store: open this link on your
+                    Android phone to download and install it, then sign in with the details above.
+                  </p>
+                  <a href="${downloadUrl}" style="font-family:Arial,sans-serif;font-size:15px;color:#4f46e5;text-decoration:none;word-break:break-all;">
+                    ${downloadUrl}
+                  </a>
+                </td>
+              </tr>` : ''}
+
               <!-- Help -->
               <tr>
                 <td style="padding:0 40px 32px 40px;">
@@ -677,10 +694,17 @@ function generateWelcomeEmailText(
   email:     string,
   roleLabel: string,
   password:  string,
+  isDriver = false,
 ): string {
   const year     = new Date().getFullYear()
   const base     = appBaseUrl()
   const loginUrl = base ? `${base}/` : ''
+  const appLine  = isDriver && base
+    ? `
+Get the driver app (not on the Play Store) — open this on your Android phone:
+${base}/download
+`
+    : ''
 
   return `
 Hi ${name},
@@ -693,7 +717,7 @@ Password: ${password}
 ────────────────────────────────────────────
 
 Sign in at: ${loginUrl}
-
+${appLine}
 IMPORTANT: This is a temporary password. Please change it after your first login.
 Never share your password with anyone — ${APP_NAME} staff will never ask for it.
 
