@@ -7,6 +7,7 @@ export interface ClientDetails {
   client_id:       string
   company_name:    string | null
   billing_address: string | null
+  landline:        string | null
 }
 
 export interface DriverDetails {
@@ -14,6 +15,10 @@ export interface DriverDetails {
   license_number:   string
   license_expiry:   string
   status:           'available' | 'assigned' | 'on_leave' | 'inactive'
+  is_external:      boolean
+  vendor_name:      string | null
+  vendor_contact:   string | null
+  license_image_url: string | null
 }
 
 export interface UserListItemRaw {
@@ -28,8 +33,9 @@ export interface UserListItemRaw {
   status:         'active' | 'inactive' | 'archived' | 'permanently_locked'
   created_at:     string
   updated_at:     string
-  clients:        ClientDetails[]
-  drivers:        DriverDetails[]
+  last_login_at:  string | null
+  clients:        ClientDetails | ClientDetails[] | null
+  drivers:        DriverDetails | DriverDetails[] | null
 }
 
 export interface UserListItem extends Omit<UserListItemRaw, 'clients' | 'drivers'> {

@@ -28,6 +28,7 @@ import * as EmergencyCallController from '../controllers/driver/emergency-call.c
 import { setTripPlanSchema, staffResumeTripSchema, staffSetMilestoneSchema } from '../schema/client/trip.schema.js'
 import { setReportStatusSchema, classifyReportSchema } from '../schema/driver/report.schema.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
+import * as UserRestoreController from '../controllers/admin/user-restore.controller.js'
 import * as PasswordResetController from '../controllers/admin/password-reset.controller.js'
 import * as ExternalDriverController from '../controllers/admin/external-driver.controller.js'
 import { requireModule, requireModuleFlag, requireAnyModuleFlag } from '../middlewares/moduleAccess.middleware.js'
@@ -65,6 +66,9 @@ const canEditCrew       = requireAnyModuleFlag(['booking-management', 'vehicle-m
 // destructive action the "All" tier exists for; as a POST it would otherwise
 // only need can_create.
 const canArchiveFleet   = requireModuleFlag('vehicle-management', 'can_delete')
+// Restoring an archived account undoes the archive (a DELETE), so it needs the
+// same "All" tier; as a POST, moduleGuard alone would ask only for can_create.
+const canRestoreUsers   = requireModuleFlag('user-management', 'can_delete')
 
 // Role groups
 const isAdmin = authorize('admin', 'it_admin')
@@ -110,6 +114,7 @@ router.patch('/admins/:id',  authenticate, isAdmin, lockGuard('user', fromParam(
 router.patch('/admins/:id/deactivate', authenticate, isAdmin, lockGuard('user', fromParam('id')), AdminController.deactivateAdmin)
 router.patch('/admins/:id/activate',   authenticate, isAdmin, lockGuard('user', fromParam('id')), AdminController.activateAdmin)
 router.delete('/admins/:id', authenticate, isAdmin, lockGuard('user', fromParam('id')), AdminController.deleteAdmin)
+router.post('/admins/:id/restore', authenticate, isAdmin, canRestoreUsers, lockGuard('user', fromParam('id')), UserRestoreController.restoreAdmin)
 
 //Clients
 router.get('/clients',        authenticate, isOperations, ClientController.getAllClients)
@@ -119,6 +124,7 @@ router.patch('/clients/:id',  authenticate, isAdmin,  canManageUsers, lockGuard(
 router.patch('/clients/:id/deactivate', authenticate, isAdmin, canManageUsers, lockGuard('user', fromParam('id')), ClientController.deactivateClient)
 router.patch('/clients/:id/activate',   authenticate, isAdmin, canManageUsers, lockGuard('user', fromParam('id')), ClientController.activateClient)
 router.delete('/clients/:id', authenticate, isAdmin,  canManageUsers, lockGuard('user', fromParam('id')), ClientController.deleteClient)
+router.post('/clients/:id/restore', authenticate, isAdmin, canManageUsers, canRestoreUsers, lockGuard('user', fromParam('id')), UserRestoreController.restoreClient)
 
 // Drivers
 router.get('/drivers',                     authenticate, isFleetRead, DriverController.getAllDrivers)
@@ -137,6 +143,7 @@ router.patch('/drivers/:id/activate',      authenticate, isFleet, canManageUsers
 // silently drops out of the assignment dropdowns and cannot put themselves back.
 router.patch('/drivers/:id/stand-down',    authenticate, isCrewRelease, canEditCrew, lockGuard('user', fromParam('id')), DriverController.standDownDriver)
 router.delete('/drivers/:id',              authenticate, isFleet, canManageUsers, lockGuard('user', fromParam('id')), DriverController.deleteDriver)
+router.post('/drivers/:id/restore',        authenticate, isFleet, canManageUsers, canRestoreUsers, lockGuard('user', fromParam('id')), UserRestoreController.restoreDriver)
 
 //Assignments
 router.get('/assignments',                    authenticate, isOperations, AssignmentController.getAllAssignments)
@@ -237,6 +244,7 @@ router.patch('/general-managers/:id',  authenticate, isAdmin, lockGuard('user', 
 router.patch('/general-managers/:id/deactivate', authenticate, isAdmin, lockGuard('user', fromParam('id')), GeneralManagerController.deactivateGeneralManager)
 router.patch('/general-managers/:id/activate',   authenticate, isAdmin, lockGuard('user', fromParam('id')), GeneralManagerController.activateGeneralManager)
 router.delete('/general-managers/:id', authenticate, isAdmin, lockGuard('user', fromParam('id')), GeneralManagerController.deleteGeneralManager)
+router.post('/general-managers/:id/restore', authenticate, isAdmin, canRestoreUsers, lockGuard('user', fromParam('id')), UserRestoreController.restoreGeneralManager)
 
 //Fleet Managers — isAdmin manages, isFleet can view
 router.get('/fleet-admins',        authenticate, isFleet,      FleetAdminController.getAllFleetAdmins)
@@ -246,6 +254,7 @@ router.patch('/fleet-admins/:id',  authenticate, isAdmin, lockGuard('user', from
 router.patch('/fleet-admins/:id/deactivate', authenticate, isAdmin, lockGuard('user', fromParam('id')), FleetAdminController.deactivateFleetAdmin)
 router.patch('/fleet-admins/:id/activate',   authenticate, isAdmin, lockGuard('user', fromParam('id')), FleetAdminController.activateFleetAdmin)
 router.delete('/fleet-admins/:id', authenticate, isAdmin, lockGuard('user', fromParam('id')), FleetAdminController.deleteFleetAdmin)
+router.post('/fleet-admins/:id/restore', authenticate, isAdmin, canRestoreUsers, lockGuard('user', fromParam('id')), UserRestoreController.restoreFleetManager)
 
 //Operations Managers — isAdmin manages, isOperations can view
 router.get('/operations-admins',        authenticate, isOperations, OperationsAdminController.getAllOperationsAdmins)
@@ -255,6 +264,7 @@ router.patch('/operations-admins/:id',  authenticate, isAdmin,  lockGuard('user'
 router.patch('/operations-admins/:id/deactivate', authenticate, isAdmin, lockGuard('user', fromParam('id')), OperationsAdminController.deactivateOperationsAdmin)
 router.patch('/operations-admins/:id/activate',   authenticate, isAdmin, lockGuard('user', fromParam('id')), OperationsAdminController.activateOperationsAdmin)
 router.delete('/operations-admins/:id', authenticate, isAdmin,  lockGuard('user', fromParam('id')), OperationsAdminController.deleteOperationsAdmin)
+router.post('/operations-admins/:id/restore', authenticate, isAdmin, canRestoreUsers, lockGuard('user', fromParam('id')), UserRestoreController.restoreOperationsAdmin)
 
 //IT Admins
 router.get('/it-admins',        authenticate, isAdmin, ITAdminController.getAllITAdmins)
@@ -268,6 +278,7 @@ router.patch('/it-admins/:id',  authenticate, isAdmin, lockGuard('user', fromPar
 router.patch('/it-admins/:id/deactivate', authenticate, isAdmin, lockGuard('user', fromParam('id')), ITAdminController.deactivateITAdmin)
 router.patch('/it-admins/:id/activate',   authenticate, isAdmin, lockGuard('user', fromParam('id')), ITAdminController.activateITAdmin)
 router.delete('/it-admins/:id', authenticate, isAdmin, lockGuard('user', fromParam('id')), ITAdminController.deleteITAdmin)
+router.post('/it-admins/:id/restore', authenticate, isAdmin, canRestoreUsers, lockGuard('user', fromParam('id')), UserRestoreController.restoreITAdmin)
 
 //Fetch all users
 router.get('/users',       authenticate, isAdmin, UserController.getUsers)

@@ -526,6 +526,28 @@ export async function verifyOtp(
   return buildAuthResponse(user, accessToken, refreshToken, accessExpiresAt, refreshExpiresAt)
 }
 
+/** Plain-language reason a non-active account can't sign in. */
+function inactiveAccountMessage(status: string): string {
+  if (status === 'archived')    return 'This account has been archived. Contact your administrator if you need access again.'
+  if (status === 'deactivated') return 'This account has been deactivated. Contact your administrator to have it reactivated.'
+  return 'This account is inactive. Contact your administrator.'
+}
+
+/** Supabase refuses a banned (archived/deactivated) login only after the password checks out. */
+function isBannedError(err: { message?: string; code?: string }): boolean {
+  return err.code === 'user_banned' || /banned/i.test(err.message ?? '')
+}
+
+/**
+ * Whether `password` is this account's password, without signing anyone in:
+ * a Supabase session it happens to open is ended straight away.
+ */
+async function passwordMatches(email: string, password: string): Promise<boolean> {
+  const { data, error } = await supabaseAnon.auth.signInWithPassword({ email, password })
+  if (data?.session) await supabase.auth.admin.signOut(data.session.access_token).catch(() => {})
+  return !error || isBannedError(error)
+}
+
 export async function loginWithPassword(
   input: { email: string; password: string; device_info?: string; platform?: string },
   userAgent?: string,
@@ -555,6 +577,9 @@ export async function loginWithPassword(
       attempt_status: 'failed_inactive',
       failure_reason: `Account status: ${user.status}`,
     })
+    // Say why only to someone who knows the password; anyone else gets the
+    // same answer as a wrong password, so this can't be used to probe accounts.
+    if (await passwordMatches(email, input.password)) throw new Error(inactiveAccountMessage(user.status))
     throw new Error('Invalid credentials')
   }
 
@@ -587,6 +612,13 @@ export async function loginWithPassword(
     email,
     password: input.password,
   })
+
+  // Supabase's own "User is banned": the profile says active but the login is
+  // still locked (an archive or deactivation whose undo didn't reach Supabase).
+  // The password was right, so this is not a failed attempt.
+  if (authError && isBannedError(authError)) {
+    throw new Error(inactiveAccountMessage('deactivated'))
+  }
 
   if (authError) {
     const newFailedCount    = await AuthModel.incrementFailedLoginAttempts(user.user_id)

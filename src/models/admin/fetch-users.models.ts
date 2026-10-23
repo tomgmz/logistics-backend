@@ -36,16 +36,22 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
       status,
       created_at,
       updated_at,
+      last_login_at,
       clients (
         client_id,
         company_name,
-        billing_address
+        billing_address,
+        landline
       ),
       drivers (
         driver_id,
         license_number,
         license_expiry,
-        status
+        status,
+        is_external,
+        vendor_name,
+        vendor_contact,
+        license_image_url
       )
     `
     )
@@ -69,10 +75,13 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
   const { data, error } = await q
   if (error) throw error
 
+  // clients.user_id and drivers.user_id are unique, so PostgREST embeds them as
+  // one object, not an array; accept either shape.
+  const one = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? v[0] ?? null : v ?? null)
   const normalized: UserListItem[] = ((data ?? []) as UserListItemRaw[]).map((u) => ({
     ...u,
-    clients: u.clients?.[0] ?? null,
-    drivers: u.drivers?.[0] ?? null,
+    clients: one(u.clients),
+    drivers: one(u.drivers),
   }))
 
   return {
