@@ -1,4 +1,4 @@
-import { S3Client, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 /**
@@ -6,9 +6,13 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
  *
  * Only for files too big for Cloudinary (10 MB raw limit on our plan) — every
  * other upload still goes to Cloudinary. R2 speaks the S3 API, so the AWS SDK
- * is the client. Downloads are served from the bucket's public URL
- * (R2_PUBLIC_URL); uploads go straight from the browser to a short-lived
- * presigned URL, never through this server or the Vercel proxy.
+ * is the client. Uploads and downloads both go straight between the browser
+ * and short-lived presigned URLs, never through this server or the Vercel proxy.
+ *
+ * Downloads are presigned on the account endpoint (*.r2.cloudflarestorage.com),
+ * not the bucket's public r2.dev URL: some ISP resolvers (a Philippine home
+ * connection, 2026-10-24) refuse to resolve *.r2.dev, so those links were dead. The public
+ * URL (R2_PUBLIC_URL) is still stored on each release for reference only.
  *
  * Env: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET,
  * R2_PUBLIC_URL. Unset = the feature reports itself unconfigured.
@@ -42,6 +46,22 @@ const bucket = () => process.env.R2_BUCKET!
 /** The public download URL for an object key. */
 export function r2PublicUrl(key: string): string {
   return `${process.env.R2_PUBLIC_URL!.replace(/\/+$/, '')}/${key.split('/').map(encodeURIComponent).join('/')}`
+}
+
+/**
+ * A URL the browser can download the object from, valid for `expiresIn`
+ * seconds (R2's maximum is 7 days), saved under `fileName`.
+ */
+export async function r2PresignGet(key: string, fileName: string, expiresIn = 24 * 60 * 60): Promise<string> {
+  return getSignedUrl(
+    r2(),
+    new GetObjectCommand({
+      Bucket: bucket(),
+      Key:    key,
+      ResponseContentDisposition: `attachment; filename="${fileName.replace(/[^\w.-]/g, '_')}"`,
+    }),
+    { expiresIn },
+  )
 }
 
 /** A URL the browser can PUT the file to directly, valid for `expiresIn` seconds. */

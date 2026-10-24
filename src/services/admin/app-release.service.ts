@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import { supabase } from '../../lib/supabase.js'
 import { badRequest, conflict } from '../../lib/http-error.js'
 import { logEvent } from '../../lib/log-event.js'
-import { r2Configured, r2ObjectSize, r2PresignPut, r2PublicUrl } from '../../lib/r2.js'
+import { r2Configured, r2ObjectSize, r2PresignGet, r2PresignPut, r2PublicUrl } from '../../lib/r2.js'
 
 /**
  * Driver app releases: the APK drivers download from the website's /download
@@ -28,6 +28,19 @@ export interface AppRelease {
   size_bytes:  number
   created_at:  string
   uploaded_by: string | null
+}
+
+/**
+ * Swap the stored r2.dev URL for a presigned download link (see lib/r2.ts for
+ * why r2.dev is not handed out). The page re-reads this every minute, so a
+ * day's validity is plenty.
+ */
+async function withDownloadUrl<T extends { version: string; file_url: string }>(
+  row: T & { file_key: string },
+): Promise<T> {
+  const { file_key, ...rest } = row
+  const fileName = `8338-driver-${row.version}.apk`
+  return { ...rest, file_url: await r2PresignGet(file_key, fileName) } as unknown as T
 }
 
 function assertConfigured() {
@@ -72,7 +85,7 @@ export async function publishRelease(
       size_bytes:  size,
       uploaded_by: actorId,
     })
-    .select('release_id, version, notes, file_url, size_bytes, created_at, uploaded_by')
+    .select('release_id, version, notes, file_key, file_url, size_bytes, created_at, uploaded_by')
     .single()
   if (error) throw error
 
@@ -83,28 +96,30 @@ export async function publishRelease(
     description: `Driver app ${data.version} published for download (${(size / 1048576).toFixed(1)} MB)`,
   })
 
-  return data as AppRelease
+  return withDownloadUrl(data as AppRelease & { file_key: string })
 }
 
 /** Every release, newest first (the IT Admin's history). */
 export async function listReleases(): Promise<AppRelease[]> {
   const { data, error } = await supabase
     .from('app_releases')
-    .select('release_id, version, notes, file_url, size_bytes, created_at, uploaded_by')
+    .select('release_id, version, notes, file_key, file_url, size_bytes, created_at, uploaded_by')
     .order('created_at', { ascending: false })
     .limit(50)
   if (error) throw error
-  return (data ?? []) as AppRelease[]
+  if (!data?.length || !r2Configured()) return (data ?? []) as AppRelease[]
+  return Promise.all((data as (AppRelease & { file_key: string })[]).map(withDownloadUrl))
 }
 
 /** What /download offers: the newest release, or null before the first upload. */
 export async function latestRelease(): Promise<Omit<AppRelease, 'uploaded_by' | 'release_id'> | null> {
   const { data, error } = await supabase
     .from('app_releases')
-    .select('version, notes, file_url, size_bytes, created_at')
+    .select('version, notes, file_key, file_url, size_bytes, created_at')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
   if (error) throw error
-  return data ?? null
+  if (!data || !r2Configured()) return data ?? null
+  return withDownloadUrl(data)
 }
