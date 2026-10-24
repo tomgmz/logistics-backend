@@ -6,7 +6,8 @@ import { enforceClientMessagingPolicy } from '../middlewares/messaging.middlewar
 import { uploadChatPhoto } from '../middlewares/upload.middleware.js'
 import * as dm    from '../controllers/messaging/messaging.controller.js'
 import * as group from '../controllers/messaging/group.controller.js'
-import * as call  from '../controllers/messaging/chat-call.controller.js'
+import * as mention from '../controllers/messaging/booking-mention.controller.js'
+import { attachClientScope, attachDriverScope } from '../middlewares/clientScope.middleware.js'
 
 const router = Router()
 
@@ -26,6 +27,11 @@ const sendLimit = rateLimit({
 
 router.use(authenticate)
 router.use(readLimit)
+
+// Booking mentions ("@BK-…"): the picker list and the details cards, each
+// limited to the bookings the reader may see (own / crewed / all for staff).
+router.get('/booking-mentions',         attachClientScope, attachDriverScope, mention.searchBookings)
+router.get('/booking-mentions/details', attachClientScope, attachDriverScope, mention.getDetails)
 
 // A photo for a chat message (multipart, field `image`, up to 10 MB). `stamp=1`
 // plus taken_at / latitude / longitude / accuracy_m burns in the time-and-place
@@ -50,13 +56,6 @@ router.post('/conversations/:conversationId/messages', sendLimit, enforceClientM
 router.patch('/conversations/:conversationId/read',                             dm.markAsRead)
 router.delete('/messages/:messageId',                                           dm.deleteMessage)
 router.post('/conversations/:conversationId/messages/:messageId/react', enforceClientMessagingPolicy, dm.reactToMessage)
-
-// Voice calls from a direct conversation (LiveKit). Never to or from a client.
-router.post('/calls',                                       sendLimit,          call.startCall)
-router.get('/calls/ringing',                                                    call.listRinging)
-router.post('/calls/:callId/answer',                                            call.answerCall)
-router.post('/calls/:callId/decline',                                           call.declineCall)
-router.post('/calls/:callId/end',                                               call.endCall)
 
 router.post('/groups',                                                          group.createGroup)
 router.get('/groups',                                                           group.getGroups)
