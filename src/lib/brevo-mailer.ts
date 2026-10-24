@@ -99,6 +99,10 @@ const UPPER  = 'ABCDEFGHJKLMNPQRSTUVWXYZ'  // no I, O
 const LOWER  = 'abcdefghjkmnpqrstuvwxyz'    // no i, l, o
 const DIGITS = '23456789'                   // no 0, 1
 
+/** How long a generated password works; mirrors the interval in the
+ *  set_temp_password_expiry DB trigger, which is what actually enforces it. */
+export const TEMP_PASSWORD_TTL_DAYS = 7
+
 /**
  * The temporary password in the welcome email: 8 characters (the user's call,
  * so it is easy to type), with at least one capital, one small letter and one
@@ -628,7 +632,7 @@ function generateWelcomeEmailHtml(
                     <tr>
                       <td style="background-color:#fff8f0;border-left:4px solid #f59e0b;border-radius:4px;padding:14px 16px;">
                         <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#92400e;line-height:1.5;">
-                          <strong>This is a temporary password.</strong>
+                          <strong>This is a temporary password. It expires in ${TEMP_PASSWORD_TTL_DAYS} days.</strong>
                           Please change it after your first login for security.
                           Never share your password with anyone — ${APP_NAME} staff will never ask for it.
                         </p>
@@ -718,7 +722,8 @@ Password: ${password}
 
 Sign in at: ${loginUrl}
 ${appLine}
-IMPORTANT: This is a temporary password. Please change it after your first login.
+IMPORTANT: This is a temporary password and it expires in ${TEMP_PASSWORD_TTL_DAYS} days.
+Please change it after your first login.
 Never share your password with anyone — ${APP_NAME} staff will never ask for it.
 
 You can also sign in using a one-time email code instead of a password — both options

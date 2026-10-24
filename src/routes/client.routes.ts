@@ -77,6 +77,8 @@ router.get('/:id/destinations', authenticate, authenticatedLimiter, canViewBooki
 // approved staff paperwork. Same scoping as the booking read above.
 router.get('/:id/timeline',     authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getBookingTimeline)
 router.get('/:id/documents',    authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getBookingDocuments)
+// Old vs resubmitted values of a booking the client corrected after a rejection.
+router.get('/:id/revisions',    authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getBookingRevisions)
 
 // Where the truck is now. The map subscribes to a realtime channel for updates;
 // this serves the first paint and the fallback poll when that channel is down,

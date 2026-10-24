@@ -40,6 +40,12 @@ const SCHEDULERS = [
     interval_minutes: 15,
   },
   {
+    source:           'driver-call.scheduler',
+    label:            'Driver call time reminders',
+    description:      'Notifies the assigned driver one hour before their call time.',
+    interval_minutes: 5,
+  },
+  {
     source:           'license-expiry.scheduler',
     label:            'Driver license expiry reminders',
     description:      'Emails and notifies each driver one month before their license expires.',

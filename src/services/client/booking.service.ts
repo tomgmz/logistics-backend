@@ -2,6 +2,7 @@ import { BookingModel } from '../../models/client/booking.model.js'
 import {
   CreateBookingRequest,
   ResubmitBookingInput,
+  BookingRevision,
   UpdateBookingInput,
   UpdateDestinationInput,
   BookingWithRelations,
@@ -308,9 +309,7 @@ export async function createBookingService(
 
   })
 
-  // Stage 1: straight to the general manager for
-  // approval. If nobody can act on that stage, clear it and hand the booking to
-  // operations so a new booking is never stranded.
+  // Stage 1: straight to the general manager for approval.
   void routeNewBookingToGm(booking, userId)
 
   // Put the stops in driving order — AFTER the reply, never before it.
@@ -384,30 +383,24 @@ async function reoptimizeBookingStops(booking: BookingWithRelations): Promise<vo
 }
 
 /**
- * Send a freshly created booking into the approval chain. Normally that means
- * notifying the GM stage; with nobody staffed to approve (no active general
- * manager and no active Company Administrator) the stage is auto-cleared and
- * the booking goes straight to ops.
+ * Send a freshly created (or resubmitted) booking into the approval chain by
+ * notifying the GM stage. A booking is never approved without a person: with
+ * no active General Manager or Company Administrator it stays pending in the
+ * approval queue until one exists and approves it (that used to auto-approve,
+ * removed 2026-10-24).
  */
 async function routeNewBookingToGm(
   booking: BookingWithRelations,
   userId?: string | null,
 ): Promise<void> {
   try {
-    if (await hasGmApprovers()) {
-      await notifyStage('gm_pending', booking)
+    if (!(await hasGmApprovers())) {
+      // Nobody to notify; the booking waits in the queue for the first approver.
+      console.warn('[booking] no active General Manager or Company Administrator; booking left pending',
+        booking.booking_id, { submitted_by: userId ?? null })
       return
     }
-
-    await BookingModel.setGmStatus(booking.booking_id, { gm_status: 'approved' })
-    const advanced = await BookingModel.updateStatus(booking.booking_id, 'approved')
-    logEvent({
-      user_id:     userId,
-      log_type:    'booking',
-      action:      'gm_auto_approved',
-      description: `Booking ${bookingRef(booking)} General Manager stage auto-cleared (no General Manager or Company Administrator staffed)`,
-    })
-    await notifyStage('ops_pending', advanced ?? booking)
+    await notifyStage('gm_pending', booking)
   } catch (err) {
     console.error('[booking] failed to route new booking to the GM stage', booking.booking_id, err)
   }
@@ -455,6 +448,9 @@ export async function updateBookingStatusService(
   // The administrator's remarks when turning a booking down. Stored on the
   // booking and sent to the client with the rejection notification.
   rejectionReason?: string | null,
+  // The administrator's remarks when approving. Required to approve, and shown
+  // in the client's and the admin transaction history.
+  approvalRemarks?: string | null,
 ): Promise<BookingWithRelations> {
   const existing = await BookingModel.findById(bookingId)
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
@@ -483,6 +479,13 @@ export async function updateBookingStatusService(
     throw new Error(`Cannot change status from '${existing.status}' back to '${status}'`)
   }
 
+  // Approving is a decision with remarks, same as rejecting. Checked before any
+  // write, matching the condition of the approval branch below.
+  const approving = status === 'approved' && existing.status !== 'approved' && existing.ops_status !== 'assigned'
+  if (approving && !approvalRemarks?.trim()) {
+    throw new Error("Cannot change status to 'approved' without remarks. Add remarks to approve the booking.")
+  }
+
   // A cancellation is a decision with an author: record who made it and why, so
   // the client can be told the reason and the record shows it was the
   // administrator — not the general manager, who may never have seen it.
@@ -504,9 +507,11 @@ export async function updateBookingStatusService(
   // Approving the booking via the top-level status control hands it to
   // operations: clear a still-pending GM stage so the record is consistent, then
   // notify the operations manager to select a vehicle and driver.
-  if (status === 'approved' && existing.status !== 'approved' && existing.ops_status !== 'assigned') {
+  if (approving) {
     if (existing.gm_status === 'pending') {
-      await BookingModel.setGmStatus(bookingId, { gm_status: 'approved' })
+      await BookingModel.setGmStatus(bookingId, { gm_status: 'approved', approval_remarks: approvalRemarks!.trim() })
+    } else {
+      await BookingModel.setApprovalRemarks(bookingId, approvalRemarks!.trim())
     }
     // The Company Admin approved it on their own authority; record that it was them.
     await BookingModel.recordDecision(bookingId, 'gm', userId)
@@ -515,10 +520,10 @@ export async function updateBookingStatusService(
       user_id:     userId,
       log_type:    'booking',
       action:      'booking_approved_to_ops',
-      description: `Booking ${bookingRef(advanced ?? booking)} approved; routed to the Operations Manager`,
+      description: `Booking ${bookingRef(advanced ?? booking)} approved; routed to the Operations Manager. Remarks: ${approvalRemarks!.trim()}`,
     })
     void notifyStage('ops_pending', advanced ?? booking)
-    void notifyStage('approved_admin', advanced ?? booking)
+    void notifyStage('approved_admin', advanced ?? booking, { reason: approvalRemarks!.trim() })
   }
 
   // The delivery is over: settle the delivery record and hand the driver and
@@ -575,8 +580,14 @@ export async function gmReviewService(
   if (input.gm_status === 'rejected' && !input.rejection_reason?.trim()) {
     throw new Error('Remarks explaining the rejection are required')
   }
+  if (input.gm_status === 'approved' && !input.approval_remarks?.trim()) {
+    throw new Error('Remarks are required to approve a booking')
+  }
 
-  const booking = await BookingModel.updateGmStatus(bookingId, input)
+  const booking = await BookingModel.updateGmStatus(bookingId, {
+    ...input,
+    approval_remarks: input.approval_remarks?.trim(),
+  })
   if (!booking) throw new Error('Failed to update General Manager status')
   await BookingModel.recordDecision(bookingId, 'gm', userId)
 
@@ -584,7 +595,8 @@ export async function gmReviewService(
     user_id:     userId,
     log_type:    'booking',
     action:      `gm_${input.gm_status}`,
-    description: `Booking ${bookingRef(booking)} ${input.gm_status} by General Manager`,
+    description: `Booking ${bookingRef(booking)} ${input.gm_status} by General Manager`
+      + (input.gm_status === 'approved' ? `. Remarks: ${input.approval_remarks!.trim()}` : ''),
 
   })
 
@@ -598,7 +610,7 @@ export async function gmReviewService(
   // send to operations to select a vehicle and driver.
   const advanced = await BookingModel.updateStatus(bookingId, 'approved')
   void notifyStage('ops_pending', advanced ?? booking)
-  void notifyStage('approved_gm', advanced ?? booking)
+  void notifyStage('approved_gm', advanced ?? booking, { reason: input.approval_remarks!.trim() })
 
   return advanced ?? booking
 }
@@ -652,7 +664,7 @@ export async function resubmitBookingService(
     throw badRequest('sequence_order must be unique per destination')
   }
 
-  const booking = await BookingModel.resubmit(bookingId, input)
+  const booking = await BookingModel.resubmit(bookingId, input, userId)
   if (!booking) throw conflict('Only a rejected booking can be resubmitted')
 
   logEvent({
@@ -761,6 +773,21 @@ export async function getBookingDocumentsService(
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
   assertBookingOwnership(existing, viewer)
   return await findClientVisibleForBooking(bookingId)
+}
+
+/**
+ * The old and resubmitted values of every resubmission of a booking, for the
+ * client and the staff who can see the booking. Empty for a booking that was
+ * never resubmitted.
+ */
+export async function getBookingRevisionsService(
+  bookingId: string,
+  viewer:    BookingViewer,
+): Promise<BookingRevision[]> {
+  const existing = await BookingModel.findById(bookingId)
+  if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
+  assertBookingOwnership(existing, viewer)
+  return BookingModel.findRevisions(bookingId)
 }
 
 export async function updateDestinationService(

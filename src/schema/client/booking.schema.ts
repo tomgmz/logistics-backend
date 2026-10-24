@@ -171,6 +171,9 @@ export const updateBookingStatusSchema = z.object({
   // The administrator's remarks when rejecting a booking outright. Optional —
   // this endpoint also drives ordinary lifecycle moves that carry no remarks.
   rejection_reason: z.string().min(1).max(500).optional(),
+  // The administrator's remarks when approving. Required by the service only
+  // when this call actually approves a pending booking.
+  approval_remarks: z.string().trim().min(1).max(500).optional(),
 })
 
 
@@ -185,9 +188,13 @@ export const reportDeliveryIssueSchema = z.object({
 export const gmReviewSchema = z.object({
   gm_status:        z.enum(['approved', 'rejected']),
   rejection_reason: z.string().min(1).optional(),
+  approval_remarks: z.string().trim().min(1).max(500).optional(),
 }).refine(
   (data) => data.gm_status !== 'rejected' || !!data.rejection_reason?.trim(),
   { message: 'Remarks explaining the rejection are required', path: ['rejection_reason'] }
+).refine(
+  (data) => data.gm_status !== 'approved' || !!data.approval_remarks?.trim(),
+  { message: 'Remarks are required to approve a booking', path: ['approval_remarks'] }
 )
 
 // The driver's plan for one calendar month, sent whole rather than as a diff:

@@ -117,8 +117,8 @@ export async function hasActiveUsersWithRoles(roles: string[]): Promise<boolean>
 }
 
 // Anyone who may act on the GM approval stage: the active general manager(s).
-// Used both for recipient resolution and for the staffing check that decides
-// whether the stage can be auto-cleared.
+// Used both for recipient resolution and for the staffing check that warns when
+// a new booking has nobody to approve it (bookings are never auto-approved).
 export async function resolveGmApprovers(): Promise<{ user_id: string; role: string }[]> {
   const { data, error } = await supabase
     .from('users')

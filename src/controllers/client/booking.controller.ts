@@ -19,6 +19,7 @@ import {
   reportDeliveryIssueService,
   getDestinationsByBookingService,
   getBookingDocumentsService,
+  getBookingRevisionsService,
   updateDestinationService,
   updateDestinationStatusService,
   driverConfirmPickupService,
@@ -177,7 +178,7 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
   try {
     const { userId } = getRequestMeta(req)
     const booking = await updateBookingStatusService(
-      param(req.params.id), req.body.status, viewerFrom(req), userId, req.body.rejection_reason,
+      param(req.params.id), req.body.status, viewerFrom(req), userId, req.body.rejection_reason, req.body.approval_remarks,
     )
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
@@ -226,6 +227,16 @@ export const getBookingDocuments = async (req: Request, res: Response) => {
   try {
     const documents = await getBookingDocumentsService(param(req.params.id), viewerFrom(req))
     res.status(200).json({ status: 'success', data: documents })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404 : 500
+    res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+export const getBookingRevisions = async (req: Request, res: Response) => {
+  try {
+    const revisions = await getBookingRevisionsService(param(req.params.id), viewerFrom(req))
+    res.status(200).json({ status: 'success', data: revisions })
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
     res.status(status).json({ status: 'error', message: error.message })

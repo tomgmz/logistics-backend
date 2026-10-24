@@ -3,6 +3,7 @@ import {
   driverSetStopOrderService,
   getTripsService,
   setTripPlanService,
+  setDriverCallTimeService,
   driverConfirmTripPickupService,
   driverConfirmTripStopService,
   driverConfirmFleetReturnService,
@@ -102,6 +103,22 @@ export const getTrips = async (req: Request, res: Response) => {
     res.status(200).json({ status: 'success', data: trips })
   } catch (error: any) {
     res.status(tripProgressStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+export const setDriverCallTime = async (req: Request, res: Response) => {
+  try {
+    const data = await setDriverCallTimeService(
+      param(req.params.bookingId),
+      req.body.driver_call_time ?? null,
+      driverActor(req),
+    )
+    res.status(200).json({ status: 'success', data })
+  } catch (error: any) {
+    const status =
+      error.message.includes('not found') ? 404 :
+      error.message.includes('Cannot ')   ? 409 : 500
+    res.status(status).json({ status: 'error', message: error.message })
   }
 }
 

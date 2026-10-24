@@ -4,6 +4,7 @@ import { pool } from '../../lib/database.js'
 import {
   CreateBookingInput,
   ResubmitBookingInput,
+  BookingRevision,
   UpdateBookingInput,
   UpdateDestinationInput,
   BookingWithRelations,
@@ -42,11 +43,13 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   truck_type_needed,
   schedule_date,
   call_time,
+  driver_call_time,
   status,
   gm_status,
   ops_status,
   blowbagets_check,
   rejection_reason,
+  approval_remarks,
   cancelled_by,
   cancelled_at,
   client_closed_at,
@@ -236,11 +239,15 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
   )
   const total = parseInt(countResult.rows[0]?.n ?? '0', 10) || 0
 
-  // Staff work the queue first in, first out: the oldest booking sits on top,
-  // under every status filter and search too. A client listing their own
-  // bookings still sees the newest first. booking_id breaks created_at ties so
-  // a row can't jump between pages.
-  const orderSql  = q.clientId ? 'b.created_at DESC, b.booking_id DESC' : 'b.created_at ASC, b.booking_id ASC'
+  // Newest first, so a booking that just came in is on page 1 (under the
+  // oldest-first order of 2026-10-22 it landed on the last page and looked
+  // missing). The Pending filter is the approval queue and stays first in,
+  // first out: the oldest waiting booking on top. That is also the General
+  // Manager's whole view, which is forced to Pending. booking_id breaks
+  // created_at ties so a row can't jump between pages.
+  const orderSql  = !q.clientId && status === 'pending'
+    ? 'b.created_at ASC, b.booking_id ASC'
+    : 'b.created_at DESC, b.booking_id DESC'
   const limitIdx  = params.length + 1
   const offsetIdx = params.length + 2
   const idsResult = await pool.query<{ booking_id: string }>(
@@ -536,18 +543,43 @@ async function create(input: CreateBookingInput): Promise<BookingWithRelations |
  * old stops deleted and no new ones behind them.
  *
  * Every decision field the rejection left behind is cleared, so the booking
- * reads exactly like a fresh request; the reason it was turned down last time
- * stays in the audit log. Guarded on the booking still being a cancelled one
- * the client has not closed, so two submissions racing each other cannot both
- * land. Returns null when that guard refused.
+ * reads exactly like a fresh request. What it looked like before (with the
+ * rejection) and what was resubmitted are kept side by side in
+ * booking_revisions, both taken by booking_snapshot() inside this transaction.
+ * Guarded on the booking still being a cancelled one the client has not
+ * closed, so two submissions racing each other cannot both land. Returns null
+ * when that guard refused.
  */
-async function resubmit(bookingId: string, input: ResubmitBookingInput): Promise<BookingWithRelations | null> {
+async function resubmit(
+  bookingId: string,
+  input: ResubmitBookingInput,
+  resubmittedBy?: string | null,
+): Promise<BookingWithRelations | null> {
   const { destinations, cargo_items, ...bookingData } = input
 
   const client = await pool.connect()
 
   try {
     await client.query('BEGIN')
+
+    // Lock the row and check the guard first: the old values have to be
+    // captured before the UPDATE below overwrites them.
+    const locked = await client.query<{ resubmission_count: number | null }>(
+      `SELECT resubmission_count FROM bookings
+        WHERE booking_id = $1 AND status = 'cancelled' AND client_closed_at IS NULL
+        FOR UPDATE`,
+      [bookingId],
+    )
+    if (locked.rowCount === 0) {
+      await client.query('ROLLBACK')
+      return null
+    }
+    const revisionNumber = Number(locked.rows[0].resubmission_count ?? 0) + 1
+    await client.query(
+      `INSERT INTO booking_revisions (booking_id, revision_number, before_snapshot, after_snapshot, resubmitted_by)
+       VALUES ($1, $2, booking_snapshot($1), '{}'::jsonb, $3)`,
+      [bookingId, revisionNumber, resubmittedBy ?? null],
+    )
 
     const columns = BOOKING_INSERT_COLUMNS.filter(
       (col) => col !== 'client_id' && col !== 'idempotency_key',
@@ -560,6 +592,7 @@ async function resubmit(bookingId: string, input: ResubmitBookingInput): Promise
               gm_status                   = 'pending',
               ops_status                  = 'pending',
               rejection_reason            = NULL,
+              approval_remarks            = NULL,
               cancelled_by                = NULL,
               cancelled_at                = NULL,
               gm_reviewed_by              = NULL,
@@ -620,6 +653,12 @@ async function resubmit(bookingId: string, input: ResubmitBookingInput): Promise
       )
     }
 
+    await client.query(
+      `UPDATE booking_revisions SET after_snapshot = booking_snapshot($1)
+        WHERE booking_id = $1 AND revision_number = $2`,
+      [bookingId, revisionNumber],
+    )
+
     await client.query('COMMIT')
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {})
@@ -629,6 +668,21 @@ async function resubmit(bookingId: string, input: ResubmitBookingInput): Promise
   }
 
   return findById(bookingId)
+}
+
+/**
+ * Every resubmission of a booking, oldest first: the snapshot before the
+ * client's corrections and the one they resubmitted (see resubmit above).
+ */
+async function findRevisions(bookingId: string): Promise<BookingRevision[]> {
+  const { data, error } = await supabase
+    .from('booking_revisions')
+    .select('revision_number, before_snapshot, after_snapshot, created_at')
+    .eq('booking_id', bookingId)
+    .order('revision_number', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []) as BookingRevision[]
 }
 
 /**
@@ -707,12 +761,26 @@ async function updateGmStatus(
     .update({
       gm_status:        input.gm_status,
       rejection_reason: input.gm_status === 'rejected' ? input.rejection_reason : null,
+      approval_remarks: input.gm_status === 'approved' ? input.approval_remarks ?? null : null,
       updated_at:       new Date().toISOString(),
     })
     .eq('booking_id', bookingId)
 
   if (error) throw error
   return findById(bookingId)
+}
+
+/**
+ * Store the approver's remarks on a booking the Company Administrator approved
+ * on their own authority (the General Manager's go in with updateGmStatus).
+ */
+async function setApprovalRemarks(bookingId: string, remarks: string): Promise<void> {
+  const { error } = await supabase
+    .from('bookings')
+    .update({ approval_remarks: remarks, updated_at: new Date().toISOString() })
+    .eq('booking_id', bookingId)
+
+  if (error) throw error
 }
 
 /**
@@ -729,6 +797,7 @@ async function setGmStatus(bookingId: string, input: GmReviewInput): Promise<voi
     .update({
       gm_status:        input.gm_status,
       rejection_reason: input.gm_status === 'rejected' ? input.rejection_reason : null,
+      approval_remarks: input.gm_status === 'approved' ? input.approval_remarks ?? null : null,
       updated_at:       new Date().toISOString(),
     })
     .eq('booking_id', bookingId)
@@ -909,6 +978,30 @@ async function markFleetRecheckSent(
   const { error } = await supabase
     .from('bookings')
     .update({ [column]: new Date().toISOString() })
+    .eq('booking_id', bookingId)
+
+  if (error) throw error
+}
+
+/**
+ * The driver's call time, set by operations (`HH:MM`, PH time), or null to
+ * follow the client's call time. Clears no reminder stamp: the stamp holds the
+ * call instant it was sent for, so a new time simply stops matching it.
+ */
+async function setDriverCallTime(bookingId: string, driverCallTime: string | null): Promise<void> {
+  const { error } = await supabase
+    .from('bookings')
+    .update({ driver_call_time: driverCallTime })
+    .eq('booking_id', bookingId)
+
+  if (error) throw error
+}
+
+/** The one-hour-ahead call reminder went out for this call instant. */
+async function markDriverCallReminded(bookingId: string, callAt: Date): Promise<void> {
+  const { error } = await supabase
+    .from('bookings')
+    .update({ driver_call_reminder_for: callAt.toISOString() })
     .eq('booking_id', bookingId)
 
   if (error) throw error
@@ -1285,11 +1378,15 @@ export const BookingModel = {
   updateStatus,
   cancelBooking,
   resubmit,
+  findRevisions,
   closeByClient,
   updateGmStatus,
   setGmStatus,
+  setApprovalRemarks,
   updateOpsStatus,
   markFleetRecheckSent,
+  setDriverCallTime,
+  markDriverCallReminded,
   recordDecision,
   markDelivered,
   resolveClientIssue,

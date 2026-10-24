@@ -12,7 +12,7 @@ import {
 export async function findUserByEmail(email: string): Promise<AuthUser | null> {
   const { data, error } = await supabase
     .from('users')
-    .select('user_id, email, first_name, last_name, role, status, locked_until, failed_login_attempts, lockup_count, must_change_password')
+    .select('user_id, email, first_name, last_name, role, status, locked_until, failed_login_attempts, lockup_count, must_change_password, temp_password_expires_at')
     .eq('email', email)
     .single()
 

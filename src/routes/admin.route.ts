@@ -25,7 +25,7 @@ import * as AssignmentController from '../controllers/admin/assignment.controlle
 import * as TripController from '../controllers/client/trip.controller.js'
 import * as ReportController from '../controllers/driver/report.controller.js'
 import * as EmergencyCallController from '../controllers/driver/emergency-call.controller.js'
-import { setTripPlanSchema, staffPauseTripSchema, staffResumeTripSchema, staffSetMilestoneSchema } from '../schema/client/trip.schema.js'
+import { setTripPlanSchema, driverCallTimeSchema, staffPauseTripSchema, staffResumeTripSchema, staffSetMilestoneSchema } from '../schema/client/trip.schema.js'
 import { setReportStatusSchema, classifyReportSchema } from '../schema/driver/report.schema.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as UserRestoreController from '../controllers/admin/user-restore.controller.js'
@@ -95,6 +95,8 @@ const isPauseDesk     = authorize('admin', 'it_admin', 'operations_manager')
 // Pausing and resuming a delivery in transit: the Company Administrator and the
 // Operations Manager only — not the driver, not IT.
 const isPauseControl  = authorize('admin', 'operations_manager')
+// The driver's call time in the Trip Planner: the same two desks.
+const isCallTimeDesk  = authorize('admin', 'operations_manager')
 // Vehicle upkeep records (odometer readings, services): the Company
 // Administrator and the Fleet Manager. Staff only — isFleet admits 'client'.
 const isFleetUpkeep = authorize('admin', 'it_admin', 'fleet_manager')
@@ -170,6 +172,10 @@ router.patch('/assignments/:bookingId/status', authenticate, isOperations, lockG
 // (admin, IT, fleet, GM, operations) and nobody else.
 router.get('/assignments/:bookingId/trips',  authenticate, isCrewRelease, TripController.getTrips)
 router.put('/assignments/:bookingId/trips',  authenticate, isCrewRelease, lockGuard('booking', fromParam('bookingId')), validate(setTripPlanSchema), TripController.setTripPlan)
+// When the driver should be at the pickup point (null = the client's call time).
+// Guidance only; the driver can still start earlier. Reminded an hour ahead.
+router.put('/assignments/:bookingId/driver-call-time', authenticate, isCallTimeDesk, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(driverCallTimeSchema), TripController.setDriverCallTime)
 
 // Pauses on a delivery in transit (weather, breakdown, closed stop…). Reading:
 // staff-only for the same reason as the trips above — isOperations admits

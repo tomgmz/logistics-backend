@@ -61,6 +61,7 @@ export interface AuthUser {
   lockup_count?:          number
   locked_until?:          Date | null
   must_change_password?:  boolean
+  temp_password_expires_at?: string | null
 
   clients?: {
     client_id:       string

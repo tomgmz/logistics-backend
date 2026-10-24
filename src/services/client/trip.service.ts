@@ -9,6 +9,7 @@ import { isBeforeScheduledDay } from '../../lib/ph-date.js'
 import { invalidateEta } from '../maps/eta.service.js'
 import { broadcast } from '../../lib/realtime.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
+import { requestDriverCallCheck } from '../notification/driver-call.scheduler.js'
 import {
   assertStopProximity,
   stopCoordinates,
@@ -198,6 +199,39 @@ export async function setTripPlanService(
   })
 
   return trips
+}
+
+/**
+ * Operations sets when the driver should be at the pickup point — or clears it
+ * (null), and the driver follows the client's call time again.
+ *
+ * Guidance, not a gate: nothing refuses a start before it. Only before the
+ * delivery starts — once the truck is out, a call time has nothing left to say.
+ */
+export async function setDriverCallTimeService(
+  bookingId: string,
+  driverCallTime: string | null,
+  actor: DriverActor,
+): Promise<{ driver_call_time: string | null }> {
+  const booking = await BookingModel.findById(bookingId)
+  if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
+  if (booking.status !== 'assigned') {
+    throw new Error(`Cannot set the driver's call time while the booking is '${booking.status}'`)
+  }
+
+  await BookingModel.setDriverCallTime(bookingId, driverCallTime)
+  requestDriverCallCheck()
+
+  logEvent({
+    user_id:     actor.userId,
+    log_type:    'booking',
+    action:      'booking_driver_call_time_set',
+    description: driverCallTime
+      ? `Driver call time for booking ${bookingRef(booking)} set to ${driverCallTime}`
+      : `Driver call time for booking ${bookingRef(booking)} cleared — the client's call time applies`,
+  })
+
+  return { driver_call_time: driverCallTime }
 }
 
 /** A planner save whose quantities don't add up — always a 400. */

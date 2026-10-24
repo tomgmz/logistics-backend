@@ -27,6 +27,7 @@ import publicRoutes from './routes/public.routes.js'
 import { startFleetRecheckScheduler } from './services/notification/fleet-recheck.scheduler.js'
 import { startCompletionScheduler } from './services/notification/completion.scheduler.js'
 import { startLicenseExpiryScheduler } from './services/notification/license-expiry.scheduler.js'
+import { startDriverCallScheduler } from './services/notification/driver-call.scheduler.js'
 import { startItAdminRenderScheduler } from './services/admin/it-admin-render.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
 import { reportEmailLinkBaseUrl } from './lib/brevo-mailer.js'
@@ -223,6 +224,8 @@ app.listen(PORT, '0.0.0.0', () => {
   startFleetRecheckScheduler();
   startCompletionScheduler();
   startLicenseExpiryScheduler();
+  // Reminds the crew one hour before the driver's call time.
+  startDriverCallScheduler();
   startItAdminRenderScheduler();
 
   // Drops driver position breadcrumbs past their retention window. The live

@@ -133,3 +133,13 @@ export const staffSetMilestoneSchema = z.object({
   at:           z.string().datetime({ offset: true }),
   note:         z.string().trim().min(3, 'Say why the time is being changed').max(500),
 }).strict()
+
+/**
+ * The driver's call time, set by operations in the Trip Planner. `null` clears
+ * it, and the driver follows the client's call time again.
+ */
+export const driverCallTimeSchema = z.object({
+  driver_call_time: z.string()
+    .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'driver_call_time must be in HH:MM format')
+    .nullable(),
+})

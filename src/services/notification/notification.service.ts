@@ -101,6 +101,8 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   trip_resumed_by_staff: { type: 'booking.trip_resumed_by_staff', audience: 'drivers' },
   // The driver set off. Ops sees it live on the board; the client is told.
   delivery_started:      { type: 'booking.delivery_started',      audience: 'client' },
+  // One hour before the driver's call time (driver-call.scheduler.ts).
+  driver_call_reminder:  { type: 'booking.driver_call_reminder',  audience: 'drivers' },
   // The office replaced the driver and/or vehicle of a delivery on the road. The
   // driver taken off is no longer on the crew, so they are named explicitly
   // (NotifyExtra.onlyUserIds); 'drivers' resolves to the crew now on it.
@@ -172,15 +174,16 @@ function copyFor(
     // Turned down by the administrator directly, without going to the GM.
     case 'rejected_admin':
       return { title: 'Booking rejected', body: `Your booking ${label} was not approved${reason ? `: ${reason}` : '.'} ${NEXT_STEP_AFTER_REJECTION}` }
+    // `reason` carries the approver's remarks, required on every approval.
     case 'approved_gm':
       return {
         title: 'Booking approved',
-        body:  `Your booking ${label} was approved by the General Manager. We will let you know once a vehicle and driver are assigned.`,
+        body:  `Your booking ${label} was approved by the General Manager${reason ? `: ${reason}` : '.'} We will let you know once a vehicle and driver are assigned.`,
       }
     case 'approved_admin':
       return {
         title: 'Booking approved',
-        body:  `Your booking ${label} was approved by the Company Administrator. We will let you know once a vehicle and driver are assigned.`,
+        body:  `Your booking ${label} was approved by the Company Administrator${reason ? `: ${reason}` : '.'} We will let you know once a vehicle and driver are assigned.`,
       }
     case 'ops_pending':
       return { title: 'Booking ready for assignment', body: `Booking ${label} was approved by the General Manager. Select a vehicle and driver.` }
@@ -299,6 +302,14 @@ function copyFor(
         title: 'Your delivery is on its way',
         body:  `The driver has started booking ${label} and is heading to the pickup point. You can follow the truck live.`,
       }
+    case 'driver_call_reminder':
+      return {
+        title: extra?.minutesLeft != null && extra.minutesLeft < 55
+          ? `Call time in ${extra.minutesLeft} minutes`
+          : 'Call time in 1 hour',
+        body:  `Be at the pickup point for booking ${label} by ${extra?.callTimeLabel ?? 'your call time'}` +
+               `${booking.origin ? ` (${booking.origin})` : ''}. You can start earlier if you are ready.`,
+      }
   }
 }
 
@@ -360,6 +371,10 @@ export interface NotifyExtra {
   // 'driver and vehicle'), and whether the load has to be moved across.
   swapped?:      string
   transfer?:     boolean
+  // For `driver_call_reminder`: the call time as shown ("9:00 AM"), and the
+  // minutes left when the reminder went out late (the time was set inside the hour).
+  callTimeLabel?: string
+  minutesLeft?:   number
 }
 
 /**

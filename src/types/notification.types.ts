@@ -28,6 +28,7 @@ export type NotificationType =
   | 'booking.trip_resumed_staff'   // pause ended -> ops + admins
   | 'booking.trip_resumed_by_staff' // the office ended the pause -> assigned driver(s)
   | 'booking.delivery_started'     // driver started navigation, booking in transit -> client
+  | 'booking.driver_call_reminder' // one hour before the driver's call time -> assigned driver(s)
   | 'booking.crew_replaced_off'    // office replaced the crew on the road -> the driver taken off
   | 'booking.crew_replaced_on'     // ... -> the crew now on it (continue where it stopped)
   | 'booking.crew_replaced_client' // ... -> client
@@ -102,6 +103,7 @@ export type NotificationStage =
   | 'trip_resumed_staff'
   | 'trip_resumed_by_staff'
   | 'delivery_started'
+  | 'driver_call_reminder'
   | 'crew_replaced_off'
   | 'crew_replaced_on'
   | 'crew_replaced_client'

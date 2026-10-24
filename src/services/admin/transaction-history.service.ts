@@ -158,8 +158,9 @@ export interface DecisionActor {
 }
 
 export interface TransactionApprovals {
-  /** The approve/reject decision: General Manager, or Company Admin on their own authority. */
-  review:     (DecisionActor & { outcome: string | null }) | null
+  /** The approve/reject decision: General Manager, or Company Admin on their own authority.
+   *  `remarks` are the approval remarks, or the rejection remarks on a rejection. */
+  review:     (DecisionActor & { outcome: string | null; remarks: string | null }) | null
   /** The driver-and-vehicle assignment. */
   assignment: DecisionActor | null
   /** A cancellation or Company Admin rejection. */
@@ -179,7 +180,7 @@ async function loadApprovals(bookingId: string): Promise<TransactionApprovals> {
   const empty: TransactionApprovals = { review: null, assignment: null, cancelled: null, completion: null, issue: null }
   const { data: b, error } = await supabase
     .from('bookings')
-    .select('gm_status, gm_reviewed_by, gm_reviewed_at, gm_reviewed_role, ops_assigned_by, ops_assigned_at, ops_assigned_role, cancelled_by, cancelled_at, completion_confirmed_by, completion_confirmed_role, completion_confirmed_at, completion_auto, client_issue_note, client_issue_reported_at')
+    .select('gm_status, approval_remarks, rejection_reason, gm_reviewed_by, gm_reviewed_at, gm_reviewed_role, ops_assigned_by, ops_assigned_at, ops_assigned_role, cancelled_by, cancelled_at, completion_confirmed_by, completion_confirmed_role, completion_confirmed_at, completion_auto, client_issue_note, client_issue_reported_at')
     .eq('booking_id', bookingId)
     .maybeSingle()
   if (error) {
@@ -209,7 +210,13 @@ async function loadApprovals(bookingId: string): Promise<TransactionApprovals> {
 
   const review = who(b.gm_reviewed_by, b.gm_reviewed_at, b.gm_reviewed_role)
   return {
-    review:     review ? { ...review, outcome: (b.gm_status as string) ?? null } : null,
+    review:     review
+      ? {
+          ...review,
+          outcome: (b.gm_status as string) ?? null,
+          remarks: ((b.gm_status === 'rejected' ? b.rejection_reason : b.approval_remarks) as string | null) ?? null,
+        }
+      : null,
     assignment: who(b.ops_assigned_by, b.ops_assigned_at, b.ops_assigned_role),
     cancelled:  who(b.cancelled_by, b.cancelled_at),
     completion: b.completion_confirmed_at

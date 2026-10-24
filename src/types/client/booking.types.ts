@@ -126,12 +126,15 @@ export interface Booking {
   truck_type_needed:      string | null
   schedule_date:          string
   call_time:              string
+  /** When operations wants the driver at the pickup point (PH time); null = follow call_time. */
+  driver_call_time?:      string | null
   status:                 BookingStatus
 
   gm_status?:             GmStatus | null
   ops_status?:            OpsStatus | null
   blowbagets_check?:      BlowbagetsCheck | null
   rejection_reason?:      string | null
+  approval_remarks?:      string | null
   cancelled_by?:          string | null
   cancelled_at?:          Date | null
   /** The client gave up on a rejected booking instead of resubmitting it. */
@@ -261,9 +264,22 @@ export interface UpdateBookingInput {
 export interface GmReviewInput {
   gm_status:         Exclude<GmStatus, 'pending'>
   rejection_reason?: string
+  approval_remarks?: string
 }
 
 export interface OpsAssignInput {
   ops_status: 'assigned'
 }
 
+
+/**
+ * One resubmission of a rejected booking (table booking_revisions). Both sides
+ * are booking_snapshot() documents: the request fields, `destinations` and
+ * `cargo_items`; `before_snapshot` also carries the rejection it received.
+ */
+export interface BookingRevision {
+  revision_number: number
+  before_snapshot: Record<string, unknown>
+  after_snapshot:  Record<string, unknown>
+  created_at:      string
+}

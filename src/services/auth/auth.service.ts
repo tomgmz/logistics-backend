@@ -694,6 +694,24 @@ export async function loginWithPassword(
 
   await AuthModel.resetFailedAttempts(user.user_id)
 
+  // A generated password is only good for 7 days (the DB trigger stamps
+  // temp_password_expires_at). Checked after the password is confirmed, so the
+  // message only reaches someone who knows it. A reset clears the flag and the
+  // stamp; the emailed-code sign-in never used this password, so it still works.
+  if (
+    user.must_change_password &&
+    user.temp_password_expires_at &&
+    new Date(user.temp_password_expires_at) <= new Date()
+  ) {
+    await AuthModel.createLoginHistory({
+      user_id: user.user_id, email,
+      device_info: input.device_info, user_agent: userAgent,
+      attempt_status: 'failed_inactive',
+      failure_reason: 'Temporary password expired',
+    })
+    throw new Error('Your temporary password has expired. Request a password reset from the sign-in screen.')
+  }
+
   const requestedPlatform = (input.platform ?? 'web') as Platform
   if (!isRoleAllowedOnPlatform(user.role, requestedPlatform)) {
     throw new Error(
