@@ -62,8 +62,11 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
   if (roleFilters?.length === 1) q = q.eq('role', roleFilters[0])
   else if (roleFilters?.length)  q = q.in('role', roleFilters)
   else                           q = q.neq('role', 'admin')
-  if (query.status) q = q.eq('status', query.status)
-  else              q = q.neq('status', 'archived')
+  // A comma list ("active,deactivated") comes from User Management's status filter.
+  const statusFilters = query.status?.split(',').map((s) => s.trim()).filter(Boolean)
+  if (statusFilters?.length === 1) q = q.eq('status', statusFilters[0])
+  else if (statusFilters?.length)  q = q.in('status', statusFilters)
+  else                             q = q.neq('status', 'archived')
 
   if (query.search) {
     const s = query.search.trim()

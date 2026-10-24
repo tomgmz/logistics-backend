@@ -45,7 +45,8 @@ export interface UserListItem extends Omit<UserListItemRaw, 'clients' | 'drivers
 
 export interface GetUsersQuery {
   role?:   string
-  status?: 'active' | 'inactive' | 'archived'
+  // One status, or a comma list ("active,deactivated").
+  status?: string
   search?: string
   page?:   number
   limit?:  number

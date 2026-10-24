@@ -9,7 +9,7 @@ export async function getUsers(req: Request, res: Response) {
 
     const result = await FetchUsersService.getUsers({
       role:      role   as string | undefined,
-      status:    status as 'active' | 'inactive' | 'archived' | undefined,
+      status:    status as string | undefined,
       search:    search as string | undefined,
       page:      page   ? parseInt(page  as string, 10) : undefined,
       limit:     limit  ? parseInt(limit as string, 10) : undefined,
