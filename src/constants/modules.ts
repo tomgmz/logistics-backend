@@ -54,16 +54,14 @@ export const MODULE_KEYS = [
 export type ModuleKey = (typeof MODULE_KEYS)[number]
 
 // Tiered access model mirrored from the frontend. The 5 granular flags remain the
-// source of truth; these three levels are how an IT Admin assigns them:
-//   read   -> view only
-//   manage -> view + create + edit + export (day-to-day operations)
-//   all    -> manage + delete (the destructive, top-tier privilege)
-export type AccessLevel = 'none' | 'read' | 'manage' | 'all'
+// source of truth; these two levels are how an IT Admin assigns them:
+//   read -> View: view only
+//   all  -> Manage All: view + create + edit + export + delete
+export type AccessLevel = 'none' | 'read' | 'all'
 
 export function levelToFlags(level: AccessLevel): ModulePermissionFlags {
   switch (level) {
     case 'read':   return { can_view: true, can_create: false, can_edit: false, can_delete: false, can_export: false }
-    case 'manage': return { can_view: true, can_create: true,  can_edit: true,  can_delete: false, can_export: true  }
     case 'all':    return { can_view: true, can_create: true,  can_edit: true,  can_delete: true,  can_export: true  }
     default:       return { ...EMPTY_FLAGS }
   }
@@ -105,13 +103,13 @@ export const ROLE_MODULE_DEFAULTS: Record<ManagedRole, Partial<Record<ModuleKey,
     'vehicle-management':  'all',
     'document-management': 'all',
     'system-maintenance':  'all',
-    'transit-tracking':    'manage',
+    'transit-tracking':    'all',
     'transaction-history': 'read',
     'audit-logs':          'read',
     'reports':             'all',
   },
   general_manager: {
-    'booking-management':  'manage',
+    'booking-management':  'all',
     'vehicle-management':  'read',
     'document-management': 'read',
   },
@@ -121,19 +119,19 @@ export const ROLE_MODULE_DEFAULTS: Record<ManagedRole, Partial<Record<ModuleKey,
     // VEHICLE, so they are governed by the vehicle-management tier below.
     'booking-management': 'read',
     'vehicle-management': 'all',
-    'transit-tracking':   'manage',
+    'transit-tracking':   'all',
     // Vehicle-related reports only (breakdowns, accidents) — the scoping is
     // done server-side in the report service, not by this tier.
-    'reports':            'manage',
+    'reports':            'all',
   },
   operations_manager: {
     'booking-management':  'all',
     'vehicle-management':  'read',
-    'document-management': 'manage',
-    'transit-tracking':    'manage',
+    'document-management': 'all',
+    'transit-tracking':    'all',
     // Operations is who responds to a driver in trouble: acknowledging and
-    // resolving a report is an edit, so Manage.
-    'reports':             'manage',
+    // resolving a report is an edit, so Manage All.
+    'reports':             'all',
   },
 }
 
