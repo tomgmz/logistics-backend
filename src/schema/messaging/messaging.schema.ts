@@ -43,3 +43,11 @@ export const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡'
 export const reactSchema = z.object({
   emoji: z.enum(REACTION_EMOJIS),
 })
+export const startChatCallSchema = z.object({
+  conversation_id: z.string().uuid(),
+})
+
+export const endChatCallSchema = z.object({
+  reason: z.enum(['hangup', 'no_answer', 'failed']).optional().default('hangup'),
+  detail: z.string().max(500).optional(),
+})

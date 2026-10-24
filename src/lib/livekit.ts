@@ -1,7 +1,8 @@
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk'
 
 /**
- * LiveKit, the voice transport for the driver's emergency call.
+ * LiveKit, the voice transport for in-app calls: the driver's emergency call
+ * and calls placed from Messages.
  *
  * Configured by three env vars from the LiveKit Cloud project (Settings → Keys):
  *   LIVEKIT_URL         wss://<project>.livekit.cloud
@@ -9,8 +10,8 @@ import { AccessToken, RoomServiceClient } from 'livekit-server-sdk'
  *   LIVEKIT_API_SECRET
  *
  * When they are missing, calling is simply OFF: the driver app sees the refusal
- * and goes straight to an ordinary phone call. The emergency path must never
- * depend on this being set up.
+ * and goes straight to an ordinary phone call, and Messages says calling is not
+ * set up. The emergency path must never depend on this being set up.
  */
 
 const url    = process.env.LIVEKIT_URL ?? ''
@@ -48,6 +49,21 @@ export async function mintRoomToken(params: {
     canPublishData: false,
   })
   return token.toJwt()
+}
+
+/**
+ * How many people are in a room right now, or null when LiveKit could not be
+ * asked. A room nobody ever joined reads as 0.
+ */
+export async function roomParticipantCount(room: string): Promise<number | null> {
+  if (!isLiveKitConfigured()) return null
+  try {
+    const httpUrl = url.replace(/^ws/, 'http')
+    return (await new RoomServiceClient(httpUrl, key, secret).listParticipants(room)).length
+  } catch (e: any) {
+    // LiveKit answers "room not found" for a room that is gone or never existed.
+    return /not.?found/i.test(String(e?.message ?? '')) ? 0 : null
+  }
 }
 
 /** Close a room so nobody is left talking into it. Best effort. */
