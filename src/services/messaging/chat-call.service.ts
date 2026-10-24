@@ -127,8 +127,8 @@ export async function startCallService(
   if (callee.role === 'client') throw new ChatCallError('Clients can only be messaged, not called', 403)
   if (target.status !== 'active') throw new ChatCallError(`${callee.name} can't take calls right now`, 409)
 
-  if (await isBusy(me.user_id))  throw new ChatCallError('You are already on a call', 409)
-  if (await isBusy(otherId))     throw new ChatCallError(`${callee.name} is on another call`, 409)
+  if (await isBusy(me.user_id))  throw new ChatCallError(`You can't call ${callee.name} because you are currently on a call`, 409)
+  if (await isBusy(otherId))     throw new ChatCallError(`${callee.name} is currently on a call with someone else`, 409)
 
   const call = await CallModel.create({
     conversation_id: conv.conversation_id,
