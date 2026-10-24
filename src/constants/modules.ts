@@ -55,7 +55,7 @@ export type ModuleKey = (typeof MODULE_KEYS)[number]
 
 // Tiered access model mirrored from the frontend. The 5 granular flags remain the
 // source of truth; these two levels are how an IT Admin assigns them:
-//   read -> View: view only
+//   read -> Read Only: view only
 //   all  -> Manage All: view + create + edit + export + delete
 export type AccessLevel = 'none' | 'read' | 'all'
 
