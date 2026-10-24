@@ -262,6 +262,10 @@ export async function changePassword(req: Request, res: Response) {
     res.status(200).json({ status: 'success', message: 'Password updated successfully.' })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to update password'
+    if ((err as any)?.code === 'PASSWORD_UNCHANGED') {
+      res.status(400).json({ status: 'error', code: 'PASSWORD_UNCHANGED', message })
+      return
+    }
     console.error('CHANGE PASSWORD ERROR:', err)
     res.status(500).json({ status: 'error', message })
   }

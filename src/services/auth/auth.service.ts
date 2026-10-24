@@ -119,6 +119,13 @@ function buildAuthResponse(
   }
 }
 
+/** A new password that is the account's current one changes nothing, so it is refused. */
+export function samePasswordError(): Error {
+  const err = new Error('Your new password must be different from your current password.')
+  ;(err as any).code = 'PASSWORD_UNCHANGED'
+  return err
+}
+
 export async function changePassword(
   userId:      string,
   newPassword: string,
@@ -128,6 +135,8 @@ export async function changePassword(
   // Read before the update so we still know whether this was the forced
   // first-login change - clearMustChangePassword wipes that flag below.
   const user = await AuthModel.findUserById(userId)
+
+  if (user && await passwordMatches(user.email, newPassword)) throw samePasswordError()
 
   const { error } = await supabase.auth.admin.updateUserById(userId, {
     password: newPassword,
@@ -542,7 +551,7 @@ function isBannedError(err: { message?: string; code?: string }): boolean {
  * Whether `password` is this account's password, without signing anyone in:
  * a Supabase session it happens to open is ended straight away.
  */
-async function passwordMatches(email: string, password: string): Promise<boolean> {
+export async function passwordMatches(email: string, password: string): Promise<boolean> {
   const { data, error } = await supabaseAnon.auth.signInWithPassword({ email, password })
   if (data?.session) await supabase.auth.admin.signOut(data.session.access_token).catch(() => {})
   return !error || isBannedError(error)

@@ -61,7 +61,43 @@ export const updateDestinationStatusSchema = z.object({
 })
 
 
-export const createBookingSchema = z.object({
+// A drop-off pinned this close to the pickup is the pickup picked twice. Kept in
+// step with SAME_LOCATION_METERS in the web wizard's bookingValidation.ts, which
+// stops it before submit; closer-but-not-same drop-offs are only confirmed there.
+const SAME_LOCATION_METERS = 20
+
+const normalizeAddress = (a: string) => a.trim().toLowerCase().replace(/\s+/g, ' ')
+
+function metersBetween(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const rad = (d: number) => (d * Math.PI) / 180
+  const h = Math.sin(rad(lat2 - lat1) / 2) ** 2
+    + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lng2 - lng1) / 2) ** 2
+  return 2 * 6_371_000 * Math.asin(Math.sqrt(h))
+}
+
+type RouteShape = {
+  origin: string
+  origin_latitude?: number
+  origin_longitude?: number
+  destinations: { address: string; latitude?: number; longitude?: number }[]
+}
+
+function refuseDropoffAtPickup(b: RouteShape, ctx: z.RefinementCtx): void {
+  b.destinations.forEach((d, i) => {
+    const sameText = normalizeAddress(d.address) === normalizeAddress(b.origin)
+    const samePin  = b.origin_latitude != null && b.origin_longitude != null
+      && d.latitude != null && d.longitude != null
+      && metersBetween(b.origin_latitude, b.origin_longitude, d.latitude, d.longitude) < SAME_LOCATION_METERS
+    if (sameText || samePin) {
+      ctx.addIssue({
+        code:    z.ZodIssueCode.custom,
+        message: `Drop-off ${i + 1} cannot be the same as the pickup location`,
+      })
+    }
+  })
+}
+
+const bookingBodySchema = z.object({
   // Optional because it is ignored for the only role that can call this route:
   // a client's booking is attributed to the company on their session, never to
   // whatever the body claims. Still uuid-checked so garbage is refused outright.
@@ -103,11 +139,15 @@ export const createBookingSchema = z.object({
   cargo_items: z.array(createCargoItemSchema).optional(),
 })
 
+export const createBookingSchema = bookingBodySchema.superRefine(refuseDropoffAtPickup)
+
 // A rejected booking resubmitted by its client: the same full statement as a
 // new booking, minus the fields that only make sense on a first creation (the
 // company comes from the session, and the booking already exists, so there is
 // no attempt to de-duplicate).
-export const resubmitBookingSchema = createBookingSchema.omit({ client_id: true, idempotency_key: true })
+export const resubmitBookingSchema = bookingBodySchema
+  .omit({ client_id: true, idempotency_key: true })
+  .superRefine(refuseDropoffAtPickup)
 
 export const updateBookingSchema = z.object({
   origin:                z.string().min(1).optional(),

@@ -53,7 +53,7 @@ export async function completeReset(req: Request, res: Response) {
     const code    = (err as any)?.code
     const message = err instanceof Error ? err.message : 'Failed to reset password'
 
-    if (code === 'RESET_TOKEN_INVALID' || code === 'RESET_ACCOUNT_INACTIVE') {
+    if (code === 'RESET_TOKEN_INVALID' || code === 'RESET_ACCOUNT_INACTIVE' || code === 'PASSWORD_UNCHANGED') {
       res.status(400).json({ status: 'error', code, message })
       return
     }

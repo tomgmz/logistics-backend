@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import bcrypt from 'bcrypt'
 import * as AuthModel from '../../models/auth/auth.model.js'
 import * as ResetModel from '../../models/auth/password-reset.model.js'
-import { hashToken } from './auth.service.js'
+import { hashToken, passwordMatches, samePasswordError } from './auth.service.js'
 import { supabase } from '../../lib/supabase.js'
 import {
   buildResetUrl,
@@ -386,6 +386,12 @@ export async function completeReset(
     ;(err as any).code = 'RESET_NOT_APPLICABLE'
     throw err
   }
+
+  // Checked against the account's current email, not the request.email
+  // snapshot, since that is the address Supabase signs in with. Nothing is
+  // spent on a refusal: the link stays live for a different password.
+  const account = await AuthModel.findUserById(request.user_id)
+  if (account && await passwordMatches(account.email, newPassword)) throw samePasswordError()
 
   const { error: authError } = await supabase.auth.admin.updateUserById(request.user_id, {
     password: newPassword,
