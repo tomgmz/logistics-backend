@@ -4,6 +4,8 @@ import {
   coreUpdateFields,
   licenseNumberField,
   licenseExpiryField,
+  mobileField,
+  optionalMobileField,
 } from './shared.schema.js'
 
 // The form posts multipart (the license photo rides along), so a boolean
@@ -12,7 +14,10 @@ const multipartBoolean = () =>
   z.preprocess((v) => (v === 'true' ? true : v === 'false' ? false : v), z.boolean())
 
 const vendorNameField    = () => z.string().trim().min(1, 'Company name is required').max(120)
-const vendorContactField = () => z.string().trim().max(120)
+// The vendor's contact is a PH mobile, held to the same rule as an account's phone.
+// On an update a blank clears it, so '' is let through for the model to null.
+const vendorContactField       = () => optionalMobileField()
+const vendorContactUpdateField = () => z.union([z.literal(''), mobileField()])
 
 // One form, two kinds of driver:
 //  - company (8338) driver: a staff account that signs in with OTP or password
@@ -26,7 +31,7 @@ export const createDriverSchema = z.object({
 
   is_external:       multipartBoolean().optional().default(false),
   vendor_name:       vendorNameField().optional(),
-  vendor_contact:    vendorContactField().optional(),
+  vendor_contact:    vendorContactField(),
 }).superRefine((data, ctx) => {
   if (data.is_external && !data.vendor_name) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['vendor_name'],
@@ -48,5 +53,5 @@ export const updateDriverSchema = z.object({
   license_expiry:    licenseExpiryField().optional(),
   license_image_url: z.string().url().optional().nullable(),
   vendor_name:       vendorNameField().optional(),
-  vendor_contact:    vendorContactField().optional().nullable(),
+  vendor_contact:    vendorContactUpdateField().optional().nullable(),
 })
