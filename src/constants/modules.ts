@@ -55,13 +55,13 @@ export type ModuleKey = (typeof MODULE_KEYS)[number]
 
 // Tiered access model mirrored from the frontend. The 5 granular flags remain the
 // source of truth; these two levels are how an IT Admin assigns them:
-//   read -> Read Only: view only
+//   read -> Read Only: view + export
 //   all  -> Manage All: view + create + edit + export + delete
 export type AccessLevel = 'none' | 'read' | 'all'
 
 export function levelToFlags(level: AccessLevel): ModulePermissionFlags {
   switch (level) {
-    case 'read':   return { can_view: true, can_create: false, can_edit: false, can_delete: false, can_export: false }
+    case 'read':   return { can_view: true, can_create: false, can_edit: false, can_delete: false, can_export: true  }
     case 'all':    return { can_view: true, can_create: true,  can_edit: true,  can_delete: true,  can_export: true  }
     default:       return { ...EMPTY_FLAGS }
   }
