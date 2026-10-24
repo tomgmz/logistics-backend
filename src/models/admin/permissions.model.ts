@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
-import { pickFlags } from '../../constants/modules.js'
+import { pickFlags, VIEW_ONLY_MODULES, type ModuleKey } from '../../constants/modules.js'
 import { ModulePermissionInput, ModulePermissionRow } from '../../types/permissions.types.js'
 
 async function findByUser(userId: string): Promise<ModulePermissionRow[]> {
@@ -21,13 +21,20 @@ async function replaceForUser(
 ): Promise<ModulePermissionRow[]> {
   const now = new Date().toISOString()
 
-  const rows = items.map((item) => ({
-    user_id:     userId,
-    module_name: item.module_name,
-    ...pickFlags(item),
-    assigned_by: assignedBy,
-    updated_at:  now,
-  }))
+  const rows = items.map((item) => {
+    const flags = pickFlags(item)
+    // View-only modules hold Read Only at most, whatever was sent.
+    if (VIEW_ONLY_MODULES.includes(item.module_name as ModuleKey) && flags.can_view) {
+      Object.assign(flags, { can_create: false, can_edit: false, can_delete: false, can_export: true })
+    }
+    return {
+      user_id:     userId,
+      module_name: item.module_name,
+      ...flags,
+      assigned_by: assignedBy,
+      updated_at:  now,
+    }
+  })
 
   if (rows.length > 0) {
     const { error: upsertError } = await supabase

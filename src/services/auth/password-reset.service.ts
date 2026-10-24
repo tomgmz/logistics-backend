@@ -64,18 +64,18 @@ const UNRESETTABLE_STATUSES = ['deactivated', 'archived', 'inactive']
 /**
  * The whole routing rule, in one place.
  *
- * Drivers and clients are the Company Admin's people; everyone with a desk is the
- * IT Admin's. Exported because both the request path (which queue to file into)
- * and the send path (who is allowed to act) must agree, and the only way to
- * guarantee that is to ask the same function.
+ * Since 2026-10-24 the IT Administrator handles every reset: staff, drivers and
+ * clients alike. The 'company_admin' group survives only on old rows (the
+ * migration moved the open ones over). Exported because both the request path
+ * (which queue to file into) and the send path (who is allowed to act) must
+ * agree, and the only way to guarantee that is to ask the same function.
  */
-export function handlerGroupFor(role: string): ResetHandlerGroup {
-  return role === 'driver' || role === 'client' ? 'company_admin' : 'it_admin'
+export function handlerGroupFor(_role: string): ResetHandlerGroup {
+  return 'it_admin'
 }
 
 /** The admin role that staffs a group — the mirror of handlerGroupFor. */
 function groupForActorRole(actorRole: string): ResetHandlerGroup | null {
-  if (actorRole === 'admin')    return 'company_admin'
   if (actorRole === 'it_admin') return 'it_admin'
   return null
 }
@@ -88,18 +88,13 @@ export interface ResetActor {
 /**
  * Assert this actor owns this request's queue.
  *
- * The routes can only gate with `authorize('admin','it_admin')`, which cannot
- * express "admin handles drivers and clients, it_admin handles staff" — so the
- * strict split is enforced here, where both roles have already been let through.
+ * The routes gate with `authorize('admin','it_admin')`; only the IT Admin owns a
+ * queue now, so a Company Admin who gets through the route is refused here.
  */
 function assertOwnsRequest(request: PasswordResetRequestRow, actor: ResetActor): void {
   const actorGroup = groupForActorRole(actor.role)
   if (!actorGroup || actorGroup !== request.handler_group) {
-    const err = new Error(
-      request.handler_group === 'company_admin'
-        ? 'Driver and client password resets are handled by the Company Administrator.'
-        : 'Staff password resets are handled by the IT Administrator.',
-    )
+    const err = new Error('Password resets are handled by the IT Administrator.')
     ;(err as any).code = 'RESET_WRONG_HANDLER'
     throw err
   }

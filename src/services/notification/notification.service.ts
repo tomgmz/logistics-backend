@@ -99,6 +99,8 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   trip_resumed:          { type: 'booking.trip_resumed',          audience: 'client' },
   trip_resumed_staff:    { type: 'booking.trip_resumed_staff',    roles: ['operations_manager'] },
   trip_resumed_by_staff: { type: 'booking.trip_resumed_by_staff', audience: 'drivers' },
+  pause_continuation:        { type: 'booking.pause_continuation',        audience: 'client' },
+  pause_continuation_driver: { type: 'booking.pause_continuation_driver', audience: 'drivers' },
   // The driver set off. Ops sees it live on the board; the client is told.
   delivery_started:      { type: 'booking.delivery_started',      audience: 'client' },
   // One hour before the driver's call time (driver-call.scheduler.ts).
@@ -221,7 +223,8 @@ function copyFor(
     case 'delivery_issue_resolved':
       return {
         title: 'Your reported problem was resolved',
-        body:  `The problem you reported on booking ${label} was marked resolved. Confirm the booking is complete, ` +
+        // `reason` carries what staff did about it, required when resolving.
+        body:  `The problem you reported on booking ${label} was marked resolved${reason ? `: ${reason}` : '.'} Confirm the booking is complete, ` +
                'or report a problem again if something is still wrong. It completes automatically in 3 days if nothing is reported.',
       }
     case 'vehicle_returned':
@@ -272,6 +275,18 @@ function copyFor(
       return {
         title: 'Your delivery was resumed by the office',
         body:  `Operations marked booking ${label} as moving again${reason ? `: ${reason}` : '.'}`,
+      }
+    case 'pause_continuation':
+      return {
+        title: 'New delivery date',
+        body:  `Your paused delivery ${label} is expected to continue on ${extra?.continuationDate ?? 'a new date'}. ` +
+               'We will let you know when it is moving again.',
+      }
+    case 'pause_continuation_driver':
+      return {
+        title: 'Delivery continues on a new date',
+        body:  `Booking ${label} continues on ${extra?.continuationDate ?? 'a new date'}. ` +
+               `Your call time is ${extra?.callTimeLabel ?? 'to be confirmed'}. Wait for the office to resume it before moving.`,
       }
     case 'crew_replaced_off':
       return {
@@ -375,6 +390,8 @@ export interface NotifyExtra {
   // minutes left when the reminder went out late (the time was set inside the hour).
   callTimeLabel?: string
   minutesLeft?:   number
+  // For the pause-continuation stages: the day the delivery continues ("Oct 26, 2026").
+  continuationDate?: string
 }
 
 /**

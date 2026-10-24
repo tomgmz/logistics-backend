@@ -93,6 +93,12 @@ export const staffPauseTripSchema = z.object({
   note:   z.string().trim().min(3, 'Say why the delivery is paused').max(500),
 })
 
+/** Operations sets when a paused delivery continues: a date and the driver's call time. */
+export const pauseContinuationSchema = z.object({
+  date:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Pick a date'),
+  call_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Pick a call time'),
+}).strict()
+
 /** Operations ends the pause from the web, optionally saying why. */
 export const staffResumeTripSchema = z.object({
   note: z.string().trim().max(500).optional().nullable(),

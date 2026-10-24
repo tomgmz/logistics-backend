@@ -219,7 +219,7 @@ export async function findExternalDriverForAssignment(userId: string): Promise<E
   }
   if (row.status === 'archived') throw new Error('This vendor driver was deleted.')
   if (row.status !== 'active') {
-    throw new Error('This vendor driver\'s access is turned off. Restore it in Driver Management first.')
+    throw new Error('This vendor driver\'s access is turned off. Ask the IT Administrator to restore it first.')
   }
 
   const active = await WebauthnModel.listCredentialsForUser(row.user_id)

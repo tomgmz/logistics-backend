@@ -13,9 +13,8 @@ import { PasswordResetRequestRow, ResetHandlerGroup } from '../../types/password
  * share the model and the three delivery steps, not the booking vocabulary.
  */
 
-// Which role staffs each queue. The split is the product rule: the Company Admin
-// looks after the people outside the office (drivers and clients), the IT Admin
-// looks after everyone with a desk.
+// Which role staffs each queue. Every new request files into it_admin (see
+// handlerGroupFor); company_admin is only on old rows.
 const GROUP_ROLE: Record<ResetHandlerGroup, string> = {
   company_admin: 'admin',
   it_admin:      'it_admin',

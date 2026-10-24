@@ -13,6 +13,11 @@ import { getRouteDistance } from '../maps/route-distance.service.js'
 import { assertLeadDriverOnBooking, type DriverActor } from '../client/booking.service.js'
 import { driverIdOf, pendingLoadTransfer } from '../driver/crew-actor.js'
 import {
+  findExternalDriverForAssignment,
+  issueInvite,
+  type ExternalDriverForAssignment,
+} from '../auth/driver-enrollment.service.js'
+import {
   assertDriverAssignable,
   assertTruckAssignable,
   crewOnBooking,
@@ -31,14 +36,23 @@ import {
  * 'in_transit' and keeps every trip, stop and proof; the first crew stays on the
  * record in crew_replacements and in who confirmed each stop. The new crew picks
  * up the remaining stops where the first one stopped.
+ *
+ * The new crew comes from the 8338 fleet (driver + registered vehicle) or from
+ * a vendor (a registered vendor driver + the vendor's typed-in vehicle), the
+ * same two paths as an assignment. A helper is a typed name only.
  */
 
 export interface ReplaceCrewInput {
-  driver_id:         string
-  truck_id:          string
+  driver_id?:        string
+  truck_id?:         string
   second_driver_id?: string | null
   helper_name?:      string | null
   reason_note:       string
+  is_vendor_supplied?:           boolean
+  vendor_driver_user_id?:        string
+  second_vendor_driver_user_id?: string | null
+  vendor_vehicle_plate?:         string
+  vendor_vehicle_type?:          string | null
 }
 
 interface StaffActor {
@@ -72,8 +86,32 @@ export async function replaceCrewService(
 ) {
   const note = input.reason_note?.trim() ?? ''
   if (note.length < 3) throw new Error('Say why the crew is being replaced')
-  if (!input.driver_id) throw new Error('driver_id is required')
-  if (!input.truck_id)  throw new Error('truck_id is required')
+
+  // The vendor path reads its drivers from the registry before anything is
+  // written, so a revoked or deleted vendor driver is refused up front.
+  const vendor = input.is_vendor_supplied === true
+  let external:       ExternalDriverForAssignment | null = null
+  let externalSecond: ExternalDriverForAssignment | null = null
+  if (vendor) {
+    if (!input.vendor_driver_user_id) throw new Error('Choose the vendor driver')
+    if (!input.vendor_vehicle_plate?.trim()) throw new Error('Vendor vehicle plate is required')
+    if (input.second_vendor_driver_user_id && input.second_vendor_driver_user_id === input.vendor_driver_user_id) {
+      throw new Error('The second driver must be a different person from the main driver')
+    }
+    ;[external, externalSecond] = await Promise.all([
+      findExternalDriverForAssignment(input.vendor_driver_user_id),
+      input.second_vendor_driver_user_id
+        ? findExternalDriverForAssignment(input.second_vendor_driver_user_id)
+        : Promise.resolve(null),
+    ])
+  } else {
+    if (!input.driver_id) throw new Error('driver_id is required')
+    if (!input.truck_id)  throw new Error('truck_id is required')
+  }
+  // drivers.driver_id of the new lead driver, on either path.
+  const leadId  = vendor ? external!.driverId : input.driver_id!
+  const truckId = vendor ? null : input.truck_id!
+  const plate   = vendor ? input.vendor_vehicle_plate!.trim().toUpperCase() : null
 
   const booking = await BookingModel.findById(bookingId)
   if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
@@ -84,20 +122,28 @@ export async function replaceCrewService(
   const previous  = await crewOnBooking(bookingId)
   const { data: prevDelivery } = await supabase
     .from('deliveries')
-    .select('is_vendor_supplied, vendor_vehicle_plate')
+    .select('is_vendor_supplied, vendor_vehicle_plate, vendor_driver_user_id, helper_name')
     .eq('booking_id', bookingId)
     .maybeSingle()
 
-  const second = input.second_driver_id ?? null
-  if (second && second === input.driver_id) {
+  const second = vendor ? externalSecond?.driverId ?? null : input.second_driver_id ?? null
+  if (second && second === leadId) {
     throw new Error('The second driver must be a different person from the main driver')
   }
+  // A helper rides only where there is no second driver.
+  const helper = second ? null : input.helper_name?.trim() || null
 
-  const driverChanged = input.driver_id !== previous.driver_id
-  const truckChanged  = input.truck_id  !== previous.truck_id || !!prevDelivery?.is_vendor_supplied
+  // A vendor lead is not in deliveries.driver_id, so compare by their account.
+  const driverChanged = vendor
+    ? input.vendor_driver_user_id !== prevDelivery?.vendor_driver_user_id
+    : leadId !== previous.driver_id
+  const truckChanged  = vendor
+    ? !prevDelivery?.is_vendor_supplied || plate !== prevDelivery?.vendor_vehicle_plate
+    : truckId !== previous.truck_id || !!prevDelivery?.is_vendor_supplied
   const secondChanged = (second ?? null) !== (previous.second_driver_id ?? null)
-  if (!driverChanged && !truckChanged && !secondChanged) {
-    throw new Error('Choose a different driver or vehicle to replace the current one')
+  const helperChanged = helper !== (prevDelivery?.helper_name ?? null)
+  if (!driverChanged && !truckChanged && !secondChanged && !helperChanged) {
+    throw new Error('Change the driver, vehicle, second driver or helper first')
   }
 
   // The same distance rule as assigning: over the threshold a second driver.
@@ -112,22 +158,29 @@ export async function replaceCrewService(
   // Held to the same pools as an assignment, but for TODAY: the replacement goes
   // out now, whatever day the booking was scheduled for.
   const today   = phDay()
+  // Vendor crews are not in the company pools; the busy check below is theirs.
   const onCrew  = (id: string) => id === previous.driver_id || id === previous.second_driver_id ? id : null
-  await Promise.all([
-    assertDriverAssignable(input.driver_id, onCrew(input.driver_id), today),
-    second ? assertDriverAssignable(second, onCrew(second), today) : Promise.resolve(),
-    assertTruckAssignable(input.truck_id, prevDelivery?.is_vendor_supplied ? null : previous.truck_id),
-  ])
-  const crewIds = [input.driver_id, second].filter((x): x is string => !!x)
+  if (!vendor) {
+    await Promise.all([
+      assertDriverAssignable(leadId, onCrew(leadId), today),
+      second ? assertDriverAssignable(second, onCrew(second), today) : Promise.resolve(),
+      assertTruckAssignable(truckId!, prevDelivery?.is_vendor_supplied ? null : previous.truck_id),
+    ])
+  }
+  // Nobody already on another active booking, in either seat, on either path.
+  const crewIds = [leadId, second].filter((x): x is string => !!x)
   const busy = await busyDriversFor(crewIds, bookingId)
   for (const id of crewIds) {
     const b = busy.get(id)
-    if (b) throw new Error(driverBusyMessage(id === input.driver_id ? 'This driver' : 'The second driver', b))
+    if (b) throw new Error(driverBusyMessage(id === leadId ? 'This driver' : 'The second driver', b))
   }
 
-  const truckType = (await supabase
-    .from('trucks').select('truck_models ( name )').eq('truck_id', input.truck_id).maybeSingle()
-  ).data as { truck_models?: { name?: string | null } | null } | null
+  const truckType = vendor
+    ? input.vendor_vehicle_type?.trim() || null
+    : ((await supabase
+        .from('trucks').select('truck_models ( name )').eq('truck_id', truckId).maybeSingle()
+      ).data as { truck_models?: { name?: string | null } | null } | null)?.truck_models?.name ?? null
+  const snap = external?.snapshot
 
   const now = new Date().toISOString()
   const replacement = await withBookingRowLock(bookingId, async (client, locked) => {
@@ -157,22 +210,30 @@ export async function replaceCrewService(
     const handoverLat = pause.latitude  ?? lastPing?.latitude  ?? null
     const handoverLng = pause.longitude ?? lastPing?.longitude ?? null
 
+    // Same shape as an assignment (assignment.model): a vendor crew is a
+    // snapshot on the delivery with deliveries.driver_id / truck_id left NULL.
     await client.query(
       `UPDATE deliveries
           SET driver_id = $2, truck_id = $3, second_driver_id = $4, helper_name = $5,
-              is_vendor_supplied = false, vendor_name = NULL, vendor_contact = NULL,
-              vendor_driver_name = NULL, vendor_driver_license = NULL, vendor_driver_phone = NULL,
-              vendor_vehicle_plate = NULL, vendor_vehicle_type = NULL, vendor_driver_email = NULL,
-              vendor_driver_user_id = NULL, updated_at = $6
+              is_vendor_supplied = $6, vendor_name = $7, vendor_contact = $8,
+              vendor_driver_name = $9, vendor_driver_license = $10, vendor_driver_phone = $11,
+              vendor_vehicle_plate = $12, vendor_vehicle_type = $13, vendor_driver_email = $14,
+              vendor_driver_user_id = $15, updated_at = $16
         WHERE booking_id = $1`,
-      [bookingId, input.driver_id, input.truck_id, second, second ? null : input.helper_name?.trim() || null, now],
+      [
+        bookingId, vendor ? null : leadId, truckId, second, helper,
+        vendor, snap?.vendor_name ?? null, snap?.vendor_contact ?? null,
+        snap?.vendor_driver_name ?? null, snap?.vendor_driver_license ?? null, snap?.vendor_driver_phone ?? null,
+        plate, vendor ? input.vendor_vehicle_type?.trim() || null : null, snap?.vendor_driver_email ?? null,
+        external?.userId ?? null, now,
+      ],
     )
     await client.query('DELETE FROM driver_assignments WHERE booking_id = $1', [bookingId])
     await client.query('DELETE FROM truck_assignments  WHERE booking_id = $1', [bookingId])
     await client.query(
       `INSERT INTO driver_assignments (booking_id, driver_id, crew_role, assigned_at, assigned_by)
        VALUES ($1, $2, 'lead', $3, $4)`,
-      [bookingId, input.driver_id, now, staff.userId],
+      [bookingId, leadId, now, staff.userId],
     )
     if (second) {
       await client.query(
@@ -181,29 +242,32 @@ export async function replaceCrewService(
         [bookingId, second, now, staff.userId],
       )
     }
-    await client.query(
-      `INSERT INTO truck_assignments (booking_id, truck_id, assigned_at, assigned_by) VALUES ($1, $2, $3, $4)`,
-      [bookingId, input.truck_id, now, staff.userId],
-    )
+    // A registered fleet row only: there is none for a vendor vehicle.
+    if (truckId) {
+      await client.query(
+        `INSERT INTO truck_assignments (booking_id, truck_id, assigned_at, assigned_by) VALUES ($1, $2, $3, $4)`,
+        [bookingId, truckId, now, staff.userId],
+      )
+    }
     await client.query(
       `UPDATE bookings SET truck_type_needed = COALESCE($2, truck_type_needed), updated_at = $3 WHERE booking_id = $1`,
-      [bookingId, truckType?.truck_models?.name ?? null, now],
+      [bookingId, truckType, now],
     )
 
     const { rows: [row] } = await client.query(
       `INSERT INTO crew_replacements (
          booking_id, trip_id, pause_id, report_id,
          old_driver_id, old_second_driver_id, old_truck_id, old_vehicle_plate,
-         new_driver_id, new_second_driver_id, new_truck_id,
+         new_driver_id, new_second_driver_id, new_truck_id, new_vehicle_plate,
          reason_note, handover_latitude, handover_longitude, transfer_required,
          replaced_by, replaced_by_role, replaced_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        RETURNING *`,
       [
         bookingId, loaded?.trip_id ?? pause.trip_id, pause.pause_id, pause.report_id,
         previous.driver_id, previous.second_driver_id, prevDelivery?.is_vendor_supplied ? null : previous.truck_id,
         prevDelivery?.is_vendor_supplied ? prevDelivery.vendor_vehicle_plate : null,
-        input.driver_id, second, input.truck_id,
+        leadId, second, truckId, plate,
         note, handoverLat, handoverLng,
         // The load moves only if there is one aboard and the vehicle changed.
         !!loaded && truckChanged,
@@ -225,13 +289,30 @@ export async function replaceCrewService(
     null,
     previous.second_driver_id && !staying.has(previous.second_driver_id) ? previous.second_driver_id : null,
   )
-  await reserveCrew(input.driver_id, input.truck_id, second)
+  // The company reservation state machine is fleet-only; a vendor crew is not in it.
+  if (!vendor) await reserveCrew(leadId, truckId, second)
+
+  // A vendor driver with no working passkey gets a setup link, as on assigning.
+  for (const driver of [external, externalSecond]) {
+    if (!driver?.needsInvite) continue
+    void issueInvite({
+      userId:     driver.userId,
+      email:      driver.snapshot.vendor_driver_email,
+      bookingId,
+      bookingRef: bookingRef(booking),
+      firstName:  driver.firstName,
+      actorId:    staff.userId,
+    }).catch((err) => {
+      console.error('[crew-replacement] failed to send vendor driver invite', bookingId, err)
+    })
+  }
 
   const after = (await BookingModel.findById(bookingId)) ?? booking
   const swapped =
     driverChanged && truckChanged ? 'driver and vehicle'
     : truckChanged ? 'vehicle'
-    : 'driver'
+    : driverChanged || secondChanged ? 'driver'
+    : 'helper'
   const oldVehicle = (await truckLabel(replacement.old_truck_id)) ?? replacement.old_vehicle_plate ?? 'the old vehicle'
 
   logEvent({
@@ -239,8 +320,9 @@ export async function replaceCrewService(
     log_type:    'booking',
     action:      'booking_crew_replaced',
     description:
-      `Booking ${bookingRef(after)}: ${swapped} replaced on the road — driver ${previous.driver_id ?? 'none'} → ${input.driver_id}, ` +
-      `vehicle ${replacement.old_truck_id ?? replacement.old_vehicle_plate ?? 'none'} → ${input.truck_id}` +
+      `Booking ${bookingRef(after)}: ${swapped} replaced on the road — driver ${previous.driver_id ?? 'none'} → ${leadId}${vendor ? ' (vendor)' : ''}, ` +
+      `vehicle ${replacement.old_truck_id ?? replacement.old_vehicle_plate ?? 'none'} → ${truckId ?? plate}` +
+      `${helper ? `, helper ${helper}` : ''}` +
       `${replacement.transfer_required ? '; load transfer required' : ''}. Reason: ${note}`,
   })
 

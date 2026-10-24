@@ -73,15 +73,33 @@ export const updateDeliveryStatusSchema = z.object({
   delivery_time: z.string().datetime().optional(),
 })
 
-// Replacing the crew of a delivery already on the road (paused). Company fleet
-// only: the full new crew, with the current members re-sent where they stay.
+// Replacing the crew of a delivery already on the road (paused): the full new
+// crew, with the current members re-sent where they stay. From the 8338 fleet
+// (driver_id + truck_id) or from a vendor (vendor driver + typed vehicle).
 export const replaceCrewSchema = z.object({
-  driver_id:        z.string().uuid('driver_id must be a valid UUID'),
-  truck_id:         z.string().uuid('truck_id must be a valid UUID'),
+  driver_id:        z.string().uuid('driver_id must be a valid UUID').optional(),
+  truck_id:         z.string().uuid('truck_id must be a valid UUID').optional(),
   second_driver_id: z.string().uuid('second_driver_id must be a valid UUID').nullable().optional(),
   helper_name:      z.string().trim().max(120, 'Helper name is too long').nullable().optional(),
   reason_note:      z.string().trim().min(3, 'Say why the crew is being replaced').max(500),
-}).strict()
+  is_vendor_supplied:           z.boolean().optional().default(false),
+  vendor_driver_user_id:        z.string().uuid('Choose a vendor driver').optional(),
+  second_vendor_driver_user_id: z.string().uuid('Choose a valid second vendor driver').nullable().optional(),
+  vendor_vehicle_plate:         z.string().trim().toUpperCase().regex(PLATE_REGEX, PLATE_ERROR).optional(),
+  vendor_vehicle_type:          z.string().trim().max(60).nullable().optional(),
+}).strict().superRefine((data, ctx) => {
+  if (data.is_vendor_supplied) {
+    if (!data.vendor_driver_user_id) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['vendor_driver_user_id'], message: 'Choose the vendor driver' })
+    }
+    if (!data.vendor_vehicle_plate) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['vendor_vehicle_plate'], message: 'Vehicle plate is required for a vendor crew' })
+    }
+  } else {
+    if (!data.driver_id) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['driver_id'], message: 'driver_id is required' })
+    if (!data.truck_id)  ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['truck_id'],  message: 'truck_id is required' })
+  }
+})
 
 export type AssignBookingInput       = z.infer<typeof assignBookingSchema>
 export type UpdateDeliveryStatusInput = z.infer<typeof updateDeliveryStatusSchema>

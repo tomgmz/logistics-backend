@@ -50,8 +50,13 @@ export const MODULE_KEYS = [
   'audit-logs',
   // Incidents drivers raise from the road (the driver app's Reports tab).
   'reports',
+  // Client support tickets (Tickets page + the dashboard queue).
+  'support-tickets',
 ] as const
 export type ModuleKey = (typeof MODULE_KEYS)[number]
+
+// Modules with nothing to change: Manage Access only offers Read Only for them.
+export const VIEW_ONLY_MODULES: readonly ModuleKey[] = ['transit-tracking', 'transaction-history', 'audit-logs']
 
 // Tiered access model mirrored from the frontend. The 5 granular flags remain the
 // source of truth; these two levels are how an IT Admin assigns them:
@@ -79,6 +84,7 @@ export const MODULES_BY_ROLE: Record<ManagedRole, ModuleKey[]> = {
     'system-maintenance',
     'audit-logs',
     'reports',
+    'support-tickets',
   ],
   general_manager: [
     'vehicle-management',
@@ -86,7 +92,7 @@ export const MODULES_BY_ROLE: Record<ManagedRole, ModuleKey[]> = {
     'document-management',
   ],
   fleet_manager: ['booking-management', 'vehicle-management', 'transit-tracking', 'reports'],
-  operations_manager: ['booking-management', 'vehicle-management', 'document-management', 'transit-tracking', 'reports'],
+  operations_manager: ['booking-management', 'vehicle-management', 'document-management', 'transit-tracking', 'reports', 'support-tickets'],
 }
 
 // Default access tier per role per module. Seeded into module_permissions when a
@@ -103,10 +109,11 @@ export const ROLE_MODULE_DEFAULTS: Record<ManagedRole, Partial<Record<ModuleKey,
     'vehicle-management':  'all',
     'document-management': 'all',
     'system-maintenance':  'all',
-    'transit-tracking':    'all',
+    'transit-tracking':    'read',
     'transaction-history': 'read',
     'audit-logs':          'read',
     'reports':             'all',
+    'support-tickets':     'all',
   },
   general_manager: {
     'booking-management':  'all',
@@ -119,7 +126,7 @@ export const ROLE_MODULE_DEFAULTS: Record<ManagedRole, Partial<Record<ModuleKey,
     // VEHICLE, so they are governed by the vehicle-management tier below.
     'booking-management': 'read',
     'vehicle-management': 'all',
-    'transit-tracking':   'all',
+    'transit-tracking':   'read',
     // Vehicle-related reports only (breakdowns, accidents) — the scoping is
     // done server-side in the report service, not by this tier.
     'reports':            'all',
@@ -128,10 +135,12 @@ export const ROLE_MODULE_DEFAULTS: Record<ManagedRole, Partial<Record<ModuleKey,
     'booking-management':  'all',
     'vehicle-management':  'read',
     'document-management': 'all',
-    'transit-tracking':    'all',
+    'transit-tracking':    'read',
     // Operations is who responds to a driver in trouble: acknowledging and
     // resolving a report is an edit, so Manage All.
     'reports':             'all',
+    // Operations answers client tickets alongside the Company Administrator.
+    'support-tickets':     'all',
   },
 }
 

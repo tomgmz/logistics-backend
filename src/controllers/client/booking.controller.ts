@@ -437,7 +437,8 @@ export const confirmCompletion = async (req: Request, res: Response) => {
 export const resolveDeliveryIssue = async (req: Request, res: Response) => {
   try {
     const { userId } = getRequestMeta(req)
-    const booking = await resolveDeliveryIssueService(param(req.params.id), viewerFrom(req), userId)
+    const note    = typeof req.body?.note === 'string' ? req.body.note : ''
+    const booking = await resolveDeliveryIssueService(param(req.params.id), note, viewerFrom(req), userId)
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
     const isNotFound  = error.message.includes('not found')

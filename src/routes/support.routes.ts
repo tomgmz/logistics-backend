@@ -4,6 +4,7 @@ import { authenticate, authorize } from '../middlewares/auth.middleware.js'
 import { authenticatedLimiter } from '../middlewares/rateLimit.middleware.js'
 import { attachClientScope } from '../middlewares/clientScope.middleware.js'
 import { validate } from '../middlewares/validate.middleware.js'
+import { requireModule } from '../middlewares/moduleAccess.middleware.js'
 import * as Support from '../services/support/support.service.js'
 import { supportInboxEmail } from '../lib/brevo-mailer.js'
 
@@ -63,7 +64,7 @@ router.get('/tickets/mine', authenticate, authenticatedLimiter, isClient, attach
     } catch (err) { fail(res, err) }
   })
 
-router.get('/tickets', authenticate, authenticatedLimiter, isSupportDesk,
+router.get('/tickets', authenticate, authenticatedLimiter, isSupportDesk, requireModule('support-tickets'),
   async (req: Request, res: Response) => {
     try {
       const raw    = String(req.query.status ?? 'open')
@@ -73,7 +74,8 @@ router.get('/tickets', authenticate, authenticatedLimiter, isSupportDesk,
     } catch (err) { fail(res, err) }
   })
 
-router.patch('/tickets/:id/resolve', authenticate, authenticatedLimiter, isSupportDesk, validate(resolveSchema),
+// Resolving is an edit: a Read Only Tickets tier can read the queue but not close it.
+router.patch('/tickets/:id/resolve', authenticate, authenticatedLimiter, isSupportDesk, requireModule('support-tickets'), validate(resolveSchema),
   async (req: Request, res: Response) => {
     try {
       const ticket = await Support.resolveTicket(String(req.params.id), req.user!.sub, req.body?.note ?? null)

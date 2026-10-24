@@ -14,6 +14,7 @@ import {
   type BookingPause,
   type BookingPauseWithActors,
   type PauseTripInput,
+  type PauseContinuationInput,
 } from '../../types/client/pause.types.js'
 import type { BookingWithRelations } from '../../types/client/booking.types.js'
 
@@ -250,6 +251,70 @@ export async function staffResumeTripService(
   announcePauseChanged(bookingId)
 
   return replanned ?? booking
+}
+
+/* ── Continuation ─────────────────────────────────────────────────────────── */
+
+/** "Oct 26, 2026" from YYYY-MM-DD, read as a calendar day (no timezone shift). */
+function dateLabel(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', {
+    timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric',
+  })
+}
+
+/** "9:00 AM" from HH:MM. */
+function clockLabel(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+}
+
+/** Today's date in Manila as YYYY-MM-DD. */
+function todayPh(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+}
+
+/**
+ * While a delivery is paused, the office says when it will continue: a date for
+ * the client, and that date plus a call time for the driver. Can be changed as
+ * often as the plan changes; each change is announced again. The live ETA only
+ * returns once the driver is moving, so the client is told the date alone.
+ */
+export async function setPauseContinuationService(
+  bookingId: string,
+  input: PauseContinuationInput,
+  actor: DriverActor,
+): Promise<BookingPause> {
+  assertPauseDesk(actor, 'pause')
+  const booking = await BookingModel.findById(bookingId)
+  if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
+
+  const open = await PauseModel.findOpen(bookingId)
+  if (!open) throw new Error('Cannot set a continuation date: the delivery is not paused')
+  if (input.date < todayPh()) throw new Error('Cannot set a continuation date in the past')
+
+  const saved = await PauseModel.setExpectedResume(open.pause_id, {
+    expected_resume_date:      input.date,
+    expected_resume_call_time: input.call_time,
+    expected_resume_set_by:    actor.userId ?? null,
+  })
+  if (!saved) throw new Error('Cannot set a continuation date: the delivery is not paused')
+
+  const continuationDate = dateLabel(input.date)
+  const callTimeLabel    = clockLabel(input.call_time)
+
+  logEvent({
+    user_id:     actor.userId,
+    log_type:    'booking',
+    action:      'pause_continuation_set',
+    description: `Booking ${bookingRef(booking)} expected to continue on ${continuationDate}, driver call time ${callTimeLabel}`,
+  })
+
+  void notifyStage('pause_continuation', booking, { continuationDate })
+  void notifyStage('pause_continuation_driver', booking, { continuationDate, callTimeLabel })
+  announcePauseChanged(bookingId)
+
+  return saved
 }
 
 /* ── Reading ──────────────────────────────────────────────────────────────── */

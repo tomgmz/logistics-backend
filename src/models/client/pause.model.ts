@@ -101,6 +101,23 @@ async function close(pauseId: string, fields: {
   return (data ?? []).length > 0
 }
 
+/** The expected continuation of an open pause. Null when the pause had already ended. */
+async function setExpectedResume(pauseId: string, fields: {
+  expected_resume_date:      string
+  expected_resume_call_time: string
+  expected_resume_set_by:    string | null
+}): Promise<BookingPause | null> {
+  const { data, error } = await supabase
+    .from('booking_pauses')
+    .update({ ...fields, expected_resume_set_at: new Date().toISOString() })
+    .eq('pause_id', pauseId)
+    .is('resumed_at', null)
+    .select('*')
+    .maybeSingle()
+  if (error) throw error
+  return (data as BookingPause | null) ?? null
+}
+
 /** Mirror the pause in force onto the booking, or clear it (all nulls). */
 async function setBookingPause(bookingId: string, pause: {
   paused_at:    string | null
@@ -120,6 +137,7 @@ export const PauseModel = {
   open,
   linkReport,
   close,
+  setExpectedResume,
   setBookingPause,
 }
 

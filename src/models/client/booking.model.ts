@@ -80,6 +80,7 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   client_issue_note,
   client_issue_reported_at,
   client_issue_resolved_at,
+  client_issue_resolution_note,
   paused_at,
   pause_reason,
   created_at,
@@ -859,6 +860,7 @@ async function reportClientIssue(bookingId: string, note: string, by: string | n
       // A new report reopens a problem staff had marked resolved.
       client_issue_resolved_at: null,
       client_issue_resolved_by: null,
+      client_issue_resolution_note: null,
       updated_at:               now,
     })
     .eq('booking_id', bookingId)
@@ -872,13 +874,14 @@ async function reportClientIssue(bookingId: string, note: string, by: string | n
  * booking; the client gets a fresh 3 days from now to confirm, and a fresh
  * reminder. Guarded on an open report, so a double click resolves it once.
  */
-async function resolveClientIssue(bookingId: string, by: string | null): Promise<boolean> {
+async function resolveClientIssue(bookingId: string, by: string | null, note: string): Promise<boolean> {
   const now = new Date().toISOString()
   const { data, error } = await supabase
     .from('bookings')
     .update({
       client_issue_resolved_at:    now,
       client_issue_resolved_by:    by,
+      client_issue_resolution_note: note,
       completion_reminder_sent_at: null,
       updated_at:                  now,
     })

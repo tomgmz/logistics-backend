@@ -256,7 +256,8 @@ export async function listForGroup(
     // is already being handled by the person reading the queue.
     .eq('delivery_method', 'link')
     .in('status', statuses)
-    .order('created_at', { ascending: false })
+    // First in, first out: whoever has waited longest is at the top.
+    .order('created_at', { ascending: true })
     .limit(limit)
 
   if (error) throw error

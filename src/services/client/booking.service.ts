@@ -1224,6 +1224,7 @@ const ISSUE_RESOLVERS = new Set(['admin', 'operations_manager'])
  */
 export async function resolveDeliveryIssueService(
   bookingId: string,
+  note:      string,
   viewer:    BookingViewer,
   userId?:   string | null,
 ): Promise<BookingWithRelations> {
@@ -1242,7 +1243,11 @@ export async function resolveDeliveryIssueService(
   }
   if (issue.client_issue_resolved_at) return existing
 
-  const done    = await BookingModel.resolveClientIssue(bookingId, userId ?? null)
+  // What was done about it goes to the client, so it is required.
+  const remarks = note.trim()
+  if (remarks.length < 5) throw new Error('Cannot resolve without remarks: write what was done about the problem')
+
+  const done    = await BookingModel.resolveClientIssue(bookingId, userId ?? null, remarks)
   const booking = (await BookingModel.findById(bookingId)) ?? existing
   if (!done) return booking // resolved by someone else first
 
@@ -1250,9 +1255,9 @@ export async function resolveDeliveryIssueService(
     user_id:     userId,
     log_type:    'booking',
     action:      'booking_delivery_issue_resolved',
-    description: `Problem reported on booking ${bookingRef(booking)} marked resolved; the client has ${AUTO_COMPLETE_DAYS} days to confirm`,
+    description: `Problem reported on booking ${bookingRef(booking)} marked resolved (${remarks}); the client has ${AUTO_COMPLETE_DAYS} days to confirm`,
   })
-  void notifyStage('delivery_issue_resolved', booking)
+  void notifyStage('delivery_issue_resolved', booking, { reason: remarks })
 
   return booking
 }

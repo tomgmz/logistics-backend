@@ -14,6 +14,7 @@ import {
 } from '../../services/client/trip.service.js'
 import {
   staffPauseTripService,
+  setPauseContinuationService,
   staffResumeTripService,
   listPausesService,
 } from '../../services/client/pause.service.js'
@@ -319,6 +320,15 @@ export const staffResumeTrip = async (req: Request, res: Response) => {
       req.body?.note ?? null,
     )
     res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    res.status(pauseStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+export const setPauseContinuation = async (req: Request, res: Response) => {
+  try {
+    const pause = await setPauseContinuationService(param(req.params.bookingId), req.body, driverActor(req))
+    res.status(200).json({ status: 'success', data: pause })
   } catch (error: any) {
     res.status(pauseStatus(error.message)).json({ status: 'error', message: error.message })
   }

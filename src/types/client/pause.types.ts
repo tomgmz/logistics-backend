@@ -43,6 +43,12 @@ export interface BookingPause {
   resumed_by:  string | null
   resumed_via: ResumedVia | null
   resume_note: string | null
+  /** Set by the office while paused: the day the delivery should continue (YYYY-MM-DD, Manila). */
+  expected_resume_date:      string | null
+  /** The driver's call time for that day (HH:MM[:SS]). */
+  expected_resume_call_time: string | null
+  expected_resume_set_by:    string | null
+  expected_resume_set_at:    string | null
   created_at:  string
 }
 
@@ -50,6 +56,12 @@ export interface BookingPause {
 export interface BookingPauseWithActors extends BookingPause {
   pauser:  { first_name: string | null; last_name: string | null } | null
   resumer: { first_name: string | null; last_name: string | null } | null
+}
+
+/** The office sets when a paused delivery continues. */
+export interface PauseContinuationInput {
+  date:      string
+  call_time: string
 }
 
 export interface PauseTripInput {
