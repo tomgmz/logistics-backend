@@ -44,8 +44,8 @@ async function update(userId: string, input: UpdateAdminInput) {
     const userFields: Record<string, any> = {}
     if (input.first_name     != undefined) userFields.first_name =     input.first_name
     if (input.last_name      != undefined) userFields.last_name =      input.last_name
-    if (input.middle_name != undefined) userFields.middle_name = input.middle_name
-    if (input.suffix         != undefined) userFields.suffix =         input.suffix
+    if (input.middle_name !== undefined) userFields.middle_name = input.middle_name
+    if (input.suffix         !== undefined) userFields.suffix =         input.suffix
     if (input.phone !== undefined) userFields.phone =                  input.phone 
     if (input.email          != undefined) userFields.email =          input.email
 
