@@ -45,7 +45,7 @@ export async function deleteAdmin(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
     await AdminService.deleteAdmin(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'Administrator deleted successfully' })
+    res.status(200).json({ status: 'success', message: 'Administrator archived successfully' })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })
   }

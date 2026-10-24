@@ -45,16 +45,6 @@ function statusForError(err: any): number {
   return 500
 }
 
-export async function createITAdmin(req: Request, res: Response) {
-  try {
-    const { userId } = getRequestMeta(req)
-    const data = await ITAdminService.createITAdmin(req.body, userId)
-    res.status(201).json({ status: 'success', data })
-  } catch (err: any) {
-    res.status(statusForError(err)).json({ status: 'error', code: err.code, message: err.message })
-  }
-}
-
 /** The caller's place in a handover: seat holder, or rendering until a date. */
 export async function getHandoverStatus(req: Request, res: Response) {
   try {
@@ -66,27 +56,53 @@ export async function getHandoverStatus(req: Request, res: Response) {
   }
 }
 
-/**
- * The IT Admin hands their role to a successor.
- *
- * The outgoing account is the caller — never named in the request — so a stale
- * id sitting in a form cannot hand over someone else's seat.
- */
-export async function transitionITAdmin(req: Request, res: Response) {
-  try {
-    const { userId } = getRequestMeta(req)
-    const data = await ITAdminService.transitionITAdmin(req.body, userId)
-    res.status(201).json({
-      status:  'success',
-      message: `IT Administrator role handed over. Your account stays active for ${ITAdminService.RENDER_DAYS} days.`,
-      data,
-    })
-  } catch (err: any) {
-    console.error('IT ADMIN TRANSITION ERROR:', err)
-    const status = err?.code === 'NOT_SEAT_HOLDER' ? 403 : statusForError(err)
-    res.status(status).json({ status: 'error', code: err.code, message: err.message })
+// Refusals a handover step can raise; each is the caller's to fix, not a server fault.
+const HANDOVER_CONFLICTS = new Set([
+  'NOT_SEAT_HOLDER', 'HANDOVER_OPEN', 'NO_OPEN_HANDOVER', 'SUCCESSOR_PENDING',
+  'NO_SUCCESSOR', 'SUCCESSOR_CONFIRMED',
+])
+
+/** One handler shape for every handover step. The actor is always the caller. */
+function handoverStep(
+  run: (req: Request, actorId: string) => Promise<unknown>,
+  message: string,
+  created = false,
+) {
+  return async (req: Request, res: Response) => {
+    try {
+      const { userId } = getRequestMeta(req)
+      const data = await run(req, userId!)
+      res.status(created ? 201 : 200).json({ status: 'success', message, data: data ?? null })
+    } catch (err: any) {
+      console.error('IT ADMIN HANDOVER ERROR:', err)
+      const status = HANDOVER_CONFLICTS.has(err?.code) ? 409 : statusForError(err)
+      res.status(status).json({ status: 'error', code: err.code, message: err.message })
+    }
   }
 }
+
+export const startHandover = handoverStep(
+  (req, actor) => ITAdminService.startHandover(req.body, actor),
+  `Handover started. You stay the IT Administrator until your replacement sets their password.`,
+  true,
+)
+export const addSuccessor = handoverStep(
+  (req, actor) => ITAdminService.addSuccessor(req.body, actor),
+  'Replacement added. They were emailed a temporary password.',
+  true,
+)
+export const resendSuccessor = handoverStep(
+  (_req, actor) => ITAdminService.resendSuccessorSignIn(actor),
+  'A new sign-in email was sent to your replacement.',
+)
+export const replaceSuccessor = handoverStep(
+  (_req, actor) => ITAdminService.replaceSuccessor(actor),
+  'Replacement removed. You can add a different one.',
+)
+export const cancelHandover = handoverStep(
+  (_req, actor) => ITAdminService.cancelHandover(actor),
+  'Handover cancelled. You remain the IT Administrator.',
+)
 
 export async function updateITAdmin(req: Request, res: Response) {
   try {
@@ -102,7 +118,7 @@ export async function deleteITAdmin(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
     await ITAdminService.deleteITAdmin(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'IT Administrator deleted successfully' })
+    res.status(200).json({ status: 'success', message: 'IT Administrator archived successfully' })
   } catch (err: any) {
     res.status(statusForError(err)).json({ status: 'error', code: err.code, message: err.message })
   }

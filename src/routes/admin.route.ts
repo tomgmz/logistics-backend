@@ -10,7 +10,7 @@ import { createTruckModelSchema, updateTruckModelSchema }             from '../s
 import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../schema/admin/general_manager.schema.js'
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
-import { createITAdminSchema, updateITAdminSchema, transitionITAdminSchema }   from '../schema/admin/it-admin.schema.js'
+import { updateITAdminSchema, startHandoverSchema, itAdminSuccessorSchema } from '../schema/admin/it-admin.schema.js'
 import { assignBookingSchema, replaceCrewSchema, updateDeliveryStatusSchema } from '../schema/admin/assignment.schema.js'
 import * as AdminController           from '../controllers/admin/admin.controller.js'
 import * as ClientController          from '../controllers/admin/client.controller.js'
@@ -283,21 +283,25 @@ router.patch('/operations-admins/:id/activate',   authenticate, isAdmin, lockGua
 router.delete('/operations-admins/:id', authenticate, isAdmin,  lockGuard('user', fromParam('id')), OperationsAdminController.deleteOperationsAdmin)
 router.post('/operations-admins/:id/restore', authenticate, isAdmin, canRestoreUsers, lockGuard('user', fromParam('id')), UserRestoreController.restoreOperationsAdmin)
 
-//IT Admins
-router.get('/it-admins',        authenticate, isAdmin, ITAdminController.getAllITAdmins)
-router.get('/it-admins/handover', authenticate, isItAdmin, ITAdminController.getHandoverStatus)
-router.get('/it-admins/:id',    authenticate, isAdmin, ITAdminController.getITAdminById)
-router.post('/it-admins',       authenticate, isAdmin, validate(createITAdminSchema), ITAdminController.createITAdmin)
-// Handing the role to a successor is narrower than the rest of this group: only
-// the root admin, never an IT Admin. A resigning office-holder must not be able
-// to appoint their own replacement, and `isAdmin` above would let them.
-// Run by the outgoing IT Admin on themselves: creates the successor, starts a 30-day render period.
-router.post('/it-admins/transition', authenticate, isItAdmin, validate(transitionITAdminSchema), ITAdminController.transitionITAdmin)
-router.patch('/it-admins/:id',  authenticate, isAdmin, lockGuard('user', fromParam('id')), validate(updateITAdminSchema), ITAdminController.updateITAdmin)
-router.patch('/it-admins/:id/deactivate', authenticate, isAdmin, lockGuard('user', fromParam('id')), ITAdminController.deactivateITAdmin)
-router.patch('/it-admins/:id/activate',   authenticate, isAdmin, lockGuard('user', fromParam('id')), ITAdminController.activateITAdmin)
-router.delete('/it-admins/:id', authenticate, isAdmin, lockGuard('user', fromParam('id')), ITAdminController.deleteITAdmin)
-router.post('/it-admins/:id/restore', authenticate, isAdmin, canRestoreUsers, lockGuard('user', fromParam('id')), UserRestoreController.restoreITAdmin)
+//IT Admins — the IT Administrator's own business since 2026-10-24: the Company
+// Administrator no longer sees or manages them. A new IT Admin is only ever made
+// through the handover below (there is no plain create).
+router.get('/it-admins',        authenticate, isItAdmin, ITAdminController.getAllITAdmins)
+// The handover, run by the outgoing IT Admin on themselves (2026-10-25): start
+// the 30-day render, add the successor (now or later), resend their sign-in
+// email, replace them, or cancel. It ends when the successor sets a password.
+router.get('/it-admins/handover',                  authenticate, isItAdmin, ITAdminController.getHandoverStatus)
+router.post('/it-admins/handover/start',           authenticate, isItAdmin, validate(startHandoverSchema), ITAdminController.startHandover)
+router.post('/it-admins/handover/successor',       authenticate, isItAdmin, validate(itAdminSuccessorSchema), ITAdminController.addSuccessor)
+router.post('/it-admins/handover/successor/resend', authenticate, isItAdmin, ITAdminController.resendSuccessor)
+router.delete('/it-admins/handover/successor',     authenticate, isItAdmin, ITAdminController.replaceSuccessor)
+router.post('/it-admins/handover/cancel',          authenticate, isItAdmin, ITAdminController.cancelHandover)
+router.get('/it-admins/:id',    authenticate, isItAdmin, ITAdminController.getITAdminById)
+router.patch('/it-admins/:id',  authenticate, isItAdmin, lockGuard('user', fromParam('id')), validate(updateITAdminSchema), ITAdminController.updateITAdmin)
+router.patch('/it-admins/:id/deactivate', authenticate, isItAdmin, lockGuard('user', fromParam('id')), ITAdminController.deactivateITAdmin)
+router.patch('/it-admins/:id/activate',   authenticate, isItAdmin, lockGuard('user', fromParam('id')), ITAdminController.activateITAdmin)
+router.delete('/it-admins/:id', authenticate, isItAdmin, lockGuard('user', fromParam('id')), ITAdminController.deleteITAdmin)
+router.post('/it-admins/:id/restore', authenticate, isItAdmin, lockGuard('user', fromParam('id')), UserRestoreController.restoreITAdmin)
 
 //Fetch all users
 router.get('/users',       authenticate, isAdmin, UserController.getUsers)

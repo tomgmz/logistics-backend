@@ -47,7 +47,7 @@ export async function revoke(req: Request, res: Response) {
       req.user?.sub ?? null,
       typeof req.body?.reason === 'string' && req.body.reason.trim()
         ? req.body.reason.trim().slice(0, 200)
-        : 'Revoked by Administrator',
+        : 'Revoked by IT Administrator',
     )
     res.status(200).json({
       status:  'success',

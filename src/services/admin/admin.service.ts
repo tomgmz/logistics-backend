@@ -95,8 +95,8 @@ export async function deleteAdmin(userId: string, actorId?: string | null) {
   logEvent({
     user_id:     actorId,
     log_type:    'user_management',
-    action:      'admin_deleted',
-    description: `Administrator ${userId} deleted`,
+    action:      'admin_archived',
+    description: `Administrator ${userId} archived`,
 
   })
 

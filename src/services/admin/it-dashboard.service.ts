@@ -54,7 +54,7 @@ const SCHEDULERS = [
   {
     source:           'it-admin-render.scheduler',
     label:            'IT Administrator handover',
-    description:      'Deactivates the outgoing IT Administrator when their 30-day render period ends.',
+    description:      'Finishes any IT Administrator handover whose replacement already set their password (normally done at once).',
     interval_minutes: 60,
   },
   {
@@ -357,7 +357,8 @@ async function accounts(now: number, users: M.UserRow[]): Promise<AccountsSectio
   const dormant = active.filter((u) => u.last_login_at && Date.parse(utc(u.last_login_at)!) < dormantBefore).length
 
   const itAdmin = active.find((u) => u.role === 'it_admin') ?? null
-  const handover = await M.latestAuditByAction('it_admin_transitioned')
+  // it_admin_transitioned is the one-step handover used before 2026-10-25.
+  const handover = await M.latestAuditByAction(['it_admin_handover_completed', 'it_admin_transitioned'])
 
   const administrators = users
     .filter((u) => u.role === 'admin' && u.status !== 'archived')

@@ -106,8 +106,8 @@ export async function deleteOperationsAdmin(userId: string, actorId?: string | n
   logEvent({
     user_id:     actorId,
     log_type:    'user_management',
-    action:      'operations_admin_deleted',
-    description: `Operations Manager ${userId} deleted`,
+    action:      'operations_admin_archived',
+    description: `Operations Manager ${userId} archived`,
 
   })
 

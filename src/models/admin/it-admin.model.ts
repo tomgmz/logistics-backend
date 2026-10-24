@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import { createUserWithProfile } from '../../lib/user-provisioning.js'
-import { CreateITAdminInput, UpdateITAdminInput } from '../../types/it-admin.types.js'
+import { CreateITAdminInput, ITAdminHandover, UpdateITAdminInput } from '../../types/it-admin.types.js'
 
 async function findAll(excludeId?: string) {
   let query = supabase
@@ -67,18 +67,37 @@ async function findSeatHolders() {
   return data ?? []
 }
 
-/** Active IT Admins whose render period has run out. */
-async function findRenderEnded(now: Date) {
+/** The handover in progress (at most one), or null. */
+async function findOpenHandover() {
   const { data, error } = await supabase
-    .from('users')
-    .select('user_id, email, render_ends_at')
-    .eq('role', 'it_admin')
-    .eq('status', 'active')
-    .not('render_ends_at', 'is', null)
-    .lte('render_ends_at', now.toISOString())
+    .from('it_admin_handovers')
+    .select('*')
+    .is('ended_at', null)
+    .is('cancelled_at', null)
+    .maybeSingle()
 
   if (error) throw error
-  return data ?? []
+  return data as ITAdminHandover | null
+}
+
+/** Open handovers whose successor already set their own password (a missed completion). */
+async function findConfirmedButOpen() {
+  const { data, error } = await supabase
+    .from('it_admin_handovers')
+    .select('handover_id, successor_id, users!it_admin_handovers_successor_id_fkey!inner ( must_change_password, status )')
+    .is('ended_at', null)
+    .is('cancelled_at', null)
+    .not('successor_id', 'is', null)
+    .eq('users.must_change_password', false)
+    .eq('users.status', 'active')
+
+  if (error) throw error
+  return (data ?? []) as unknown as { handover_id: string; successor_id: string }[]
+}
+
+async function updateHandover(handoverId: string, fields: Partial<ITAdminHandover>) {
+  const { error } = await supabase.from('it_admin_handovers').update(fields).eq('handover_id', handoverId)
+  if (error) throw error
 }
 
 async function create(userId: string, input: CreateITAdminInput) {
@@ -124,4 +143,4 @@ async function remove(userId: string) {
   return true
 }
 
-export { findAll, findById, findActive, findSeatHolders, findRenderEnded, create, update, remove }
+export { findAll, findById, findActive, findSeatHolders, findOpenHandover, findConfirmedButOpen, updateHandover, create, update, remove }

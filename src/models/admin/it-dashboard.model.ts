@@ -81,11 +81,12 @@ export async function allUsers(): Promise<UserRow[]> {
   return (data ?? []) as UserRow[]
 }
 
-export async function latestAuditByAction(action: string) {
+/** The newest audit row with any of `actions`. */
+export async function latestAuditByAction(actions: string[]) {
   const { data, error } = await supabase
     .from('audit_logs')
     .select('description, timestamp')
-    .eq('action', action)
+    .in('action', actions)
     .order('timestamp', { ascending: false })
     .limit(1)
     .maybeSingle()

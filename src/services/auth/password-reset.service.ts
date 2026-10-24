@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt'
 import * as AuthModel from '../../models/auth/auth.model.js'
 import * as ResetModel from '../../models/auth/password-reset.model.js'
 import { hashToken, passwordMatches, samePasswordError } from './auth.service.js'
+import { completeHandoverOnConfirm } from '../admin/it-admin.service.js'
 import { supabase } from '../../lib/supabase.js'
 import {
   buildResetUrl,
@@ -415,6 +416,10 @@ export async function completeReset(
   // Another request for the same token already completed — the password change
   // above was idempotent, so there is nothing to undo.
   if (!completed) return
+
+  // An IT Admin's own reset (the emailed-code path) also confirms a pending
+  // handover: a replacement whose temporary password ran out lands here.
+  if (request.requested_role === 'it_admin') await completeHandoverOnConfirm(request.user_id)
 
   logEvent({
     user_id:     request.user_id,

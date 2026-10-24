@@ -34,7 +34,6 @@ export function invalidateUserPermissions(userId: string): void {
 // so req.user is populated. Bypass + managed-role logic per the RBAC plan:
 //   - it_admin                    -> never restricted (BYPASS_ROLES); it runs the
 //                                    permission panel, so it must not be lockable
-//   - root administrator          -> never restricted, whatever its rows say
 //   - other non-managed roles     -> left to existing role gates
 //   - managed role, no rows       -> keep role-default access
 //   - managed role, has rows      -> enforce the matrix (missing/insufficient = 403)

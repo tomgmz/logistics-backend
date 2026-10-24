@@ -23,23 +23,35 @@ export interface CreateITAdminInput {
   created_by?: string
 }
 
-/**
- * The successor's details, plus why the handover is happening.
- *
- * There is no outgoing id: the system permits exactly one active IT Admin, so the
- * account being replaced is looked up rather than named by the caller — which
- * also means a stale id in a form cannot retire the wrong person.
- */
-export interface TransitionITAdminInput {
+/** One row of it_admin_handovers. */
+export interface ITAdminHandover {
+  handover_id:        string
+  outgoing_id:        string
+  reason:             string
+  started_at:         string
+  render_due_at:      string
+  successor_id:       string | null
+  successor_added_at: string | null
+  confirmed_at:       string | null
+  ended_at:           string | null
+  cancelled_at:       string | null
+  created_by:         string | null
+}
+
+/** The successor's details (added at the start of a handover or later). */
+export interface ITAdminSuccessorInput {
   first_name:   string
   last_name:    string
   middle_name?: string | null
   suffix?:      string | null
   email:        string
   phone?:       string
-  // Free text, kept in the audit log. A privileged account changing hands should
-  // say why on the record.
-  reason:       string
+}
+
+/** Starting a handover: why, and the successor if one is already known. */
+export interface StartHandoverInput {
+  reason:     string
+  successor?: ITAdminSuccessorInput | null
 }
 
 export interface UpdateITAdminInput {

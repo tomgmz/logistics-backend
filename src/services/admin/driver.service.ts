@@ -163,17 +163,18 @@ export async function updateDriver(userId: string, dto: UpdateDriverDTO, actorId
 export async function deleteDriver(userId: string, actorId?: string | null) {
   const result = await DriverModel.remove(userId)
   await banArchivedAuthUser(userId)
-  // Only vendor drivers hold passkeys; for everyone else this is a no-op. The ban
+  // Vendor drivers, and company drivers who set one up, hold passkeys. The ban
   // already blocks sign-in, but a passkey left live would come back the moment
   // the account is reused, and would block a fresh setup on the same phone with
-  // "one of the excluded credentials exists on the local device".
-  await WebauthnModel.revokeAllForUser(userId, actorId ?? null, 'Account deleted')
+  // "one of the excluded credentials exists on the local device". So archiving
+  // ends them (restoring means setting one up again); deactivating does not.
+  await WebauthnModel.revokeAllForUser(userId, actorId ?? null, 'Account archived')
 
   logEvent({
     user_id:     actorId,
     log_type:    'user_management',
-    action:      'driver_deleted',
-    description: `Driver ${userId} deleted`,
+    action:      'driver_archived',
+    description: `Driver ${userId} archived`,
   })
 
   return result

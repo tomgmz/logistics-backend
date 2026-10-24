@@ -12,7 +12,7 @@ import {
 import { supabase, supabaseAnon } from '../../lib/supabase.js'
 import { isManagedRole } from '../../constants/modules.js'
 import { getSessionPermissions } from '../admin/permissions.service.js'
-import { isProtectedAdmin } from '../../lib/protected-admin.js'
+import { completeHandoverOnConfirm } from '../admin/it-admin.service.js'
 import { logEvent } from '../../lib/log-event.js'
 import { logSystem } from '../../lib/log-system.js'
 import {
@@ -143,6 +143,10 @@ export async function changePassword(
   })
   if (error) throw new Error(`Failed to update password: ${error.message}`)
   await AuthModel.clearMustChangePassword(userId)
+
+  // A replacement IT Admin setting their own password confirms the handover:
+  // the previous IT Admin's render ends now (a no-op for anyone else).
+  if (user?.role === 'it_admin' && user.must_change_password) await completeHandoverOnConfirm(userId)
 
   // Tell the account holder, as a completed reset does. afterReset=false because
   // this path neither signs out other devices nor lifts a lockout.
@@ -304,6 +308,19 @@ export async function requestOtp(
     return
   }
 
+  // An outside-vendor driver signs in with the passkey on their phone only. An
+  // emailed code would be a way in around it, so none is sent. Silent, like the
+  // refusals above, so this endpoint is no enumeration oracle.
+  if (await AuthModel.isExternalDriver(user.user_id)) {
+    await AuthModel.createLoginHistory({
+      user_id: user.user_id,
+      email,
+      attempt_status: 'failed_inactive',
+      failure_reason: 'Sign-in code requested for a passkey-only external driver',
+    })
+    return
+  }
+
   const latestOtp = await AuthModel.findLatestOtp(user.user_id)
   if (latestOtp) {
     const secondsSinceLast = (Date.now() - new Date(latestOtp.created_at).getTime()) / 1000
@@ -380,6 +397,20 @@ export async function verifyOtp(
       failure_reason: `Account status: ${user.status}`,
     })
     throw new Error('Invalid credentials')
+  }
+
+  // Checked again here, not only when the code was requested: a code could have
+  // been issued before the account became a vendor driver.
+  if (await AuthModel.isExternalDriver(user.user_id)) {
+    await AuthModel.createLoginHistory({
+      user_id: user.user_id,
+      email,
+      device_info: input.device_info,
+      user_agent: userAgent,
+      attempt_status: 'failed_inactive',
+      failure_reason: 'External driver attempted sign-in code login',
+    })
+    throw new Error('This account signs in with a passkey. Open the app and use "Sign in with a passkey".')
   }
 
   if (user.locked_until && new Date(user.locked_until) > new Date()) {

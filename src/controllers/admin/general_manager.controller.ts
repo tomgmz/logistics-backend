@@ -45,7 +45,7 @@ export async function deleteGeneralManager(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
     await GeneralManagerService.deleteGeneralManager(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'General Manager deleted successfully' })
+    res.status(200).json({ status: 'success', message: 'General Manager archived successfully' })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
   }

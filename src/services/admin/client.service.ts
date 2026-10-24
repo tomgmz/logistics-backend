@@ -110,8 +110,8 @@ export async function deleteClient(
   logEvent({
     user_id:     actorId,
     log_type:    'user_management',
-    action:      'client_deleted',
-    description: `Client ${userId} deleted`,
+    action:      'client_archived',
+    description: `Client ${userId} archived`,
 
   })
 

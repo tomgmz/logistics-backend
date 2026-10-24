@@ -1,13 +1,12 @@
-import { deactivateEndedRenders } from './it-admin.service.js'
+import { completeMissedHandovers } from './it-admin.service.js'
 import { logSystem, logSystemError } from '../../lib/log-system.js'
 
 /**
- * Ends the 30-day render period of an IT Admin who handed the role over:
- * once users.render_ends_at has passed, the account is deactivated, signed out
- * everywhere and its login locked.
- *
- * Hourly, so an account closes within the hour after its period ends. The
- * successor is already the seat holder, so nothing waits on this.
+ * Safety net for the IT Administrator handover. A handover ends the moment the
+ * successor sets their own password (completeHandoverOnConfirm); this hourly
+ * tick finishes any that were confirmed but not closed. Nothing ends on a timer:
+ * the 30-day render is a target, and without a confirmed successor the outgoing
+ * IT Admin stays active.
  *
  * Same in-process shape as the license-expiry scheduler.
  */
@@ -21,14 +20,14 @@ async function tick(): Promise<void> {
   if (running) return
   running = true
   try {
-    const closed = await deactivateEndedRenders()
+    const closed = await completeMissedHandovers()
     // Heartbeat on success too, so the IT Admin dashboard can tell a quiet hour
     // from a stopped scheduler.
     logSystem({
       log_level:  'info',
       event_type: 'cron_job',
       source:     'it-admin-render.scheduler',
-      message:    `IT Administrator render tick: ${closed} account(s) deactivated`,
+      message:    `IT Administrator handover tick: ${closed} missed handover(s) completed`,
       metadata:   { closed },
     })
   } catch (err) {

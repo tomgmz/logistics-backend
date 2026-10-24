@@ -1,259 +1,116 @@
 /**
- * Proves the single-IT-Admin rule and the handover that works around it.
+ * Proves the two-step IT Administrator handover (2026-10-25) at the database:
  *
  *   npx tsx scripts/verify-it-admin-transition.ts
  *
- * The regression that matters is the one this whole feature exists to prevent:
- * a moment with no ACTIVE IT Admin. Every staff password reset routes to the
- * 'it_admin' queue, a Company Admin is refused on those rows, and recipient
- * lookups filter on status='active' — so an empty seat makes staff resets both
- * invisible and unactionable. The transition_it_admin() RPC is asserted to
- * retire the outgoing account and install the incoming one in ONE transaction,
- * with the count never leaving 1.
+ * start_it_admin_handover → add_it_admin_successor → complete_it_admin_handover,
+ * and the rule the whole feature protects: there is never a moment with no
+ * ACTIVE IT Admin (every password reset routes to the it_admin queue).
  *
- * Unlike the other verify scripts, the destructive half runs inside an explicit
- * BEGIN/ROLLBACK on a raw pg connection. That is deliberate: the assertions have
- * to run against the REAL current IT Admin (the unique index makes it impossible
- * to stage a second active one), and nothing they do may survive. A rolled-back
- * transaction is the only way to have both.
+ * Everything runs inside BEGIN/ROLLBACK on a raw pg connection against the REAL
+ * current IT Admin, so nothing survives. users.user_id is FK'd to auth.users, so
+ * the successor's identity is inserted into auth.users inside the same
+ * transaction and rolled back with it.
  *
- * Deliberately NOT covered: the service-level transitionITAdmin(). It creates a
- * Supabase Auth identity and emails a real person a real password, neither of
- * which belongs in a verification run. Its guard paths are asserted here; the
- * Auth + email steps share their code path with createITAdmin.
+ * Deliberately NOT covered: the service steps that create a Supabase Auth user,
+ * email a real temporary password, or archive (ban) a real login. Those cannot
+ * be rolled back; their database halves are what is asserted here.
  */
 import 'dotenv/config'
 import crypto from 'crypto'
 import { pool } from '../src/lib/database.js'
-import * as ITAdminService from '../src/services/admin/it-admin.service.js'
-import * as ITAdminModel from '../src/models/admin/it-admin.model.js'
 
 let passed = 0
 let failed = 0
-const ok  = (m: string) => { passed++; console.log(`  PASS  ${m}`) }
-const bad = (m: string) => { failed++; console.log(`  FAIL  ${m}`) }
+const ok    = (m: string) => { passed++; console.log(`  PASS  ${m}`) }
+const bad   = (m: string) => { failed++; console.log(`  FAIL  ${m}`) }
+const check = (m: string, cond: boolean, detail = '') => (cond ? ok(m) : bad(`${m}${detail ? ` — ${detail}` : ''}`))
 
-/** Assert an awaited call rejects, and (optionally) with a specific error code. */
-async function expectThrows(label: string, fn: () => Promise<unknown>, code?: string) {
+const client = await pool.connect()
+const activeCount = async () =>
+  Number((await client.query(`select count(*)::int n from users where role='it_admin' and status='active'`)).rows[0].n)
+
+/** Run `sql` expecting it to raise `token`; isolated in a savepoint. */
+async function expectRaise(label: string, token: string, sql: string, params: unknown[]) {
+  await client.query('SAVEPOINT x')
   try {
-    await fn()
-    bad(`${label} — expected a refusal, got success`)
-  } catch (e: any) {
-    if (code && e?.code !== code) bad(`${label} — refused with ${e?.code ?? '(no code)'}, expected ${code}`)
-    else ok(`${label} — refused: "${e.message.split('\n')[0]}"`)
+    await client.query(sql, params)
+    bad(`${label} — expected ${token}, got success`)
+  } catch (err: any) {
+    check(label, String(err?.message).includes(token), err?.message)
   }
+  await client.query('ROLLBACK TO SAVEPOINT x')
 }
 
-async function main() {
-  console.log('\n1. The constraint exists and is scoped to ACTIVE accounts')
-  const { rows: idx } = await pool.query(
-    `select indexdef from pg_indexes
-      where schemaname = 'public' and tablename = 'users'
-        and indexname = 'users_one_active_it_admin'`,
+try {
+  await client.query('BEGIN')
+
+  const { rows: seat } = await client.query(
+    `select user_id, email from users where role='it_admin' and status='active' and render_ends_at is null`,
   )
-  idx.length === 1
-    ? ok('users_one_active_it_admin exists')
-    : bad('users_one_active_it_admin is missing — apply 20260916010000')
-  // Postgres renders the stored predicate with its own casts —
-  // ((status)::text = 'active'::text) — so match on the parts, not the spelling.
-  const def = idx[0]?.indexdef ?? ''
-  def.includes(`'active'`) && def.includes(`'it_admin'`) && def.toUpperCase().includes('UNIQUE')
-    ? ok('a UNIQUE index scoped to active it_admin rows, so a kept predecessor does not count')
-    : bad(`unexpected index definition: ${def}`)
+  check('exactly one seat holder before', seat.length === 1, `found ${seat.length}`)
+  const outgoing = seat[0]
+  const before = await activeCount()
 
-  const { rows: [{ n: activeCount }] } = await pool.query(
-    `select count(*)::int as n from public.users where role = 'it_admin' and status = 'active'`,
+  // Step 1: start.
+  const { rows: [h] } = await client.query(`select * from start_it_admin_handover($1, $2, 30)`, [
+    outgoing.user_id, 'verify script: handover rehearsal',
+  ])
+  check('start returns an open handover', !!h?.handover_id && !h.ended_at && !h.successor_id)
+  const { rows: [o1] } = await client.query(`select status, render_ends_at from users where user_id=$1`, [outgoing.user_id])
+  check('outgoing still active, now rendering', o1.status === 'active' && !!o1.render_ends_at)
+  check('render target is ~30 days out',
+    Math.abs(new Date(h.render_due_at).getTime() - Date.now() - 30 * 86_400_000) < 3_600_000)
+  check('active IT Admin count unchanged after start', (await activeCount()) === before)
+
+  await expectRaise('a second start is refused', 'NOT_SEAT_HOLDER',
+    `select * from start_it_admin_handover($1, 'again', 30)`, [outgoing.user_id])
+
+  // Step 2: successor.
+  const incoming = crypto.randomUUID()
+  const email = `verify-successor-${incoming.slice(0, 8)}@example.com`
+  await client.query('insert into auth.users (id, email) values ($1, $2)', [incoming, email])
+  const { rows: [succ] } = await client.query(
+    `select * from add_it_admin_successor($1, $2, $3, 'Verify', 'Successor', null, null, null)`,
+    [outgoing.user_id, incoming, email],
   )
-  activeCount === 1
-    ? ok('exactly one active IT Admin right now')
-    : bad(`expected exactly 1 active IT Admin, found ${activeCount}`)
-  if (activeCount !== 1) return finish()
+  check('successor created active, must change password',
+    succ.status === 'active' && succ.must_change_password === true && succ.role === 'it_admin')
+  check('successor password expiry stamped', !!succ.temp_password_expires_at)
+  check('two active IT Admins while pending (never zero)', (await activeCount()) === before + 1)
 
-  const { rows: [outgoing] } = await pool.query(
-    `select user_id, email from public.users where role = 'it_admin' and status = 'active'`,
+  const other = crypto.randomUUID()
+  await client.query('insert into auth.users (id, email) values ($1, $2)', [other, `verify-other-${other.slice(0, 8)}@example.com`])
+  await expectRaise('a second successor is refused while one is pending', 'SUCCESSOR_PENDING',
+    `select * from add_it_admin_successor($1, $2, 'x@example.com', 'X', 'Y', null, null, null)`, [outgoing.user_id, other])
+
+  // Step 3: confirmation.
+  const { rows: [{ complete_it_admin_handover: done }] } = await client.query(
+    `select complete_it_admin_handover($1)`, [incoming],
   )
-
-  console.log('\n2. A second ACTIVE IT Admin is impossible; a kept predecessor is not')
-  // Everything here is thrown away — see the header.
-  const client = await pool.connect()
-
-  /**
-   * `users.user_id` is FK'd to `auth.users(id)`, so a profile row cannot exist
-   * without an identity behind it. Inside this throwaway transaction we mint the
-   * identity ourselves rather than going through the Auth API — which would
-   * create something real that a ROLLBACK could not take back.
-   */
-  const mintId = async (label: string): Promise<string> => {
-    const id = crypto.randomUUID()
-    await client.query('insert into auth.users (id, email) values ($1, $2)', [
-      id, `verify-${label}-${id}@example.com`,
-    ])
-    return id
-  }
-
-  try {
-    await client.query('BEGIN')
-
-    const secondId = await mintId('dup')
-    try {
-      await client.query(
-        `insert into public.users (user_id, email, first_name, last_name, role, status)
-         values ($1, $2, 'Verify', 'Duplicate', 'it_admin', 'active')`,
-        [secondId, `verify-dup-${secondId}@example.com`],
-      )
-      bad('a second ACTIVE it_admin was accepted')
-    } catch (e: any) {
-      e.code === '23505'
-        ? ok('a second ACTIVE it_admin is rejected by the unique index (23505)')
-        : bad(`rejected, but with ${e.code}: ${e.message}`)
-    }
-    // That failure aborted the transaction; start a clean one for the next case.
-    await client.query('ROLLBACK')
-    await client.query('BEGIN')
-
-    const keptId = await mintId('kept')
-    await client.query(
-      `insert into public.users (user_id, email, first_name, last_name, role, status)
-       values ($1, $2, 'Verify', 'Predecessor', 'it_admin', 'deactivated')`,
-      [keptId, `verify-kept-${keptId}@example.com`],
-    )
-    ok('a DEACTIVATED it_admin coexists — the predecessor record is keepable')
-
-    console.log('\n3. The handover is atomic: the seat is never empty')
-    const incomingId = await mintId('incoming')
-    const { rows: [created] } = await client.query(
-      `select * from public.transition_it_admin($1, $2, $3, 'Verify', 'Successor', null, null, null, null)`,
-      [outgoing.user_id, incomingId, `verify-incoming-${incomingId}@example.com`],
-    )
-
-    created?.user_id === incomingId && created.role === 'it_admin' && created.status === 'active'
-      ? ok('the incoming account is created active and in role')
-      : bad(`incoming row is ${created?.role}/${created?.status}`)
-    created?.must_change_password === true
-      ? ok('the incoming account must change the password it was mailed')
-      : bad('must_change_password was not set on the incoming account')
-
-    const { rows: [after] } = await client.query(
-      `select status, render_ends_at from public.users where user_id = $1`, [outgoing.user_id],
-    )
-    after.status === 'active' && after.render_ends_at
-      && Math.abs(new Date(after.render_ends_at).getTime() - Date.now() - 30 * 86_400_000) < 3_600_000
-      ? ok('the outgoing account stays active with a 30-day render period')
-      : bad(`outgoing account is ${after.status}, render_ends_at ${after.render_ends_at}`)
-
-    const { rows: [{ n: postCount }] } = await client.query(
-      `select count(*)::int as n from public.users
-        where role = 'it_admin' and status = 'active' and render_ends_at is null`,
-    )
-    postCount === 1
-      ? ok('still exactly one seat holder — the count never dipped to zero or rose to two')
-      : bad(`after the swap there are ${postCount} seat holders`)
-
-    console.log('\n4. The RPC refuses a bad outgoing account')
-    try {
-      await client.query('SAVEPOINT s1')
-      const againId = await mintId('again')
-      await client.query(
-        `select * from public.transition_it_admin($1, $2, $3, 'Verify', 'Twice', null, null, null, null)`,
-        [outgoing.user_id, againId, `verify-again-${againId}@example.com`],
-      )
-      bad('handing over twice from a rendering account was allowed')
-    } catch (e: any) {
-      await client.query('ROLLBACK TO SAVEPOINT s1')
-      e.message.includes('OUTGOING_ALREADY_RENDERING')
-        ? ok('an outgoing account already rendering is refused (OUTGOING_ALREADY_RENDERING)')
-        : bad(`refused, but with: ${e.message}`)
-    }
-
-    try {
-      await client.query('SAVEPOINT s2')
-      const { rows: [someone] } = await client.query(
-        `select user_id from public.users where role <> 'it_admin' limit 1`,
-      )
-      const wrongId = await mintId('wrong')
-      await client.query(
-        `select * from public.transition_it_admin($1, $2, $3, 'Verify', 'WrongRole', null, null, null, null)`,
-        [someone.user_id, wrongId, `verify-wrong-${wrongId}@example.com`],
-      )
-      bad('transitioning a non-IT-Admin account was allowed')
-    } catch (e: any) {
-      await client.query('ROLLBACK TO SAVEPOINT s2')
-      e.message.includes('OUTGOING_NOT_IT_ADMIN')
-        ? ok('a non-IT-Admin outgoing account is refused (OUTGOING_NOT_IT_ADMIN)')
-        : bad(`refused, but with: ${e.message}`)
-    }
-  } finally {
-    // Nothing above is kept. This is the whole reason the section is safe to run
-    // against production.
-    await client.query('ROLLBACK').catch(() => {})
-    client.release()
-  }
-
-  console.log('\n5. Nothing from section 2-4 survived the rollback')
-  const { rows: [{ n: finalCount }] } = await pool.query(
-    `select count(*)::int as n from public.users where role = 'it_admin'`,
+  check('completion returns the outgoing id', done === outgoing.user_id)
+  const { rows: [closed] } = await client.query(`select confirmed_at, ended_at from it_admin_handovers where handover_id=$1`, [h.handover_id])
+  check('handover marked confirmed and ended', !!closed.confirmed_at && !!closed.ended_at)
+  const { rows: [{ complete_it_admin_handover: again }] } = await client.query(
+    `select complete_it_admin_handover($1)`, [incoming],
   )
-  const { rows: [stillActive] } = await pool.query(
-    `select user_id, status from public.users where role = 'it_admin' and status = 'active'`,
-  )
-  stillActive?.user_id === outgoing.user_id
-    ? ok(`the real IT Admin (${outgoing.email}) is untouched and still active`)
-    : bad('the real IT Admin was mutated — the rollback did not hold')
-  console.log(`        (${finalCount} it_admin row(s) total, unchanged)`)
+  check('completing twice is a no-op', again === null)
 
-  console.log('\n6. Service guards keep the seat from being vacated outright')
-  // These refuse before writing anything, so they need no rollback.
-  await expectThrows(
-    'an IT Admin deactivating themselves',
-    () => ITAdminService.deactivateITAdmin(outgoing.user_id, outgoing.user_id),
-    'IT_ADMIN_SELF_ACTION',
-  )
-  await expectThrows(
-    'an IT Admin archiving themselves',
-    () => ITAdminService.deleteITAdmin(outgoing.user_id, outgoing.user_id),
-    'IT_ADMIN_SELF_ACTION',
-  )
-  await expectThrows(
-    'someone else deactivating the last active IT Admin',
-    () => ITAdminService.deactivateITAdmin(outgoing.user_id, crypto.randomUUID()),
-    'LAST_IT_ADMIN',
-  )
-  await expectThrows(
-    'someone else archiving the last active IT Admin',
-    () => ITAdminService.deleteITAdmin(outgoing.user_id, crypto.randomUUID()),
-    'LAST_IT_ADMIN',
-  )
+  // The service archives the outgoing account next; its database half:
+  await client.query(`update users set status='archived' where user_id=$1`, [outgoing.user_id])
+  check('after archive exactly one active IT Admin, the successor', (await activeCount()) === before)
 
-  console.log('\n7. Creating a second IT Admin is refused before any auth user is made')
-  await expectThrows(
-    'createITAdmin while one is already active',
-    () => ITAdminService.createITAdmin({
-      first_name: 'Verify',
-      last_name:  'Rejected',
-      email:      `verify-rejected-${crypto.randomUUID()}@example.com`,
-      phone:      '+639171234567',
-    }),
-    'IT_ADMIN_EXISTS',
-  )
-
-  const seat = await ITAdminModel.findSeatHolders()
-  seat.length === 1 && seat[0].user_id === outgoing.user_id
-    ? ok('findSeatHolders() returns the real IT Admin, which is what the guards read')
-    : bad(`findSeatHolders() returned ${seat.length} row(s)`)
-
-  return finish()
+  // Cancel path, on a fresh handover by the successor (now the seat holder).
+  await client.query(`update users set must_change_password=false where user_id=$1`, [incoming])
+  const { rows: [h2] } = await client.query(`select * from start_it_admin_handover($1, 'verify cancel path', 30)`, [incoming])
+  check('the new IT Admin can start their own handover', !!h2?.handover_id)
+} catch (err) {
+  bad(`unexpected error: ${(err as Error).message}`)
+} finally {
+  await client.query('ROLLBACK').catch(() => {})
+  client.release()
+  await pool.end()
 }
 
-async function finish() {
-  // Nothing to tear down: section 2-4 rolled back, and sections 6-7 only asserted
-  // refusals, which write nothing by definition. Section 5 is the proof.
-  await pool.end().catch(() => {})
-  console.log(`\n${passed} passed, ${failed} failed`)
-  process.exit(failed === 0 ? 0 : 1)
-}
-
-main().catch(async (err) => {
-  console.error('\nHARNESS ERROR:', err)
-  await pool.end().catch(() => {})
-  process.exit(1)
-})
+console.log(`\n${passed} passed, ${failed} failed`)
+process.exit(failed ? 1 : 0)

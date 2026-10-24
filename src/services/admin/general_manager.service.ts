@@ -106,8 +106,8 @@ export async function deleteGeneralManager(userId: string, actorId?: string | nu
   logEvent({
     user_id:     actorId,
     log_type:    'user_management',
-    action:      'general_manager_deleted',
-    description: `General Manager ${userId} deleted`,
+    action:      'general_manager_archived',
+    description: `General Manager ${userId} archived`,
 
   })
 

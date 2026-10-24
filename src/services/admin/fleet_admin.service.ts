@@ -106,8 +106,8 @@ export async function deleteFleetAdmin(userId: string, actorId?: string | null) 
   logEvent({
     user_id:     actorId,
     log_type:    'user_management',
-    action:      'fleet_admin_deleted',
-    description: `Fleet Manager ${userId} deleted`,
+    action:      'fleet_admin_archived',
+    description: `Fleet Manager ${userId} archived`,
 
   })
 

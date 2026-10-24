@@ -217,7 +217,7 @@ export async function findExternalDriverForAssignment(userId: string): Promise<E
   if (profile.is_external !== true) {
     throw new Error('This is a company driver. Assign them through Company fleet instead.')
   }
-  if (row.status === 'archived') throw new Error('This vendor driver was deleted.')
+  if (row.status === 'archived') throw new Error('This vendor driver was archived.')
   if (row.status !== 'active') {
     throw new Error('This vendor driver\'s access is turned off. Ask the IT Administrator to restore it first.')
   }

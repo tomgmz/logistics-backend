@@ -94,7 +94,7 @@ export async function deleteDriver(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
     await DriverService.deleteDriver(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'Driver deleted successfully' })
+    res.status(200).json({ status: 'success', message: 'Driver archived successfully' })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
   }

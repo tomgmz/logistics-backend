@@ -45,7 +45,7 @@ export async function deleteClient(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
     await ClientService.deleteClient(param(req.params.id), userId)
-    res.status(200).json({ status: 'success', message: 'Client deleted successfully' })
+    res.status(200).json({ status: 'success', message: 'Client archived successfully' })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })
   }

@@ -16,7 +16,6 @@ import 'dotenv/config'
 import type { Request, Response } from 'express'
 import { pool } from '../src/lib/database.js'
 import { requireModule, requireModuleFlag } from '../src/middlewares/moduleAccess.middleware.js'
-import { isProtectedAdmin } from '../src/lib/protected-admin.js'
 
 let checks = 0
 let failures = 0
@@ -63,20 +62,11 @@ async function main() {
   console.log(`\nTesting ${rows.length} users with a transaction-history permission row\n`)
 
   for (const u of rows) {
-    // The root administrator bypasses every module gate by design, so its
-    // verdicts prove nothing about the flag.
-    const protectedAdmin = await isProtectedAdmin(u.user_id)
-    const label = `${u.role} ${u.user_id.slice(0, 8)} (view=${u.can_view} export=${u.can_export})` +
-                  (protectedAdmin ? ' [protected root admin]' : '')
+    const label = `${u.role} ${u.user_id.slice(0, 8)} (view=${u.can_view} export=${u.can_export})`
     console.log(label)
 
     const read = await run(readGate, { sub: u.user_id, role: u.role })
     const exp  = await run(exportGate, { sub: u.user_id, role: u.role })
-
-    if (protectedAdmin) {
-      check('  protected admin bypasses both gates', read.allowed && exp.allowed)
-      continue
-    }
 
     check('  read gate follows can_view', read.allowed === u.can_view,
       `allowed=${read.allowed} can_view=${u.can_view}${read.status ? ` status=${read.status}` : ''}`)
