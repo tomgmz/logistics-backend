@@ -1,6 +1,6 @@
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
-import { restoreArchivedUser, type BanManagedUserRole } from '../../services/admin/user-auth-status.service.js'
+import { isOneGeneralManagerError, ONE_GENERAL_MANAGER_MESSAGE, restoreArchivedUser, type BanManagedUserRole } from '../../services/admin/user-auth-status.service.js'
 
 /**
  * POST /<role path>/:id/restore — bring an archived account back as active.
@@ -14,10 +14,11 @@ function restoreHandler(role: BanManagedUserRole, label: string, action: string)
       const data = await restoreArchivedUser(param(req.params.id), role, action, label, userId)
       res.status(200).json({ status: 'success', message: `${label} restored`, data })
     } catch (err: any) {
+      const oneGm  = isOneGeneralManagerError(err)
       const status = err.message.includes('not found') ? 404
-        : err.message.includes('not archived') || err.message.includes('Only one IT Administrator') ? 409
+        : err.message.includes('not archived') || err.message.includes('Only one IT Administrator') || oneGm ? 409
         : 500
-      res.status(status).json({ status: 'error', message: err.message })
+      res.status(status).json({ status: 'error', message: oneGm ? ONE_GENERAL_MANAGER_MESSAGE : err.message })
     }
   }
 }

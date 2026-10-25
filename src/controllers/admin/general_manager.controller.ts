@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as GeneralManagerService from '../../services/admin/general_manager.service.js'
+import { isOneGeneralManagerError, ONE_GENERAL_MANAGER_MESSAGE } from '../../services/admin/user-auth-status.service.js'
 
 export async function getAllGeneralManagers(req: Request, res: Response) {
   try {
@@ -27,6 +28,9 @@ export async function createGeneralManager(req: Request, res: Response) {
     const data = await GeneralManagerService.createGeneralManager(req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (error: any) {
+    if (isOneGeneralManagerError(error)) {
+      return res.status(409).json({ status: 'error', message: ONE_GENERAL_MANAGER_MESSAGE })
+    }
     res.status(500).json({ status: 'error', message: error.message })
   }
 }

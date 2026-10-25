@@ -58,6 +58,30 @@ export async function banArchivedAuthUser(userId: string) {
  * archived one cannot come back while another holds the seat; the seat holder
  * hands it over from their own portal instead.
  */
+/** The one-General-Manager rule's message (also what the unique index maps to). */
+export const ONE_GENERAL_MANAGER_MESSAGE = 'There is already a General Manager. Archive the current one before adding or restoring another.'
+
+/**
+ * Only one General Manager that is not archived (users_one_general_manager).
+ * Checked before creating or restoring one, so the user gets this message rather
+ * than the index's error; the index still settles a race between two requests.
+ */
+export async function assertNoGeneralManager(): Promise<void> {
+  const { count, error } = await supabase
+    .from('users')
+    .select('user_id', { count: 'exact', head: true })
+    .eq('role', 'general_manager')
+    .neq('status', 'archived')
+  if (error) throw error
+  if ((count ?? 0) > 0) throw new Error(ONE_GENERAL_MANAGER_MESSAGE)
+}
+
+/** True for the one-General-Manager rule, from either the check or the index. */
+export function isOneGeneralManagerError(err: unknown): boolean {
+  const m = (err as { message?: unknown })?.message
+  return typeof m === 'string' && (m === ONE_GENERAL_MANAGER_MESSAGE || m.includes('users_one_general_manager'))
+}
+
 export async function restoreArchivedUser(
   userId: string,
   role: BanManagedUserRole,
@@ -75,6 +99,8 @@ export async function restoreArchivedUser(
   if (selErr) throw selErr
   if (!existing) throw new Error(`${entityLabel} not found`)
   if (existing.status !== 'archived') throw new Error(`${entityLabel} is not archived`)
+
+  if (role === 'general_manager') await assertNoGeneralManager()
 
   if (role === 'it_admin') {
     const { count, error: cntErr } = await supabase

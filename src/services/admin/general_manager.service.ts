@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
-import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } from './user-auth-status.service.js'
+import { activateUserWithUnban, assertNoGeneralManager, banArchivedAuthUser, deactivateUserWithBan } from './user-auth-status.service.js'
 import * as GeneralManagerModel from '../../models/admin/general_manager.model.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -28,6 +28,8 @@ export async function getGeneralManagerById(userId: string) {
 }
 
 export async function createGeneralManager(dto: BaseCreateDTO, actorId?: string | null) {
+  // Only one General Manager in the system; checked before the auth user exists.
+  await assertNoGeneralManager()
   await assertPhoneAvailable(dto.phone)
 
   const password = generateSecurePassword()
