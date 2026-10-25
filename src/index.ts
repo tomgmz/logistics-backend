@@ -27,6 +27,7 @@ import publicRoutes from './routes/public.routes.js'
 import { startFleetRecheckScheduler } from './services/notification/fleet-recheck.scheduler.js'
 import { startCompletionScheduler } from './services/notification/completion.scheduler.js'
 import { startLicenseExpiryScheduler } from './services/notification/license-expiry.scheduler.js'
+import { startRegistrationExpiryScheduler } from './services/notification/registration-expiry.scheduler.js'
 import { startDriverCallScheduler } from './services/notification/driver-call.scheduler.js'
 import { startItAdminRenderScheduler } from './services/admin/it-admin-render.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
@@ -224,6 +225,9 @@ app.listen(PORT, '0.0.0.0', () => {
   startFleetRecheckScheduler();
   startCompletionScheduler();
   startLicenseExpiryScheduler();
+  // Tells Fleet Managers + Company Administrators a month before a vehicle's
+  // registration expires.
+  startRegistrationExpiryScheduler();
   // Reminds the crew one hour before the driver's call time.
   startDriverCallScheduler();
   startItAdminRenderScheduler();

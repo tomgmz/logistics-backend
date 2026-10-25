@@ -166,7 +166,7 @@ export async function assignBookingService(
     // to exactly the same rules as the main one.
     await Promise.all([
       assertDriverAssignable(input.driver_id, currentFor(input.driver_id), scheduleDate),
-      assertTruckAssignable(input.truck_id, previous.truck_id),
+      assertTruckAssignable(input.truck_id, previous.truck_id, scheduleDate),
       second ? assertDriverAssignable(second, currentFor(second), scheduleDate) : Promise.resolve(),
     ])
     secondDriverId = second

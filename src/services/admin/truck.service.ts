@@ -11,7 +11,9 @@ import type { DriverReport } from '../../types/driver/report.types.js'
 import * as UpkeepModel from '../../models/admin/truck-upkeep.model.js'
 import { scheduleOf, returnOdometerDue, assertReadingPlausible } from './truck-upkeep.service.js'
 import { serviceStatus, type ServiceStatus } from '../../lib/service-schedule.js'
-import { phDay } from '../../lib/ph-date.js'
+import { phDay, asDay } from '../../lib/ph-date.js'
+import { registrationStatus, type RegistrationStatus } from '../../lib/registration-expiry.js'
+import { requestRegistrationExpiryCheck } from '../notification/registration-expiry.scheduler.js'
 
 /**
  * Attach each vehicle's most recent BLOWBAGETS inspection, and when it last came
@@ -32,6 +34,8 @@ async function withLatestInspection<T extends { truck_id: string }>(rows: T[]) {
     last_service_at:      string | null
     service_status:       ServiceStatus
     return_odometer_due:  boolean
+    registration_expiry:  string | null
+    registration_status:  RegistrationStatus
   }
   if (rows.length === 0) return [] as Enriched[]
 
@@ -54,6 +58,9 @@ async function withLatestInspection<T extends { truck_id: string }>(rows: T[]) {
       service_status:       serviceStatus(schedule, today),
       // The Fleet Manager still owes the after-delivery odometer.
       return_odometer_due:  returnOdometerDue(row as any, lastReturn),
+      registration_expiry:  asDay((row as any).registration_expiry),
+      // Expired blocks assignment; worked out here so every screen agrees.
+      registration_status:  registrationStatus((row as any).registration_expiry, today),
     }
   }) as Enriched[]
 }
@@ -106,6 +113,7 @@ export async function getAllTrucks() {
  *   driver_report     — a driver has an unresolved breakdown/accident open on it
  *
  *   service_*         — routine service overdue / due soon / not set up
+ *   registration_*    — registration expired / expiring within a month / no date yet
  *
  * Archived and inactive vehicles are parked, so nothing is owed on them.
  */
@@ -119,6 +127,9 @@ export type MaintenanceReason =
   | 'service_overdue'        // past the km or the date — blocked from assignment
   | 'service_due_soon'       // within 10% of the km interval or 7 days
   | 'service_schedule_missing' // no schedule / reading entered yet (older vehicles)
+  | 'registration_expired'     // past registration_expiry — blocked from assignment
+  | 'registration_expiring'    // expires within one calendar month
+  | 'registration_missing'     // no expiry date entered yet (older vehicles)
 
 export async function getMaintenanceQueue() {
   const [trucks, reports] = await Promise.all([
@@ -154,6 +165,10 @@ export async function getMaintenanceQueue() {
       if (service === 'overdue')  reasons.push('service_overdue')
       if (service === 'due_soon') reasons.push('service_due_soon')
       if (service === 'missing')  reasons.push('service_schedule_missing')
+      const registration = t.registration_status?.state
+      if (registration === 'expired')  reasons.push('registration_expired')
+      if (registration === 'expiring') reasons.push('registration_expiring')
+      if (registration === 'missing')  reasons.push('registration_missing')
       return { ...t, maintenance_reasons: reasons, open_reports: open }
     })
     .filter((t) => t.maintenance_reasons.length > 0)
@@ -209,6 +224,8 @@ export async function createTruck(input: CreateTruckInput, actorId?: string | nu
       description: `Vehicle ${input.plate_number} paired with driver ${input.assigned_driver_id}`,
     })
   }
+  // A registration already inside the month is reminded now, not next hour.
+  if (input.registration_expiry) requestRegistrationExpiryCheck()
 
   return result ? getTruckById(result.truck_id) : result
 }
@@ -282,6 +299,17 @@ export async function updateTruck(truckId: string, input: UpdateTruckInput, acto
       action:      'vehicle_updated',
       description: `Vehicle ${truckId} updated`,
     })
+  }
+
+  if (input.registration_expiry !== undefined) {
+    logEvent({
+      user_id:     actorId,
+      log_type:    'vehicle_activity',
+      action:      'vehicle_registration_updated',
+      description: `Vehicle ${result?.plate_number ?? truckId} registration valid until ${input.registration_expiry}`,
+    })
+    // A new date re-arms the reminder; one already inside the month goes out now.
+    requestRegistrationExpiryCheck()
   }
 
   if (statusChange?.changed) {

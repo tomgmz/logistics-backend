@@ -164,7 +164,7 @@ export async function replaceCrewService(
     await Promise.all([
       assertDriverAssignable(leadId, onCrew(leadId), today),
       second ? assertDriverAssignable(second, onCrew(second), today) : Promise.resolve(),
-      assertTruckAssignable(truckId!, prevDelivery?.is_vendor_supplied ? null : previous.truck_id),
+      assertTruckAssignable(truckId!, prevDelivery?.is_vendor_supplied ? null : previous.truck_id, today),
     ])
   }
   // Nobody already on another active booking, in either seat, on either path.

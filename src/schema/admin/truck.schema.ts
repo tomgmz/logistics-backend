@@ -30,6 +30,9 @@ export const createTruckSchema = z.object({
   odometer_km:        km,
   odometer_photo_url: photoUrl.optional().nullable(),
   ...schedule,
+  // Last day the LTO registration is valid. Required for every new vehicle; an
+  // expired one cannot be assigned (fleet-availability assertRegistrationValid).
+  registration_expiry: day,
   // Optional regular driver, so a vehicle can be paired as it is created
   // instead of needing a second trip through Update Details.
   assigned_driver_id: z.string().uuid().optional().nullable(),
@@ -43,6 +46,8 @@ export const updateTruckSchema = z.object({
   last_service_at:          day.optional(),
   last_service_odometer_km: km.optional(),
   odometer_km:              km.optional(),
+  // Changed when the registration is renewed; a new date re-arms the reminder.
+  registration_expiry:      day.optional(),
   plate_number: z
     .string()
     .toUpperCase()

@@ -19,6 +19,9 @@ export interface BookingListQuery {
   limit:   number
   status?: string | null
   search?: string | null
+  /** Schedule-date window, inclusive, as YYYY-MM-DD (the list's "Select dates"). */
+  dateFrom?: string | null
+  dateTo?:   string | null
   /** Set for a client caller, so the page and its counts cover only their own bookings. */
   clientId?: string | null
 }
@@ -227,6 +230,19 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
       b.reference_number ILIKE $${i} ESCAPE '\\' OR
       COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\'
     )`)
+  }
+
+  // Only a real calendar date gets through; anything else is ignored, not an error.
+  const isoDate  = (v?: string | null) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null)
+  const dateFrom = isoDate(q.dateFrom)
+  const dateTo   = isoDate(q.dateTo)
+  if (dateFrom) {
+    params.push(dateFrom)
+    where.push(`b.schedule_date::date >= $${params.length}::date`)
+  }
+  if (dateTo) {
+    params.push(dateTo)
+    where.push(`b.schedule_date::date <= $${params.length}::date`)
   }
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''

@@ -10,6 +10,8 @@ import type { BlowbagetsItems } from '../../types/client/booking.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { assertServiceNotOverdue, assertReturnOdometerRecorded } from './truck-upkeep.service.js'
 import * as TruckModel from '../../models/admin/truck.model.js'
+import { phDay } from '../../lib/ph-date.js'
+import { registrationStatus } from '../../lib/registration-expiry.js'
 
 /**
  * Availability rules shared by the assignment flow and the booking lifecycle.
@@ -117,6 +119,34 @@ export async function assertBookingVehicleInService(bookingId: string): Promise<
   }
 }
 
+/**
+ * Throws when the vehicle's registration has expired, or will have by `onDay`
+ * (`YYYY-MM-DD`, the delivery day; today when not given) — it cannot legally go
+ * on the road. A vehicle with no date entered yet (one from before the field
+ * existed) is flagged on Upkeep but not blocked, so operations do not stop
+ * while the dates are filled in.
+ */
+export async function assertRegistrationValid(truckId: string, onDay?: string | null): Promise<void> {
+  const { data, error } = await supabase
+    .from('trucks')
+    .select('plate_number, registration_expiry')
+    .eq('truck_id', truckId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return
+
+  const today = phDay()
+  const day   = onDay && onDay > today ? onDay : today
+  const { state, expires_on } = registrationStatus(data.registration_expiry, day)
+  if (state !== 'expired') return
+
+  throw new Error(
+    expires_on! < today
+      ? `The registration of ${data.plate_number} expired on ${expires_on} — renew it and enter the new date in Vehicle Management before it can be assigned`
+      : `The registration of ${data.plate_number} expires on ${expires_on}, before this delivery on ${day} — renew it first or choose another vehicle`,
+  )
+}
+
 /** Throws unless the truck's latest BLOWBAGETS inspection is a pass. */
 export async function assertTruckPassedInspection(truckId: string): Promise<void> {
   const latest = await latestInspectionFor(truckId)
@@ -142,10 +172,13 @@ export async function assertTruckPassedInspection(truckId: string): Promise<void
 export async function assertTruckAssignable(
   truckId: string,
   currentTruckId?: string | null,
+  onDay?: string | null,
 ): Promise<void> {
   // Checked before the "already on this booking" exemption: a vehicle taken out
   // of service has to come off its booking, not be kept on it by a re-save.
   await assertTruckInService(truckId)
+  // Same for an expired registration: it is not road-legal on the delivery day.
+  await assertRegistrationValid(truckId, onDay)
   await assertTruckPassedInspection(truckId)
   // Past its routine service (km or date, whichever came first): it stays in
   // the yard until the service is recorded.

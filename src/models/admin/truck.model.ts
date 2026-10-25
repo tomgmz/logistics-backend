@@ -116,8 +116,9 @@ async function findByAssignedDriver(driverId: string) {
 async function create(input: CreateTruckInput) {
   const result = await pool.query(
     `INSERT INTO trucks (plate_number, model_id, service_interval_km, service_interval_months,
-                         last_service_at, last_service_odometer_km, assigned_driver_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+                         last_service_at, last_service_odometer_km, assigned_driver_id,
+                         registration_expiry)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
     [
       input.plate_number,
@@ -127,6 +128,7 @@ async function create(input: CreateTruckInput) {
       input.last_service_at ?? null,
       input.last_service_odometer_km ?? null,
       input.assigned_driver_id ?? null,
+      input.registration_expiry ?? null,
     ]
   )
   return findById(result.rows[0].truck_id)
@@ -144,6 +146,7 @@ async function update(truckId: string, input: UpdateTruckInput) {
   if (input.service_interval_months  !== undefined) { fields.push(`service_interval_months = $${index++}`);  values.push(input.service_interval_months) }
   if (input.last_service_at          !== undefined) { fields.push(`last_service_at = $${index++}`);          values.push(input.last_service_at) }
   if (input.last_service_odometer_km !== undefined) { fields.push(`last_service_odometer_km = $${index++}`); values.push(input.last_service_odometer_km) }
+  if (input.registration_expiry      !== undefined) { fields.push(`registration_expiry = $${index++}`);      values.push(input.registration_expiry) }
   // Explicit null clears the pairing — "this truck has no regular driver" is a
   // real answer, so undefined (absent) and null must not mean the same thing.
   if (input.assigned_driver_id !== undefined) {

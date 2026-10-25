@@ -52,6 +52,12 @@ const SCHEDULERS = [
     interval_minutes: 60,
   },
   {
+    source:           'registration-expiry.scheduler',
+    label:            'Vehicle registration expiry reminders',
+    description:      'Emails and notifies Fleet Managers and Company Administrators one month before a vehicle registration expires.',
+    interval_minutes: 60,
+  },
+  {
     source:           'it-admin-render.scheduler',
     label:            'IT Administrator handover',
     description:      'Finishes any IT Administrator handover whose replacement already set their password (normally done at once).',

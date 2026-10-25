@@ -49,6 +49,9 @@ export type NotificationType =
   // Scheduled, about the driver themselves: their license expires within a month.
   // Carries `license_expiry` in `data`; `booking_id` is always null.
   | 'driver.license_expiring'         // one month before license_expiry -> that driver
+  // Scheduled, about a fleet vehicle: its registration expires within a month.
+  // Carries `truck_id`, `plate_number`, `registration_expiry` in `data`; no booking.
+  | 'vehicle.registration_expiring'   // one month before registration_expiry -> Fleet Managers + Company Administrators
   // Password resets. Scoped to a reset REQUEST, not a booking, so they carry
   // `request_id` in `data` and leave `booking_id` null. Routed to exactly one
   // admin group: driver/client requests to `admin` (Company Admin), staff

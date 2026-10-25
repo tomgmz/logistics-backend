@@ -30,6 +30,8 @@ export interface Truck {
   /** Latest odometer reading (km) and when it was taken. */
   odometer_km?:              number | null
   odometer_recorded_at?:     string | null
+  /** `YYYY-MM-DD`, last day the registration is valid — see lib/registration-expiry. */
+  registration_expiry?:      string | null
   created_at:         string
   updated_at:         string
 }
@@ -49,6 +51,8 @@ export interface CreateTruckInput extends TruckScheduleInput {
   /** Current odometer (km) — the vehicle's first reading. */
   odometer_km?:      number
   odometer_photo_url?: string | null
+  /** `YYYY-MM-DD`, last day the registration is valid. */
+  registration_expiry?: string
   /** The vehicle's regular driver, when paired at creation. */
   assigned_driver_id?: string | null
 }
@@ -56,6 +60,8 @@ export interface CreateTruckInput extends TruckScheduleInput {
 export interface UpdateTruckInput extends TruckScheduleInput {
   /** Only accepted while the vehicle has no reading yet (setting up an existing truck). */
   odometer_km?:       number
+  /** `YYYY-MM-DD` — the renewed registration's last valid day. */
+  registration_expiry?: string
   plate_number?:      string
   model_id?:          string | null
   status?:            'available' | 'recheck_due' | 'in_use' | 'under_maintenance' | 'inactive'

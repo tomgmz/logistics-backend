@@ -204,8 +204,8 @@ export async function sendWelcomeEmail(params: WelcomeEmailParams): Promise<void
     const brevo = getBrevoClient()
     await brevo.transactionalEmails.sendTransacEmail({
       subject:     `Welcome to ${APP_NAME} — Your account is ready`,
-      htmlContent: generateWelcomeEmailHtml(name, to, roleLabel, password, role === 'driver'),
-      textContent: generateWelcomeEmailText(name, to, roleLabel, password, role === 'driver'),
+      htmlContent: generateWelcomeEmailHtml(name, to, roleLabel, password),
+      textContent: generateWelcomeEmailText(name, to, roleLabel, password),
       sender:      { name: FROM_NAME, email: FROM_EMAIL },
       to:          [{ email: to, name: firstName ?? undefined }],
     })
@@ -536,15 +536,12 @@ function generateWelcomeEmailHtml(
   email:     string,
   roleLabel: string,
   password:  string,
-  isDriver = false,
 ): string {
   const year       = new Date().getFullYear()
   // Falls back to '#' only if nothing is configured — the credentials above are
   // still useful without a working button, so this one degrades rather than throws.
   const base       = appBaseUrl()
   const loginUrl   = base ? `${base}/` : '#'
-  // Drivers work in the Android app, which is not on the Play Store.
-  const downloadUrl = base ? `${base}/download` : null
 
   return `
     <!DOCTYPE html>
@@ -655,20 +652,6 @@ function generateWelcomeEmailHtml(
                 </td>
               </tr>
 
-              ${isDriver && downloadUrl ? `
-              <!-- Driver app -->
-              <tr>
-                <td style="padding:0 40px 32px 40px;">
-                  <p style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:15px;color:#333333;line-height:1.6;">
-                    <strong>Get the driver app.</strong> It is not on the Play Store: open this link on your
-                    Android phone to download and install it, then sign in with the details above.
-                  </p>
-                  <a href="${downloadUrl}" style="font-family:Arial,sans-serif;font-size:15px;color:#4f46e5;text-decoration:none;word-break:break-all;">
-                    ${downloadUrl}
-                  </a>
-                </td>
-              </tr>` : ''}
-
               <!-- Help -->
               <tr>
                 <td style="padding:0 40px 32px 40px;">
@@ -698,17 +681,10 @@ function generateWelcomeEmailText(
   email:     string,
   roleLabel: string,
   password:  string,
-  isDriver = false,
 ): string {
   const year     = new Date().getFullYear()
   const base     = appBaseUrl()
   const loginUrl = base ? `${base}/` : ''
-  const appLine  = isDriver && base
-    ? `
-Get the driver app (not on the Play Store) — open this on your Android phone:
-${base}/download
-`
-    : ''
 
   return `
 Hi ${name},
@@ -721,7 +697,7 @@ Password: ${password}
 ────────────────────────────────────────────
 
 Sign in at: ${loginUrl}
-${appLine}
+
 IMPORTANT: This is a temporary password and it expires in ${TEMP_PASSWORD_TTL_DAYS} days.
 Please change it after your first login.
 Never share your password with anyone — ${APP_NAME} staff will never ask for it.
@@ -1751,6 +1727,54 @@ ${emailFooterText(reason)}
     })
     throw new Error(`Failed to send license expiry email: ${error}`)
   }
+}
+
+// ---------------------------------------------------------------------------
+// Vehicle registration expiry reminder, sent one month before the expiry date to
+// every Fleet Manager and Company Administrator by
+// services/notification/registration-expiry.scheduler.ts.
+// ---------------------------------------------------------------------------
+export interface RegistrationExpiryEmailParams {
+  to:          string
+  firstName:   string | null
+  plateNumber: string
+  /** The expiry date, already formatted for reading ("November 4, 2026"). */
+  expiresOn:   string
+  /** Whole days from today to the expiry date. */
+  daysLeft:    number
+}
+
+export async function sendRegistrationExpiryEmail(p: RegistrationExpiryEmailParams): Promise<void> {
+  const title  = 'Vehicle Registration Reminder'
+  const inDays = p.daysLeft === 0 ? 'today' : p.daysLeft === 1 ? 'in 1 day' : `in ${p.daysLeft} days`
+  const reason = `This reminder was sent because you manage the fleet on ${APP_NAME} and a vehicle's registration is about to expire.`
+  const note   =
+    'Renew the registration before it expires, then enter the new expiry date in Vehicle Management ' +
+    '(Update Details). Once it expires the vehicle cannot be assigned to a booking.'
+
+  const intro = `Hi ${escapeHtml(p.firstName?.trim() || 'there')},<br><br>` +
+    `The registration of <strong>${escapeHtml(p.plateNumber)}</strong> expires on <strong>${escapeHtml(p.expiresOn)}</strong>, ${inDays}.`
+  const body  = supportRowsHtml([['Plate number', p.plateNumber], ['Registration valid until', p.expiresOn]]) +
+    supportBlockHtml('What to do', note)
+
+  const text = `
+Hi ${p.firstName?.trim() || 'there'},
+
+The registration of ${p.plateNumber} expires on ${p.expiresOn}, ${inDays}.
+
+${note}
+
+---
+${emailFooterText(reason)}
+  `.trim()
+
+  await sendSupportEmail({
+    subject: `${p.plateNumber} registration expires on ${p.expiresOn}`,
+    html:    supportEmailHtml(title, intro, body, reason),
+    text,
+    to:      { email: p.to, name: p.firstName ?? undefined },
+    what:    'registration expiry email',
+  })
 }
 
 // ---------------------------------------------------------------------------

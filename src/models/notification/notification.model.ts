@@ -70,7 +70,7 @@ export async function listForUser(
  * The bell's filter: unread only, or one group of types by their prefix
  * ('booking' → booking.*). Whitelisted so the prefix is never user text.
  */
-export const NOTIFICATION_FILTERS = ['unread', 'booking', 'driver', 'auth', 'support'] as const
+export const NOTIFICATION_FILTERS = ['unread', 'booking', 'driver', 'auth', 'support', 'vehicle'] as const
 export type NotificationFilter = typeof NOTIFICATION_FILTERS[number]
 
 export async function pageForUser(
