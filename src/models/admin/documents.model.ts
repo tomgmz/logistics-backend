@@ -4,6 +4,8 @@ import { CLIENT_VISIBLE_DOCUMENT_TYPES } from '../../types/documents.types.js'
 import type {
   ClientBookingDocument,
   DocumentCounts,
+  DocumentFolder,
+  DocumentFolderQuery,
   DocumentListQuery,
   LibraryDocument,
   ReviewStatus,
@@ -219,6 +221,10 @@ function buildWhere(f: Filters, omit: { types?: boolean; review?: boolean } = {}
     params.push(f.booking_id)
     where.push(`l.booking_id = $${params.length}::uuid`)
   }
+  if (f.truck_id) {
+    params.push(f.truck_id)
+    where.push(`l.truck_id = $${params.length}::uuid`)
+  }
   if (f.date_from) {
     params.push(f.date_from)
     where.push(`${MANILA_DAY} >= $${params.length}::date`)
@@ -330,6 +336,104 @@ export async function countByType(f: Filters): Promise<DocumentCounts> {
     pending_review += Number(r.pending)
   }
   return { total, pending_review, by_type }
+}
+
+// ── Folders ────────────────────────────────────────────────────────────────
+
+const FOLDER_CAP = 1000
+
+const FOLDER_COUNTS = `
+  COUNT(*)::int                                            AS file_count,
+  COUNT(*) FILTER (WHERE l.review_status = 'pending')::int AS pending_review,
+  MAX(l.uploaded_at)                                       AS last_upload`
+
+/**
+ * One row per folder at a level, counted over the same library rows the file
+ * list reads (archived rows only in the Archived view, like the list).
+ *   clients   every client with a booking that has files
+ *   bookings  bookings with files: one client's, every client's (search), or one
+ *   vehicles  trucks with fleet files (odometer photos, service receipts)
+ */
+export async function findFolders(q: DocumentFolderQuery): Promise<DocumentFolder[]> {
+  const params: unknown[] = []
+  const where: string[] = [q.archived === 'only' ? 'l.archived_at IS NOT NULL' : 'l.archived_at IS NULL']
+  const term = q.search ? likeTerm(q.search) : null
+
+  if (q.level === 'vehicles') {
+    where.push(`l.truck_id IS NOT NULL`)
+    if (term) {
+      params.push(term)
+      where.push(`COALESCE(t.plate_number, '') ILIKE $${params.length} ESCAPE '\\'`)
+    }
+    const { rows } = await pool.query<DocumentFolder>(
+      `SELECT t.truck_id::text AS id, t.plate_number AS name,
+              NULL::text AS client_id, NULL::text AS company_name,
+              NULL::text AS booking_status, NULL::text AS schedule_date,
+              COUNT(DISTINCT l.booking_id)::int AS booking_count, ${FOLDER_COUNTS}
+         ${FROM_SQL}
+        WHERE ${where.join(' AND ')}
+        GROUP BY t.truck_id, t.plate_number
+        ORDER BY t.plate_number ASC NULLS LAST
+        LIMIT ${FOLDER_CAP}`,
+      params,
+    )
+    return rows
+  }
+
+  where.push(`l.booking_id IS NOT NULL`)
+
+  if (q.level === 'clients') {
+    if (term) {
+      // A client shows when its name, or any of its bookings, matches.
+      params.push(term)
+      const i = params.length
+      where.push(`(COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\' OR COALESCE(b.reference_number, '') ILIKE $${i} ESCAPE '\\')`)
+    }
+    const { rows } = await pool.query<DocumentFolder>(
+      `SELECT COALESCE(c.client_id::text, 'none') AS id, c.company_name AS name,
+              c.client_id::text AS client_id, c.company_name,
+              NULL::text AS booking_status, NULL::text AS schedule_date,
+              COUNT(DISTINCT l.booking_id)::int AS booking_count, ${FOLDER_COUNTS}
+         ${FROM_SQL}
+        WHERE ${where.join(' AND ')}
+        GROUP BY c.client_id, c.company_name
+        ORDER BY c.company_name ASC NULLS LAST
+        LIMIT ${FOLDER_CAP}`,
+      params,
+    )
+    return rows
+  }
+
+  // bookings
+  if (q.booking_id) {
+    params.push(q.booking_id)
+    where.push(`l.booking_id = $${params.length}::uuid`)
+  }
+  if (q.client_id === 'none') {
+    where.push(`c.client_id IS NULL`)
+  } else if (q.client_id) {
+    params.push(q.client_id)
+    where.push(`c.client_id = $${params.length}::uuid`)
+  }
+  if (term) {
+    params.push(term)
+    const i = params.length
+    where.push(`(COALESCE(b.reference_number, '') ILIKE $${i} ESCAPE '\\' OR COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\')`)
+  }
+  const { rows } = await pool.query<DocumentFolder>(
+    `SELECT l.booking_id::text AS id, b.reference_number AS name,
+            c.client_id::text AS client_id, c.company_name,
+            b.status::text AS booking_status,
+            to_char(b.schedule_date, 'YYYY-MM-DD') AS schedule_date,
+            1 AS booking_count, ${FOLDER_COUNTS}
+       ${FROM_SQL}
+      WHERE ${where.join(' AND ')}
+      GROUP BY l.booking_id, b.reference_number, b.status, b.schedule_date, b.created_at, c.client_id, c.company_name
+      ORDER BY b.created_at DESC NULLS LAST, l.booking_id DESC
+      LIMIT ${FOLDER_CAP}`,
+    params,
+  )
+  return rows
 }
 
 // ── Staff documents (the `documents` table) ────────────────────────────────

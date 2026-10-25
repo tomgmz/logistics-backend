@@ -19,7 +19,8 @@ import * as TransactionHistoryController from '../controllers/admin/transaction-
 
 const router = Router()
 
-const isHistoryStaff = authorize('admin', 'it_admin')
+// The Company Administrator and, since 2026-10-25, the General Manager.
+const isHistoryStaff = authorize('admin', 'it_admin', 'general_manager')
 const canReadHistory = requireModule('transaction-history')
 // An export is a GET, and requiredFlagForMethod maps every GET to can_view, so
 // the flag has to be named explicitly or the export tier means nothing.

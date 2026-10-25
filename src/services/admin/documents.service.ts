@@ -4,6 +4,7 @@ import { logSystemError } from '../../lib/log-system.js'
 import { badRequest, conflict, HttpError, notFound } from '../../lib/http-error.js'
 import * as DocumentsModel from '../../models/admin/documents.model.js'
 import type {
+  DocumentFolderQuery,
   DocumentListQuery,
   StaffDocumentType,
 } from '../../types/documents.types.js'
@@ -19,6 +20,10 @@ export async function listDocuments(q: DocumentListQuery) {
     DocumentsModel.countByType(filters),
   ])
   return { data: rows, total, page, limit, counts }
+}
+
+export async function listFolders(q: DocumentFolderQuery) {
+  return DocumentsModel.findFolders(q)
 }
 
 export async function exportDocuments(q: Omit<DocumentListQuery, 'page' | 'limit'>) {

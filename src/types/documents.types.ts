@@ -110,12 +110,44 @@ export interface DocumentListQuery {
   group?:         'booking' | 'fleet'
   review_status?: ReviewStatus
   booking_id?:    string
+  /** A vehicle's folder: every file recorded against that truck. */
+  truck_id?:      string
   date_from?:     string
   date_to?:       string
   archived?:      'hide' | 'only'
   sort?:          'asc' | 'desc'
   page:           number
   limit:          number
+}
+
+/**
+ * Document Management's folders: a client holds booking folders; the Fleet
+ * folder holds one folder per vehicle. Built from the same library rows, so a
+ * folder only exists while it has files.
+ */
+export type DocumentFolderLevel = 'clients' | 'bookings' | 'vehicles'
+
+export interface DocumentFolderQuery {
+  level:       DocumentFolderLevel
+  /** bookings: one client's ('none' = bookings with no client on record). */
+  client_id?:  string
+  /** bookings: just this one (the deep link from a booking). */
+  booking_id?: string
+  search?:     string
+  archived?:   'hide' | 'only'
+}
+
+export interface DocumentFolder {
+  id:             string | null
+  name:           string | null
+  client_id:      string | null
+  company_name:   string | null
+  booking_status: string | null
+  schedule_date:  string | null
+  booking_count:  number
+  file_count:     number
+  pending_review: number
+  last_upload:    string | null
 }
 
 export interface DocumentCounts {

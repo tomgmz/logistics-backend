@@ -4,6 +4,7 @@ import { statusOf } from '../../lib/http-error.js'
 import * as DocumentsService from '../../services/admin/documents.service.js'
 import {
   LIBRARY_DOCUMENT_TYPES,
+  type DocumentFolderLevel,
   type DocumentListQuery,
   type LibraryDocumentType,
   type ReviewStatus,
@@ -25,6 +26,7 @@ function filtersFrom(req: Request): Omit<DocumentListQuery, 'page' | 'limit'> {
   const group  = str(req.query.group)
   const review = str(req.query.review_status)
   const booking = str(req.query.booking_id)
+  const truck  = str(req.query.truck_id)
   const from   = str(req.query.date_from)
   const to     = str(req.query.date_to)
 
@@ -34,6 +36,7 @@ function filtersFrom(req: Request): Omit<DocumentListQuery, 'page' | 'limit'> {
     group:         group === 'booking' || group === 'fleet' ? group : undefined,
     review_status: ['pending', 'approved', 'rejected'].includes(review ?? '') ? review as ReviewStatus : undefined,
     booking_id:    booking && UUID_RE.test(booking) ? booking : undefined,
+    truck_id:      truck && UUID_RE.test(truck) ? truck : undefined,
     date_from:     from && DATE_RE.test(from) ? from : undefined,
     date_to:       to && DATE_RE.test(to) ? to : undefined,
     archived:      req.query.archived === 'only' ? 'only' : 'hide',
@@ -58,6 +61,28 @@ export async function listDocuments(req: Request, res: Response) {
       limit: Number(req.query.limit) || 25,
     })
     res.status(200).json({ status: 'success', ...data })
+  } catch (err) {
+    fail(res, err)
+  }
+}
+
+/** Folder rows for one level: clients, a client's bookings, or vehicles. */
+export async function listFolders(req: Request, res: Response) {
+  try {
+    const level   = str(req.query.level)
+    const client  = str(req.query.client_id)
+    const booking = str(req.query.booking_id)
+    if (level !== 'clients' && level !== 'bookings' && level !== 'vehicles') {
+      return res.status(400).json({ status: 'error', message: 'Unknown folder level.' })
+    }
+    const data = await DocumentsService.listFolders({
+      level:      level as DocumentFolderLevel,
+      client_id:  client === 'none' || (client && UUID_RE.test(client)) ? client : undefined,
+      booking_id: booking && UUID_RE.test(booking) ? booking : undefined,
+      search:     str(req.query.search)?.slice(0, 100),
+      archived:   req.query.archived === 'only' ? 'only' : 'hide',
+    })
+    res.status(200).json({ status: 'success', data })
   } catch (err) {
     fail(res, err)
   }

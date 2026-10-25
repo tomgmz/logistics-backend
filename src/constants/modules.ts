@@ -89,6 +89,7 @@ export const MODULES_BY_ROLE: Record<ManagedRole, ModuleKey[]> = {
   general_manager: [
     'vehicle-management',
     'booking-management',
+    'transaction-history',
     'document-management',
   ],
   fleet_manager: ['booking-management', 'vehicle-management', 'transit-tracking', 'reports'],
@@ -118,6 +119,7 @@ export const ROLE_MODULE_DEFAULTS: Record<ManagedRole, Partial<Record<ModuleKey,
   general_manager: {
     'booking-management':  'all',
     'vehicle-management':  'read',
+    'transaction-history': 'read',
     'document-management': 'read',
   },
   fleet_manager: {
