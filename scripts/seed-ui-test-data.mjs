@@ -173,7 +173,10 @@ try {
   const all = Object.values(people).flat()
   for (const [k, p] of all.entries()) {
     const staff  = !['client', 'driver'].includes(p.role)
-    const status = staff && p.i <= 10 ? 'active' : pick(USER_STATUS, p.i - 1)
+    // Only one non-archived General Manager may exist (users_one_general_manager),
+    // and that is the real one: every seeded GM is archived.
+    const status = p.role === 'general_manager' ? 'archived'
+      : staff && p.i <= 10 ? 'active' : pick(USER_STATUS, p.i - 1)
     await ins('users', 'user_id', {
       user_id: p.id, email: p.email, phone: nextPhone(), role: p.role, status,
       first_name: pick(FIRST, k), last_name: pick(LAST, k + 3 + Math.floor(k / 20)), middle_name: null,
@@ -244,9 +247,13 @@ try {
       service === 'due_soon' ? sixMonthsAgoPlus(3) :
       service === 'missing'  ? null : day(-30 - (i % 20))
     const driverIdx = p.status === 'archived' ? null : i
+    // Registration 1-2 years out, reminder stamps pre-set so the scheduler skips it.
+    const registration = ymd(day(365 + i * 4))
 
     const truckId = await ins('trucks', 'truck_id', {
       plate_number: `SEED ${pad(i + 1, 4)}`, status: p.status, model_id: pick(liveModels, i),
+      registration_expiry: registration,
+      registration_reminder_notified_for: registration, registration_reminder_emailed_for: registration,
       assigned_driver_id: driverIdx === null ? null : driverIds[driverIdx],
       service_interval_km:      service === 'missing' ? null : 10000,
       service_interval_months:  service === 'missing' ? null : 6,
