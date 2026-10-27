@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase.js'
 import * as PermissionsModel from '../../models/admin/permissions.model.js'
 import { invalidateUserPermissions } from '../../middlewares/moduleAccess.middleware.js'
 import { logEvent } from '../../lib/log-event.js'
+import { broadcast } from '../../lib/realtime.js'
 import { isManagedRole, pickFlags, MODULES_BY_ROLE, ManagedRole } from '../../constants/modules.js'
 import {
   ModulePermissionInput,
@@ -59,6 +60,9 @@ export async function setUserPermissions(
 
   const rows = await PermissionsModel.replaceForUser(userId, actorId ?? null, filtered)
   invalidateUserPermissions(userId)
+  // Tell the user's open tabs, which re-read their access and show a notice.
+  // Carries nothing: the tab fetches its own permissions from /auth/me.
+  void broadcast(`session:user:${userId}`, 'permissions_changed', {}).catch(() => {})
 
   logEvent({
     user_id:     actorId,
