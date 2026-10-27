@@ -18,7 +18,7 @@ import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 import { logEvent } from '../../lib/log-event.js'
 import { badRequest, conflict, notFound } from '../../lib/http-error.js'
 import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
-import { isBeforeScheduledDay, phDay, phDayPlusMonth, phTimeHHMM, sameDayBookingOpen } from '../../lib/ph-date.js'
+import { isBeforeScheduledDay, phDay, phDayPlusMonth, phTimeHHMM, SAME_DAY_LATEST_CALL_TIME, sameDayBookingOpen } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers, emailDeliveryConfirm } from '../notification/notification.service.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { revokeVendorCrewAfterCompletion } from '../auth/driver-enrollment.service.js'
@@ -35,7 +35,8 @@ import { assertNoPendingLoadTransfer } from '../driver/crew-actor.js'
 /**
  * How far ahead a client has to book: today until 12:00 noon (Monday to
  * Saturday, see sameDayBookingOpen), otherwise tomorrow at the earliest; one
- * month out at the latest.
+ * month out at the latest. A same-day call time must be later than now and no
+ * later than 12:00 noon.
  *
  * Compared in Philippine calendar days, matching the `date` column — the
  * server's own timezone must not decide what "today" means to a client in
@@ -55,6 +56,9 @@ function validateScheduleDate(scheduleDate: string, callTime?: string): void {
     // A same-day call time already gone is no booking at all.
     if (callTime && callTime.slice(0, 5) <= phTimeHHMM()) {
       throw badRequest('For a same-day booking, the call time must be later than now')
+    }
+    if (callTime && callTime.slice(0, 5) > SAME_DAY_LATEST_CALL_TIME) {
+      throw badRequest('For a same-day booking, the call time can be no later than 12:00 PM')
     }
     return
   }
