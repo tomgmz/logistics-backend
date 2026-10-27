@@ -38,28 +38,6 @@ export async function assertCanSendInConversation(
   return receiver
 }
 
-/**
- * Keep a client <-> driver conversation pointed at the delivery they are on now.
- * There is one conversation per pair, reused across deliveries, and one started
- * from the driver app carries no booking at all; the client sees this booking's
- * number beside the driver's name. Best effort: never blocks the send.
- */
-async function linkToCurrentBooking(
-  conv: { conversation_id: string; booking_id: string | null },
-  a: { user_id: string; role: string },
-  b: { user_id: string; role: string },
-): Promise<void> {
-  const client = a.role === 'client' ? a : b.role === 'client' ? b : null
-  const driver = a.role === 'driver' ? a : b.role === 'driver' ? b : null
-  if (!client || !driver) return
-  try {
-    const bookingId = await model.currentClientDriverBooking(client.user_id, driver.user_id)
-    if (bookingId && bookingId !== conv.booking_id) await model.setConversationBooking(conv.conversation_id, bookingId)
-  } catch (err) {
-    console.error('[messaging] could not link conversation to booking:', err)
-  }
-}
-
 async function deliverMessage(
   conv: { conversation_id: string; participant_a_id: string; participant_b_id: string },
   senderId: string,
@@ -156,8 +134,7 @@ export async function sendMessage(
   if (!conv) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 })
   if (conv.participant_a_id !== senderId && conv.participant_b_id !== senderId) throw Object.assign(new Error('Access denied'), { statusCode: 403 })
 
-  const receiver = await assertCanSendInConversation(conv, senderId, senderRole)
-  await linkToCurrentBooking(conv, { user_id: senderId, role: senderRole }, receiver)
+  await assertCanSendInConversation(conv, senderId, senderRole)
 
   return deliverMessage(conv, senderId, content, replyToMessageId, attachmentUrl)
 }
@@ -181,7 +158,7 @@ export async function sendDirectMessage(
   bookingId?: string,
   attachmentUrl?: string
 ): Promise<MessageRow> {
-  const target = await assertCanMessage(currentUserId, currentUserRole, targetUserId)
+  await assertCanMessage(currentUserId, currentUserRole, targetUserId)
 
   const conv = await model.findConversationByParticipants(currentUserId, targetUserId)
     ?? await model.createConversation(
@@ -190,7 +167,6 @@ export async function sendDirectMessage(
       currentUserRole === 'client' ? 'booking_transit' : 'direct',
       bookingId
     )
-  await linkToCurrentBooking(conv, { user_id: currentUserId, role: currentUserRole }, target)
 
   return deliverMessage(conv, currentUserId, content, replyToMessageId, attachmentUrl)
 }
@@ -277,7 +253,7 @@ export async function toggleReaction(
 }
 
 export async function getMessagableUsers(userId: string, role: string): Promise<MessagableUser[]> {
-  if (role === 'client') return model.getMessagableDriversForClient(userId)
+  if (role === 'client') return []  // clients cannot start or send messages
   if (role === 'driver') return model.getMessagableUsersForDriver(userId)
   return model.getMessagableUsersForStaff(userId, role)
 }
