@@ -21,9 +21,16 @@ function limitTripped(source: string, level: 'warn' | 'error' = 'warn') {
       message:    `Rate limit tripped on ${req.method} ${req.originalUrl}`,
       metadata:   { limit: options?.limit ?? options?.max ?? null },
     })
-    res.status(options?.statusCode ?? 429).json(
-      typeof options?.message === 'string' ? { status: 'error', message: options.message } : options?.message,
-    )
+    const body = typeof options?.message === 'string' ? { status: 'error', message: options.message } : options?.message
+    // How long until this key's window resets, so a client can count down
+    // instead of retrying blind — every retry inside the window is refused too.
+    const resetTime: Date | undefined = req.rateLimit?.resetTime
+    const retryAfter = resetTime ? Math.max(1, Math.ceil((resetTime.getTime() - Date.now()) / 1000)) : undefined
+    res.status(options?.statusCode ?? 429).json({
+      ...body,
+      code: body?.code ?? 'RATE_LIMITED',
+      ...(retryAfter ? { retryAfter } : {}),
+    })
   }
 }
 
