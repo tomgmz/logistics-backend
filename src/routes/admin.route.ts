@@ -348,6 +348,7 @@ router.patch('/system-logs/:id/resolve', authenticate, isItAdmin, SystemLogContr
 // IT Admin dashboard — system health, sign-in security and the account roster
 // in one read. IT Admin only, for the same reason as the system logs above.
 router.get('/it-dashboard', authenticate, isItAdmin, ItDashboardController.getSummary)
+router.get('/it-dashboard/trend', authenticate, isItAdmin, ItDashboardController.getTrend)
 
 // Staff dashboards — each desk's queues, plus the Company Administrator's
 // analytics. Counts and short reference lists only.

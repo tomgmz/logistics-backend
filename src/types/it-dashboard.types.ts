@@ -20,6 +20,8 @@ export interface DashboardLogRow {
 /** A: the triage queue. */
 export interface ProblemsSection {
   unresolved: { critical: number; error: number; warn: number }
+  /** Logged in the last 24 hours, resolved or not: the metric cards' badges. */
+  last_24h:   { critical: number; error: number; warn: number }
   /** Newest unresolved critical/error rows, newest first. */
   latest:     DashboardLogRow[]
 }
@@ -132,4 +134,22 @@ export interface ItDashboardSummary {
   services:     ServiceHealth[]
   security:     SecuritySection
   accounts:     AccountsSection
+}
+
+/** The chart's time windows, as Untitled UI's dashboard-04 offers them. */
+export type TrendRange = '12m' | '30d' | '7d' | '24h'
+export type TrendLevel = 'critical' | 'error' | 'warn'
+
+/**
+ * system_logs rows of one level per bucket (hours for 24h, days for 7d/30d,
+ * months for 12m), bucketed on Manila time, oldest first. The newest bucket is
+ * the current one, still filling.
+ */
+export interface ItDashboardTrend {
+  range:          TrendRange
+  level:          TrendLevel
+  buckets:        { start: string; count: number }[]
+  total:          number
+  /** The same length of time just before the range, for the change badge. */
+  previous_total: number
 }

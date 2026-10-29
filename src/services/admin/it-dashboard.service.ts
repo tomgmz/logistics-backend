@@ -3,6 +3,7 @@ import {
   AccountsSection,
   DashboardLogRow,
   ItDashboardSummary,
+  ItDashboardTrend,
   LockedAccount,
   ProblemsSection,
   RoleCounts,
@@ -13,6 +14,8 @@ import {
   ServiceHealth,
   ServiceStatus,
   StaffAccount,
+  TrendLevel,
+  TrendRange,
 } from '../../types/it-dashboard.types.js'
 import { SystemLogLevel, SystemLogEventType } from '../../types/system-logs.types.js'
 
@@ -165,18 +168,28 @@ function toLogRow(r: Awaited<ReturnType<typeof M.latestSystemLogs>>[number]): Da
 
 // ── A ───────────────────────────────────────────────────────────────────────
 
-async function problems(): Promise<ProblemsSection> {
+async function problems(now: number): Promise<ProblemsSection> {
   const unresolved = (level: SystemLogLevel) =>
     M.countSystemLogs((q) => q.eq('resolved', false).eq('log_level', level))
+  const dayIso = iso(now - DAY)
+  const lastDay = (level: SystemLogLevel) =>
+    M.countSystemLogs((q) => q.eq('log_level', level).gte('timestamp', dayIso))
 
-  const [critical, error, warn, latest] = await Promise.all([
+  const [critical, error, warn, dayCritical, dayError, dayWarn, latest] = await Promise.all([
     unresolved('critical'),
     unresolved('error'),
     unresolved('warn'),
+    lastDay('critical'),
+    lastDay('error'),
+    lastDay('warn'),
     M.latestSystemLogs((q) => q.eq('resolved', false).in('log_level', ['critical', 'error']), 5),
   ])
 
-  return { unresolved: { critical, error, warn }, latest: latest.map(toLogRow) }
+  return {
+    unresolved: { critical, error, warn },
+    last_24h:   { critical: dayCritical, error: dayError, warn: dayWarn },
+    latest:     latest.map(toLogRow),
+  }
 }
 
 // ── B ───────────────────────────────────────────────────────────────────────
@@ -391,7 +404,7 @@ export async function getSummary(): Promise<ItDashboardSummary> {
   const users = await M.allUsers()
 
   const [p, sch, svc, sec, acc] = await Promise.all([
-    problems(),
+    problems(now),
     schedulers(now),
     services(now),
     security(now, users),
@@ -405,5 +418,54 @@ export async function getSummary(): Promise<ItDashboardSummary> {
     services:     svc,
     security:     sec,
     accounts:     acc,
+  }
+}
+
+// ── Trend ───────────────────────────────────────────────────────────────────
+
+/** Manila is UTC+8 all year (no daylight saving), so buckets are fixed offsets. */
+const MANILA_OFFSET = 8 * HOUR
+
+/** Where each bucket starts (UTC ms), oldest first; the last one is still filling. */
+function bucketStarts(range: TrendRange, now: number): number[] {
+  if (range === '24h') {
+    // Manila and UTC hours line up: the offset is whole hours.
+    const hour = Math.floor(now / HOUR) * HOUR
+    return Array.from({ length: 24 }, (_, i) => hour - (23 - i) * HOUR)
+  }
+  if (range === '12m') {
+    const local = new Date(now + MANILA_OFFSET)
+    const y = local.getUTCFullYear(), m = local.getUTCMonth()
+    return Array.from({ length: 12 }, (_, i) => Date.UTC(y, m - (11 - i), 1) - MANILA_OFFSET)
+  }
+  const days = range === '7d' ? 7 : 30
+  const midnight = Math.floor((now + MANILA_OFFSET) / DAY) * DAY - MANILA_OFFSET
+  return Array.from({ length: days }, (_, i) => midnight - (days - 1 - i) * DAY)
+}
+
+/**
+ * One level's system_logs per bucket. A head-only count per bucket, like every
+ * other read here, so the cost does not grow with the table (the
+ * (log_level, timestamp) index carries each one): at most 30 + 1 counts.
+ */
+export async function getTrend(range: TrendRange, level: TrendLevel): Promise<ItDashboardTrend> {
+  const now    = Date.now()
+  const starts = bucketStarts(range, now)
+  const first  = starts[0]
+  const count  = (from: number, to: number) =>
+    M.countSystemLogs((q) => q.eq('log_level', level).gte('timestamp', iso(from)).lt('timestamp', iso(to)))
+
+  const [counts, previous_total] = await Promise.all([
+    Promise.all(starts.map((s, i) => count(s, starts[i + 1] ?? now + MIN))),
+    // The same length of time just before the range.
+    count(first - (now - first), first),
+  ])
+
+  return {
+    range,
+    level,
+    buckets:        starts.map((s, i) => ({ start: iso(s), count: counts[i] })),
+    total:          counts.reduce((a, b) => a + b, 0),
+    previous_total,
   }
 }
