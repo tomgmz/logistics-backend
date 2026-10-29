@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { GetSystemLogsQuery } from '../../types/system-logs.types.js'
 import { readInPages } from '../../lib/read-in-pages.js'
+import { searchOrFilters } from '../../lib/paginate.js'
 
 /**
  * Reads the system_logs table.
@@ -20,7 +21,7 @@ const MAX_LIMIT     = 200
 // The list and the export share this, so "export what I'm looking at" really
 // does export the same filtered, same-ordered rows.
 function filteredQuery(
-  { event_type, log_level, resolved, search, sort = 'desc' }: GetSystemLogsQuery,
+  { event_type, log_level, resolved, search, from, to, sort = 'desc' }: GetSystemLogsQuery,
   options?: { count: 'exact' },
 ) {
   let q = supabase
@@ -33,9 +34,11 @@ function filteredQuery(
   if (event_type)          q = q.eq('event_type', event_type)
   if (log_level)           q = q.eq('log_level', log_level)
   if (resolved !== undefined) q = q.eq('resolved', resolved)
-  if (search) {
-    q = q.or(`message.ilike.%${search}%,source.ilike.%${search}%`)
-  }
+  // Whole Manila days (+08:00), both ends included.
+  if (from) q = q.gte('timestamp', `${from}T00:00:00+08:00`)
+  if (to)   q = q.lte('timestamp', `${to}T23:59:59.999+08:00`)
+  // The search box reads "Search source or message": those two, nothing else.
+  for (const f of searchOrFilters(search ?? '', ['source', 'message'])) q = q.or(f)
 
   return q.order('timestamp', { ascending: sort === 'asc' })
 }

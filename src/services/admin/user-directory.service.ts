@@ -7,7 +7,7 @@ import * as GeneralManagerService from './general_manager.service.js'
 import * as FleetAdminService from './fleet_admin.service.js'
 import * as OperationsAdminService from './operations_admin.service.js'
 import { phDay, phDayPlusMonth } from '../../lib/ph-date.js'
-import { matchesSearch } from '../../lib/paginate.js'
+import { matchesWords } from '../../lib/paginate.js'
 import { splitRules, matchesFilter, allowedValues, parseFilterRules, type FilterRule } from '../../lib/filter-rules.js'
 
 export { parseFilterRules }
@@ -65,12 +65,11 @@ async function listStaff(
   const pick = split(filters, 'status').is[0] ?? null
   if (tab === 'all-admins') {
     const { data } = await FetchUsersService.getUsers({
-      search: search || undefined,
       role:   STAFF_ROLES,
       status: pick ?? [...CURRENT_STATUSES, 'archived'].join(','),
       excludeId,
     })
-    return data
+    return data.filter((u: any) => matchesWords(search, staffSearchFields(u)))
   }
   const archived = () => FetchUsersService.getUsers({ role: STAFF_ROLE[tab], status: 'archived', excludeId }).then((r) => r.data)
   const all =
@@ -79,8 +78,20 @@ async function listStaff(
     : pick ? (await staffRows(tab)).filter((u) => u.status === pick)
     // None picked: current and archived together.
     : (await Promise.all([staffRows(tab), archived()])).flat()
-  const q = search.trim().toLowerCase()
-  return all.filter((u) => matchesSearch(q, [u.email, u.first_name, u.last_name]))
+  return all.filter((u) => matchesWords(search, staffSearchFields(u)))
+}
+
+/**
+ * What each search box names, and only that. Administrators: "Search name,
+ * email or phone". Clients and drivers: "Search name, email, phone or
+ * company" (the client's company; a vendor driver's vendor).
+ */
+function staffSearchFields(u: any) {
+  return [u.first_name, u.middle_name, u.last_name, u.email, u.phone]
+}
+function peopleSearchFields(u: any) {
+  const one = (v: any) => (Array.isArray(v) ? v[0] : v)
+  return [...staffSearchFields(u), one(u.clients)?.company_name, one(u.drivers)?.vendor_name]
 }
 
 const CURRENT_STATUSES = ['active', 'inactive', 'deactivated', 'permanently_locked']
@@ -154,12 +165,11 @@ export async function listDirectory(params: {
     const role   = allowedValues(filters, 'role', ['client', 'driver'])
     const status = allowedValues(filters, 'status', CURRENT_STATUSES) ?? [...CURRENT_STATUSES, 'archived']
     const { data } = await FetchUsersService.getUsers({
-      search:  search || undefined,
       role:    role?.length ? role.join(',') : 'client,driver',
       status:  status.length ? status.join(',') : undefined,
       excludeId,
     })
-    return { rows: data, licenseFlagCount: 0 }
+    return { rows: data.filter((u: any) => matchesWords(search, peopleSearchFields(u))), licenseFlagCount: 0 }
   }
 
   const peopleTab = tab as Exclude<PeopleTab, 'all'>
@@ -174,9 +184,8 @@ export async function listDirectory(params: {
     ? 0
     : all.filter((u) => needsLicenseUpdate(u.drivers?.license_expiry)).length
 
-  const q = search.trim().toLowerCase()
   const rows = all.filter((u) =>
-    matchesTabFilters(u, peopleTab, filters) && matchesSearch(q, [u.email, u.first_name, u.last_name]))
+    matchesTabFilters(u, peopleTab, filters) && matchesWords(search, peopleSearchFields(u)))
 
   return { rows, licenseFlagCount }
 }

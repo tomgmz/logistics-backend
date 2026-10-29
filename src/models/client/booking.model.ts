@@ -225,12 +225,12 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
     const esc = `%${search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
     params.push(esc)
     const i = params.length
+    // Booking Management's box reads "Search reference, company, pickup or
+    // drop-off": those, nothing else.
     where.push(`(
-      b.origin ILIKE $${i} ESCAPE '\\' OR
-      b.truck_type_needed ILIKE $${i} ESCAPE '\\' OR
-      b.booking_id::text ILIKE $${i} ESCAPE '\\' OR
       b.reference_number ILIKE $${i} ESCAPE '\\' OR
       COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\' OR
+      b.origin ILIKE $${i} ESCAPE '\\' OR
       EXISTS (
         SELECT 1 FROM booking_destinations bd
         WHERE bd.booking_id = b.booking_id AND bd.address ILIKE $${i} ESCAPE '\\'

@@ -1,5 +1,5 @@
 import type { MaintenanceReason } from './truck.service.js'
-import { matchesSearch } from '../../lib/paginate.js'
+import { matchesWords } from '../../lib/paginate.js'
 
 /**
  * Vehicle Management → Upkeep, ONE ROW PER PROBLEM, built on the server so the
@@ -96,7 +96,8 @@ export function filterProblems(
     if (opts.group !== 'all' && opts.group !== 'odometer' && p.group !== opts.group) return false
     const d = p.truck.assigned_driver
     const driver = d ? `${d.first_name ?? ''} ${d.last_name ?? ''}`.trim() : null
-    return matchesSearch(q, [p.truck.plate_number, p.truck.truck_model?.name, p.truck.truck_model?.vehicle_type, driver])
+    // The search box reads "Search plate, model, driver...": those, nothing else.
+    return matchesWords(q, [p.truck.plate_number, p.truck.truck_model?.name, driver])
   })
   if (!opts.focusId) return visible
   return [

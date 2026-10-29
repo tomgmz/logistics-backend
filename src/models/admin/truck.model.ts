@@ -60,11 +60,13 @@ async function findAllPaginated(q: TruckListQuery) {
     const esc = `%${search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
     params.push(esc)
     const i = params.length
+    // The search box reads "Search plate, model, status...": those, nothing
+    // else. The status as the table writes it ("under maintenance", not
+    // "under_maintenance").
     where.push(`(
       t.plate_number ILIKE $${i} ESCAPE '\\' OR
-      t.truck_id::text ILIKE $${i} ESCAPE '\\' OR
-      COALESCE(tm.name, '')         ILIKE $${i} ESCAPE '\\' OR
-      COALESCE(tm.vehicle_type, '') ILIKE $${i} ESCAPE '\\'
+      COALESCE(tm.name, '') ILIKE $${i} ESCAPE '\\' OR
+      REPLACE(t.status::text, '_', ' ') ILIKE $${i} ESCAPE '\\'
     )`)
   }
 

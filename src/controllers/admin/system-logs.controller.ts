@@ -6,6 +6,11 @@ import {
   SystemLogLevel,
 } from '../../types/system-logs.types.js'
 
+/** A YYYY-MM-DD query param, or undefined. */
+function dayParam(v: unknown): string | undefined {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined
+}
+
 // Shared by the list and the export so both read the filters the same way.
 function queryFrom(req: Request): GetSystemLogsQuery {
   return {
@@ -16,6 +21,9 @@ function queryFrom(req: Request): GetSystemLogsQuery {
                   ? undefined
                   : req.query.resolved === 'true',
     search:     req.query.search as string | undefined,
+    // "Select Date": Manila calendar days, YYYY-MM-DD, both ends included.
+    from:      dayParam(req.query.from),
+    to:        dayParam(req.query.to),
     sort:       (req.query.sort === 'asc' ? 'asc' : 'desc'),
     page:       req.query.page  ? Number(req.query.page)  : 1,
     limit:      req.query.limit ? Number(req.query.limit) : 15,

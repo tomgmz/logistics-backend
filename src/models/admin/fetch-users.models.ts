@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { searchOrFilters } from '../../lib/paginate.js'
 import {
   GetUsersQuery,
   GetUsersResult,
@@ -68,10 +69,8 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
   else if (statusFilters?.length)  q = q.in('status', statusFilters)
   else                             q = q.neq('status', 'archived')
 
-  if (query.search) {
-    const s = query.search.trim()
-    q = q.or(`first_name.ilike.%${s}%,last_name.ilike.%${s}%,email.ilike.%${s}%`)
-  }
+  // Name, email or phone; every word of the search must be in one of them.
+  for (const f of searchOrFilters(query.search ?? '', ['first_name', 'middle_name', 'last_name', 'email', 'phone'])) q = q.or(f)
 
   if (query.excludeId) q = q.neq('user_id', query.excludeId)
 

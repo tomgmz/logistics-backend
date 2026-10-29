@@ -57,10 +57,40 @@ export function searchQuery(req: Request, key = 'search'): string {
   return typeof v === 'string' ? v.trim().toLowerCase() : ''
 }
 
+/** The words of a search, lower-cased ("Juan  Cruz" → ["juan", "cruz"]). */
+export function searchWords(q: string): string[] {
+  return q.trim().toLowerCase().split(/\s+/).filter(Boolean)
+}
+
 /** True when any of `values` contains `q` (already lower-cased); '' matches everything. */
 export function matchesSearch(q: string, values: (string | number | null | undefined)[]): boolean {
   if (!q) return true
   return values.some((v) => v != null && String(v).toLowerCase().includes(q))
+}
+
+/**
+ * The table format's search (2026-10-30): true when every word of `q` is found
+ * in one of `values`; '' matches everything. `values` are exactly the fields
+ * the table's search box names, so "Juan Cruz" finds the row whose first name
+ * is Juan and last name is Cruz, and nothing outside those fields is matched.
+ */
+export function matchesWords(q: string, values: (string | number | null | undefined)[]): boolean {
+  const words = searchWords(q)
+  if (!words.length) return true
+  const texts = values.filter((v) => v != null).map((v) => String(v).toLowerCase())
+  return words.every((w) => texts.some((t) => t.includes(w)))
+}
+
+/**
+ * The same rule for a PostgREST query: one `.or()` per word (PostgREST ANDs
+ * them), each word matched against `columns`. Characters that would end the
+ * filter early (, ( ) and the LIKE wildcards) are dropped from the word.
+ */
+export function searchOrFilters(q: string, columns: string[], extra: (word: string) => string[] = () => []): string[] {
+  return searchWords(q)
+    .map((w) => w.replace(/[,()%_*\\"]/g, ''))
+    .filter(Boolean)
+    .map((w) => [...columns.map((c) => `${c}.ilike.%${w}%`), ...extra(w)].join(','))
 }
 
 /** A string query param, or `fallback` when it is missing or empty. */
@@ -82,6 +112,6 @@ export function pagedList<T>(
   const paging = pageQuery(req)
   if (!paging) return { data: rows }
   const q = searchQuery(req)
-  const { data, meta } = paginate(rows.filter((r) => matchesSearch(q, fields(r))), paging)
+  const { data, meta } = paginate(rows.filter((r) => matchesWords(q, fields(r))), paging)
   return { data, meta: { ...meta, unfiltered: rows.length } }
 }

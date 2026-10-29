@@ -418,7 +418,9 @@ export async function findFolders(q: DocumentFolderQuery): Promise<DocumentFolde
   if (term) {
     params.push(term)
     const i = params.length
-    where.push(`(COALESCE(b.reference_number, '') ILIKE $${i} ESCAPE '\\' OR COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\')`)
+    where.push(q.client_id
+      ? `COALESCE(b.reference_number, '') ILIKE $${i} ESCAPE '\\'`
+      : `(COALESCE(b.reference_number, '') ILIKE $${i} ESCAPE '\\' OR COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\')`)
   }
   const { rows } = await pool.query<DocumentFolder>(
     `SELECT l.booking_id::text AS id, b.reference_number AS name,

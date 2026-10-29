@@ -7,13 +7,7 @@ import { validate } from '../middlewares/validate.middleware.js'
 import { requireModule } from '../middlewares/moduleAccess.middleware.js'
 import * as Support from '../services/support/support.service.js'
 import { supportInboxEmail } from '../lib/brevo-mailer.js'
-import { pageQuery, paginate, searchQuery, matchesSearch } from '../lib/paginate.js'
-
-// What the Tickets page calls each category, so a search for the label it shows finds the row.
-const CATEGORY_SEARCH_LABEL: Record<string, string> = {
-  booking: 'Booking', delivery: 'Delivery', tracking: 'Tracking',
-  documents: 'Documents', account: 'Account', other: 'Something else',
-}
+import { pageQuery, paginate, searchQuery, matchesWords } from '../lib/paginate.js'
 
 /**
  * Client support tickets, raised from the web FAQ chatbot.
@@ -87,10 +81,9 @@ router.get('/tickets', authenticate, authenticatedLimiter, isSupportDesk, requir
         const q      = searchQuery(req)
         const name   = (p: any) => [p?.first_name, p?.last_name].filter(Boolean).join(' ') || null
         const rows   = all
-          .filter((t: any) => (status === 'all' || t.status === status) && matchesSearch(q, [
-            t.reference, t.subject, t.message, t.clients?.company_name,
-            name(t.opener), t.opener?.email, t.bookings?.reference_number,
-            CATEGORY_SEARCH_LABEL[t.category],
+          // Exactly what the search box names: ticket, client, subject or booking.
+          .filter((t: any) => (status === 'all' || t.status === status) && matchesWords(q, [
+            t.reference, t.clients?.company_name, name(t.opener), t.subject, t.bookings?.reference_number,
           ]))
           // Open tickets oldest first (who has waited longest); otherwise newest first.
           .sort((a: any, b: any) => (status === 'open'

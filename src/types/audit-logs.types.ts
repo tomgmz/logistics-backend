@@ -47,6 +47,9 @@ export interface AuditLog {
 export interface GetLogsQuery {
   log_type?:  LogType
   search?:    string
+  /** Manila days, YYYY-MM-DD, inclusive. */
+  from?:      string
+  to?:        string
   sort?:      'asc' | 'desc'
   page?:      number
   limit?:     number

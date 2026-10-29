@@ -10,9 +10,8 @@ import {
   setReportStatusService,
   classifyReportService,
   getEmergencyContactService,
-  incidentLabel,
 } from '../../services/driver/report.service.js'
-import { pageQuery, paginate, searchQuery, matchesSearch, queryString } from '../../lib/paginate.js'
+import { pageQuery, paginate, searchQuery, matchesWords, queryString } from '../../lib/paginate.js'
 import { reportScopeForRole, type ReportStatus } from '../../types/driver/report.types.js'
 
 /**
@@ -171,14 +170,11 @@ export const listAllReports = async (req: Request, res: Response) => {
         if (type === 'unspecified' && r.incident_type !== null) return false
         if (type !== 'all' && type !== 'unspecified' && r.incident_type !== type) return false
         const u = r.drivers?.users
-        return matchesSearch(q, [
+        // Exactly what the search box names: driver, plate or booking.
+        return matchesWords(q, [
           u ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() : null,
           r.trucks?.plate_number,
           r.bookings?.reference_number,
-          r.sub_type,
-          r.description,
-          r.address,
-          incidentLabel(r.incident_type),
         ])
       })
       const { data, meta } = paginate(rows, paging)

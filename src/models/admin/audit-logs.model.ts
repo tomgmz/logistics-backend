@@ -1,11 +1,30 @@
 import { supabase } from '../../lib/supabase.js'
 import { GetLogsQuery } from '../../types/audit-logs.types.js'
 import { readInPages } from '../../lib/read-in-pages.js'
+import { searchOrFilters, searchWords } from '../../lib/paginate.js'
+
+/**
+ * For each word of the search, the users whose first or last name holds it:
+ * the search box reads "Search name, action or description", and the name is
+ * the acting user's, which lives on users, not on the log row.
+ */
+async function nameMatches(search: string | undefined): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  for (const word of searchWords(search ?? '')) {
+    const [filter] = searchOrFilters(word, ['first_name', 'last_name'])
+    if (!filter) continue
+    const { data, error } = await supabase.from('users').select('user_id').or(filter).limit(500)
+    if (error) throw error
+    out.set(word.replace(/[,()%_*\\"]/g, ''), (data ?? []).map((u) => u.user_id as string))
+  }
+  return out
+}
 
 // The list and the export share this, so "export what I'm looking at" really
 // does export the same filtered, same-ordered rows.
 function filteredQuery(
-  { log_type, search, sort = 'desc' }: GetLogsQuery,
+  { log_type, search, from, to, sort = 'desc' }: GetLogsQuery,
+  names: Map<string, string[]>,
   options?: { count: 'exact' },
 ) {
   let q = supabase
@@ -21,9 +40,14 @@ function filteredQuery(
     `, options)
 
   if (log_type) q = q.eq('log_type', log_type)
-  if (search) {
-    q = q.or(`action.ilike.%${search}%,description.ilike.%${search}%`)
-  }
+  // Whole Manila days (+08:00), both ends included.
+  if (from) q = q.gte('timestamp', `${from}T00:00:00+08:00`)
+  if (to)   q = q.lte('timestamp', `${to}T23:59:59.999+08:00`)
+  // Every word must be in the user's name, the action or the description.
+  for (const f of searchOrFilters(search ?? '', ['action', 'description'], (word) => {
+    const ids = names.get(word) ?? []
+    return ids.length ? [`user_id.in.(${ids.join(',')})`] : []
+  })) q = q.or(f)
   return q.order('timestamp', { ascending: sort === 'asc' })
 }
 
@@ -37,7 +61,8 @@ export async function findAll(query: GetLogsQuery = {}) {
   const limit = Math.min(MAX_LIMIT, Math.max(1, Number(query.limit) || DEFAULT_LIMIT))
   const from  = (page - 1) * limit
 
-  const { data, error, count } = await filteredQuery(query, { count: 'exact' })
+  const names = await nameMatches(query.search)
+  const { data, error, count } = await filteredQuery(query, names, { count: 'exact' })
     // log_id breaks timestamp ties so a row never sits on two pages.
     .order('log_id')
     .range(from, from + limit - 1)
@@ -46,9 +71,10 @@ export async function findAll(query: GetLogsQuery = {}) {
 }
 
 export async function findForExport(query: GetLogsQuery, cap: number) {
+  const names = await nameMatches(query.search)
   return readInPages(
     // log_id breaks timestamp ties so paging never skips or repeats a row.
-    (from, to) => filteredQuery(query).order('log_id').range(from, to),
+    (from, to) => filteredQuery(query, names).order('log_id').range(from, to),
     cap,
   )
 }

@@ -36,6 +36,9 @@ export interface GetSystemLogsQuery {
   log_level?:  SystemLogLevel
   resolved?:   boolean
   search?:     string
+  /** Manila days, YYYY-MM-DD, inclusive. */
+  from?:       string
+  to?:         string
   sort?:       'asc' | 'desc'
   page?:       number
   limit?:      number

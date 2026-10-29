@@ -129,13 +129,12 @@ function buildWhere(f: TransactionFilters): { whereSql: string; params: unknown[
     const esc = `%${search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
     params.push(esc)
     const i = params.length
+    // Exactly what the search box names: reference, company or pickup.
     where.push(`(
-      b.origin ILIKE $${i} ESCAPE '\\' OR
-      b.truck_type_needed ILIKE $${i} ESCAPE '\\' OR
-      b.booking_id::text ILIKE $${i} ESCAPE '\\' OR
       b.reference_number ILIKE $${i} ESCAPE '\\' OR
       COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\' OR
-      COALESCE(c.registered_name, '') ILIKE $${i} ESCAPE '\\'
+      COALESCE(c.registered_name, '') ILIKE $${i} ESCAPE '\\' OR
+      b.origin ILIKE $${i} ESCAPE '\\'
     )`)
   }
 

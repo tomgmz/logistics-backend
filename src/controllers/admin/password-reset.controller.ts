@@ -2,7 +2,7 @@ import { Request, Response } from 'express'
 import { param } from '../../lib/controller-utils.js'
 import * as ResetService from '../../services/auth/password-reset.service.js'
 import { ResetRequestStatus } from '../../types/password-reset.types.js'
-import { pageQuery, paginate, searchQuery, matchesSearch, queryString } from '../../lib/paginate.js'
+import { pageQuery, paginate, searchQuery, matchesWords, queryString } from '../../lib/paginate.js'
 import { matchesFilter, parseFilterRules } from '../../lib/filter-rules.js'
 import { phDay } from '../../lib/ph-date.js'
 
@@ -46,7 +46,7 @@ export async function listRequests(req: Request, res: Response) {
           matchesFilter(rules, 'role', r.requested_role) &&
           (since === null || new Date(r.created_at).getTime() >= since) &&
           (!from || day >= from) && (!to || day <= to) &&
-          matchesSearch(q, [[r.first_name, r.last_name].filter(Boolean).join(' '), r.email])
+          matchesWords(q, [[r.first_name, r.last_name].filter(Boolean).join(' '), r.email])
       })
       // Anything an admin still has to act on, over the whole queue.
       const pendingCount = data.filter((r: any) => r.status === 'pending' || r.status === 'expired').length
