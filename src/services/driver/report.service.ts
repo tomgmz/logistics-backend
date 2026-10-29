@@ -57,7 +57,7 @@ const INCIDENT_LABEL: Record<IncidentType, string> = {
 }
 
 /** A quick alert sent without picking a tile is still an emergency. */
-function incidentLabel(type: IncidentType | null): string {
+export function incidentLabel(type: IncidentType | null): string {
   return type ? INCIDENT_LABEL[type] : 'Unspecified emergency'
 }
 

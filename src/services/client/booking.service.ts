@@ -185,6 +185,7 @@ export async function getAllBookingsPaginatedService(params: {
   search?: string | null
   dateFrom?: string | null
   dateTo?:   string | null
+  order?:    'created' | 'schedule'
 }, viewer: BookingViewer): Promise<{ data: BookingWithRelations[]; meta: PaginatedBookingsMeta }> {
   const page  = Math.max(1, params.page)
   const limit = Math.min(Math.max(1, params.limit), 100)
@@ -202,7 +203,7 @@ export async function getAllBookingsPaginatedService(params: {
   }
 
   const [{ rows, total }, statusCounts] = await Promise.all([
-    BookingModel.findAllPaginated({ page, limit, status: params.status, search: params.search, dateFrom: params.dateFrom, dateTo: params.dateTo, clientId }),
+    BookingModel.findAllPaginated({ page, limit, status: params.status, search: params.search, dateFrom: params.dateFrom, dateTo: params.dateTo, clientId, order: params.order }),
     BookingModel.countByStatus(clientId),
   ])
 

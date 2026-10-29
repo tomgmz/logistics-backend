@@ -304,6 +304,7 @@ router.post('/it-admins/:id/restore', authenticate, isItAdmin, lockGuard('user',
 //Fetch all users
 router.get('/users',       authenticate, isAdmin, UserController.getUsers)
 router.get('/users/stats', authenticate, isAdmin, UserController.getUserStats)
+router.get('/user-directory', authenticate, isAdmin, UserController.getUserDirectory)
 
 // Password reset queues. Both admin roles reach these routes; which REQUESTS each
 // one may act on is enforced in the service (admin handles drivers + clients,

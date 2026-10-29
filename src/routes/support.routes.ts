@@ -7,6 +7,13 @@ import { validate } from '../middlewares/validate.middleware.js'
 import { requireModule } from '../middlewares/moduleAccess.middleware.js'
 import * as Support from '../services/support/support.service.js'
 import { supportInboxEmail } from '../lib/brevo-mailer.js'
+import { pageQuery, paginate, searchQuery, matchesSearch } from '../lib/paginate.js'
+
+// What the Tickets page calls each category, so a search for the label it shows finds the row.
+const CATEGORY_SEARCH_LABEL: Record<string, string> = {
+  booking: 'Booking', delivery: 'Delivery', tracking: 'Tracking',
+  documents: 'Documents', account: 'Account', other: 'Something else',
+}
 
 /**
  * Client support tickets, raised from the web FAQ chatbot.
@@ -69,6 +76,30 @@ router.get('/tickets', authenticate, authenticatedLimiter, isSupportDesk, requir
     try {
       const raw    = String(req.query.status ?? 'open')
       const status = raw === 'resolved' || raw === 'all' ? raw : 'open'
+
+      const paging = pageQuery(req)
+      if (paging) {
+        // The Tickets table: status tab, search and the tab counts are worked
+        // out here, and only the page on screen goes back.
+        const all    = await Support.listTickets('all')
+        const open   = all.filter((t: any) => t.status === 'open').length
+        const counts = { all: all.length, open, resolved: all.length - open }
+        const q      = searchQuery(req)
+        const name   = (p: any) => [p?.first_name, p?.last_name].filter(Boolean).join(' ') || null
+        const rows   = all
+          .filter((t: any) => (status === 'all' || t.status === status) && matchesSearch(q, [
+            t.reference, t.subject, t.message, t.clients?.company_name,
+            name(t.opener), t.opener?.email, t.bookings?.reference_number,
+            CATEGORY_SEARCH_LABEL[t.category],
+          ]))
+          // Open tickets oldest first (who has waited longest); otherwise newest first.
+          .sort((a: any, b: any) => (status === 'open'
+            ? String(a.created_at).localeCompare(String(b.created_at))
+            : String(b.created_at).localeCompare(String(a.created_at))))
+        const { data, meta } = paginate(rows, paging)
+        return res.status(200).json({ status: 'success', data, meta: { ...meta, counts }, inbox: supportInboxEmail() })
+      }
+
       // The inbox the tickets were emailed to; the Tickets page opens it in Gmail.
       res.status(200).json({ status: 'success', data: await Support.listTickets(status), inbox: supportInboxEmail() })
     } catch (err) { fail(res, err) }

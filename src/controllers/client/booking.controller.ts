@@ -70,7 +70,8 @@ export const getAllBookings = async (req: Request, res: Response) => {
       const search = typeof req.query.search === 'string' ? req.query.search : ''
       const dateFrom = typeof req.query.date_from === 'string' ? req.query.date_from : null
       const dateTo   = typeof req.query.date_to   === 'string' ? req.query.date_to   : null
-      const result = await getAllBookingsPaginatedService({ page, limit, status, search, dateFrom, dateTo }, viewerFrom(req))
+      const order    = req.query.order === 'schedule' ? 'schedule' : 'created'
+      const result = await getAllBookingsPaginatedService({ page, limit, status, search, dateFrom, dateTo, order }, viewerFrom(req))
       return res.status(200).json({ status: 'success', data: result.data, meta: result.meta })
     }
 

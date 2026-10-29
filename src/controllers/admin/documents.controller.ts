@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import { statusOf } from '../../lib/http-error.js'
 import * as DocumentsService from '../../services/admin/documents.service.js'
+import { pageQuery, paginate } from '../../lib/paginate.js'
 import {
   LIBRARY_DOCUMENT_TYPES,
   type DocumentFolderLevel,
@@ -72,6 +73,38 @@ export async function listFolders(req: Request, res: Response) {
     const level   = str(req.query.level)
     const client  = str(req.query.client_id)
     const booking = str(req.query.booking_id)
+    const search  = str(req.query.search)?.slice(0, 100)
+    const archived = req.query.archived === 'only' ? 'only' as const : 'hide' as const
+    const paging  = pageQuery(req)
+
+    // The Documents page's top level, paged: every client folder, then (while
+    // searching) the matching bookings across all clients, then the Fleet
+    // folder (not while searching, and not on the clients-only view). Each row
+    // says which `kind` it is.
+    if (level === 'root') {
+      const [clients, bookings, vehicles] = await Promise.all([
+        DocumentsService.listFolders({ level: 'clients', search, archived }),
+        search ? DocumentsService.listFolders({ level: 'bookings', search, archived }) : Promise.resolve([]),
+        !search && req.query.fleet === '1' ? DocumentsService.listFolders({ level: 'vehicles', archived }) : Promise.resolve([]),
+      ])
+      const rows: any[] = [
+        ...clients.map((c) => ({ ...c, kind: 'client' })),
+        ...bookings.map((b) => ({ ...b, kind: 'booking' })),
+      ]
+      if (vehicles.length > 0) {
+        rows.push({
+          kind: 'fleet', id: null, name: 'Fleet', client_id: null, company_name: null,
+          booking_status: null, schedule_date: null,
+          booking_count:  vehicles.length,
+          file_count:     vehicles.reduce((n, v) => n + v.file_count, 0),
+          pending_review: 0,
+          last_upload:    vehicles.reduce<string | null>((m, v) => (v.last_upload && (!m || v.last_upload > m) ? v.last_upload : m), null),
+        })
+      }
+      const { data, meta } = paginate(rows, paging ?? { page: 1, limit: rows.length || 1 })
+      return res.status(200).json({ status: 'success', data, meta })
+    }
+
     if (level !== 'clients' && level !== 'bookings' && level !== 'vehicles') {
       return res.status(400).json({ status: 'error', message: 'Unknown folder level.' })
     }
@@ -79,9 +112,13 @@ export async function listFolders(req: Request, res: Response) {
       level:      level as DocumentFolderLevel,
       client_id:  client === 'none' || (client && UUID_RE.test(client)) ? client : undefined,
       booking_id: booking && UUID_RE.test(booking) ? booking : undefined,
-      search:     str(req.query.search)?.slice(0, 100),
-      archived:   req.query.archived === 'only' ? 'only' : 'hide',
+      search,
+      archived,
     })
+    if (paging) {
+      const { data: page, meta } = paginate(data, paging)
+      return res.status(200).json({ status: 'success', data: page, meta })
+    }
     res.status(200).json({ status: 'success', data })
   } catch (err) {
     fail(res, err)

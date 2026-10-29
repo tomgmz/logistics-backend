@@ -1,11 +1,12 @@
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as LandlinePrefixService from '../../services/admin/landline-prefix.service.js'
+import { pagedList } from '../../lib/paginate.js'
 
 export async function getAllLandlinePrefixes(req: Request, res: Response) {
   try {
     const data = await LandlinePrefixService.getAllLandlinePrefixes()
-    res.status(200).json({ status: 'success', data })
+    res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (p) => [p.prefix, p.city, p.region]) })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
   }

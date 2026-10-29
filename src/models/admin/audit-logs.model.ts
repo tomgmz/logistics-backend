@@ -4,7 +4,10 @@ import { readInPages } from '../../lib/read-in-pages.js'
 
 // The list and the export share this, so "export what I'm looking at" really
 // does export the same filtered, same-ordered rows.
-function filteredQuery({ log_type, search, sort = 'desc' }: GetLogsQuery) {
+function filteredQuery(
+  { log_type, search, sort = 'desc' }: GetLogsQuery,
+  options?: { count: 'exact' },
+) {
   let q = supabase
     .from('audit_logs')
     .select(`
@@ -15,7 +18,7 @@ function filteredQuery({ log_type, search, sort = 'desc' }: GetLogsQuery) {
       description,
       timestamp,
       users ( role, first_name, last_name )
-    `)
+    `, options)
 
   if (log_type) q = q.eq('log_type', log_type)
   if (search) {
@@ -24,10 +27,22 @@ function filteredQuery({ log_type, search, sort = 'desc' }: GetLogsQuery) {
   return q.order('timestamp', { ascending: sort === 'asc' })
 }
 
+const DEFAULT_LIMIT = 20
+const MAX_LIMIT     = 200
+
+// Paginated in the database, like system_logs: reading the whole table to
+// slice it in the browser also hit PostgREST's 1000-row ceiling silently.
 export async function findAll(query: GetLogsQuery = {}) {
-  const { data, error } = await filteredQuery(query)
+  const page  = Math.max(1, Number(query.page) || 1)
+  const limit = Math.min(MAX_LIMIT, Math.max(1, Number(query.limit) || DEFAULT_LIMIT))
+  const from  = (page - 1) * limit
+
+  const { data, error, count } = await filteredQuery(query, { count: 'exact' })
+    // log_id breaks timestamp ties so a row never sits on two pages.
+    .order('log_id')
+    .range(from, from + limit - 1)
   if (error) throw error
-  return { data, total: data?.length ?? 0, page: 1, limit: data?.length ?? 0 }
+  return { data: data ?? [], total: count ?? 0, page, limit }
 }
 
 export async function findForExport(query: GetLogsQuery, cap: number) {

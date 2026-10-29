@@ -3,6 +3,8 @@ import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as TruckService from '../../services/admin/truck.service.js'
 import * as InspectionService from '../../services/admin/truck-inspection.service.js'
 import * as UpkeepService from '../../services/admin/truck-upkeep.service.js'
+import { toProblems, filterProblems } from '../../services/admin/upkeep-problems.js'
+import { pageQuery, paginate, queryString } from '../../lib/paginate.js'
 
 /**
  * Upkeep refusals are the Fleet Manager's to fix (a typo'd odometer, a missing
@@ -36,9 +38,33 @@ export async function getAllTrucks(req: Request, res: Response) {
 }
 
 // Vehicle Management → Maintenance: what needs a mechanic, and why.
-export async function getMaintenanceQueue(_req: Request, res: Response) {
+export async function getMaintenanceQueue(req: Request, res: Response) {
   try {
     const data = await TruckService.getMaintenanceQueue()
+
+    // The Upkeep table: one row per problem, filtered and paged here.
+    // Without page/limit the page's badge and Vehicles-tab tags get the whole queue.
+    const paging = pageQuery(req)
+    if (paging) {
+      const focusId  = queryString(req, 'focus') || null
+      const problems = toProblems(data)
+      const rows     = filterProblems(problems, {
+        group:  queryString(req, 'group', 'all'),
+        search: queryString(req, 'search'),
+        focusId,
+      })
+      const { data: page, meta } = paginate(rows, paging)
+      return res.status(200).json({
+        status: 'success',
+        data:   page,
+        meta: {
+          ...meta,
+          // A focused vehicle that owes nothing gets a pinned row of its own on the page.
+          focusHasProblems: !!focusId && problems.some((p) => p.truck.truck_id === focusId),
+        },
+      })
+    }
+
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })

@@ -10,7 +10,9 @@ import {
   setReportStatusService,
   classifyReportService,
   getEmergencyContactService,
+  incidentLabel,
 } from '../../services/driver/report.service.js'
+import { pageQuery, paginate, searchQuery, matchesSearch, queryString } from '../../lib/paginate.js'
 import { reportScopeForRole, type ReportStatus } from '../../types/driver/report.types.js'
 
 /**
@@ -147,6 +149,42 @@ export const enrichReport = async (req: Request, res: Response) => {
 
 export const listAllReports = async (req: Request, res: Response) => {
   try {
+    const paging = pageQuery(req)
+    if (paging) {
+      // The Reports table: filters, search and the tab counts are worked out
+      // here, and only the page on screen goes back.
+      const all    = await listAllReportsService(null, reportScopeForRole(req.user?.role))
+      const status = queryString(req, 'status', 'open')
+      const type   = queryString(req, 'type', 'all')
+      const q      = searchQuery(req)
+
+      const counts = { all: all.length, open: 0, reported: 0, acknowledged: 0, resolved: 0, unclassified: 0 }
+      for (const r of all) {
+        counts[r.status]++
+        if (r.status !== 'resolved') counts.open++
+        if (r.status !== 'resolved' && !r.incident_type) counts.unclassified++
+      }
+
+      const rows = all.filter((r) => {
+        if (status === 'open' && r.status === 'resolved') return false
+        if (status !== 'open' && status !== 'all' && r.status !== status) return false
+        if (type === 'unspecified' && r.incident_type !== null) return false
+        if (type !== 'all' && type !== 'unspecified' && r.incident_type !== type) return false
+        const u = r.drivers?.users
+        return matchesSearch(q, [
+          u ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() : null,
+          r.trucks?.plate_number,
+          r.bookings?.reference_number,
+          r.sub_type,
+          r.description,
+          r.address,
+          incidentLabel(r.incident_type),
+        ])
+      })
+      const { data, meta } = paginate(rows, paging)
+      return res.status(200).json({ status: 'success', data, meta: { ...meta, counts } })
+    }
+
     const status = String(req.query.status ?? '') as ReportStatus | ''
     const reports = await listAllReportsService(status || null, reportScopeForRole(req.user?.role))
     res.status(200).json({ status: 'success', data: reports })

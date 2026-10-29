@@ -2,12 +2,13 @@ import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import { statusOf } from '../../lib/http-error.js'
 import * as VehicleTypeService from '../../services/admin/vehicle-type.service.js'
+import { pagedList } from '../../lib/paginate.js'
 
 // ?active=true is what the pickers ask for; System Maintenance reads them all.
 export async function getAllVehicleTypes(req: Request, res: Response) {
   try {
     const data = await VehicleTypeService.getAllVehicleTypes(req.query.active === 'true')
-    res.status(200).json({ status: 'success', data })
+    res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (t) => [t.name, t.description]) })
   } catch (error: any) {
     res.status(statusOf(error)).json({ status: 'error', message: error.message })
   }

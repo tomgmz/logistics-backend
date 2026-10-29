@@ -24,6 +24,8 @@ export interface BookingListQuery {
   dateTo?:   string | null
   /** Set for a client caller, so the page and its counts cover only their own bookings. */
   clientId?: string | null
+  /** 'schedule': newest schedule date first (the client's Booking History). Default: newest created first. */
+  order?: 'created' | 'schedule'
 }
 
 // Exported so the transaction-history model hydrates rows with exactly the same
@@ -228,7 +230,11 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
       b.truck_type_needed ILIKE $${i} ESCAPE '\\' OR
       b.booking_id::text ILIKE $${i} ESCAPE '\\' OR
       b.reference_number ILIKE $${i} ESCAPE '\\' OR
-      COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\'
+      COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\' OR
+      EXISTS (
+        SELECT 1 FROM booking_destinations bd
+        WHERE bd.booking_id = b.booking_id AND bd.address ILIKE $${i} ESCAPE '\\'
+      )
     )`)
   }
 
@@ -262,7 +268,9 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
   // first out: the oldest waiting booking on top. That is also the General
   // Manager's whole view, which is forced to Pending. booking_id breaks
   // created_at ties so a row can't jump between pages.
-  const orderSql  = !q.clientId && status === 'pending'
+  const orderSql  = q.order === 'schedule'
+    ? 'b.schedule_date DESC NULLS LAST, b.booking_id DESC'
+    : !q.clientId && status === 'pending'
     ? 'b.created_at ASC, b.booking_id ASC'
     : 'b.created_at DESC, b.booking_id DESC'
   const limitIdx  = params.length + 1

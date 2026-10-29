@@ -1,12 +1,13 @@
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as CargoCatalogService from '../../services/admin/cargo-catalog.service.js'
+import { pagedList } from '../../lib/paginate.js'
 
 export async function getAllHandlingCodes(req: Request, res: Response) {
   try {
     const type = req.query.type as 'standard' | 'additional' | undefined
     const data = await CargoCatalogService.getAllHandlingCodes(type)
-    res.status(200).json({ status: 'success', data })
+    res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (h) => [h.code, h.name, h.description]) })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
   }
@@ -57,7 +58,7 @@ export async function deleteHandlingCode(req: Request, res: Response) {
 export async function getAllCommodities(req: Request, res: Response) {
   try {
     const data = await CargoCatalogService.getAllCommodities()
-    res.status(200).json({ status: 'success', data })
+    res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (c) => [c.name, c.category, c.description]) })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
   }
@@ -109,7 +110,7 @@ export async function getAllProducts(req: Request, res: Response) {
   try {
     const commodityId = req.query.commodity_id as string | undefined
     const data = await CargoCatalogService.getAllProducts(commodityId)
-    res.status(200).json({ status: 'success', data })
+    res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (p) => [p.name, p.unit, p.description, p.commodities?.name]) })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
   }
