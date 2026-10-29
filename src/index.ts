@@ -101,10 +101,26 @@ if (!IS_PRODUCTION) {
   app.use((req: Request, res: Response, next: NextFunction) => {
     console.log(`${req.method} ${req.path}`, {
       cookies: Object.keys(req.cookies || {}),
-      body: req.method !== 'GET' ? req.body : undefined,
+      body: req.method !== 'GET' ? redactSecrets(req.body) : undefined,
     });
     next();
   });
+}
+
+/**
+ * The request body for the dev console, with secrets masked. Passwords, sign-in
+ * codes, reset/enrolment tokens and the like are what a sign-in or reset body
+ * is made of, and a terminal is not a place to keep them, even locally.
+ */
+function redactSecrets(body: unknown): unknown {
+  if (Array.isArray(body)) return body.map(redactSecrets);
+  if (!body || typeof body !== 'object') return body;
+  return Object.fromEntries(Object.entries(body).map(([key, value]) => [
+    key,
+    /password|passcode|otp|^code$|token|secret|credential|assertion|signature/i.test(key)
+      ? '[redacted]'
+      : redactSecrets(value),
+  ]));
 }
 
 // SWAGGER
