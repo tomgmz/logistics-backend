@@ -221,15 +221,16 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
     where.push(`b.status = $${params.length}`)
   }
 
-  if (search) {
-    const esc = `%${search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
-    params.push(esc)
+  // Only what the search box names: Booking Management's "Search reference,
+  // company, pickup or drop-off"; the client's own history "Search reference,
+  // pickup or drop-off" (every row there is their company). Every word must
+  // be found in one of those, so "BK-0012 Makati" narrows instead of failing.
+  for (const word of search.split(/\s+/).filter(Boolean)) {
+    params.push(`%${word.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`)
     const i = params.length
-    // Booking Management's box reads "Search reference, company, pickup or
-    // drop-off": those, nothing else.
     where.push(`(
       b.reference_number ILIKE $${i} ESCAPE '\\' OR
-      COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\' OR
+      ${q.clientId ? '' : `COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\' OR`}
       b.origin ILIKE $${i} ESCAPE '\\' OR
       EXISTS (
         SELECT 1 FROM booking_destinations bd
