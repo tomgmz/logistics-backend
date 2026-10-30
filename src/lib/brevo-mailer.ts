@@ -1096,18 +1096,11 @@ export function supportInboxEmail(): string {
   return CONTACT_INBOX_EMAIL
 }
 
-const CONTACT_ROLE_LABELS: Record<string, string> = {
-  fmcg:    'FMCG',
-  shipper: 'Shipper',
-  other:   'Other',
-}
-
 export interface ContactInquiryEmailParams {
   firstName: string
   lastName:  string
   email:     string
   phone?:    string | null
-  role:      string
   message:   string
 }
 
@@ -1123,16 +1116,14 @@ export async function sendContactInquiryEmail(params: ContactInquiryEmailParams)
     throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
   }
 
-  const { firstName, lastName, email, phone, role, message } = params
+  const { firstName, lastName, email, phone, message } = params
   const fullName  = `${firstName} ${lastName}`
-  const roleLabel = CONTACT_ROLE_LABELS[role] ?? role
   const year      = new Date().getFullYear()
 
   const rows: Array<[string, string]> = [
     ['Name',     fullName],
     ['Email',    email],
     ['Phone',    phone || 'Not given'],
-    ['Role',     roleLabel],
     ['Received', formatManilaTimestamp()],
   ]
   const rowsHtml = rows
@@ -1195,7 +1186,7 @@ ${emailFooterText(`Sent from the contact form on the ${APP_NAME} website.`)}
   try {
     const brevo = getBrevoClient()
     await brevo.transactionalEmails.sendTransacEmail({
-      subject:     `Website enquiry from ${fullName} (${roleLabel})`,
+      subject:     `Website enquiry from ${fullName}`,
       htmlContent,
       textContent,
       sender:      { name: FROM_NAME, email: FROM_EMAIL },

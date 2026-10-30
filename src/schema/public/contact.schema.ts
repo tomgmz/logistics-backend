@@ -6,8 +6,6 @@ import {
   optionalMobileField,
 } from '../admin/shared.schema.js'
 
-export const CONTACT_ROLES = ['fmcg', 'shipper', 'other'] as const
-
 // The landing page's "Contact our logistics experts" form. Names, email and
 // phone go through the same rules as every account in the system.
 export const contactInquirySchema = z.object({
@@ -15,7 +13,6 @@ export const contactInquirySchema = z.object({
   last_name:  lastNameField(),
   email:      emailField(),
   phone:      optionalMobileField(),
-  role:       z.enum(CONTACT_ROLES, { error: 'Choose fmcg, shipper or other' }),
   message:    z
     .string()
     .trim()

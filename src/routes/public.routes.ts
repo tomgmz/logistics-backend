@@ -50,7 +50,6 @@ router.post('/contact', contactFormLimiter, validate(contactInquirySchema), asyn
       lastName:  body.last_name,
       email:     body.email,
       phone:     body.phone ?? null,
-      role:      body.role,
       message:   body.message,
     })
     res.status(200).json({ status: 'success', message: 'Message sent.' })
