@@ -45,6 +45,7 @@ async function create(userId: string, input: CreateClientInput) {
         company_name:    input.company_name ?? null,
         billing_address: input.billing_address ?? null,
         landline:        input.landline ?? null,
+        contract_valid_until: input.contract_valid_until ?? null,
       },
     )
     return findById(userId)
@@ -74,6 +75,7 @@ async function update(userId: string, input: UpdateClientInput) {
   if ('company_name' in input) clientFields.company_name = input.company_name
   if ('billing_address' in input) clientFields.billing_address = input.billing_address
   if ('landline' in input) clientFields.landline = input.landline
+  if ('contract_valid_until' in input) clientFields.contract_valid_until = input.contract_valid_until
 
   if (Object.keys(clientFields).length > 0) {
     const { error } = await supabase

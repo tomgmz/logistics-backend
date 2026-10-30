@@ -42,7 +42,8 @@ export async function findAllUsers(query: GetUsersQuery): Promise<GetUsersResult
         client_id,
         company_name,
         billing_address,
-        landline
+        landline,
+        contract_valid_until
       ),
       drivers (
         driver_id,

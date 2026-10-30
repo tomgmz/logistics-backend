@@ -8,6 +8,7 @@ export interface ClientDetails {
   company_name:    string | null
   billing_address: string | null
   landline:        string | null
+  contract_valid_until: string | null
 }
 
 export interface DriverDetails {

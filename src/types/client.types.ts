@@ -17,6 +17,7 @@ export interface Client {
   company_name?:    string | null
   billing_address?: string | null
   landline?:        string | null
+  contract_valid_until?: string | null
 }
 
 export interface CreateClientInput {
@@ -31,6 +32,7 @@ export interface CreateClientInput {
   company_name?:    string
   billing_address?: string
   landline?:        string | null
+  contract_valid_until?: string | null
 }
 
 export interface UpdateClientInput {
@@ -44,4 +46,5 @@ export interface UpdateClientInput {
   company_name?:    string
   billing_address?: string
   landline?:        string | null
+  contract_valid_until?: string | null
 }
