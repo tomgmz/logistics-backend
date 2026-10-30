@@ -87,10 +87,18 @@ try {
   }
 
   // 1. Copy every file. Any failure stops here, before the DB is touched.
+  // A file Cloudinary no longer has (404) is already broken in the app; its row
+  // keeps the dead URL rather than blocking the rest.
   const manifest = {}
+  const missing  = new Set()
   let i = 0
   for (const url of urls) {
     const res = await fetch(url)
+    if (res.status === 404) {
+      missing.add(url)
+      console.log(`[${++i}/${urls.size}] MISSING on Cloudinary, left as is: ${url}`)
+      continue
+    }
     if (!res.ok) throw new Error(`download failed (${res.status}): ${url}`)
     const key = keyFor(url)
     await s3.send(new PutObjectCommand({
@@ -122,15 +130,16 @@ try {
       }
     }
   }
-  // Nothing may still point at Cloudinary, or the move was incomplete.
+  // Nothing but the missing files may still point at Cloudinary.
   for (const col of hits) {
     const { rows } = await client.query(
-      `select count(*)::int n from public."${col.table_name}" where "${col.column_name}"::text like '%res.cloudinary.com%'`,
+      `select "${col.column_name}"::text v from public."${col.table_name}" where "${col.column_name}"::text like '%res.cloudinary.com%'`,
     )
-    if (rows[0].n) throw new Error(`${col.table_name}.${col.column_name} still has ${rows[0].n} Cloudinary values`)
+    const left = rows.flatMap((r) => r.v.match(URL_RE) ?? []).filter((u) => !missing.has(u))
+    if (left.length) throw new Error(`${col.table_name}.${col.column_name} still has ${left.length} Cloudinary values`)
   }
   await client.query('COMMIT')
-  console.log('\ndatabase rewritten; no Cloudinary URLs remain')
+  console.log(`\ndatabase rewritten; only the ${missing.size} missing file(s) still point at Cloudinary`)
 } catch (err) {
   await client.query('ROLLBACK').catch(() => {})
   console.error('\nFAILED, database left unchanged:', err.message)
