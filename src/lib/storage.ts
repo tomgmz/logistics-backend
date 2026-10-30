@@ -1,6 +1,6 @@
 import 'dotenv/config'
-import { randomUUID } from 'node:crypto'
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+import { createHash, randomUUID } from 'node:crypto'
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { logSystemError } from './log-system.js'
 
@@ -82,33 +82,58 @@ export function safeFileName(originalName: string): string {
   return ext && ext !== originalName.toLowerCase() ? `${base}.${ext}` : base
 }
 
+/** The file's fingerprint: identical bytes always give the same 64-character code. */
+export function sha256(buffer: Buffer): string {
+  return createHash('sha256').update(buffer).digest('hex')
+}
+
 /**
  * Stores a file and returns its reference. The random id in the key is what
  * makes it unguessable; `fileName` (documents) keeps the original name as the
- * last segment so the signed link can offer it on download.
+ * last segment so the signed link can offer it on download. The fingerprint
+ * rides along as object metadata, for spotting the same file uploaded twice.
  */
 export async function putFile(
   buffer: Buffer,
   opts: { folder: string; ext?: string; fileName?: string; contentType?: string },
-): Promise<{ ref: string; key: string; bytes: number }> {
+): Promise<{ ref: string; key: string; bytes: number; sha256: string }> {
   const id  = randomUUID()
   const ext = (opts.ext ?? opts.fileName?.split('.').pop() ?? '').toLowerCase()
   const key = opts.fileName
     ? `${opts.folder}/${id}/${opts.fileName}`
     : `${opts.folder}/${id}${ext ? `.${ext}` : ''}`
 
+  const hash = sha256(buffer)
   try {
     await s3.send(new PutObjectCommand({
       Bucket:      BUCKET,
       Key:         key,
       Body:        buffer,
       ContentType: opts.contentType ?? contentTypeFor(ext),
+      Metadata:    { sha256: hash },
     }))
   } catch (err) {
     logSystemError('storage.put', 'external_api', err, { key })
     throw err
   }
-  return { ref: FILE_REF_PREFIX + key, key, bytes: buffer.length }
+  return { ref: FILE_REF_PREFIX + key, key, bytes: buffer.length, sha256: hash }
+}
+
+/**
+ * A stored file's fingerprint: from its metadata, or, for a file stored before
+ * fingerprints existed, by reading it once. Null if it cannot be read.
+ */
+export async function fileSha256(refOrKey: string): Promise<string | null> {
+  const Key = keyOf(refOrKey)
+  try {
+    const head = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key }))
+    if (head.Metadata?.sha256) return head.Metadata.sha256
+    const obj = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key }))
+    const bytes = await obj.Body?.transformToByteArray()
+    return bytes ? sha256(Buffer.from(bytes)) : null
+  } catch {
+    return null
+  }
 }
 
 export async function deleteFile(refOrKey: string): Promise<void> {

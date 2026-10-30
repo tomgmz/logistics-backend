@@ -196,6 +196,22 @@ function likeTerm(search: string): string {
   return `%${search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
 }
 
+/**
+ * The table format's search (2026-10-30): every word must be found in one of
+ * `columns`, which are exactly the fields the page's search box names. One
+ * AND-ed group per word, so "Acme BK-0012" narrows instead of matching
+ * nothing. Null when there is nothing to search.
+ */
+function wordsMatch(params: unknown[], search: string | null | undefined, columns: string[]): string | null {
+  const words = (search ?? '').trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return null
+  return words.map((w) => {
+    params.push(likeTerm(w))
+    const i = params.length
+    return `(${columns.map((c) => `${c} ILIKE $${i} ESCAPE '\\'`).join(' OR ')})`
+  }).join(' AND ')
+}
+
 type Filters = Omit<DocumentListQuery, 'page' | 'limit' | 'sort'>
 
 function buildWhere(f: Filters, omit: { types?: boolean; review?: boolean } = {}) {
@@ -238,19 +254,15 @@ function buildWhere(f: Filters, omit: { types?: boolean; review?: boolean } = {}
     params.push(f.date_to)
     where.push(`${MANILA_DAY} <= $${params.length}::date`)
   }
-  if (f.search) {
-    params.push(likeTerm(f.search))
-    const i = params.length
-    where.push(`(
-      COALESCE(b.reference_number, '') ILIKE $${i} ESCAPE '\\' OR
-      COALESCE(c.company_name, '')     ILIKE $${i} ESCAPE '\\' OR
-      COALESCE(t.plate_number, '')     ILIKE $${i} ESCAPE '\\' OR
-      l.file_name                      ILIKE $${i} ESCAPE '\\' OR
-      COALESCE(l.detail, '')           ILIKE $${i} ESCAPE '\\' OR
-      COALESCE(l.notes, '')            ILIKE $${i} ESCAPE '\\' OR
-      COALESCE(CONCAT_WS(' ', up.first_name, up.last_name), '') ILIKE $${i} ESCAPE '\\'
-    )`)
-  }
+  // A folder of files: "Search file, booking, client, plate or uploader".
+  const fileSearch = wordsMatch(params, f.search, [
+    'l.file_name',
+    `COALESCE(b.reference_number, '')`,
+    `COALESCE(c.company_name, '')`,
+    `COALESCE(t.plate_number, '')`,
+    `COALESCE(CONCAT_WS(' ', up.first_name, up.last_name), '')`,
+  ])
+  if (fileSearch) where.push(fileSearch)
 
   return { whereSql: `WHERE ${where.join(' AND ')}`, params }
 }
@@ -362,14 +374,11 @@ const FOLDER_COUNTS = `
 export async function findFolders(q: DocumentFolderQuery): Promise<DocumentFolder[]> {
   const params: unknown[] = []
   const where: string[] = [q.archived === 'only' ? 'l.archived_at IS NOT NULL' : 'l.archived_at IS NULL']
-  const term = q.search ? likeTerm(q.search) : null
-
   if (q.level === 'vehicles') {
     where.push(`l.truck_id IS NOT NULL`)
-    if (term) {
-      params.push(term)
-      where.push(`COALESCE(t.plate_number, '') ILIKE $${params.length} ESCAPE '\\'`)
-    }
+    // Fleet: "Search plate".
+    const plate = wordsMatch(params, q.search, [`COALESCE(t.plate_number, '')`])
+    if (plate) where.push(plate)
     const { rows } = await pool.query<DocumentFolder>(
       `SELECT t.truck_id::text AS id, t.plate_number AS name,
               NULL::text AS client_id, NULL::text AS company_name,
@@ -388,12 +397,10 @@ export async function findFolders(q: DocumentFolderQuery): Promise<DocumentFolde
   where.push(`l.booking_id IS NOT NULL`)
 
   if (q.level === 'clients') {
-    if (term) {
-      // A client shows when its name, or any of its bookings, matches.
-      params.push(term)
-      const i = params.length
-      where.push(`(COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\' OR COALESCE(b.reference_number, '') ILIKE $${i} ESCAPE '\\')`)
-    }
+    // Top level, "Search client or booking": a client shows when its name, or
+    // any of its bookings, matches.
+    const client = wordsMatch(params, q.search, [`COALESCE(c.company_name, '')`, `COALESCE(b.reference_number, '')`])
+    if (client) where.push(client)
     const { rows } = await pool.query<DocumentFolder>(
       `SELECT COALESCE(c.client_id::text, 'none') AS id, c.company_name AS name,
               c.client_id::text AS client_id, c.company_name,
@@ -420,13 +427,12 @@ export async function findFolders(q: DocumentFolderQuery): Promise<DocumentFolde
     params.push(q.client_id)
     where.push(`c.client_id = $${params.length}::uuid`)
   }
-  if (term) {
-    params.push(term)
-    const i = params.length
-    where.push(q.client_id
-      ? `COALESCE(b.reference_number, '') ILIKE $${i} ESCAPE '\\'`
-      : `(COALESCE(b.reference_number, '') ILIKE $${i} ESCAPE '\\' OR COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\')`)
-  }
+  // Inside a client's folder, "Search booking": the reference only. At the top
+  // level ("Search client or booking") the company too.
+  const booking = wordsMatch(params, q.search, q.client_id
+    ? [`COALESCE(b.reference_number, '')`]
+    : [`COALESCE(b.reference_number, '')`, `COALESCE(c.company_name, '')`])
+  if (booking) where.push(booking)
   const { rows } = await pool.query<DocumentFolder>(
     `SELECT l.booking_id::text AS id, b.reference_number AS name,
             c.client_id::text AS client_id, c.company_name,
@@ -553,6 +559,25 @@ export async function searchBookings(search: string, limit = 10): Promise<Bookin
       ORDER BY b.created_at DESC
       LIMIT $${params.length}`,
     params,
+  )
+  return rows
+}
+
+/**
+ * Every file a booking already holds that a person attached: the client's
+ * transaction documents and the staff documents not archived. For numbering
+ * same-named uploads and refusing the same file twice (lib/booking-files.ts).
+ */
+export async function findBookingAttachedFiles(bookingId: string): Promise<{ name: string; url: string }[]> {
+  const { rows } = await pool.query<{ name: string; url: string }>(
+    `SELECT regexp_replace(t.url, '^.*/', '') AS name, t.url
+       FROM bookings b, unnest(b.transaction_documents) AS t(url)
+      WHERE b.booking_id = $1 AND t.url IS NOT NULL AND t.url <> ''
+     UNION ALL
+     SELECT COALESCE(d.original_name, regexp_replace(d.file_url, '^.*/', '')), d.file_url
+       FROM documents d
+      WHERE d.booking_id = $1 AND d.archived_at IS NULL`,
+    [bookingId],
   )
   return rows
 }

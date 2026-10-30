@@ -1,4 +1,5 @@
-import { putFile, safeFileName } from '../../lib/storage.js'
+import { putFile, safeFileName, isFileRef } from '../../lib/storage.js'
+import { planBookingUploads, DuplicateBookingFileError } from '../../lib/booking-files.js'
 import { logEvent } from '../../lib/log-event.js'
 import { logSystemError } from '../../lib/log-system.js'
 import { badRequest, conflict, HttpError, notFound } from '../../lib/http-error.js'
@@ -50,8 +51,8 @@ export function searchBookingsForUpload(search: string) {
  * (so the link cannot be guessed) holding the file under its original name (so
  * a download is offered with that name).
  */
-async function uploadOne(file: Express.Multer.File, folder: string) {
-  const fileName = safeFileName(file.originalname)
+async function uploadOne(file: Express.Multer.File, folder: string, displayName: string) {
+  const fileName = safeFileName(displayName)
   try {
     const { ref, key, bytes } = await putFile(file.buffer, { folder, fileName, contentType: file.mimetype })
     return { url: ref, public_id: key, format: fileName.split('.').pop() ?? '', bytes }
@@ -73,14 +74,24 @@ export async function uploadStaffDocuments(input: {
   const booking = await DocumentsModel.findBookingRef(input.bookingId)
   if (!booking) throw notFound('That booking could not be found.')
 
+  // Same name → numbered; the same file already on the booking → refused.
+  const existing = await DocumentsModel.findBookingAttachedFiles(booking.booking_id)
+  let plan: { displayName: string }[]
+  try {
+    plan = await planBookingUploads(input.files, existing.map((e) => ({ name: e.name, ref: isFileRef(e.url) ? e.url : null })))
+  } catch (err) {
+    if (err instanceof DuplicateBookingFileError) throw conflict(err.message)
+    throw err
+  }
+
   const folder   = `${FOLDER}/${booking.reference_number ?? booking.booking_id}/staff`
-  const uploaded = await Promise.all(input.files.map((f) => uploadOne(f, folder)))
+  const uploaded = await Promise.all(input.files.map((f, i) => uploadOne(f, folder, plan[i].displayName)))
 
   const ids = await DocumentsModel.insertStaffDocuments(uploaded.map((u, i) => ({
     booking_id:    booking.booking_id,
     document_type: input.documentType,
     file_url:      u.url,
-    original_name: input.files[i].originalname,
+    original_name: plan[i].displayName,
     public_id:     u.public_id,
     file_format:   u.format,
     bytes:         u.bytes,

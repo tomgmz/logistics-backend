@@ -1,13 +1,13 @@
 import { Request, Response } from 'express'
-import { putFile, safeFileName } from '../../lib/storage.js'
+import { putFile, safeFileName, isFileRef } from '../../lib/storage.js'
+import { planBookingUploads, nameOfRef, DuplicateBookingFileError } from '../../lib/booking-files.js'
 import { getRequestMeta } from '../../lib/controller-utils.js'
 import { logEvent } from '../../lib/log-event.js'
 
 const FOLDER = 'booking_documents'
 
-async function uploadDocument(file: Express.Multer.File, ref?: string, root: string = FOLDER) {
+async function uploadDocument(file: Express.Multer.File, fileName: string, ref?: string, root: string = FOLDER) {
   const folder   = ref ? `${root}/${ref}` : root
-  const fileName = safeFileName(file.originalname)
   const stored   = await putFile(file.buffer, { folder, fileName, contentType: file.mimetype })
   return {
     url:           stored.ref,
@@ -33,8 +33,20 @@ export const uploadBookingDocuments = async (req: Request, res: Response) => {
       ? req.body.booking_ref.trim() || undefined
       : undefined
 
+    // On Edit & Resubmit, the documents the client is keeping come along as
+    // existing_urls (already turned back into r2:// refs by fileUrls), so a
+    // new file can be numbered against them and a re-added one refused.
+    const kept = ([] as unknown[]).concat(req.body.existing_urls ?? [])
+      .filter((v): v is string => isFileRef(v) && v.startsWith('r2://booking_documents/'))
+      .slice(0, 10)
+    // Names compared as they will display: the safe form the key keeps.
+    const plan = await planBookingUploads(
+      files.map((f) => ({ originalname: safeFileName(f.originalname), buffer: f.buffer })),
+      kept.map((ref) => ({ name: nameOfRef(ref), ref })),
+    )
+
     const results = await Promise.all(
-      files.map((f) => uploadDocument(f, bookingRef))
+      files.map((f, i) => uploadDocument(f, plan[i].displayName, bookingRef))
     )
     const urls = results.map((r) => r.url)
 
@@ -51,6 +63,9 @@ export const uploadBookingDocuments = async (req: Request, res: Response) => {
       data:   { urls, files: results },
     })
   } catch (error: any) {
+    if (error instanceof DuplicateBookingFileError) {
+      return res.status(409).json({ status: 'error', message: error.message })
+    }
     const isBadRequest = error.message?.match(/Only PDF|DOCX|too large|files allowed/i)
     return res.status(isBadRequest ? 400 : 500).json({
       status:  'error',
