@@ -1,52 +1,21 @@
 import { Request, Response } from 'express'
-import { cloudinary } from '../../lib/cloudinary.js'
+import { putFile, safeFileName } from '../../lib/storage.js'
 import { getRequestMeta } from '../../lib/controller-utils.js'
 import { logEvent } from '../../lib/log-event.js'
 
 const FOLDER = 'booking_documents'
 
-async function uploadToCloudinary(file: Express.Multer.File, ref?: string, root: string = FOLDER) {
-  const folder = ref ? `${root}/${ref}` : root
-
-  const ext      = file.originalname.split('.').pop()?.toLowerCase() ?? ''
-  const baseName = file.originalname
-    .replace(/\.[^/.]+$/, '')
-    .replace(/\s+/g, '-')
-    .replace(/[^a-zA-Z0-9_\-]/g, '_')
-    .slice(0, 55)
-
-  const safeName = ext === 'pdf' ? baseName : `${baseName}.${ext}`
-
-  return new Promise<{
-    url:           string
-    public_id:     string
-    original_name: string
-    format:        string
-    bytes:         number
-  }>((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder,
-        resource_type:   'auto',
-        public_id:       safeName,
-        unique_filename: true,
-        overwrite:       false,
-        access_mode:     'public',
-      },
-      (error, result) => {
-        if (error || !result) return reject(error ?? new Error('Cloudinary upload failed'))
-        resolve({
-          url:           result.secure_url,
-          public_id:     result.public_id,
-          original_name: file.originalname,
-          format:        result.format ?? ext,
-          bytes:         result.bytes  ?? 0,
-        })
-      },
-    )
-
-    stream.end(file.buffer)
-  })
+async function uploadDocument(file: Express.Multer.File, ref?: string, root: string = FOLDER) {
+  const folder   = ref ? `${root}/${ref}` : root
+  const fileName = safeFileName(file.originalname)
+  const stored   = await putFile(file.buffer, { folder, fileName, contentType: file.mimetype })
+  return {
+    url:           stored.ref,
+    public_id:     stored.key,
+    original_name: file.originalname,
+    format:        fileName.split('.').pop() ?? '',
+    bytes:         stored.bytes,
+  }
 }
 
 export const uploadBookingDocuments = async (req: Request, res: Response) => {
@@ -65,7 +34,7 @@ export const uploadBookingDocuments = async (req: Request, res: Response) => {
       : undefined
 
     const results = await Promise.all(
-      files.map((f) => uploadToCloudinary(f, bookingRef))
+      files.map((f) => uploadDocument(f, bookingRef))
     )
     const urls = results.map((r) => r.url)
 

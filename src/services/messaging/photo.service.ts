@@ -1,6 +1,6 @@
 import sharp from 'sharp'
 import { pool } from '../../lib/database.js'
-import { cloudinary } from '../../lib/cloudinary.js'
+import { putFile, FILE_REF_PREFIX } from '../../lib/storage.js'
 import { stampProofPhoto, type ProofStampData } from '../../lib/proof-stamp.js'
 import { logSystemThrottled } from '../../lib/log-system.js'
 import { bookingRef } from '../../lib/booking-ref.js'
@@ -18,7 +18,7 @@ import { reverseGeocode } from '../maps/routeOptimization.service.js'
  * important, drops the EXIF block, which on a phone photo usually holds the
  * GPS position the sender did not choose to share.
  *
- * The kind is recorded in the Cloudinary folder (message_photos/stamped or
+ * The kind is recorded in the storage folder (message_photos/stamped or
  * message_photos/plain). Only this server can write there, so a send can tell
  * from the URL alone whether a photo really was stamped.
  */
@@ -173,22 +173,9 @@ export async function uploadChatPhoto(
     }
   }
 
-  const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder:        `message_photos/${stamped ? 'stamped' : 'plain'}`,
-        resource_type: 'image',
-        tags:          stamped ? ['message_photo', 'stamped'] : ['message_photo'],
-      },
-      (error, res) => {
-        if (error || !res) return reject(error ?? new Error('Upload failed'))
-        resolve(res)
-      },
-    )
-    stream.end(buffer)
-  })
+  const { ref } = await putFile(buffer, { folder: `message_photos/${stamped ? 'stamped' : 'plain'}`, ext: 'jpg' })
 
-  return { url: result.secure_url, stamped }
+  return { url: ref, stamped }
 }
 
 /**
@@ -197,13 +184,9 @@ export async function uploadChatPhoto(
  * an arbitrary site or pass a plain photo off as stamped.
  */
 export function parseChatPhotoUrl(url: string): { stamped: boolean } | null {
-  const cloud = process.env.CLOUDINARY_CLOUD_NAME
-  if (!cloud) return null
-  const escaped = cloud.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const re = new RegExp(
-    `^https://res\\.cloudinary\\.com/${escaped}/image/upload/(?:v\\d+/)?message_photos/(stamped|plain)/[A-Za-z0-9_-]+\\.(?:jpe?g|png|webp)$`,
+  const m = /^message_photos\/(stamped|plain)\/[0-9a-f-]{36}\.(?:jpe?g|png|webp)$/.exec(
+    url.startsWith(FILE_REF_PREFIX) ? url.slice(FILE_REF_PREFIX.length) : '',
   )
-  const m = re.exec(url)
   return m ? { stamped: m[1] === 'stamped' } : null
 }
 

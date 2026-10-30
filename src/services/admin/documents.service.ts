@@ -1,4 +1,4 @@
-import { cloudinary } from '../../lib/cloudinary.js'
+import { putFile, safeFileName } from '../../lib/storage.js'
 import { logEvent } from '../../lib/log-event.js'
 import { logSystemError } from '../../lib/log-system.js'
 import { badRequest, conflict, HttpError, notFound } from '../../lib/http-error.js'
@@ -46,49 +46,19 @@ export function searchBookingsForUpload(search: string) {
 }
 
 /**
- * Same shape as the client booking-document upload: `auto` so photos and PDFs
- * land as image resources the browser can preview, while DOCX/XLSX land as raw.
- * Image resources get their format appended by Cloudinary, so the extension is
- * left off the public id for those (PDF included); raw files keep theirs.
+ * Same shape as the client booking-document upload: a random folder per file
+ * (so the link cannot be guessed) holding the file under its original name (so
+ * a download is offered with that name).
  */
-function uploadOne(file: Express.Multer.File, folder: string) {
-  const ext      = file.originalname.split('.').pop()?.toLowerCase() ?? ''
-  const baseName = file.originalname
-    .replace(/\.[^/.]+$/, '')
-    .replace(/\s+/g, '-')
-    .replace(/[^a-zA-Z0-9_\-]/g, '_')
-    .slice(0, 55)
-  const isRaw    = ['docx', 'doc', 'xlsx'].includes(ext)
-  const publicId = isRaw ? `${baseName}.${ext}` : baseName
-
-  return new Promise<{ url: string; public_id: string; format: string; bytes: number }>((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder,
-        resource_type:   'auto',
-        public_id:       publicId,
-        unique_filename: true,
-        overwrite:       false,
-        access_mode:     'public',
-        tags:            ['staff_document'],
-      },
-      (error, result) => {
-        if (error || !result) {
-          logSystemError('documents.service', 'external_api', error ?? new Error('Cloudinary upload failed'), {
-            folder, original_name: file.originalname,
-          })
-          return reject(error ?? new Error('Cloudinary upload failed'))
-        }
-        resolve({
-          url:       result.secure_url,
-          public_id: result.public_id,
-          format:    result.format ?? ext,
-          bytes:     result.bytes ?? 0,
-        })
-      },
-    )
-    stream.end(file.buffer)
-  })
+async function uploadOne(file: Express.Multer.File, folder: string) {
+  const fileName = safeFileName(file.originalname)
+  try {
+    const { ref, key, bytes } = await putFile(file.buffer, { folder, fileName, contentType: file.mimetype })
+    return { url: ref, public_id: key, format: fileName.split('.').pop() ?? '', bytes }
+  } catch (err) {
+    logSystemError('documents.service', 'external_api', err, { folder, original_name: file.originalname })
+    throw err
+  }
 }
 
 export async function uploadStaffDocuments(input: {

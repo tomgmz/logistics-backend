@@ -87,11 +87,11 @@ const SERVICES: { key: string; label: string; description: string; filter: (q: a
     filter:      (q) => q.eq('event_type', 'email_event'),
   },
   {
-    key:         'cloudinary',
-    label:       'File storage (Cloudinary)',
+    key:         'storage',
+    label:       'File storage (Cloudflare R2)',
     description: 'Proof photos, documents and every other uploaded file.',
     filter:      (q) => q.eq('event_type', 'external_api')
-                         .in('source', ['uploadDocument.service', 'documents.service']),
+                         .or('source.eq.documents.service,source.like.storage.%'),
   },
   {
     key:         'google-maps',

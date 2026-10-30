@@ -35,6 +35,7 @@ import { reportEmailLinkBaseUrl } from './lib/brevo-mailer.js'
 import { reportWebauthnConfig } from './lib/webauthn-config.js'
 import { requestContext } from './lib/request-context.js'
 import { logSystem } from './lib/log-system.js'
+import { fileUrls } from './middlewares/fileUrls.middleware.js'
 
 dotenv.config();
 
@@ -95,6 +96,8 @@ app.use(cookieParser(process.env.COOKIE_SECRET));
 app.use(requestContext);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Private file storage: signed links in, r2:// references stored, signed links out.
+app.use(fileUrls);
 
 if (!IS_PRODUCTION) {
   app.use(morgan('dev'));

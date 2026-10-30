@@ -1,19 +1,11 @@
 import { Request, Response }  from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as DriverService        from '../../services/admin/driver.service.js'
-import { cloudinary }            from '../../lib/cloudinary.js'
+import { putFile, extForMime }   from '../../lib/storage.js'
 
-function uploadToCloudinary(buffer: Buffer): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder: 'driver_licenses', resource_type: 'image', tags: ['driver_license'] },
-      (error, result) => {
-        if (error || !result) return reject(error ?? new Error('Cloudinary upload failed'))
-        resolve(result.secure_url)
-      },
-    )
-    stream.end(buffer)
-  })
+async function uploadLicense(file: Express.Multer.File): Promise<string> {
+  const { ref } = await putFile(file.buffer, { folder: 'driver_licenses', ext: extForMime(file.mimetype) })
+  return ref
 }
 
 export async function getAllDrivers(req: Request, res: Response) {
@@ -65,7 +57,7 @@ export async function createDriver(req: Request, res: Response) {
       return
     }
     const { userId }         = getRequestMeta(req)
-    const license_image_url = await uploadToCloudinary(req.file.buffer)
+    const license_image_url = await uploadLicense(req.file)
     const data              = await DriverService.createDriver(
       { ...req.body, license_image_url },
       userId,
@@ -81,7 +73,7 @@ export async function updateDriver(req: Request, res: Response) {
     const { userId } = getRequestMeta(req)
     // A replacement license photo arrives as multipart; plain JSON edits have no file.
     const body = req.file
-      ? { ...req.body, license_image_url: await uploadToCloudinary(req.file.buffer) }
+      ? { ...req.body, license_image_url: await uploadLicense(req.file) }
       : req.body
     const data = await DriverService.updateDriver(param(req.params.id), body, userId)
     res.status(200).json({ status: 'success', data })

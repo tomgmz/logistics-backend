@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { cloudinary } from '../../lib/cloudinary.js'
+import { putFile, extForMime } from '../../lib/storage.js'
 import { proofPhotoBytes, ProofNotOnCrewError } from '../../services/driver/proof-stamp.service.js'
 
 export async function uploadImage(req: Request, res: Response) {
@@ -9,18 +9,9 @@ export async function uploadImage(req: Request, res: Response) {
       return
     }
 
-    const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        { folder: 'truck_models', resource_type: 'image' },
-        (error, result) => {
-          if (error || !result) return reject(error ?? new Error('Upload failed'))
-          resolve(result)
-        }
-      )
-      stream.end(req.file!.buffer)
-    })
+    const result = await putFile(req.file!.buffer, { folder: 'truck_models', ext: extForMime(req.file!.mimetype) })
 
-    res.status(200).json({ status: 'success', data: { url: result.secure_url } })
+    res.status(200).json({ status: 'success', data: { url: result.ref } })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })
   }
@@ -50,22 +41,12 @@ export async function uploadDeliveryProof(req: Request, res: Response) {
       { userId: req.user?.sub, role: req.user?.role },
     )
 
-    const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          folder:        'delivery_proofs',
-          resource_type: 'image',
-          tags:          stamped ? ['delivery_proof', 'stamped'] : ['delivery_proof'],
-        },
-        (error, result) => {
-          if (error || !result) return reject(error ?? new Error('Upload failed'))
-          resolve(result)
-        }
-      )
-      stream.end(buffer)
+    const result = await putFile(buffer, {
+      folder: stamped ? 'delivery_proofs/stamped' : 'delivery_proofs',
+      ext:    stamped ? 'jpg' : extForMime(req.file.mimetype),
     })
 
-    res.status(200).json({ status: 'success', data: { url: result.secure_url } })
+    res.status(200).json({ status: 'success', data: { url: result.ref } })
   } catch (err: any) {
     res.status(err instanceof ProofNotOnCrewError ? 403 : 500).json({ status: 'error', message: err.message })
   }
@@ -78,22 +59,9 @@ export async function uploadDriverLicense(req: Request, res: Response) {
       return
     }
 
-    const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          folder:        'driver_licenses',
-          resource_type: 'image',
-          tags:          ['driver_license'],
-        },
-        (error, result) => {
-          if (error || !result) return reject(error ?? new Error('Upload failed'))
-          resolve(result)
-        }
-      )
-      stream.end(req.file!.buffer)
-    })
+    const result = await putFile(req.file!.buffer, { folder: 'driver_licenses', ext: extForMime(req.file!.mimetype) })
 
-    res.status(200).json({ status: 'success', data: { url: result.secure_url } })
+    res.status(200).json({ status: 'success', data: { url: result.ref } })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })
   }
@@ -110,18 +78,9 @@ export async function uploadFleetRecordPhoto(req: Request, res: Response) {
       return
     }
 
-    const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        { folder: 'fleet_records', resource_type: 'image', tags: ['fleet_record'] },
-        (error, result) => {
-          if (error || !result) return reject(error ?? new Error('Upload failed'))
-          resolve(result)
-        }
-      )
-      stream.end(req.file!.buffer)
-    })
+    const result = await putFile(req.file!.buffer, { folder: 'fleet_records', ext: extForMime(req.file!.mimetype) })
 
-    res.status(200).json({ status: 'success', data: { url: result.secure_url } })
+    res.status(200).json({ status: 'success', data: { url: result.ref } })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })
   }
