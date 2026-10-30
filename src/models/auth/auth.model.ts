@@ -6,7 +6,6 @@ import {
   AuthUser,
   LoginHistory,
   TrustedDevice,
-  RiskAssessment
 } from '../../types/auth.types.js'
 
 export async function findUserByEmail(email: string): Promise<AuthUser | null> {
@@ -36,6 +35,21 @@ export async function isExternalDriver(userId: string): Promise<boolean> {
     .from('drivers')
     .select('is_external')
     .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data?.is_external === true
+}
+
+/**
+ * isExternalDriver keyed on the email, so password sign-in can run it alongside
+ * findUserByEmail instead of waiting for the user_id first.
+ */
+export async function isExternalDriverByEmail(email: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('drivers')
+    .select('is_external, users!inner ( email )')
+    .eq('users.email', email)
     .maybeSingle()
 
   if (error) throw error
@@ -251,22 +265,23 @@ export async function revokeAllUserSessions(
   reason: SessionRevokedReason,
 ): Promise<void> {
   const now = new Date().toISOString()
-  const { error } = await supabase
-    .from('active_sessions')
-    .update({ expires_at: now, refresh_expires_at: now })
-    .eq('user_id', userId)
+  // Independent updates, so they run together: this sits on the sign-in path.
+  const [{ error }, { error: reasonError }] = await Promise.all([
+    supabase
+      .from('active_sessions')
+      .update({ expires_at: now, refresh_expires_at: now })
+      .eq('user_id', userId),
+    // Stamp the reason only on rows that do not already carry one, so a device
+    // that was pushed out by a sign-in elsewhere keeps being told that, rather
+    // than whatever revoked the account's sessions after it.
+    supabase
+      .from('active_sessions')
+      .update({ revoked_reason: reason })
+      .eq('user_id', userId)
+      .is('revoked_reason', null),
+  ])
 
   if (error) throw error
-
-  // Stamp the reason only on rows that do not already carry one, so a device
-  // that was pushed out by a sign-in elsewhere keeps being told that, rather
-  // than whatever revoked the account's sessions after it.
-  const { error: reasonError } = await supabase
-    .from('active_sessions')
-    .update({ revoked_reason: reason })
-    .eq('user_id', userId)
-    .is('revoked_reason', null)
-
   if (reasonError) throw reasonError
 
   // Tell the user's open browsers and devices right away, so a session pushed
@@ -484,26 +499,6 @@ export async function removeTrustedDevice(deviceId: string): Promise<void> {
     .eq('id', deviceId)
 
   if (error) throw error
-}
-
-export async function detectSuspiciousLogin(
-  userId: string,
-  deviceFingerprint?: string
-): Promise<RiskAssessment> {
-  const { data, error } = await supabase.rpc('detect_suspicious_login', {
-    p_user_id: userId,
-    p_device_fingerprint: deviceFingerprint || 'unknown',
-  })
-
-  if (error) {
-    return {
-      risk_score: 0,
-      risk_factors: [],
-      requires_additional_verification: false,
-    }
-  }
-
-  return data as RiskAssessment
 }
 
 export async function findUserWithClient(userId: string): Promise<AuthUser | null> {

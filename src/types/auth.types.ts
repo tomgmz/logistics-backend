@@ -101,15 +101,6 @@ export interface TrustedDevice {
   created_at: Date
 }
 
-export interface RiskAssessment {
-  risk_score: number
-  risk_factors: Array<{
-    type: string
-    count?: number
-  }>
-  requires_additional_verification: boolean
-}
-
 export interface RequestOtpInput {
   email: string
 }

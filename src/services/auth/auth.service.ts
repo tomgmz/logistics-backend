@@ -507,8 +507,10 @@ export async function verifyOtp(
     throw new Error(`Account locked due to too many failed attempts. (${newLockupCount}/${MAX_LOCKUPS} lockouts used)`)
   }
 
-  await AuthModel.markOtpUsed(latestOtp.id)
-  await AuthModel.resetFailedAttempts(user.user_id)
+  await Promise.all([
+    AuthModel.markOtpUsed(latestOtp.id),
+    AuthModel.resetFailedAttempts(user.user_id),
+  ])
 
   const requestedPlatform = (input.platform ?? 'web') as Platform
   if (!isRoleAllowedOnPlatform(user.role, requestedPlatform)) {
@@ -529,29 +531,26 @@ export async function verifyOtp(
     ? generateDeviceFingerprint(userAgent)
     : undefined
 
-  if (deviceFingerprint) {
-    const riskAssessment = await AuthModel.detectSuspiciousLogin(user.user_id, deviceFingerprint)
-    if (riskAssessment.requires_additional_verification) {
-      console.warn(`High-risk login detected for user ${user.user_id}:`, riskAssessment)
-    }
-    await AuthModel.upsertTrustedDevice({
+  const [{ accessToken, refreshToken, accessExpiresAt, refreshExpiresAt }] = await Promise.all([
+    createTokensAndSession(user, input.device_info),
+    deviceFingerprint && AuthModel.upsertTrustedDevice({
       user_id:            user.user_id,
       device_fingerprint: deviceFingerprint,
       device_name:        input.device_info || 'Unknown Device',
-      trust_score:        Math.max(0, 100 - riskAssessment.risk_score),
-      is_trusted:         riskAssessment.risk_score < 30,
-    })
-  }
+      trust_score:        100,
+      is_trusted:         true,
+    }),
+  ])
 
-  const { accessToken, refreshToken, accessExpiresAt, refreshExpiresAt } =
-    await createTokensAndSession(user, input.device_info)
-
-  await AuthModel.updateLastLogin(user.user_id)
-  await AuthModel.createLoginHistory({
-    user_id: user.user_id, email,
-    device_info: input.device_info, user_agent: userAgent,
-    attempt_status: 'success',
-  })
+  // Only once the session exists, so a sign-in that failed never reads as one.
+  await Promise.all([
+    AuthModel.updateLastLogin(user.user_id),
+    AuthModel.createLoginHistory({
+      user_id: user.user_id, email,
+      device_info: input.device_info, user_agent: userAgent,
+      attempt_status: 'success',
+    }),
+  ])
 
   // login_history above is the detailed record, but nothing surfaces it in
   // either log UI — and passkey sign-ins were already writing to the audit
@@ -594,7 +593,12 @@ export async function loginWithPassword(
 ): Promise<AuthResponse> {
   const email = input.email.trim().toLowerCase()
 
-  const user = await AuthModel.findUserByEmail(email)
+  // Fetched together to save a database round trip; the checks below still
+  // run in their original order.
+  const [user, externalDriver] = await Promise.all([
+    AuthModel.findUserByEmail(email),
+    AuthModel.isExternalDriverByEmail(email),
+  ])
 
   if (!user) {
     throw new Error('Invalid credentials')
@@ -638,7 +642,7 @@ export async function loginWithPassword(
   // requires one; it is random, was never shown to anyone, and their way in is
   // the passkey on their phone. Refuse before reaching signInWithPassword so
   // this stays a closed door rather than an unguessable one.
-  if (await AuthModel.isExternalDriver(user.user_id)) {
+  if (externalDriver) {
     await AuthModel.createLoginHistory({
       user_id: user.user_id, email,
       device_info: input.device_info, user_agent: userAgent,
@@ -648,10 +652,13 @@ export async function loginWithPassword(
     throw new Error('This account signs in with a passkey. Open the app and use "Sign in with a passkey".')
   }
 
-  const { error: authError } = await supabaseAnon.auth.signInWithPassword({
+  const { data: authData, error: authError } = await supabaseAnon.auth.signInWithPassword({
     email,
     password: input.password,
   })
+  // Only the password check is wanted; our own tokens are the session. End the
+  // Supabase one it opened (as passwordMatches does) without waiting on it.
+  if (authData?.session) void supabase.auth.admin.signOut(authData.session.access_token).catch(() => {})
 
   // Supabase's own "User is banned": the profile says active but the login is
   // still locked (an archive or deactivation whose undo didn't reach Supabase).
@@ -732,7 +739,9 @@ export async function loginWithPassword(
     throw new Error(`Account locked due to too many failed attempts. (${newLockupCount}/${MAX_LOCKUPS} lockouts used)`)
   }
 
-  await AuthModel.resetFailedAttempts(user.user_id)
+  // The right password resets the counter whatever happens next; every path
+  // below awaits this before it returns or throws.
+  const attemptsReset = AuthModel.resetFailedAttempts(user.user_id)
 
   // A generated password is only good for 7 days (the DB trigger stamps
   // temp_password_expires_at). Checked after the password is confirmed, so the
@@ -743,17 +752,21 @@ export async function loginWithPassword(
     user.temp_password_expires_at &&
     new Date(user.temp_password_expires_at) <= new Date()
   ) {
-    await AuthModel.createLoginHistory({
-      user_id: user.user_id, email,
-      device_info: input.device_info, user_agent: userAgent,
-      attempt_status: 'failed_inactive',
-      failure_reason: 'Temporary password expired',
-    })
+    await Promise.all([
+      attemptsReset,
+      AuthModel.createLoginHistory({
+        user_id: user.user_id, email,
+        device_info: input.device_info, user_agent: userAgent,
+        attempt_status: 'failed_inactive',
+        failure_reason: 'Temporary password expired',
+      }),
+    ])
     throw new Error('Your temporary password has expired. Request a password reset from the sign-in screen.')
   }
 
   const requestedPlatform = (input.platform ?? 'web') as Platform
   if (!isRoleAllowedOnPlatform(user.role, requestedPlatform)) {
+    await attemptsReset
     throw new Error(
       requestedPlatform === 'mobile'
         ? 'Mobile access is not available for your account type.'
@@ -761,15 +774,20 @@ export async function loginWithPassword(
     )
   }
 
-  const { accessToken, refreshToken, accessExpiresAt, refreshExpiresAt } =
-    await createTokensAndSession(user, input.device_info)
+  const [{ accessToken, refreshToken, accessExpiresAt, refreshExpiresAt }] = await Promise.all([
+    createTokensAndSession(user, input.device_info),
+    attemptsReset,
+  ])
 
-  await AuthModel.updateLastLogin(user.user_id)
-  await AuthModel.createLoginHistory({
-    user_id: user.user_id, email,
-    device_info: input.device_info, user_agent: userAgent,
-    attempt_status: 'success',
-  })
+  // Only once the session exists, so a sign-in that failed never reads as one.
+  await Promise.all([
+    AuthModel.updateLastLogin(user.user_id),
+    AuthModel.createLoginHistory({
+      user_id: user.user_id, email,
+      device_info: input.device_info, user_agent: userAgent,
+      attempt_status: 'success',
+    }),
+  ])
 
   return buildAuthResponse(user, accessToken, refreshToken, accessExpiresAt, refreshExpiresAt)
 }

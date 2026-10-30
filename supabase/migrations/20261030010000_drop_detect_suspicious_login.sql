@@ -1,0 +1,41 @@
+-- Drops detect_suspicious_login: it can never have worked since 20260922020000.
+--
+-- It takes a p_ip_address argument the backend never sends (we do not collect
+-- user IPs), so every rpc call failed to resolve and the model silently fell
+-- back to "risk 0". Its body also reads login_history.ip_address, which
+-- 20260922020000 dropped. The backend no longer calls it.
+--
+-- The base schema is not in version control, so the old definition is kept
+-- here in case it is ever wanted back:
+--
+--   CREATE OR REPLACE FUNCTION public.detect_suspicious_login(p_user_id uuid, p_ip_address text, p_device_fingerprint text)
+--    RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public', 'pg_temp'
+--   AS $function$
+--   DECLARE
+--     recent_failed_count INTEGER; different_ip_count INTEGER; is_known_device BOOLEAN;
+--     risk_score INTEGER := 0; risk_factors JSONB := '[]'::jsonb;
+--   BEGIN
+--     SELECT COUNT(*) INTO recent_failed_count FROM login_history
+--      WHERE user_id = p_user_id AND attempt_status LIKE 'failed_%' AND created_at > NOW() - INTERVAL '1 hour';
+--     IF recent_failed_count >= 3 THEN
+--       risk_score := risk_score + 30;
+--       risk_factors := risk_factors || jsonb_build_object('type', 'multiple_failed_attempts', 'count', recent_failed_count);
+--     END IF;
+--     SELECT COUNT(DISTINCT ip_address) INTO different_ip_count FROM login_history
+--      WHERE user_id = p_user_id AND created_at > NOW() - INTERVAL '7 days';
+--     IF different_ip_count > 5 THEN
+--       risk_score := risk_score + 20;
+--       risk_factors := risk_factors || jsonb_build_object('type', 'multiple_ips', 'count', different_ip_count);
+--     END IF;
+--     SELECT EXISTS(SELECT 1 FROM trusted_devices WHERE user_id = p_user_id
+--        AND device_fingerprint = p_device_fingerprint AND is_trusted = true) INTO is_known_device;
+--     IF NOT is_known_device THEN
+--       risk_score := risk_score + 25;
+--       risk_factors := risk_factors || jsonb_build_object('type', 'unknown_device');
+--     END IF;
+--     RETURN jsonb_build_object('risk_score', risk_score, 'risk_factors', risk_factors,
+--                               'requires_additional_verification', risk_score >= 50);
+--   END;
+--   $function$;
+
+DROP FUNCTION IF EXISTS public.detect_suspicious_login(uuid, text, text);
