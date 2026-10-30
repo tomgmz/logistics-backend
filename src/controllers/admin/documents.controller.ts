@@ -13,6 +13,10 @@ import {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+// staff:<uuid>, txn:<uuid>:<n>, trip-stop:<uuid>, … (see documents.model.ts)
+const DOC_KEY_RE = /^[a-z-]+:[0-9a-f-]{36}(?::\d{1,3})?$/
+/** Most files one download may hold. */
+export const MAX_DOWNLOAD_KEYS = 100
 
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v.trim() : undefined
@@ -30,6 +34,7 @@ function filtersFrom(req: Request): Omit<DocumentListQuery, 'page' | 'limit'> {
   const truck  = str(req.query.truck_id)
   const from   = str(req.query.date_from)
   const to     = str(req.query.date_to)
+  const keys   = (str(req.query.keys) ?? '').split(',').filter((k) => DOC_KEY_RE.test(k)).slice(0, MAX_DOWNLOAD_KEYS)
 
   return {
     search:        str(req.query.search)?.slice(0, 100),
@@ -42,6 +47,7 @@ function filtersFrom(req: Request): Omit<DocumentListQuery, 'page' | 'limit'> {
     date_to:       to && DATE_RE.test(to) ? to : undefined,
     archived:      req.query.archived === 'only' ? 'only' : 'hide',
     sort:          req.query.sort === 'asc' ? 'asc' : 'desc',
+    keys:          keys.length ? keys : undefined,
   }
 }
 

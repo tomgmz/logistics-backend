@@ -202,6 +202,11 @@ function buildWhere(f: Filters, omit: { types?: boolean; review?: boolean } = {}
   const where: string[] = []
   const params: unknown[] = []
 
+  // Ticked rows are fetched as they are, archived or not; no other filter applies.
+  if (f.keys && f.keys.length > 0) {
+    return { whereSql: 'WHERE l.doc_key = ANY($1::text[])', params: [f.keys] }
+  }
+
   // Archiving only exists for staff documents; derived rows are never archived.
   where.push(f.archived === 'only' ? 'l.archived_at IS NOT NULL' : 'l.archived_at IS NULL')
 

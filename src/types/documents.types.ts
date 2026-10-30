@@ -116,6 +116,8 @@ export interface DocumentListQuery {
   date_to?:       string
   archived?:      'hide' | 'only'
   sort?:          'asc' | 'desc'
+  /** Exactly these rows (doc_key), whatever the other filters say: a download of ticked documents. */
+  keys?:          string[]
   page:           number
   limit:          number
 }
