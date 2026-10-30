@@ -32,14 +32,25 @@ export function scheduleOf(truck: any): ServiceScheduleFields {
 /**
  * Throws unless `km` can be the vehicle's next reading. Odometers only go up; a
  * lower number is a typo (or a swapped dash), and accepting it would wind the
- * service counter back.
+ * service counter back. A return reading must be strictly higher: the vehicle
+ * has just done a delivery, so the same number means the old reading was retyped.
  */
-export function assertReadingPlausible(truck: { odometer_km?: number | null; plate_number: string }, km: number): void {
+export function assertReadingPlausible(
+  truck: { odometer_km?: number | null; plate_number: string },
+  km: number,
+  opts: { isReturn?: boolean } = {},
+): void {
   if (!Number.isInteger(km) || km < 0) throw new Error('Enter the odometer in whole kilometres')
   if (truck.odometer_km != null && km < truck.odometer_km) {
     throw new Error(
       `The odometer can't go down — ${truck.plate_number} was last recorded at ` +
       `${truck.odometer_km.toLocaleString()} km`,
+    )
+  }
+  if (opts.isReturn && truck.odometer_km != null && km === truck.odometer_km) {
+    throw new Error(
+      `${truck.plate_number} is back from a delivery — the return odometer must be higher than ` +
+      `the last reading (${truck.odometer_km.toLocaleString()} km)`,
     )
   }
 }
@@ -84,8 +95,8 @@ export async function recordOdometerReading(
   if (!truck) throw new Error('Truck not found')
   if (truck.status === 'archived') throw new Error('An archived vehicle cannot have its odometer updated')
 
-  assertReadingPlausible(truck, input.reading_km)
   const isReturn = returnOdometerDue(truck, await lastFleetReturnFor(truckId))
+  assertReadingPlausible(truck, input.reading_km, { isReturn })
 
   const reading = await UpkeepModel.insertReading({
     truck_id:    truckId,
