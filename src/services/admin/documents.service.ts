@@ -4,6 +4,7 @@ import { logEvent } from '../../lib/log-event.js'
 import { logSystemError } from '../../lib/log-system.js'
 import { badRequest, conflict, HttpError, notFound } from '../../lib/http-error.js'
 import * as DocumentsModel from '../../models/admin/documents.model.js'
+import { OTHER_LABEL_MAX } from '../../types/documents.types.js'
 import type {
   DocumentFolderQuery,
   DocumentListQuery,
@@ -46,6 +47,18 @@ export function searchBookingsForUpload(search: string) {
   return DocumentsModel.searchBookings(search)
 }
 
+export function searchClientsForUpload(search: string) {
+  return DocumentsModel.searchClients(search)
+}
+
+export function listOtherLabels() {
+  return DocumentsModel.findOtherLabels()
+}
+
+export function contractFolderStats(clientId: string, archived: 'hide' | 'only') {
+  return DocumentsModel.findContractFolderStats(clientId, archived)
+}
+
 /**
  * Same shape as the client booking-document upload: a random folder per file
  * (so the link cannot be guessed) holding the file under its original name (so
@@ -62,34 +75,61 @@ async function uploadOne(file: Express.Multer.File, folder: string, displayName:
   }
 }
 
+/**
+ * Staff paperwork. Proof of Delivery and Other go on a booking (Other with the
+ * type the uploader typed in); a Contract goes on a client, in that client's
+ * Contract folder. Either way a same-named file is numbered and the same file
+ * already there is refused (lib/booking-files.ts).
+ */
 export async function uploadStaffDocuments(input: {
-  bookingId:    string
+  bookingId:    string | null
+  clientId:     string | null
   documentType: StaffDocumentType
+  otherLabel:   string | null
   notes:        string | null
   files:        Express.Multer.File[]
   uploadedBy:   string | null
 }) {
   if (input.files.length === 0) throw badRequest('Choose at least one file to upload.')
 
-  const booking = await DocumentsModel.findBookingRef(input.bookingId)
-  if (!booking) throw notFound('That booking could not be found.')
+  const otherLabel = input.documentType === 'other' ? input.otherLabel?.trim().replace(/\s+/g, ' ') ?? '' : null
+  if (otherLabel !== null && !otherLabel) throw badRequest('Type what kind of document this is.')
+  if (otherLabel && otherLabel.length > OTHER_LABEL_MAX) throw badRequest(`Keep the document type to ${OTHER_LABEL_MAX} characters.`)
 
-  // Same name → numbered; the same file already on the booking → refused.
-  const existing = await DocumentsModel.findBookingAttachedFiles(booking.booking_id)
+  // Where it is filed, and what is already there to compare against.
+  let target: { booking_id: string | null; client_id: string | null; folder: string; label: string }
+  let existing: { name: string; url: string }[]
+  if (input.documentType === 'contract') {
+    if (!input.clientId) throw badRequest('Choose the client this contract is for.')
+    const client = await DocumentsModel.findClient(input.clientId)
+    if (!client) throw notFound('That client could not be found.')
+    target   = { booking_id: null, client_id: client.client_id, folder: `client_documents/${client.client_id}/contracts`, label: `client ${client.company_name ?? client.client_id}` }
+    existing = await DocumentsModel.findClientContracts(client.client_id)
+  } else {
+    if (!input.bookingId) throw badRequest('Choose the booking this document is for.')
+    const booking = await DocumentsModel.findBookingRef(input.bookingId)
+    if (!booking) throw notFound('That booking could not be found.')
+    target   = { booking_id: booking.booking_id, client_id: null, folder: `${FOLDER}/${booking.reference_number ?? booking.booking_id}/staff`, label: `booking ${booking.reference_number ?? booking.booking_id}` }
+    existing = await DocumentsModel.findBookingAttachedFiles(booking.booking_id)
+  }
+
   let plan: { displayName: string }[]
   try {
     plan = await planBookingUploads(input.files, existing.map((e) => ({ name: e.name, ref: isFileRef(e.url) ? e.url : null })))
   } catch (err) {
-    if (err instanceof DuplicateBookingFileError) throw conflict(err.message)
+    if (err instanceof DuplicateBookingFileError) {
+      throw conflict(input.documentType === 'contract' ? err.message.replace('this booking', 'this client') : err.message)
+    }
     throw err
   }
 
-  const folder   = `${FOLDER}/${booking.reference_number ?? booking.booking_id}/staff`
-  const uploaded = await Promise.all(input.files.map((f, i) => uploadOne(f, folder, plan[i].displayName)))
+  const uploaded = await Promise.all(input.files.map((f, i) => uploadOne(f, target.folder, plan[i].displayName)))
 
   const ids = await DocumentsModel.insertStaffDocuments(uploaded.map((u, i) => ({
-    booking_id:    booking.booking_id,
+    booking_id:    target.booking_id,
+    client_id:     target.client_id,
     document_type: input.documentType,
+    other_label:   otherLabel,
     file_url:      u.url,
     original_name: plan[i].displayName,
     public_id:     u.public_id,
@@ -102,7 +142,7 @@ export async function uploadStaffDocuments(input: {
   logEvent({
     log_type:    'document_activity',
     action:      'document_uploaded',
-    description: `${ids.length} ${input.documentType} document(s) attached to booking ${booking.reference_number ?? booking.booking_id}: ${input.files.map((f) => f.originalname).join(', ')}`,
+    description: `${ids.length} ${otherLabel ? `Other (${otherLabel})` : input.documentType} document(s) attached to ${target.label}: ${input.files.map((f) => f.originalname).join(', ')}`,
   })
 
   return { document_ids: ids }

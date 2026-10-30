@@ -28,7 +28,7 @@ const LIBRARY_SQL = `
   SELECT
     'staff:' || d.document_id          AS doc_key,
     d.document_type::text               AS doc_type,
-    'booking'                           AS doc_group,
+    CASE WHEN d.booking_id IS NULL AND d.client_id IS NOT NULL THEN 'client' ELSE 'booking' END AS doc_group,
     'staff'                             AS source,
     d.file_url,
     COALESCE(d.original_name, regexp_replace(d.file_url, '^.*/', '')) AS file_name,
@@ -47,7 +47,7 @@ const LIBRARY_SQL = `
     d.archived_at,
     d.bytes
   FROM documents d
-  WHERE d.booking_id IS NOT NULL
+  WHERE d.booking_id IS NOT NULL OR d.client_id IS NOT NULL
 
   UNION ALL
   SELECT
@@ -167,10 +167,14 @@ const LIBRARY_SQL = `
   WHERE sv.receipt_url IS NOT NULL
 `
 
+// dx: the staff document behind a row, for what only staff rows carry (a
+// contract's client, Other's typed-in type). The client comes from the booking,
+// or, for a contract, from the document.
 const FROM_SQL = `
   FROM (${LIBRARY_SQL}) l
-  LEFT JOIN bookings b  ON b.booking_id = l.booking_id
-  LEFT JOIN clients  c  ON c.client_id  = b.client_id
+  LEFT JOIN bookings  b  ON b.booking_id   = l.booking_id
+  LEFT JOIN documents dx ON dx.document_id = l.document_id
+  LEFT JOIN clients   c  ON c.client_id    = COALESCE(b.client_id, dx.client_id)
   LEFT JOIN trucks   t  ON t.truck_id   = l.truck_id
   LEFT JOIN users    up ON up.user_id   = l.uploaded_by
   LEFT JOIN users    rv ON rv.user_id   = l.reviewed_by
@@ -181,6 +185,7 @@ const SELECT_SQL = `
     l.doc_key, l.doc_type, l.doc_group, l.source, l.file_url, l.file_name,
     l.uploaded_at, l.detail, l.notes, l.override_reason,
     l.booking_id, b.reference_number, b.status::text AS booking_status, c.company_name,
+    c.client_id::text AS client_id, dx.other_label,
     l.truck_id, t.plate_number,
     l.uploaded_by,
     NULLIF(TRIM(CONCAT_WS(' ', up.first_name, up.last_name)), '') AS uploaded_by_name,
@@ -246,6 +251,10 @@ function buildWhere(f: Filters, omit: { types?: boolean; review?: boolean } = {}
     params.push(f.truck_id)
     where.push(`l.truck_id = $${params.length}::uuid`)
   }
+  if (f.client_id) {
+    params.push(f.client_id)
+    where.push(`c.client_id = $${params.length}::uuid`)
+  }
   if (f.date_from) {
     params.push(f.date_from)
     where.push(`${MANILA_DAY} >= $${params.length}::date`)
@@ -257,6 +266,7 @@ function buildWhere(f: Filters, omit: { types?: boolean; review?: boolean } = {}
   // A folder of files: "Search file, booking, client, plate or uploader".
   const fileSearch = wordsMatch(params, f.search, [
     'l.file_name',
+    `COALESCE(dx.other_label, '')`,
     `COALESCE(b.reference_number, '')`,
     `COALESCE(c.company_name, '')`,
     `COALESCE(t.plate_number, '')`,
@@ -394,9 +404,9 @@ export async function findFolders(q: DocumentFolderQuery): Promise<DocumentFolde
     return rows
   }
 
-  where.push(`l.booking_id IS NOT NULL`)
-
   if (q.level === 'clients') {
+    // A client with only a contract still has a folder.
+    where.push(`(l.booking_id IS NOT NULL OR l.doc_group = 'client')`)
     // Top level, "Search client or booking": a client shows when its name, or
     // any of its bookings, matches.
     const client = wordsMatch(params, q.search, [`COALESCE(c.company_name, '')`, `COALESCE(b.reference_number, '')`])
@@ -417,6 +427,7 @@ export async function findFolders(q: DocumentFolderQuery): Promise<DocumentFolde
   }
 
   // bookings
+  where.push(`l.booking_id IS NOT NULL`)
   if (q.booking_id) {
     params.push(q.booking_id)
     where.push(`l.booking_id = $${params.length}::uuid`)
@@ -463,8 +474,11 @@ export interface StaffDocumentRow {
 }
 
 export interface NewStaffDocument {
-  booking_id:    string
+  /** Null for a contract, which is filed under the client instead. */
+  booking_id:    string | null
+  client_id:     string | null
   document_type: StaffDocumentType
+  other_label:   string | null
   file_url:      string
   original_name: string
   public_id:     string
@@ -476,7 +490,7 @@ export interface NewStaffDocument {
 
 export async function insertStaffDocuments(docs: NewStaffDocument[]): Promise<string[]> {
   if (docs.length === 0) return []
-  const cols = ['booking_id', 'document_type', 'file_url', 'original_name', 'public_id', 'file_format', 'bytes', 'notes', 'uploaded_by'] as const
+  const cols = ['booking_id', 'client_id', 'document_type', 'other_label', 'file_url', 'original_name', 'public_id', 'file_format', 'bytes', 'notes', 'uploaded_by'] as const
   const params: unknown[] = []
   const tuples = docs.map((d) => {
     const slots = cols.map((c) => {
@@ -580,6 +594,83 @@ export async function findBookingAttachedFiles(bookingId: string): Promise<{ nam
     [bookingId],
   )
   return rows
+}
+
+/** A client's contracts (not archived), for numbering and refusing the same file twice. */
+export async function findClientContracts(clientId: string): Promise<{ name: string; url: string }[]> {
+  const { rows } = await pool.query<{ name: string; url: string }>(
+    `SELECT COALESCE(original_name, regexp_replace(file_url, '^.*/', '')) AS name, file_url AS url
+       FROM documents
+      WHERE client_id = $1 AND document_type = 'contract' AND archived_at IS NULL`,
+    [clientId],
+  )
+  return rows
+}
+
+/** A client's Contract folder: always shown first inside the client's folder, even when empty. */
+export async function findContractFolderStats(clientId: string, archived: 'hide' | 'only'): Promise<{ file_count: number; pending_review: number; last_upload: string | null }> {
+  const { rows } = await pool.query<{ file_count: number; pending_review: number; last_upload: string | null }>(
+    `SELECT COUNT(*)::int AS file_count,
+            COUNT(*) FILTER (WHERE status = 'pending')::int AS pending_review,
+            MAX(uploaded_at) AS last_upload
+       FROM documents
+      WHERE client_id = $1 AND document_type = 'contract'
+        AND ${archived === 'only' ? 'archived_at IS NOT NULL' : 'archived_at IS NULL'}`,
+    [clientId],
+  )
+  return rows[0]
+}
+
+/**
+ * Types typed in for Other before, most used first, so the next uploader
+ * picks "Invoice" instead of typing "invoice" or "INV". Spellings that differ
+ * only in case count as one, shown the way it was typed most often.
+ */
+export async function findOtherLabels(limit = 50): Promise<string[]> {
+  const { rows } = await pool.query<{ label: string }>(
+    `SELECT mode() WITHIN GROUP (ORDER BY btrim(other_label)) AS label
+       FROM documents
+      WHERE document_type = 'other' AND other_label IS NOT NULL
+      GROUP BY lower(btrim(other_label))
+      ORDER BY COUNT(*) DESC, 1
+      LIMIT $1`,
+    [limit],
+  )
+  return rows.map((r) => r.label)
+}
+
+export interface ClientOption {
+  client_id:    string
+  company_name: string | null
+}
+
+/** The client picker for uploading a contract. */
+export async function searchClients(search: string, limit = 10): Promise<ClientOption[]> {
+  const params: unknown[] = []
+  let where = ''
+  if (search.trim()) {
+    params.push(likeTerm(search.trim()))
+    where = `WHERE COALESCE(c.company_name, '') ILIKE $1 ESCAPE '\\'`
+  }
+  params.push(limit)
+  const { rows } = await pool.query<ClientOption>(
+    `SELECT c.client_id::text AS client_id, c.company_name
+       FROM clients c
+       JOIN users u ON u.user_id = c.user_id
+      ${where}${where ? ' AND' : ' WHERE'} u.status <> 'archived'
+      ORDER BY c.company_name ASC NULLS LAST
+      LIMIT $${params.length}`,
+    params,
+  )
+  return rows
+}
+
+export async function findClient(clientId: string): Promise<ClientOption | null> {
+  const { rows } = await pool.query<ClientOption>(
+    `SELECT client_id::text AS client_id, company_name FROM clients WHERE client_id = $1`,
+    [clientId],
+  )
+  return rows[0] ?? null
 }
 
 export async function findBookingRef(bookingId: string): Promise<{ booking_id: string; reference_number: string | null } | null> {

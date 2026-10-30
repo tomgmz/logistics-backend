@@ -32,6 +32,7 @@ function filtersFrom(req: Request): Omit<DocumentListQuery, 'page' | 'limit'> {
   const review = str(req.query.review_status)
   const booking = str(req.query.booking_id)
   const truck  = str(req.query.truck_id)
+  const client = str(req.query.client_id)
   const from   = str(req.query.date_from)
   const to     = str(req.query.date_to)
   const keys   = (str(req.query.keys) ?? '').split(',').filter((k) => DOC_KEY_RE.test(k)).slice(0, MAX_DOWNLOAD_KEYS)
@@ -39,10 +40,11 @@ function filtersFrom(req: Request): Omit<DocumentListQuery, 'page' | 'limit'> {
   return {
     search:        str(req.query.search)?.slice(0, 100),
     types:         types.length ? types : undefined,
-    group:         group === 'booking' || group === 'fleet' ? group : undefined,
+    group:         group === 'booking' || group === 'fleet' || group === 'client' ? group : undefined,
     review_status: ['pending', 'approved', 'rejected'].includes(review ?? '') ? review as ReviewStatus : undefined,
     booking_id:    booking && UUID_RE.test(booking) ? booking : undefined,
     truck_id:      truck && UUID_RE.test(truck) ? truck : undefined,
+    client_id:     client && UUID_RE.test(client) ? client : undefined,
     date_from:     from && DATE_RE.test(from) ? from : undefined,
     date_to:       to && DATE_RE.test(to) ? to : undefined,
     archived:      req.query.archived === 'only' ? 'only' : 'hide',
@@ -114,13 +116,23 @@ export async function listFolders(req: Request, res: Response) {
     if (level !== 'clients' && level !== 'bookings' && level !== 'vehicles') {
       return res.status(400).json({ status: 'error', message: 'Unknown folder level.' })
     }
-    const data = await DocumentsService.listFolders({
+    let data: any[] = await DocumentsService.listFolders({
       level:      level as DocumentFolderLevel,
       client_id:  client === 'none' || (client && UUID_RE.test(client)) ? client : undefined,
       booking_id: booking && UUID_RE.test(booking) ? booking : undefined,
       search,
       archived,
     })
+    // Inside a client's folder, its Contract folder always comes first, even
+    // while empty, so there is always somewhere to upload one.
+    if (level === 'bookings' && client && UUID_RE.test(client) && !booking) {
+      const stats = await DocumentsService.contractFolderStats(client, archived)
+      data = [
+        { kind: 'contract', id: client, name: 'Contract', client_id: client, company_name: null,
+          booking_status: null, schedule_date: null, booking_count: 0, ...stats },
+        ...data.map((d) => ({ ...d, kind: 'booking' })),
+      ]
+    }
     if (paging) {
       const { data: page, meta } = paginate(data, paging)
       return res.status(200).json({ status: 'success', data: page, meta })
@@ -150,12 +162,33 @@ export async function searchBookings(req: Request, res: Response) {
   }
 }
 
+/** The client picker for uploading a contract. */
+export async function searchClients(req: Request, res: Response) {
+  try {
+    const data = await DocumentsService.searchClientsForUpload(str(req.query.search)?.slice(0, 100) ?? '')
+    res.status(200).json({ status: 'success', data })
+  } catch (err) {
+    fail(res, err)
+  }
+}
+
+/** Types typed in for Other before, most used first: the suggestions under the field. */
+export async function listOtherLabels(_req: Request, res: Response) {
+  try {
+    res.status(200).json({ status: 'success', data: await DocumentsService.listOtherLabels() })
+  } catch (err) {
+    fail(res, err)
+  }
+}
+
 export async function uploadDocuments(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
     const data = await DocumentsService.uploadStaffDocuments({
-      bookingId:    req.body.booking_id,
+      bookingId:    req.body.booking_id ?? null,
+      clientId:     req.body.client_id ?? null,
       documentType: req.body.document_type,
+      otherLabel:   req.body.other_label ?? null,
       notes:        req.body.notes?.trim() || null,
       files:        (req.files as Express.Multer.File[] | undefined) ?? [],
       uploadedBy:   userId,

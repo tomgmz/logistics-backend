@@ -362,6 +362,8 @@ router.get('/dashboard', authenticate, authorize('admin', 'it_admin', 'general_m
 router.get('/documents',                authenticate, isDocuments, DocumentsController.listDocuments)
 router.get('/documents/export',         authenticate, isDocuments, requireModuleFlag('document-management', 'can_export'), DocumentsController.exportDocuments)
 router.get('/documents/bookings',       authenticate, isDocuments, DocumentsController.searchBookings)
+router.get('/documents/clients',        authenticate, isDocuments, DocumentsController.searchClients)
+router.get('/documents/other-labels',   authenticate, isDocuments, DocumentsController.listOtherLabels)
 router.get('/documents/folders',        authenticate, isDocuments, DocumentsController.listFolders)
 router.post('/documents',               authenticate, isDocuments, handleDocumentUpload, validate(uploadStaffDocumentsSchema), DocumentsController.uploadDocuments)
 router.patch('/documents/:id/review',   authenticate, isDocuments, validate(reviewDocumentSchema), DocumentsController.reviewDocument)

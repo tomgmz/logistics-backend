@@ -20,7 +20,7 @@ import { logSystemError } from './log-system.js'
  *
  * Links are signed per time window rather than per request: within one window
  * every reader gets the identical URL, so browsers and the mobile image cache
- * can still cache the file. Licences and booking documents get 5-minute
+ * can still cache the file. Licences, booking documents and contracts get 5-minute
  * windows and 15-minute links (valid 10–15 minutes); everything else 1-hour
  * windows and 2-hour links (valid 1–2 hours).
  */
@@ -33,8 +33,8 @@ export const FILE_REF_PREFIX = 'r2://'
 
 const MINUTE = 60 * 1000
 
-/** The most sensitive files: driver licences and booking paperwork (DRs, staff documents). */
-const SENSITIVE_KEY = /^(driver_licenses|booking_documents)\//
+/** The most sensitive files: driver licences, booking paperwork (DRs, staff documents) and client contracts. */
+const SENSITIVE_KEY = /^(driver_licenses|booking_documents|client_documents)\//
 
 export function linkPolicy(key: string): { windowMs: number; expiresInSec: number } {
   return SENSITIVE_KEY.test(key)

@@ -9,17 +9,21 @@
  * stored in the `documents` table — can be reviewed or archived.
  */
 
-/** Paperwork staff can attach (the `documents.document_type` whitelist). */
+/**
+ * Paperwork staff can attach (the `documents.document_type` whitelist), in the
+ * order the upload form lists them. A Contract belongs to a client, not a
+ * booking, and is staff only. Proof of Delivery and Other go on a booking;
+ * Other carries the type the uploader typed in (other_label) and is staff only.
+ */
 export const STAFF_DOCUMENT_TYPES = [
-  'delivery_receipt',
-  'trip_ticket',
-  'dtr',
+  'contract',
   'proof_of_delivery',
-  'purchase_order',
-  'maintenance_record',
   'other',
 ] as const
 export type StaffDocumentType = (typeof STAFF_DOCUMENT_TYPES)[number]
+
+/** The longest type an uploader may type in for Other. */
+export const OTHER_LABEL_MAX = 60
 
 /** Files that come from other flows and are listed read-only. */
 export const DERIVED_DOCUMENT_TYPES = [
@@ -40,21 +44,16 @@ export const LIBRARY_DOCUMENT_TYPES: readonly LibraryDocumentType[] = [
 
 /**
  * What a client sees in their own transaction history: their attachments, every
- * pickup and drop-off proof photo, and the shipment paperwork staff attached to
- * the booking. Left out are the files about OUR side of the job: a driver's
- * Daily Time Record, maintenance records, and the fleet's odometer photos and
- * service receipts. Staff uploads also appear only once they are approved and
- * not archived, so a rejected or mistaken upload never reaches the client.
+ * pickup and drop-off proof photo, and staff's Proof of Delivery. Left out are
+ * Other documents and contracts (staff only), and the fleet's odometer photos
+ * and service receipts. Staff uploads also appear only once they are approved
+ * and not archived, so a rejected or mistaken upload never reaches the client.
  */
 export const CLIENT_VISIBLE_DOCUMENT_TYPES: readonly LibraryDocumentType[] = [
   'transaction_document',
   'pickup_proof',
   'delivery_proof',
-  'delivery_receipt',
   'proof_of_delivery',
-  'trip_ticket',
-  'purchase_order',
-  'other',
 ]
 
 /** The client-safe projection of a library row: no staff names, notes or override reasons. */
@@ -76,7 +75,8 @@ export type ReviewStatus = 'pending' | 'approved' | 'rejected'
 export interface LibraryDocument {
   doc_key:            string
   doc_type:           LibraryDocumentType
-  doc_group:          'booking' | 'fleet'
+  /** `client`: a contract, filed under the client rather than a booking. */
+  doc_group:          'booking' | 'fleet' | 'client'
   source:             DocumentSource
   file_url:           string
   file_name:          string
@@ -89,6 +89,9 @@ export interface LibraryDocument {
   reference_number:   string | null
   booking_status:     string | null
   company_name:       string | null
+  client_id:          string | null
+  /** Other only: the type the uploader typed in. */
+  other_label:        string | null
   truck_id:           string | null
   plate_number:       string | null
   uploaded_by:        string | null
@@ -107,9 +110,11 @@ export interface LibraryDocument {
 export interface DocumentListQuery {
   search?:        string
   types?:         LibraryDocumentType[]
-  group?:         'booking' | 'fleet'
+  group?:         'booking' | 'fleet' | 'client'
   review_status?: ReviewStatus
   booking_id?:    string
+  /** A client's Contract folder (with group 'client'). */
+  client_id?:     string
   /** A vehicle's folder: every file recorded against that truck. */
   truck_id?:      string
   date_from?:     string
