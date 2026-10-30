@@ -1,4 +1,5 @@
 import multer from 'multer'
+import { withFileUrls } from './fileUrls.middleware.js'
 
 /**
  * Uploads for client-supplied paperwork attached to a booking.
@@ -29,7 +30,7 @@ const MAX_FILE_COUNT = 3
 
 const storage = multer.memoryStorage()
 
-export const uploadDocuments = multer({
+export const uploadDocuments = withFileUrls(multer({
   storage,
   limits: {
     fileSize:  MAX_FILE_SIZE,
@@ -41,4 +42,4 @@ export const uploadDocuments = multer({
     }
     cb(null, true)
   },
-}).array('documents', MAX_FILE_COUNT)
+}).array('documents', MAX_FILE_COUNT))

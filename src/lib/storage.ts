@@ -9,15 +9,20 @@ import { logSystemError } from './log-system.js'
  * can be opened by URL alone: the database stores a reference (`r2://<key>`),
  * and the only way to reach the file is a signed link that expires.
  *
- * Signing happens on the way out (middlewares/file-urls.ts walks every JSON
- * response), so a link is only ever handed to someone the route already let
- * see that row. When a client sends a signed link back (a proof photo URL with
- * the stop confirmation, say), the same middleware turns it back into the
- * reference before validation, so a signed link is never what gets stored.
+ * Signing happens on the way out (middlewares/fileUrls.middleware.ts walks
+ * every JSON response), so a link is only ever handed to someone the route
+ * already let see that row. When a client sends a signed link back in a file
+ * field (a proof photo URL with the stop confirmation, say), the same
+ * middleware turns it back into the reference before validation, so a signed
+ * link is never what gets stored. Only file fields: a link pasted into free
+ * text (a chat message) stays plain text and dies with its expiry, and text
+ * that starts with `r2://` is refused, or it would be signed for every reader.
  *
- * Links are signed per hour window rather than per request: within one window
+ * Links are signed per time window rather than per request: within one window
  * every reader gets the identical URL, so browsers and the mobile image cache
- * can still cache the file. A link stays valid for 1–2 hours, then dies.
+ * can still cache the file. Licences and booking documents get 5-minute
+ * windows and 15-minute links (valid 10–15 minutes); everything else 1-hour
+ * windows and 2-hour links (valid 1–2 hours).
  */
 
 const ACCOUNT = process.env.R2_ACCOUNT_ID ?? ''
@@ -26,8 +31,16 @@ const HOST    = `${ACCOUNT}.r2.cloudflarestorage.com`
 
 export const FILE_REF_PREFIX = 'r2://'
 
-const WINDOW_MS      = 60 * 60 * 1000
-const EXPIRES_IN_SEC = 2 * 60 * 60
+const MINUTE = 60 * 1000
+
+/** The most sensitive files: driver licences and booking paperwork (DRs, staff documents). */
+const SENSITIVE_KEY = /^(driver_licenses|booking_documents)\//
+
+export function linkPolicy(key: string): { windowMs: number; expiresInSec: number } {
+  return SENSITIVE_KEY.test(key)
+    ? { windowMs: 5 * MINUTE,  expiresInSec: 15 * 60 }
+    : { windowMs: 60 * MINUTE, expiresInSec: 2 * 60 * 60 }
+}
 
 const s3 = new S3Client({
   region:         'auto',
@@ -119,6 +132,7 @@ export function keyOf(refOrKey: string): string {
 export async function signFileRef(ref: string, now = Date.now()): Promise<string> {
   const key      = keyOf(ref)
   const fileName = key.split('/').pop() ?? 'file'
+  const { windowMs, expiresInSec } = linkPolicy(key)
   return getSignedUrl(
     s3,
     new GetObjectCommand({
@@ -126,7 +140,7 @@ export async function signFileRef(ref: string, now = Date.now()): Promise<string
       Key:    key,
       ResponseContentDisposition: `inline; filename="${fileName}"`,
     }),
-    { expiresIn: EXPIRES_IN_SEC, signingDate: new Date(Math.floor(now / WINDOW_MS) * WINDOW_MS) },
+    { expiresIn: expiresInSec, signingDate: new Date(Math.floor(now / windowMs) * windowMs) },
   )
 }
 
@@ -169,13 +183,36 @@ export async function signFileRefsDeep(value: unknown): Promise<unknown> {
   return walk(value)
 }
 
-/** Copy of `value` with every signed link of ours swapped back to its reference. */
-export function refsFromSignedUrlsDeep(value: unknown): unknown {
-  if (typeof value === 'string') return refFromSignedUrl(value) ?? value
-  if (Array.isArray(value)) return value.map(refsFromSignedUrlsDeep)
+/**
+ * Whether a request field carries files: every such field in the API is named
+ * `…_url`, `…_urls` (or `url`/`urls`), except `transaction_documents`.
+ */
+export function isFileField(key: string): boolean {
+  return /(^|_)urls?$/.test(key) || key === 'transaction_documents'
+}
+
+/** Text that would be signed as a file reference if it were stored. */
+export class FileRefInTextError extends Error {
+  constructor(public field: string) {
+    super('That text cannot start with "r2://".')
+  }
+}
+
+/**
+ * Copy of a request body with every signed link of ours in a file field
+ * swapped back to its reference. Anywhere else a link is left as plain text,
+ * and text starting with `r2://` throws FileRefInTextError.
+ */
+export function refsFromSignedUrlsDeep(value: unknown, field = '', inFileField = false): unknown {
+  if (typeof value === 'string') {
+    if (inFileField) return refFromSignedUrl(value) ?? value
+    if (value.trimStart().startsWith(FILE_REF_PREFIX)) throw new FileRefInTextError(field)
+    return value
+  }
+  if (Array.isArray(value)) return value.map((v) => refsFromSignedUrlsDeep(v, field, inFileField))
   if (isPlainObject(value)) {
     const out: Record<string, unknown> = {}
-    for (const [k, child] of Object.entries(value)) out[k] = refsFromSignedUrlsDeep(child)
+    for (const [k, child] of Object.entries(value)) out[k] = refsFromSignedUrlsDeep(child, k, isFileField(k))
     return out
   }
   return value

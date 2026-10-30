@@ -1,8 +1,9 @@
 import multer from 'multer'
+import { withFileUrls } from './fileUrls.middleware.js'
 
 const storage = multer.memoryStorage()
 
-export const uploadSingle = multer({
+export const uploadSingle = withFileUrls(multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
@@ -11,10 +12,10 @@ export const uploadSingle = multer({
     }
     cb(null, true)
   },
-}).single('image')
+}).single('image'))
 
 /** A photo sent in chat (field `image`), up to 10 MB. */
-export const uploadChatPhoto = multer({
+export const uploadChatPhoto = withFileUrls(multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
@@ -23,4 +24,4 @@ export const uploadChatPhoto = multer({
     }
     cb(null, true)
   },
-}).single('image')
+}).single('image'))
