@@ -9,7 +9,7 @@ import sharp from 'sharp'
  *
  * Same idea as a "geocam" app's overlay — plate, time, date, where — drawn by
  * the SERVER rather than the phone, so the driver cannot edit it and the photo
- * that reaches Cloudinary is already the evidence.
+ * that reaches storage is already the evidence.
  *
  * Text is drawn as vector outlines from the bundled Barlow fonts, never as SVG
  * <text>. librsvg resolves <text> through the host's fontconfig, and a bare

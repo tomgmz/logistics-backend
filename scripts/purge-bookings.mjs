@@ -1,7 +1,7 @@
 /**
  * Delete every booking and everything hanging off it: destinations, trips,
  * stops, cargo, deliveries, assignments, location pings, booking documents,
- * booking notifications, and their Cloudinary files. Users, clients, drivers
+ * booking notifications, and their storage files. Users, clients, drivers
  * and vehicles stay (a reference from them is nulled, never deleted); trucks
  * left 'in_use' and drivers left 'assigned' go back to 'available'; booking
  * numbering restarts.
@@ -19,15 +19,9 @@ import 'dotenv/config'
 import fs from 'node:fs'
 import path from 'node:path'
 import pg from 'pg'
-import { v2 as cloudinary } from 'cloudinary'
+import { FILE_REF, assetFromRef, deleteStoredFile } from './lib/stored-files.mjs'
 
 const dryRun = process.argv.includes('--dry-run')
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key:    process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-})
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
 pool.on('error', (err) => console.error('pool client error:', err.message))
@@ -35,14 +29,6 @@ pool.on('error', (err) => console.error('pool client error:', err.message))
 const KEEP_TABLES = new Set([
   'public.users', 'public.clients', 'public.drivers', 'public.trucks', 'public.truck_models',
 ])
-const CLOUDINARY_URL = /https?:\/\/res\.cloudinary\.com\/[^"\s\\]+/g
-
-function assetFromUrl(url) {
-  const m = /res\.cloudinary\.com\/[^/]+\/(image|video|raw)\/upload\/(?:v\d+\/)?(.+)$/.exec(url)
-  if (!m) return null
-  const [, resourceType, p] = m
-  return { url, resource_type: resourceType, public_id: resourceType === 'raw' ? p : p.replace(/\.[^./]+$/, '') }
-}
 
 const db = await pool.connect()
 const snapshot = {}, deleted = {}, nulled = [], urls = new Set()
@@ -68,7 +54,7 @@ try {
       rows.push(...page)
       if (page.length < 200) break
     }
-    for (const r of rows) for (const u of JSON.stringify(r).match(CLOUDINARY_URL) ?? []) urls.add(u)
+    for (const r of rows) for (const u of JSON.stringify(r).match(FILE_REF) ?? []) urls.add(u)
     ;(snapshot[table] ??= []).push(...rows)
   }
 
@@ -109,13 +95,13 @@ try {
   console.log(`bookings left: ${(await db.query(`select count(*)::int n from bookings`)).rows[0].n}`)
 
   const assets = [], unparsed = []
-  for (const u of urls) { const a = assetFromUrl(u); a ? assets.push(a) : unparsed.push(u) }
-  console.log(`\ncloudinary assets to delete: ${assets.length}${unparsed.length ? ` (+${unparsed.length} unparseable)` : ''}`)
+  for (const u of urls) { const a = assetFromRef(u); a ? assets.push(a) : unparsed.push(u) }
+  console.log(`\nstored files to delete: ${assets.length}${unparsed.length ? ` (+${unparsed.length} unparseable)` : ''}`)
   for (const u of unparsed) console.log(`   ?! ${u}`)
 
   if (dryRun) {
     await db.query('ROLLBACK')
-    console.log('\nDRY RUN — rolled back, nothing changed. Cloudinary untouched.')
+    console.log('\nDRY RUN — rolled back, nothing changed. stored files untouched.')
     db.release(); await pool.end(); process.exit(0)
   }
 
@@ -129,14 +115,9 @@ try {
   console.log('Database committed.')
   db.release()
 
-  console.log('\nCloudinary:')
+  console.log('\nStored files:')
   for (const a of assets) {
-    try {
-      const res = await cloudinary.uploader.destroy(a.public_id, { resource_type: a.resource_type, invalidate: true })
-      console.log(`  ${String(res.result).padEnd(9)} ${a.resource_type.padEnd(5)} ${a.public_id}`)
-    } catch (err) {
-      console.log(`  fail      ${a.resource_type.padEnd(5)} ${a.public_id} — ${err.message}`)
-    }
+    console.log(`  ${(await deleteStoredFile(a)).padEnd(9)} ${a.key}`)
   }
 } catch (err) {
   await db.query('ROLLBACK').catch(() => {})

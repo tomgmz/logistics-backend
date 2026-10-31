@@ -18,27 +18,14 @@ import 'dotenv/config'
 import fs from 'node:fs'
 import path from 'node:path'
 import pg from 'pg'
-import { v2 as cloudinary } from 'cloudinary'
+import { assetFromRef, deleteStoredFile, deleteStoredPrefix } from './lib/stored-files.mjs'
 
 const dryRun = process.argv.includes('--dry-run')
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key:    process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-})
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 })
-
-function assetFromUrl(url) {
-  const m = /res\.cloudinary\.com\/[^/]+\/(image|video|raw)\/upload\/(?:v\d+\/)?(.+)$/.exec(url)
-  if (!m) return null
-  const [, resourceType, p] = m
-  return { url, resource_type: resourceType, public_id: resourceType === 'raw' ? p : p.replace(/\.[^./]+$/, '') }
-}
 
 // An idle client dropping (slow link, pooler timeout) must not crash the process.
 pool.on('error', (err) => console.error('pool client error:', err.message))
@@ -97,11 +84,11 @@ try {
 
   const unparsed = []
   for (const url of new Set(urls)) {
-    const a = assetFromUrl(url)
+    const a = assetFromRef(url)
     if (a) assets.push(a)
     else unparsed.push(url)
   }
-  console.log(`cloudinary assets: ${assets.length}${unparsed.length ? ` (+${unparsed.length} unparseable)` : ''}`)
+  console.log(`stored files: ${assets.length}${unparsed.length ? ` (+${unparsed.length} unparseable)` : ''}`)
   for (const u of unparsed) console.log(`   ?! ${u}`)
 
   console.log('')
@@ -143,7 +130,7 @@ try {
 
   if (dryRun) {
     await db.query('ROLLBACK')
-    console.log('\nDRY RUN — rolled back, nothing changed. Cloudinary untouched.')
+    console.log('\nDRY RUN — rolled back, nothing changed. stored files untouched.')
     process.exit(0)
   }
   await db.query('COMMIT')
@@ -156,26 +143,18 @@ try {
   db.release()
 }
 
-console.log('\nCloudinary:')
+console.log('\nStored files:')
 for (const a of assets) {
-  try {
-    const res = await cloudinary.uploader.destroy(a.public_id, { resource_type: a.resource_type, invalidate: true })
-    console.log(`  ${String(res.result).padEnd(9)} ${a.resource_type.padEnd(5)} ${a.public_id}`)
-  } catch (err) {
-    console.log(`  fail      ${a.resource_type.padEnd(5)} ${a.public_id} — ${err.message}`)
-  }
+  console.log(`  ${(await deleteStoredFile(a)).padEnd(9)} ${a.key}`)
 }
 
-console.log('\nCloudinary folder sweep:')
+console.log('\nStored-file folder sweep:')
 for (const folder of ['booking_documents', 'delivery_proofs']) {
-  for (const resourceType of ['image', 'raw', 'video']) {
-    try {
-      const res = await cloudinary.api.delete_resources_by_prefix(`${folder}/`, { resource_type: resourceType, invalidate: true })
-      const n = Object.keys(res.deleted ?? {}).length
-      if (n) console.log(`  ${folder.padEnd(18)} ${resourceType.padEnd(5)} ${n} deleted`)
-    } catch (err) {
-      console.log(`  fail ${folder} ${resourceType} — ${err.error?.message ?? err.message}`)
-    }
+  try {
+    const n = await deleteStoredPrefix(`${folder}/`)
+    if (n) console.log(`  ${folder.padEnd(18)} ${n} deleted`)
+  } catch (err) {
+    console.log(`  fail ${folder} — ${err.message}`)
   }
 }
 

@@ -231,7 +231,7 @@ try {
       suitable_for: 'FMCG', stackable_friendly: i % 2 === 0,
       max_weight_kg: wheels * 1000, max_volume_cbm: wheels * 4, max_length_cm: 400 + wheels * 50,
       length_mm: 4000 + wheels * 500, width_mm: 2000, height_mm: 2100,
-      image_url: modelImage ?? 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+      image_url: modelImage ?? null,
       archived_at: i > 95 ? new Date() : null,
     }))
   }
@@ -413,12 +413,13 @@ try {
     await db.query(`update booking_reference_counters set last_value = $1 where period = to_char(now() at time zone 'Asia/Manila', 'YYYYMM')`, [counterBefore])
   }
 
-  // documents
-  const DOC_TYPES = ['delivery_receipt', 'trip_ticket', 'proof_of_delivery', 'purchase_order', 'other']
-  for (let i = 0; i < N; i++) {
+  // documents: booking uploads are Proof of Delivery or Other (with its typed-in
+  // type); they reuse an existing stored image, so none are seeded without one.
+  const DOC_TYPES = ['proof_of_delivery', 'other']
+  for (let i = 0; modelImage && i < N; i++) {
     const status = pick(['pending', 'approved', 'approved', 'rejected', 'archived'], i)
     await ins('documents', 'document_id', {
-      booking_id: bookingIds[i], document_type: pick(DOC_TYPES, i), file_url: modelImage ?? 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+      booking_id: bookingIds[i], document_type: pick(DOC_TYPES, i), other_label: pick(DOC_TYPES, i) === 'other' ? 'SEED Gate Pass' : null, file_url: modelImage,
       original_name: `SEED-document-${pad(i + 1)}.png`, file_format: 'png', bytes: 120000 + i * 100,
       uploaded_by: pick(opss, i).id, status, uploaded_at: hoursAgo(i * 2),
       reviewed_by: status === 'pending' ? null : pick(admins, i).id, reviewed_at: status === 'pending' ? null : hoursAgo(i * 2 - 1),

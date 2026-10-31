@@ -7,7 +7,7 @@ import { SystemLogLevel, SystemLogEventType } from '../types/system-logs.types.j
  * to do. Most rows have no human behind them at all.
  *
  * The distinction against logEvent() is the subject, not the severity. A person
- * deleting a document is an audit row even though it is routine; Cloudinary
+ * deleting a document is an audit row even though it is routine; R2
  * refusing that delete is a system row even though the same click caused it.
  *
  * This function must never throw and must never reject. It is called from the

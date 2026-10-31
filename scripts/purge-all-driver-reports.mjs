@@ -1,6 +1,6 @@
 /**
  * Removes every driver report — both the quick SOS alerts and the detailed
- * forms — along with their photos/videos on Cloudinary and the notifications
+ * forms — along with their photos/videos in storage and the notifications
  * that were fanned out about them.
  *
  *   node scripts/purge-all-driver-reports.mjs --dry-run   # report only
@@ -22,32 +22,14 @@ import 'dotenv/config'
 import fs from 'node:fs'
 import path from 'node:path'
 import pg from 'pg'
-import { v2 as cloudinary } from 'cloudinary'
+import { assetFromRef, deleteStoredFile } from './lib/stored-files.mjs'
 
 const dryRun = process.argv.includes('--dry-run')
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key:    process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-})
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 })
-
-/** See purge-all-bookings.mjs — the URL states its own resource type. */
-function assetFromUrl(url) {
-  const m = /res\.cloudinary\.com\/[^/]+\/(image|video|raw)\/upload\/(?:v\d+\/)?(.+)$/.exec(url)
-  if (!m) return null
-  const [, resourceType, p] = m
-  return {
-    url,
-    resource_type: resourceType,
-    public_id: resourceType === 'raw' ? p : p.replace(/\.[^./]+$/, ''),
-  }
-}
 
 const db = await pool.connect()
 let assets = []
@@ -81,7 +63,7 @@ try {
 
   const unparsed = []
   for (const url of [...new Set(urls)]) {
-    const asset = assetFromUrl(url)
+    const asset = assetFromRef(url)
     if (asset) assets.push(asset)
     else unparsed.push(url)
   }
@@ -89,7 +71,7 @@ try {
   console.log(`reports          : ${reports.length} — ${reports.map((r) => r.incident_type ?? r.source).join(', ')}`)
   console.log(`report notifs    : ${(await db.query(
     `select count(*)::int n from notifications where data->>'report_id' is not null`)).rows[0].n} (${orphanNotifs} already orphaned)`)
-  console.log(`assets           : ${assets.length} on Cloudinary${unparsed.length ? ` (+${unparsed.length} UNPARSEABLE)` : ''}`)
+  console.log(`assets           : ${assets.length} in storage${unparsed.length ? ` (+${unparsed.length} UNPARSEABLE)` : ''}`)
   for (const u of unparsed) console.log(`   ?! ${u}`)
   console.log('')
 
@@ -98,7 +80,7 @@ try {
       driver_reports: (await db.query(`select * from driver_reports`)).rows,
       notifications:  (await db.query(
         `select * from notifications where data->>'report_id' is not null`)).rows,
-      cloudinary_assets: assets,
+      stored_files: assets,
     }
     const dir = path.join(process.cwd(), 'backups')
     fs.mkdirSync(dir, { recursive: true })
@@ -129,7 +111,7 @@ try {
 
   if (dryRun) {
     await db.query('ROLLBACK')
-    console.log('\nDRY RUN — rolled back, nothing changed. Cloudinary untouched.')
+    console.log('\nDRY RUN — rolled back, nothing changed. stored files untouched.')
     process.exit(0)
   }
 
@@ -143,14 +125,9 @@ try {
   db.release()
 }
 
-console.log('\nCloudinary:')
+console.log('\nStored files:')
 for (const a of assets) {
-  try {
-    const res = await cloudinary.uploader.destroy(a.public_id, { resource_type: a.resource_type, invalidate: true })
-    console.log(`  ${(res.result === 'ok' ? 'ok' : res.result).padEnd(9)} ${a.resource_type.padEnd(5)} ${a.public_id}`)
-  } catch (err) {
-    console.log(`  fail      ${a.resource_type.padEnd(5)} ${a.public_id} — ${err.message}`)
-  }
+  console.log(`  ${(await deleteStoredFile(a)).padEnd(9)} ${a.key}`)
 }
 
 await pool.end()

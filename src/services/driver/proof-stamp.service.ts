@@ -182,7 +182,7 @@ export async function buildStampData(
     if (allowed) job = context
     // A driver photographing a stop of a booking they are no longer on — the
     // office re-crewed it while the camera was open. The confirmation would be
-    // refused anyway; refusing the upload too keeps the photo off Cloudinary.
+    // refused anyway; refusing the upload too keeps the photo out of storage.
     else if (actor.role === 'driver') throw new ProofNotOnCrewError()
   }
 

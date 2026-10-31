@@ -32,36 +32,14 @@ import 'dotenv/config'
 import fs from 'node:fs'
 import path from 'node:path'
 import pg from 'pg'
-import { v2 as cloudinary } from 'cloudinary'
+import { assetFromRef, deleteStoredFile, deleteStoredPrefix } from './lib/stored-files.mjs'
 
 const dryRun = process.argv.includes('--dry-run')
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key:    process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-})
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 })
-
-/**
- * A delivery URL carries its own resource type: Cloudinary serves every asset
- * from /<cloud>/<resource_type>/upload/. Raw assets are addressed by the path
- * with the extension left on; images and videos have it stripped.
- */
-function assetFromUrl(url) {
-  const m = /res\.cloudinary\.com\/[^/]+\/(image|video|raw)\/upload\/(?:v\d+\/)?(.+)$/.exec(url)
-  if (!m) return null
-  const [, resourceType, path] = m
-  return {
-    url,
-    resource_type: resourceType,
-    public_id: resourceType === 'raw' ? path : path.replace(/\.[^./]+$/, ''),
-  }
-}
 
 const db = await pool.connect()
 let assets = []
@@ -109,7 +87,7 @@ try {
     [bookingIds],
   )).rows.map((r) => r.truck_id))]
 
-  // Cloudinary URLs, collected while the rows are still here.
+  // Stored-file references, collected while the rows are still here.
   const urls = (await db.query(
     `select pickup_proof_photo_url as url from bookings where pickup_proof_photo_url is not null
      union all
@@ -135,7 +113,7 @@ try {
 
   const unparsed = []
   for (const url of [...new Set(urls)]) {
-    const asset = assetFromUrl(url)
+    const asset = assetFromRef(url)
     if (asset) assets.push(asset)
     else unparsed.push(url)
   }
@@ -145,12 +123,12 @@ try {
   console.log(`invoices   : ${invoiceIds.length}`)
   console.log(`periods    : ${periodIds.length}`)
   console.log(`crew back  : ${driverIds.length} driver(s), ${truckIds.length} vehicle(s)`)
-  console.log(`assets     : ${assets.length} on Cloudinary${unparsed.length ? ` (+${unparsed.length} UNPARSEABLE)` : ''}`)
+  console.log(`assets     : ${assets.length} in storage${unparsed.length ? ` (+${unparsed.length} UNPARSEABLE)` : ''}`)
   for (const u of unparsed) console.log(`   ?! ${u}`)
   console.log('')
 
   // Everything about to be destroyed, written out while it still exists. The
-  // Cloudinary URLs live in here too, which is what makes a re-upload possible.
+  // Stored-file references live in here too, which is what makes a re-upload possible.
   if (!dryRun) {
     const snapshot = {}
     const capture = async (name, sql, params) => {
@@ -173,7 +151,7 @@ try {
     await capture('acknowledgement_receipts', `select * from acknowledgement_receipts`)
     await capture('notifications', `select * from notifications where booking_id is not null`)
     await capture('booking_reference_counters', `select * from booking_reference_counters`)
-    snapshot.cloudinary_assets = assets
+    snapshot.stored_files = assets
 
     const dir = path.join(process.cwd(), 'backups')
     fs.mkdirSync(dir, { recursive: true })
@@ -265,7 +243,7 @@ try {
 
   if (dryRun) {
     await db.query('ROLLBACK')
-    console.log('\nDRY RUN — rolled back, nothing changed. Cloudinary untouched.')
+    console.log('\nDRY RUN — rolled back, nothing changed. stored files untouched.')
     process.exit(0)
   }
 
@@ -279,31 +257,23 @@ try {
   db.release()
 }
 
-// Only once the rows are gone, so a Cloudinary failure cannot leave a live
+// Only once the rows are gone, so a storage failure cannot leave a live
 // booking pointing at a deleted photo.
-console.log('\nCloudinary:')
+console.log('\nStored files:')
 for (const a of assets) {
-  try {
-    const res = await cloudinary.uploader.destroy(a.public_id, { resource_type: a.resource_type, invalidate: true })
-    console.log(`  ${(res.result === 'ok' ? 'ok' : res.result).padEnd(9)} ${a.resource_type.padEnd(5)} ${a.public_id}`)
-  } catch (err) {
-    console.log(`  fail      ${a.resource_type.padEnd(5)} ${a.public_id} — ${err.message}`)
-  }
+  console.log(`  ${(await deleteStoredFile(a)).padEnd(9)} ${a.key}`)
 }
 
 // These folders hold nothing but booking files, and earlier deletes left assets
 // behind that no row points at any more. Starting fresh means sweeping them too.
 const BOOKING_FOLDERS = ['booking_documents', 'delivery_proofs']
-console.log('\nCloudinary folder sweep:')
+console.log('\nStored-file folder sweep:')
 for (const folder of BOOKING_FOLDERS) {
-  for (const resourceType of ['image', 'raw', 'video']) {
-    try {
-      const res = await cloudinary.api.delete_resources_by_prefix(`${folder}/`, { resource_type: resourceType, invalidate: true })
-      const n = Object.keys(res.deleted ?? {}).length
-      if (n) console.log(`  ${folder.padEnd(18)} ${resourceType.padEnd(5)} ${n} deleted`)
-    } catch (err) {
-      console.log(`  fail ${folder} ${resourceType} — ${err.error?.message ?? err.message}`)
-    }
+  try {
+    const n = await deleteStoredPrefix(`${folder}/`)
+    if (n) console.log(`  ${folder.padEnd(18)} ${n} deleted`)
+  } catch (err) {
+    console.log(`  fail ${folder} — ${err.message}`)
   }
 }
 

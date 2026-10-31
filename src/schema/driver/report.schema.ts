@@ -31,7 +31,7 @@ const incidentTypeSchema = z.enum([
   'security_threat',
 ])
 
-// Cloudinary URLs. Capped so a runaway client can't post an unbounded array —
+// Stored-file references (signed links turned back by fileUrls). Capped so a runaway client can't post an unbounded array —
 // the form offers a handful of attachments, not a gallery.
 const mediaUrls = z.array(z.string().url()).max(10)
 

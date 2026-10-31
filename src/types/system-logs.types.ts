@@ -12,7 +12,7 @@ export type SystemLogEventType =
   | 'auth_event'
   /** Outbound mail accepted or rejected by the provider. */
   | 'email_event'
-  /** Cloudinary, Google Maps, OCR, push delivery. */
+  /** File storage (R2), Google Maps, OCR, push delivery. */
   | 'external_api'
   /** Scheduler ticks — including successful ones, so a dead cron is visible. */
   | 'cron_job'
