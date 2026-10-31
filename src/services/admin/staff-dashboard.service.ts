@@ -17,7 +17,7 @@ import { supportInboxEmail } from '../../lib/brevo-mailer.js'
 const DAY_MS        = 24 * 60 * 60 * 1000
 const SERIES_DAYS   = 14
 const TOP_CLIENT_WINDOW_DAYS = 30
-const LIST_LIMIT    = 6
+const LIST_LIMIT    = 5
 
 interface BookingRow {
   booking_id:               string
@@ -208,7 +208,7 @@ export async function getStaffDashboard() {
       // The inbox the tickets were emailed to; the dashboard opens it in Gmail.
       inbox: supportInboxEmail(),
       count: openTickets.length,
-      items: openTickets.slice(0, 8).map((t: any) => ({
+      items: openTickets.slice(0, LIST_LIMIT).map((t: any) => ({
         ticket_id:  t.ticket_id,
         reference:  t.reference,
         subject:    t.subject,
