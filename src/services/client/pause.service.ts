@@ -6,6 +6,7 @@ import { bookingRef } from '../../lib/booking-ref.js'
 import { broadcast } from '../../lib/realtime.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { createReportService } from '../driver/report.service.js'
+import { clearBreakdown } from './breakdown.service.js'
 import { continuationAt, refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { requestPauseContinuationCheck } from '../notification/pause-continuation.scheduler.js'
 import { invalidateEta } from '../maps/eta.service.js'
@@ -136,6 +137,9 @@ export async function staffPauseTripService(
     pause_reason: input.reason,
     pause_note:   note,
   })
+  // A breakdown the driver reported was waiting for this decision.
+  const driverReportId = (booking as { breakdown_report_id?: string | null }).breakdown_report_id ?? null
+  void clearBreakdown(bookingId).catch((err) => console.error('[pause] clearing the breakdown flag failed', bookingId, err))
 
   const label = PAUSE_REASON_LABEL[input.reason]
 
@@ -148,8 +152,11 @@ export async function staffPauseTripService(
 
   // A breakdown is also a vehicle problem, and vehicle problems live in the
   // Reports queue the Fleet Manager works from.
+  // The driver's own breakdown report already exists: link it rather than file
+  // a second one (which would also hold the vehicle twice).
   if (input.reason === 'vehicle_breakdown') {
-    void fileBreakdownReport(pause, booking, actor)
+    if (driverReportId) void PauseModel.linkReport(pause.pause_id, driverReportId).catch(() => {})
+    else void fileBreakdownReport(pause, booking, actor)
   }
 
   // The cached live ETA was "now + drive time" from a moving truck. Drop it: the

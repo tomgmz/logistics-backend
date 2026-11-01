@@ -108,6 +108,8 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   // delay.scheduler.ts: the next stop is running 15+ min past its planned window.
   delivery_delayed:       { type: 'booking.delivery_delayed',       audience: 'client' },
   delivery_delayed_staff: { type: 'booking.delivery_delayed_staff', roles: ['operations_manager'] },
+  // breakdown.scheduler.ts: a driver-reported breakdown still has no decision.
+  breakdown_unhandled:    { type: 'booking.breakdown_unhandled',    roles: ['operations_manager'] },
   // The office swapped the main and second driver on the road (driving-shift.service).
   crew_roles_swapped:     { type: 'booking.crew_roles_swapped',     audience: 'drivers' },
   // The driver set off. Ops sees it live on the board; the client is told.
@@ -298,6 +300,12 @@ function copyFor(
         body:  `Booking ${label} continues today. Your call time is ${extra?.callTimeLabel ?? 'soon'}` +
                (extra?.minutesLeft ? ` (in ${extra.minutesLeft} min)` : '') +
                '. Wait for the office to resume it before moving.',
+      }
+    case 'breakdown_unhandled':
+      return {
+        title: 'Breakdown waiting for a decision',
+        body:  `The driver on booking ${label} reported a breakdown ${extra?.minutesLeft ?? 15} min ago and the trip can't continue. ` +
+               'Pause the delivery for the breakdown (then replace the vehicle or set a continuation date), or confirm the truck is moving again.',
       }
     case 'crew_roles_swapped':
       return {

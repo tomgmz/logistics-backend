@@ -1,3 +1,4 @@
+import { dismissBreakdownSchema } from '../schema/client/breakdown.schema.js'
 import { Router } from 'express'
 import { validate }                  from '../middlewares/validate.middleware.js'
 import { lockGuard, fromParam }      from '../lib/record-lock.js'
@@ -189,6 +190,9 @@ router.patch('/assignments/:bookingId/pause',  authenticate, isPauseControl, req
   lockGuard('booking', fromParam('bookingId')), validate(staffPauseTripSchema), TripController.staffPauseTrip)
 router.patch('/assignments/:bookingId/resume', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
   lockGuard('booking', fromParam('bookingId')), validate(staffResumeTripSchema), TripController.staffResumeTrip)
+// A breakdown the driver reported, handled without a pause ("truck is moving again").
+router.patch('/assignments/:bookingId/breakdown/dismiss', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(dismissBreakdownSchema), TripController.dismissBreakdown)
 // While paused: when it continues (date for the client, date + call time for the driver).
 router.patch('/assignments/:bookingId/pause/continuation', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
   lockGuard('booking', fromParam('bookingId')), validate(pauseContinuationSchema), TripController.setPauseContinuation)

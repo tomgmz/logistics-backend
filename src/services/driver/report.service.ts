@@ -3,6 +3,8 @@ import * as notificationModel from '../../models/notification/notification.model
 import * as push from '../messaging/push.service.js'
 import { broadcast } from '../../lib/realtime.js'
 import { logEvent } from '../../lib/log-event.js'
+import { holdVehicleForBreakdown, isBreakdownHold } from '../admin/vehicle-breakdown.service.js'
+import { flagBreakdown, isBlockingBreakdown } from '../client/breakdown.service.js'
 import { supabase } from '../../lib/supabase.js'
 import {
   isVehicleIncident,
@@ -104,6 +106,15 @@ export async function createReportService(
   })
 
   void notifyResponders(report)
+  // A breakdown the trip can't continue from waits for the office's decision
+  // (the delivery is flagged, not paused) and puts the vehicle Under Maintenance.
+  if (isBlockingBreakdown(report)) void flagBreakdown(report)
+  if (isBreakdownHold(report)) {
+    void holdVehicleForBreakdown({
+      truckId: report.truck_id!, bookingId: report.booking_id ?? null, reportId: report.report_id,
+      note: report.description ?? null, actorId: actor.userId ?? null,
+    })
+  }
 
   return report
 }
@@ -293,6 +304,16 @@ export async function enrichReportService(
   }
 
   const updated = await ReportModel.update(reportId, patch as Partial<DriverReport>)
+
+  // Filled in afterwards as a breakdown the trip can't continue from (a quick
+  // alert becoming a breakdown report): the vehicle goes on hold now.
+  if (isBlockingBreakdown(updated) && !isBlockingBreakdown(report)) void flagBreakdown(updated)
+  if (isBreakdownHold(updated) && !isBreakdownHold(report)) {
+    void holdVehicleForBreakdown({
+      truckId: updated.truck_id!, bookingId: updated.booking_id ?? null, reportId: updated.report_id,
+      note: updated.description ?? null, actorId: null,
+    })
+  }
 
   // The driver's own detail turned it into a vehicle report: fleet was not told
   // at the time, so tell them now.

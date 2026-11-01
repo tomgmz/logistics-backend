@@ -1,3 +1,4 @@
+import { dismissBreakdownService } from '../../services/client/breakdown.service.js'
 import { Request, Response } from 'express'
 import {
   driverSetStopOrderService,
@@ -360,5 +361,19 @@ export const staffSetMilestone = async (req: Request, res: Response) => {
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
     res.status(tripProgressStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+/** The office handled a driver-reported breakdown without pausing (truck moving again). */
+export const dismissBreakdown = async (req: Request, res: Response) => {
+  try {
+    const data = await dismissBreakdownService(param(req.params.bookingId), String(req.body?.note ?? ''), driverActor(req))
+    res.status(200).json({ status: 'success', data })
+  } catch (error: any) {
+    const status = error.message.includes('not found') ? 404
+      : error.message.includes('not allowed') ? 403
+      : error.message.startsWith('Say ') ? 400
+      : 500
+    res.status(status).json({ status: 'error', message: error.message })
   }
 }

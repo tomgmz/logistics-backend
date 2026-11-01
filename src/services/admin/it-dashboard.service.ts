@@ -49,6 +49,12 @@ const SCHEDULERS = [
     interval_minutes: 5,
   },
   {
+    source:           'breakdown.scheduler',
+    label:            'Breakdown reminders',
+    description:      'Reminds the Operations Manager and Company Administrator every 15 minutes about a driver-reported breakdown that has not been paused or dismissed.',
+    interval_minutes: 5,
+  },
+  {
     source:           'delay.scheduler',
     label:            'Delayed delivery detection',
     description:      'Flags a delivery whose next stop is running 15+ minutes past its planned arrival, and tells the client and operations.',

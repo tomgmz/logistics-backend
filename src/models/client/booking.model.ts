@@ -92,6 +92,9 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   delay_minutes,
   delay_expected_at,
   delay_destination_id,
+  breakdown_reported_at,
+  breakdown_report_id,
+  breakdown_note,
   pauses:booking_pauses!booking_pauses_booking_id_fkey (
     expected_resume_date,
     expected_resume_call_time,

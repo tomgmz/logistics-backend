@@ -10,6 +10,8 @@ const SELECT_TRUCK = `
     tm.vehicle_type,
     tm.name AS model_name,
     row_to_json(tm.*) AS truck_model,
+    -- The booking a breakdown hold came from, by its reference (maintenance_*).
+    (SELECT b.reference_number FROM bookings b WHERE b.booking_id = t.maintenance_booking_id) AS maintenance_booking_ref,
     CASE WHEN ad.driver_id IS NULL THEN NULL ELSE json_build_object(
       'driver_id',      ad.driver_id,
       'license_number', ad.license_number,

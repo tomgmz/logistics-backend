@@ -49,6 +49,7 @@ interface BookingRow {
   delay_minutes:          number | null
   delay_notified_minutes: number | null
   delay_max_minutes:      number | null
+  breakdown_reported_at:  string | null
 }
 
 interface StopRow {
@@ -125,6 +126,10 @@ async function evaluate(b: BookingRow, now: number): Promise<'set' | 'cleared' |
     return null
   }
 
+  // A breakdown the driver reported is waiting for the office: the client hears
+  // the real reason from the pause, not a "running late" notice first.
+  if (b.breakdown_reported_at) return null
+
   const { data: trips, error } = await supabase
     .from('booking_trips')
     .select('trip_number, status, booking_trip_stops ( destination_id, status, sequence_order, planned_arrival_at )')
@@ -194,7 +199,7 @@ export async function runDelayTick(now = Date.now()): Promise<Record<string, num
   // In transit, plus any still flagged after it ended (to clear them).
   const { data, error } = await supabase
     .from('bookings')
-    .select('booking_id, status, paused_at, delayed_since, delay_minutes, delay_notified_minutes, delay_max_minutes')
+    .select('booking_id, status, paused_at, delayed_since, delay_minutes, delay_notified_minutes, delay_max_minutes, breakdown_reported_at')
     .or('status.eq.in_transit,delayed_since.not.is.null')
   if (error) throw error
 
