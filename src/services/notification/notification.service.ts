@@ -101,6 +101,10 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   trip_resumed_by_staff: { type: 'booking.trip_resumed_by_staff', audience: 'drivers' },
   pause_continuation:        { type: 'booking.pause_continuation',        audience: 'client' },
   pause_continuation_driver: { type: 'booking.pause_continuation_driver', audience: 'drivers' },
+  // pause-continuation.scheduler.ts: an hour before the continuation call time,
+  // and once that time has passed with the delivery still paused.
+  pause_continuation_due:     { type: 'booking.pause_continuation_due',     audience: 'drivers' },
+  pause_continuation_overdue: { type: 'booking.pause_continuation_overdue', roles: ['operations_manager'] },
   // The driver set off. Ops sees it live on the board; the client is told.
   delivery_started:      { type: 'booking.delivery_started',      audience: 'client' },
   // One hour before the driver's call time (driver-call.scheduler.ts).
@@ -279,8 +283,22 @@ function copyFor(
     case 'pause_continuation':
       return {
         title: 'New delivery date',
-        body:  `Your paused delivery ${label} is expected to continue on ${extra?.continuationDate ?? 'a new date'}. ` +
-               'We will let you know when it is moving again.',
+        body:  `Your paused delivery ${label} is expected to continue on ${extra?.continuationDate ?? 'a new date'}.` +
+               (extra?.newArrival ? ` New expected arrival: ${extra.newArrival}.` : '') +
+               ' We will let you know when it is moving again.',
+      }
+    case 'pause_continuation_due':
+      return {
+        title: 'Paused delivery continues soon',
+        body:  `Booking ${label} continues today. Your call time is ${extra?.callTimeLabel ?? 'soon'}` +
+               (extra?.minutesLeft ? ` (in ${extra.minutesLeft} min)` : '') +
+               '. Wait for the office to resume it before moving.',
+      }
+    case 'pause_continuation_overdue':
+      return {
+        title: 'Paused delivery not resumed',
+        body:  `Booking ${label} was due to continue at ${extra?.callTimeLabel ?? 'its call time'} on ` +
+               `${extra?.continuationDate ?? 'the set date'} but is still paused. Resume it or set a new date.`,
       }
     case 'pause_continuation_driver':
       return {

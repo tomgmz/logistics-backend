@@ -1960,6 +1960,8 @@ export interface SupportTicketEmailParams {
   bookingRef:  string | null
   /** What the chatbot showed before the client asked for a person. */
   transcript:  Array<{ from: 'client' | 'bot'; text: string }>
+  /** The staff member who opened it for the client; null when the client did. */
+  openedBy?:   string | null
 }
 
 function supportEmailHtml(title: string, introHtml: string, bodyHtml: string, footerReason: string): string {
@@ -2061,16 +2063,22 @@ export async function sendSupportTicketEmail(p: SupportTicketEmailParams): Promi
   const transcript = p.transcript.length
     ? p.transcript.map((m) => `${m.from === 'client' ? 'Client' : 'Assistant'}: ${m.text}`).join('\n')
     : ''
-  const intro =
-    `Hi ${p.clientName}, we received your support ticket ${p.reference}. Our team will reply in this ` +
-    'email thread. To add details, simply reply to this email.'
+  // Opened by the office for the client (a call, an email, a walk-in).
+  const intro = p.openedBy
+    ? `Hi ${p.clientName}, our team opened support ticket ${p.reference} for you, from what you told us. ` +
+      'We will reply in this email thread. To add details or correct anything, simply reply to this email.'
+    : `Hi ${p.clientName}, we received your support ticket ${p.reference}. Our team will reply in this ` +
+      'email thread. To add details, simply reply to this email.'
+  const footer = p.openedBy
+    ? `Our team opened this support ticket for you on the ${APP_NAME} website.`
+    : `You opened a support ticket on the ${APP_NAME} website.`
   const html = supportEmailHtml(
     'Support Ticket',
     escapeHtml(intro),
     supportRowsHtml(rows) +
       supportBlockHtml(`Subject: ${escapeHtml(p.subject)}`, p.message) +
       (transcript ? supportBlockHtml('Your conversation with the help assistant', transcript) : ''),
-    `You opened a support ticket on the ${APP_NAME} website.`,
+    footer,
   )
   const text = [
     intro,
@@ -2082,7 +2090,7 @@ export async function sendSupportTicketEmail(p: SupportTicketEmailParams): Promi
     ...(transcript ? ['', 'Your conversation with the help assistant:', transcript] : []),
     '',
     '---',
-    emailFooterText(`You opened a support ticket on the ${APP_NAME} website.`),
+    emailFooterText(footer),
   ].join('\n')
 
   await sendSupportEmail({

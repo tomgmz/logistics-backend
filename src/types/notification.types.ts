@@ -29,6 +29,8 @@ export type NotificationType =
   | 'booking.trip_resumed_by_staff' // the office ended the pause -> assigned driver(s)
   | 'booking.pause_continuation'     // office set when a paused delivery continues -> client (date)
   | 'booking.pause_continuation_driver' // ... -> assigned driver(s) (date + call time)
+  | 'booking.pause_continuation_due'    // an hour before that call time -> assigned driver(s)
+  | 'booking.pause_continuation_overdue' // call time passed, still paused -> ops + admin
   | 'booking.delivery_started'     // driver started navigation, booking in transit -> client
   | 'booking.driver_call_reminder' // one hour before the driver's call time -> assigned driver(s)
   | 'booking.crew_replaced_off'    // office replaced the crew on the road -> the driver taken off
@@ -61,7 +63,8 @@ export type NotificationType =
   // Client support tickets. Carry `ticket_id` + `reference_number` in `data`;
   // `booking_id` stays null even when the ticket names a booking.
   | 'support.ticket_opened'           // client opened a ticket -> Company Administrators
-  | 'support.ticket_resolved'         // staff resolved it -> the client who opened it
+  | 'support.ticket_resolved'         // staff resolved it -> the client
+  | 'support.ticket_logged'           // staff opened a ticket for a client -> that client
 
 export interface NotificationRow {
   notification_id: string
@@ -109,6 +112,8 @@ export type NotificationStage =
   | 'trip_resumed_by_staff'
   | 'pause_continuation'
   | 'pause_continuation_driver'
+  | 'pause_continuation_due'
+  | 'pause_continuation_overdue'
   | 'delivery_started'
   | 'driver_call_reminder'
   | 'crew_replaced_off'

@@ -29,6 +29,7 @@ import { startCompletionScheduler } from './services/notification/completion.sch
 import { startLicenseExpiryScheduler } from './services/notification/license-expiry.scheduler.js'
 import { startRegistrationExpiryScheduler } from './services/notification/registration-expiry.scheduler.js'
 import { startDriverCallScheduler } from './services/notification/driver-call.scheduler.js'
+import { startPauseContinuationScheduler } from './services/notification/pause-continuation.scheduler.js'
 import { startItAdminRenderScheduler } from './services/admin/it-admin-render.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
 import { reportEmailLinkBaseUrl } from './lib/brevo-mailer.js'
@@ -249,6 +250,9 @@ app.listen(PORT, '0.0.0.0', () => {
   startRegistrationExpiryScheduler();
   // Reminds the crew one hour before the driver's call time.
   startDriverCallScheduler();
+  // Paused deliveries: reminds the crew before the continuation call time and
+  // the office when it passes still paused.
+  startPauseContinuationScheduler();
   startItAdminRenderScheduler();
 
   // Drops driver position breadcrumbs past their retention window. The live

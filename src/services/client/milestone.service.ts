@@ -9,21 +9,34 @@ import { driverIdOf } from '../driver/crew-actor.js'
 import { fromDeviceClock, hasDeviceClock } from '../../lib/device-clock.js'
 
 /**
- * The times at each stop — see the stop_milestones migration.
+ * The times at each stop visit — see the stop_milestones migrations.
  *
- *   arrived_parking → docked → started → finished → departed
+ *   arrived → started → finished
  *
- * `finished` is not stored here: it IS the proof confirmation (the run's
- * pickup_proof_at for the loading, the visit's delivered_at for a drop-off), so
- * a stop can never show a finish without its photo. The other four are the
- * driver's taps, or the office's fill-in.
+ * `arrived` is sent by the phone on its own when navigation detects the
+ * arrival; `started` is the driver's one tap ("Start loading" / "Start
+ * unloading"). `finished` is not stored here: it IS the proof confirmation (the
+ * run's pickup_proof_at for the loading, the visit's delivered_at for a
+ * drop-off), so a stop can never show a finish without its photo. The office can
+ * fill in or correct the other two.
  */
 
-export const MILESTONE_STAGES = ['arrived_parking', 'docked', 'started', 'departed'] as const
+export const MILESTONE_STAGES = ['arrived', 'started'] as const
 export type MilestoneStage = typeof MILESTONE_STAGES[number]
 
+/**
+ * Steps an older app still sends from its queue. `arrived_parking` is the
+ * arrival under its old name; docking and departure are no longer recorded and
+ * are accepted and dropped, so a queued one never blocks what is behind it.
+ */
+const LEGACY_ALIAS: Record<string, MilestoneStage | null> = {
+  arrived_parking: 'arrived',
+  docked:          null,
+  departed:        null,
+}
+
 /** Order of the steps, `finished` included, for the "never before the step before" bound. */
-const ORDER = ['arrived_parking', 'docked', 'started', 'finished', 'departed'] as const
+const ORDER = ['arrived', 'started', 'finished'] as const
 
 /**
  * A tap that reached us within this long of when the phone says it happened is
@@ -45,11 +58,9 @@ export interface StepTime {
 }
 
 export interface StopTimes {
-  arrived_parking: StepTime | null
-  docked:          StepTime | null
-  started:         StepTime | null
-  finished:        StepTime | null
-  departed:        StepTime | null
+  arrived:  StepTime | null
+  started:  StepTime | null
+  finished: StepTime | null
 }
 
 export interface TimelineStop extends StopTimes {
@@ -71,7 +82,8 @@ export interface TimelineTrip {
   stops:       TimelineStop[]
 }
 
-const emptyTimes = (): StopTimes => ({ arrived_parking: null, docked: null, started: null, finished: null, departed: null })
+const emptyTimes = (): StopTimes => ({ arrived: null, started: null, finished: null })
+const shownStage = (stage: string): stage is MilestoneStage => (MILESTONE_STAGES as readonly string[]).includes(stage)
 
 /** Every run of the booking, with the times at its loading and each drop-off. */
 export async function bookingTimeline(bookingId: string, { withNotes = false } = {}): Promise<TimelineTrip[]> {
@@ -119,7 +131,8 @@ export async function bookingTimeline(bookingId: string, { withNotes = false } =
     const loading = emptyTimes()
     if (t.pickup_proof_at) loading.finished = { at: iso(t.pickup_proof_at), source: 'proof' }
     for (const m of marks) {
-      if (m.trip_id === t.trip_id && !m.trip_stop_id) (loading as any)[m.stage] = step(m)
+      const st: string = m.stage
+      if (m.trip_id === t.trip_id && !m.trip_stop_id && shownStage(st)) loading[st] = step(m)
     }
     const total = loaded.find((l: any) => l.trip_id === t.trip_id && Number(l.loaded_lines) > 0)
     return {
@@ -132,7 +145,8 @@ export async function bookingTimeline(bookingId: string, { withNotes = false } =
         const times = emptyTimes()
         if (s.delivered_at) times.finished = { at: iso(s.delivered_at), source: 'proof' }
         for (const m of marks) {
-          if (m.trip_stop_id === s.trip_stop_id) (times as any)[m.stage] = step(m)
+          const st: string = m.stage
+          if (m.trip_stop_id === s.trip_stop_id && shownStage(st)) times[st] = step(m)
         }
         return {
           trip_stop_id:   s.trip_stop_id,
@@ -176,7 +190,10 @@ async function timesOf(target: Target): Promise<Partial<Record<typeof ORDER[numb
     `SELECT stage, at FROM stop_milestones
       WHERE trip_id = $1 AND trip_stop_id IS NOT DISTINCT FROM $2`,
     [target.tripId, target.tripStopId])
-  for (const r of rows) out[r.stage as MilestoneStage] = new Date(r.at).getTime()
+  for (const r of rows) {
+    const st: string = r.stage
+    if (shownStage(st)) out[st] = new Date(r.at).getTime()
+  }
   const { rows: [fin] } = target.tripStopId
     ? await pool.query(`SELECT delivered_at AS at FROM booking_trip_stops WHERE trip_stop_id = $1`, [target.tripStopId])
     : await pool.query(`SELECT pickup_proof_at AS at FROM booking_trips WHERE trip_id = $1`, [target.tripId])
@@ -196,10 +213,8 @@ function ceilingFor(stage: MilestoneStage, times: Partial<Record<typeof ORDER[nu
 }
 
 const STAGE_LABEL: Record<MilestoneStage, string> = {
-  arrived_parking: 'arrival at the parking',
-  docked:          'docking',
-  started:         'start',
-  departed:        'departure',
+  arrived: 'arrival',
+  started: 'start of loading or unloading',
 }
 
 /**
@@ -211,7 +226,9 @@ export async function driverRecordMilestoneService(
   body: Record<string, any>,
   actor: DriverActor,
 ) {
-  const stage = body.stage as MilestoneStage
+  const raw = String(body.stage ?? '')
+  const stage = raw in LEGACY_ALIAS ? LEGACY_ALIAS[raw] : (raw as MilestoneStage)
+  if (stage === null) return { recorded: false, ignored: true }
   if (!MILESTONE_STAGES.includes(stage)) throw new Error('Cannot record an unknown step')
   const booking = await assertLeadDriverOnBooking(bookingId, actor)
   if (booking.status !== 'in_transit' && booking.status !== 'delivered' && booking.status !== 'completed') {
@@ -219,13 +236,6 @@ export async function driverRecordMilestoneService(
   }
   const target = await resolveTarget(bookingId, body)
   const times  = await timesOf(target)
-  if (stage === 'departed' && times.finished == null) {
-    // Worded "Confirm the …": a 409 the queue keeps and retries, since the
-    // confirmation queued ahead of this may simply not have landed yet.
-    throw new Error(target.tripStopId
-      ? 'Confirm the drop-off before recording the departure'
-      : 'Confirm the pickup before recording the departure')
-  }
 
   // When it happened: the phone's time of the tap, corrected by how far off the
   // phone's clock was when it sent this request (lib/device-clock). An app that

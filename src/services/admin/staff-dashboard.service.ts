@@ -214,7 +214,12 @@ export async function getStaffDashboard() {
         subject:    t.subject,
         category:   t.category,
         client:     (Array.isArray(t.clients) ? t.clients[0] : t.clients)?.company_name ?? null,
-        email:      (Array.isArray(t.opener) ? t.opener[0] : t.opener)?.email ?? null,
+        // The client's account: the thread is with them, even when staff opened it.
+        email:      (() => {
+          const c = Array.isArray(t.clients) ? t.clients[0] : t.clients
+          const u = Array.isArray(c?.users) ? c.users[0] : c?.users
+          return u?.email ?? (Array.isArray(t.opener) ? t.opener[0] : t.opener)?.email ?? null
+        })(),
         booking:    (Array.isArray(t.bookings) ? t.bookings[0] : t.bookings)?.reference_number ?? null,
         created_at: t.created_at,
       })),

@@ -49,6 +49,12 @@ const SCHEDULERS = [
     interval_minutes: 5,
   },
   {
+    source:           'pause-continuation.scheduler',
+    label:            'Paused delivery continuation',
+    description:      'Reminds the crew before a paused delivery continues, and tells operations when its continuation time passes still paused.',
+    interval_minutes: 5,
+  },
+  {
     source:           'license-expiry.scheduler',
     label:            'Driver license expiry reminders',
     description:      'Emails and notifies each driver one month before their license expires.',

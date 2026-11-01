@@ -68,41 +68,40 @@ const tap = (stage: string, extra: Record<string, unknown> = {}) =>
 
 try {
   console.log('\nBefore the start')
-  check('a tap before the delivery started is refused', !!(await refused(() => tap('arrived_parking'))))
+  check('a tap before the delivery started is refused', !!(await refused(() => tap('arrived'))))
 
   await claimDeliveryStart(bookingId, actor)
 
   console.log('\nLoading')
   const phoneWrong = new Date(Date.now() + 3 * 3600_000).toISOString()   // phone 3 h ahead, sent live
-  const a = await tap('arrived_parking', { at: phoneWrong })
-  check('a live tap uses the server clock, not a wrong phone clock', Math.abs(Date.parse(a.at) - Date.now()) < 10_000, a.at)
-  const again = await tap('arrived_parking')
-  check('re-sending the same step is harmless (first tap wins)', again.recorded === false)
+  const a = await tap('arrived', { at: phoneWrong })
+  check('a live arrival uses the server clock, not a wrong phone clock', Math.abs(Date.parse(a.at) - Date.now()) < 10_000, a.at)
+  const again = await tap('arrived')
+  check('re-sending the same step is harmless (first one wins)', again.recorded === false)
   const queuedAt = new Date(Date.now() - 10 * 60_000).toISOString()  // queued offline 10 min ago
-  const d = await tap('docked', { at: queuedAt })
-  check('a queued tap is clamped to not before the step before it', Date.parse(d.at) >= Date.parse(a.at), d.at)
-  await tap('started')
-  check('departure before the loading is confirmed is refused', /Confirm the pickup/.test((await refused(() => tap('departed'))) ?? ''))
+  const st = await tap('started', { at: queuedAt })
+  check('a queued tap is clamped to not before the step before it', Date.parse(st.at) >= Date.parse(a.at), st.at)
+  const legacy = await tap('docked')
+  check('an old app\'s docking tap is accepted and dropped', (legacy as { ignored?: boolean }).ignored === true)
   await q(`update booking_trips set status = 'in_transit', pickup_proof_photo_url = 'https://example.invalid/qa.jpg', pickup_proof_at = now() where trip_id = $1`, [trip.trip_id])
   await q(`update booking_trip_cargo set loaded_qty = planned_qty where trip_id = $1`, [trip.trip_id])
-  const dep = await tap('departed')
-  check('departure after the loading is confirmed', dep.recorded === true)
 
   console.log('\nUnloading at the first drop-off')
-  await tap('arrived_parking', { trip_stop_id: stop.trip_stop_id })
-  check('the drop-off has its own steps', (await tap('docked', { trip_stop_id: stop.trip_stop_id })).recorded === true)
+  check('an old app\'s parking tap counts as the arrival',
+    (await tap('arrived_parking', { trip_stop_id: stop.trip_stop_id })).recorded === true)
+  check('the drop-off has its own steps', (await tap('started', { trip_stop_id: stop.trip_stop_id })).recorded === true)
 
   console.log('\nStaff corrections')
   const t1 = await bookingTimeline(bookingId)
-  const loadingArr = Date.parse(t1[0].loading.arrived_parking!.at)
+  const loadingArr = Date.parse(t1[0].loading.arrived!.at)
   check('correction after the next step is refused', !!(await refused(() => staffSetMilestoneService(bookingId,
-    { trip_id: trip.trip_id, stage: 'arrived_parking', at: new Date(Date.now() + 30_000).toISOString(), note: 'QA' }, { userId: staff.user_id }))))
+    { trip_id: trip.trip_id, stage: 'arrived', at: new Date(Date.now() + 30_000).toISOString(), note: 'QA' }, { userId: staff.user_id }))))
   check('correction in the future is refused', !!(await refused(() => staffSetMilestoneService(bookingId,
-    { trip_id: trip.trip_id, stage: 'arrived_parking', at: new Date(Date.now() + 3600_000).toISOString(), note: 'QA' }, { userId: staff.user_id }))))
+    { trip_id: trip.trip_id, stage: 'arrived', at: new Date(Date.now() + 3600_000).toISOString(), note: 'QA' }, { userId: staff.user_id }))))
   const fixed = await staffSetMilestoneService(bookingId,
-    { trip_id: trip.trip_id, stage: 'arrived_parking', at: new Date(loadingArr - 20 * 60_000).toISOString(), note: 'QA: driver tapped late' },
+    { trip_id: trip.trip_id, stage: 'arrived', at: new Date(loadingArr - 20 * 60_000).toISOString(), note: 'QA: driver tapped late' },
     { userId: staff.user_id })
-  check('a valid correction is saved and marked', fixed[0].loading.arrived_parking?.corrected === true && fixed[0].loading.arrived_parking?.note === 'QA: driver tapped late')
+  check('a valid correction is saved and marked', fixed[0].loading.arrived?.corrected === true && fixed[0].loading.arrived?.note === 'QA: driver tapped late')
   await new Promise((r) => setTimeout(r, 1500))   // logEvent writes in the background
   const [audit] = await q(`select description from audit_logs where action = 'stop_time_corrected' and timestamp >= $1::timestamp order by timestamp desc limit 1`, [startedAt])
   check('the original time is in the audit log', !!audit && /changed from/.test(audit.description))
@@ -110,10 +109,10 @@ try {
   console.log('\nTimeline')
   const t = await bookingTimeline(bookingId)
   const L = t[0].loading
-  check('loading shows all five steps', !!(L.arrived_parking && L.docked && L.started && L.finished && L.departed))
+  check('loading shows arrival, start and finish', !!(L.arrived && L.started && L.finished))
   check('the finish is the pickup confirmation', L.finished?.source === 'proof')
   check('total loaded is shown', t[0].total_loaded != null, JSON.stringify(t[0].total_loaded))
-  check('client view leaves out staff notes', (await bookingTimeline(bookingId))[0].loading.arrived_parking?.note === undefined)
+  check('client view leaves out staff notes', (await bookingTimeline(bookingId))[0].loading.arrived?.note === undefined)
 
   console.log(`\n${failures === 0 ? 'PASS' : 'FAIL'} — ${failures} failed check(s)`)
 } finally {

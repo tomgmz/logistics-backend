@@ -6,7 +6,8 @@ import { bookingRef } from '../../lib/booking-ref.js'
 import { broadcast } from '../../lib/realtime.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { createReportService } from '../driver/report.service.js'
-import { refreshPlannedEta } from '../maps/planned-eta.service.js'
+import { continuationAt, refreshPlannedEta } from '../maps/planned-eta.service.js'
+import { requestPauseContinuationCheck } from '../notification/pause-continuation.scheduler.js'
 import { invalidateEta } from '../maps/eta.service.js'
 import type { DriverActor } from './booking.service.js'
 import {
@@ -277,8 +278,14 @@ function todayPh(): string {
 /**
  * While a delivery is paused, the office says when it will continue: a date for
  * the client, and that date plus a call time for the driver. Can be changed as
- * often as the plan changes; each change is announced again. The live ETA only
- * returns once the driver is moving, so the client is told the date alone.
+ * often as the plan changes; each change is announced again.
+ *
+ * The planned arrival is re-planned from that day's call time, so the client is
+ * told a real arrival window on the new day. The live ETA stays blank ("Paused")
+ * until the office resumes the delivery and the truck reports again; resuming
+ * earlier or later than planned re-plans from the actual resume.
+ * pause-continuation.scheduler.ts reminds the crew before the call time and the
+ * office when it passes with the delivery still paused.
  */
 export async function setPauseContinuationService(
   bookingId: string,
@@ -292,6 +299,9 @@ export async function setPauseContinuationService(
   const open = await PauseModel.findOpen(bookingId)
   if (!open) throw new Error('Cannot set a continuation date: the delivery is not paused')
   if (input.date < todayPh()) throw new Error('Cannot set a continuation date in the past')
+  const resumeAt = continuationAt(input.date, input.call_time)
+  if (resumeAt == null) throw new Error('Cannot read the continuation date and call time')
+  if (resumeAt <= Date.now()) throw new Error('Cannot set a continuation call time that has already passed')
 
   const saved = await PauseModel.setExpectedResume(open.pause_id, {
     expected_resume_date:      input.date,
@@ -310,9 +320,20 @@ export async function setPauseContinuationService(
     description: `Booking ${bookingRef(booking)} expected to continue on ${continuationDate}, driver call time ${callTimeLabel}`,
   })
 
-  void notifyStage('pause_continuation', booking, { continuationDate })
+  // The pause now runs to that day's call time: every arrival after it moves,
+  // and the client is told the new window, not just the day.
+  await refreshPlannedEta(bookingId)
+  const replanned = await BookingModel.findById(bookingId)
+  const after = (replanned as { estimated_delivery?: string | null } | null)?.estimated_delivery ?? null
+
+  void notifyStage('pause_continuation', replanned ?? booking, {
+    continuationDate,
+    newArrival: after ? arrivalWindowPh(after) : undefined,
+  })
   void notifyStage('pause_continuation_driver', booking, { continuationDate, callTimeLabel })
   announcePauseChanged(bookingId)
+  // A call time set less than an hour ahead is reminded at once.
+  requestPauseContinuationCheck()
 
   return saved
 }

@@ -13,6 +13,10 @@ import { pageQuery, paginate, searchQuery, matchesWords } from '../lib/paginate.
  * Client support tickets, raised from the web FAQ chatbot.
  *
  *   POST  /support/tickets               client opens one (emails the inbox)
+ *   POST  /support/tickets/staff         staff open one for a client (a call,
+ *                                        an email, a walk-in) — same email thread
+ *   GET   /support/clients?search=       staff: clients to open one for
+ *   GET   /support/clients/:id/bookings  staff: that client's recent bookings
  *   GET   /support/tickets/mine          the client's own tickets
  *   GET   /support/tickets?status=open   staff queue (dashboard + the Company
  *                                        Administrator's Tickets page)
@@ -38,6 +42,14 @@ const openTicketSchema = z.object({
   })).max(40).optional(),
 })
 
+const staffTicketSchema = z.object({
+  client_id:  z.string().uuid('Choose a client'),
+  category:   z.enum(Support.TICKET_CATEGORIES),
+  subject:    z.string().trim().min(3, 'Add a short subject').max(150),
+  message:    z.string().trim().min(10, 'Describe the problem in a sentence or two').max(4000),
+  booking_id: z.string().uuid().nullable().optional(),
+}).strict()
+
 const resolveSchema = z.object({
   note: z.string().trim().max(2000).nullable().optional(),
 })
@@ -55,6 +67,32 @@ router.post('/tickets', authenticate, authenticatedLimiter, isClient, attachClie
     try {
       const ticket = await Support.openTicket(req.clientId!, req.user!.sub, req.body)
       res.status(201).json({ status: 'success', data: ticket })
+    } catch (err) { fail(res, err) }
+  })
+
+// Opening one is an edit: a Read Only Tickets tier cannot.
+router.post('/tickets/staff', authenticate, authenticatedLimiter, isSupportDesk, requireModule('support-tickets'), validate(staffTicketSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const ticket = await Support.openTicketForClient(req.user!.sub, req.body)
+      res.status(201).json({ status: 'success', data: ticket })
+    } catch (err) { fail(res, err) }
+  })
+
+// The pickers on that form: a client, then (optionally) one of their bookings.
+router.get('/clients', authenticate, authenticatedLimiter, isSupportDesk, requireModule('support-tickets'),
+  async (req: Request, res: Response) => {
+    try {
+      res.status(200).json({ status: 'success', data: await Support.searchTicketClients(String(req.query.search ?? '').slice(0, 100)) })
+    } catch (err) { fail(res, err) }
+  })
+
+router.get('/clients/:clientId/bookings', authenticate, authenticatedLimiter, isSupportDesk, requireModule('support-tickets'),
+  async (req: Request, res: Response) => {
+    try {
+      const clientId = String(req.params.clientId)
+      if (!z.string().uuid().safeParse(clientId).success) return res.status(400).json({ status: 'error', message: 'Invalid client' })
+      res.status(200).json({ status: 'success', data: await Support.ticketClientBookings(clientId) })
     } catch (err) { fail(res, err) }
   })
 
@@ -83,7 +121,7 @@ router.get('/tickets', authenticate, authenticatedLimiter, isSupportDesk, requir
         const rows   = all
           // Exactly what the search box names: ticket, client, subject or booking.
           .filter((t: any) => (status === 'all' || t.status === status) && matchesWords(q, [
-            t.reference, t.clients?.company_name, name(t.opener), t.subject, t.bookings?.reference_number,
+            t.reference, t.clients?.company_name, name(t.clients?.users), name(t.opener), t.subject, t.bookings?.reference_number,
           ]))
           // Open tickets oldest first (who has waited longest); otherwise newest first.
           .sort((a: any, b: any) => (status === 'open'

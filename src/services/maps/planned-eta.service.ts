@@ -47,8 +47,9 @@ const MINUTE_MS = 60_000
 interface Point { latitude: number; longitude: number }
 
 /**
- * A pause the driver put on the delivery, as a stretch of time. An open pause
- * (still in force) runs to "now"; it is re-planned again when it ends.
+ * A pause on the delivery, as a stretch of time. An open pause (still in force)
+ * runs to its continuation date + call time when the office set one, else to
+ * "now"; it is re-planned again when it ends.
  */
 interface PauseSpan { start: number; end: number }
 
@@ -87,18 +88,37 @@ function holdUntilUnpaused(at: number, pauses: PauseSpan[]): number {
   return t
 }
 
+/**
+ * When the office expects a paused delivery to move again: the continuation
+ * date + the driver's call time, PH time. Null when none is set.
+ */
+export function continuationAt(date: string | null | undefined, callTime: string | null | undefined): number | null {
+  const day = String(date ?? '').slice(0, 10)
+  const hm  = String(callTime ?? '').slice(0, 8).replace(/^(\d{2}:\d{2})$/, '$1:00')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !/^\d{2}:\d{2}:\d{2}$/.test(hm)) return null
+  const at = Date.parse(`${day}T${hm}${PH_OFFSET}`)
+  return Number.isFinite(at) ? at : null
+}
+
 async function loadPauses(bookingId: string): Promise<PauseSpan[]> {
   const { data, error } = await supabase
     .from('booking_pauses')
-    .select('paused_at, resumed_at')
+    .select('paused_at, resumed_at, expected_resume_date, expected_resume_call_time')
     .eq('booking_id', bookingId)
     .order('paused_at', { ascending: true })
   if (error) throw error
   const now = Date.now()
-  return (data ?? []).map((p: { paused_at: string; resumed_at: string | null }) => ({
-    start: Date.parse(p.paused_at),
-    end:   p.resumed_at ? Date.parse(p.resumed_at) : now,
-  })).filter((p) => p.end > p.start)
+  return (data ?? []).map((p: {
+    paused_at: string; resumed_at: string | null
+    expected_resume_date: string | null; expected_resume_call_time: string | null
+  }) => {
+    if (p.resumed_at) return { start: Date.parse(p.paused_at), end: Date.parse(p.resumed_at) }
+    // Still paused: it lasts until the continuation the office set (a typhoon
+    // pause runs to that day's call time), or at least until now — once that
+    // time has passed without a resume, the plan keeps moving with the clock.
+    const planned = continuationAt(p.expected_resume_date, p.expected_resume_call_time)
+    return { start: Date.parse(p.paused_at), end: Math.max(now, planned ?? now) }
+  }).filter((p) => p.end > p.start)
 }
 
 interface PlannedStop { trip_stop_id: string; planned_arrival_at: string }

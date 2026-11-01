@@ -187,7 +187,7 @@ export const driverStartDelivery = async (req: Request, res: Response) => {
   }
 }
 
-/** A step at a stop: arrived at parking, docked, started, departed. */
+/** A step at a stop: arrived (sent by the phone itself) or started. */
 export const driverRecordMilestone = async (req: Request, res: Response) => {
   try {
     const data = await driverRecordMilestoneService(param(req.params.bookingId), req.body ?? {}, driverActor(req))

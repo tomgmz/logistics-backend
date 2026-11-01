@@ -114,13 +114,16 @@ export const startDeliverySchema = z.object({
  *  position, exactly like a stop confirmation. */
 export const loadTransferSchema = driverStopProofSchema
 
-const MILESTONE_STAGE = z.enum(['arrived_parking', 'docked', 'started', 'departed'])
+const MILESTONE_STAGE = z.enum(['arrived', 'started'])
+/** What a phone may send: today's steps, plus the old ones an older app's queue
+ *  still holds (the service maps or drops them). */
+const DRIVER_MILESTONE_STAGE = z.enum(['arrived', 'started', 'arrived_parking', 'docked', 'departed'])
 
-/** A driver's tap at a stop. The trip (and drop-off) by id, or by number +
- *  drop-off for ones the phone created offline. `at` is the phone's
- *  server-corrected time, used only when the tap was queued. */
+/** A step at a stop — the phone's own arrival, or the driver's "Start" tap.
+ *  The trip (and drop-off) by id, or by number + drop-off for ones the phone
+ *  created offline. `at` is the phone's time of it. */
 export const recordMilestoneSchema = z.object({
-  stage:          MILESTONE_STAGE,
+  stage:          DRIVER_MILESTONE_STAGE,
   trip_id:        z.string().uuid().optional().nullable(),
   trip_number:    z.number().int().min(1).optional().nullable(),
   trip_stop_id:   z.string().uuid().optional().nullable(),

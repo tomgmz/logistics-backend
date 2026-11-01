@@ -129,8 +129,8 @@ router.get('/bookings/:bookingId/load-transfer',
 router.patch('/bookings/:bookingId/load-transfer',
   authenticate, authenticatedLimiter, isAny, validate(loadTransferSchema), TripController.driverConfirmLoadTransfer)
 
-// The steps around each stop: arrived at the parking, docked, started loading /
-// unloading, departed (the finish is the proof confirmation). Through the queue.
+// The steps at each stop: arrived (the phone sends it on arrival) and started
+// loading / unloading (the finish is the proof confirmation). Through the queue.
 router.post('/bookings/:bookingId/milestones',
   authenticate, authenticatedLimiter, isAny, validate(recordMilestoneSchema), TripController.driverRecordMilestone)
 
