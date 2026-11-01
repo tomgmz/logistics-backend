@@ -4,7 +4,6 @@ import * as push from '../messaging/push.service.js'
 import { broadcast } from '../../lib/realtime.js'
 import { phDay } from '../../lib/ph-date.js'
 import { addOneMonth, daysBetween } from '../../lib/registration-expiry.js'
-import { sendRegistrationExpiryEmail } from '../../lib/brevo-mailer.js'
 import { logSystem, logSystemError } from '../../lib/log-system.js'
 import { NotificationRow } from '../../types/notification.types.js'
 
@@ -13,10 +12,12 @@ import { NotificationRow } from '../../types/notification.types.js'
  * about to expire — so it is renewed before the vehicle has to stay in the yard
  * (an expired registration blocks assignment, see assertRegistrationValid).
  * Every active Fleet Manager and Company Administrator gets it in the app (row +
- * realtime + push) and by email.
+ * realtime + push). No email (the user's call, 2026-11-01): the system
+ * notification is the one channel.
  *
- * Once per expiry date, per channel, per vehicle: trucks.registration_reminder_
- * notified_for and _emailed_for hold the expiry date each reminder was sent for.
+ * Once per expiry date, per vehicle: trucks.registration_reminder_notified_for
+ * holds the expiry date the reminder was sent for (_emailed_for is no longer
+ * written; the column is kept).
  * A renewal changes registration_expiry, the stamps stop matching, and the new
  * date gets its own reminder a month out.
  *
@@ -78,45 +79,13 @@ async function notifyInApp(
   }
 }
 
-/**
- * Emails everyone with an address. Counts as sent when at least one lands: a
- * Brevo outage (all fail) is retried next tick, but one bad address must not
- * resend to everybody else every hour.
- */
-async function emailAll(
-  c: reminderModel.RegistrationReminderCandidate,
-  recipients: reminderModel.RegistrationReminderRecipient[],
-  expiresOn: string,
-  daysLeft: number,
-): Promise<boolean> {
-  const withEmail = recipients.filter((r) => r.email)
-  if (withEmail.length === 0) return false
-
-  const results = await Promise.allSettled(withEmail.map((r) => sendRegistrationExpiryEmail({
-    to:          r.email!,
-    firstName:   r.first_name,
-    plateNumber: c.plate_number,
-    expiresOn,
-    daysLeft,
-  })))
-  for (const [i, res] of results.entries()) {
-    if (res.status === 'rejected') {
-      logSystemError('registration-expiry.scheduler', 'cron_job', res.reason, {
-        truck_id: c.truck_id, channel: 'email', user_id: withEmail[i].user_id,
-      })
-    }
-  }
-  return results.some((r) => r.status === 'fulfilled')
-}
-
 /** One pass. Exported so it can be driven from a script. */
-export async function runRegistrationExpiryTick(now = new Date()): Promise<{ notified: number; emailed: number }> {
+export async function runRegistrationExpiryTick(now = new Date()): Promise<{ notified: number }> {
   const today  = phDay(now)
   const cutoff = addOneMonth(today)
   const rows   = await reminderModel.findExpiringBetween(today, cutoff)
 
   let notified = 0
-  let emailed  = 0
 
   // Nobody to tell (no Fleet Manager or Company Administrator yet): leave the
   // stamps alone so the reminder goes out once someone is.
@@ -137,18 +106,6 @@ export async function runRegistrationExpiryTick(now = new Date()): Promise<{ not
           logSystemError('registration-expiry.scheduler', 'cron_job', err, { truck_id: c.truck_id, channel: 'in_app' })
         }
       }
-
-      if (c.registration_reminder_emailed_for !== c.registration_expiry) {
-        try {
-          if (await emailAll(c, recipients, expiresOn, daysLeft)) {
-            await reminderModel.markReminded(c.truck_id, 'emailed', c.registration_expiry)
-            emailed++
-          }
-        } catch (err) {
-          console.error('[registration-expiry] email reminder failed for truck', c.truck_id, err)
-          logSystemError('registration-expiry.scheduler', 'cron_job', err, { truck_id: c.truck_id, channel: 'email' })
-        }
-      }
     }
   }
 
@@ -158,11 +115,11 @@ export async function runRegistrationExpiryTick(now = new Date()): Promise<{ not
     log_level:  'info',
     event_type: 'cron_job',
     source:     'registration-expiry.scheduler',
-    message:    `Registration expiry tick: ${notified} in-app, ${emailed} email reminder(s) sent`,
-    metadata:   { candidates: rows.length, recipients: recipients.length, notified, emailed, window_end: cutoff },
+    message:    `Registration expiry tick: ${notified} in-app reminder(s) sent`,
+    metadata:   { candidates: rows.length, recipients: recipients.length, notified, window_end: cutoff },
   })
 
-  return { notified, emailed }
+  return { notified }
 }
 
 let timer: NodeJS.Timeout | null = null

@@ -54,6 +54,7 @@ export type NotificationType =
   // Scheduled, about the driver themselves: their license expires within a month.
   // Carries `license_expiry` in `data`; `booking_id` is always null.
   | 'driver.license_expiring'         // one month before license_expiry -> that driver
+  | 'driver.license_expiring_staff'    // a driver's license expires within a month / 7 days / today -> Company Administrators + Operations Managers (in-app only)
   // Scheduled, about a fleet vehicle: its registration expires within a month.
   // Carries `truck_id`, `plate_number`, `registration_expiry` in `data`; no booking.
   | 'vehicle.registration_expiring'   // one month before registration_expiry -> Fleet Managers + Company Administrators

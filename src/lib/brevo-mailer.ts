@@ -1721,54 +1721,6 @@ ${emailFooterText(reason)}
 }
 
 // ---------------------------------------------------------------------------
-// Vehicle registration expiry reminder, sent one month before the expiry date to
-// every Fleet Manager and Company Administrator by
-// services/notification/registration-expiry.scheduler.ts.
-// ---------------------------------------------------------------------------
-export interface RegistrationExpiryEmailParams {
-  to:          string
-  firstName:   string | null
-  plateNumber: string
-  /** The expiry date, already formatted for reading ("November 4, 2026"). */
-  expiresOn:   string
-  /** Whole days from today to the expiry date. */
-  daysLeft:    number
-}
-
-export async function sendRegistrationExpiryEmail(p: RegistrationExpiryEmailParams): Promise<void> {
-  const title  = 'Vehicle Registration Reminder'
-  const inDays = p.daysLeft === 0 ? 'today' : p.daysLeft === 1 ? 'in 1 day' : `in ${p.daysLeft} days`
-  const reason = `This reminder was sent because you manage the fleet on ${APP_NAME} and a vehicle's registration is about to expire.`
-  const note   =
-    'Renew the registration before it expires, then enter the new expiry date in Vehicle Management ' +
-    '(Update Details). Once it expires the vehicle cannot be assigned to a booking.'
-
-  const intro = `Hi ${escapeHtml(p.firstName?.trim() || 'there')},<br><br>` +
-    `The registration of <strong>${escapeHtml(p.plateNumber)}</strong> expires on <strong>${escapeHtml(p.expiresOn)}</strong>, ${inDays}.`
-  const body  = supportRowsHtml([['Plate number', p.plateNumber], ['Registration valid until', p.expiresOn]]) +
-    supportBlockHtml('What to do', note)
-
-  const text = `
-Hi ${p.firstName?.trim() || 'there'},
-
-The registration of ${p.plateNumber} expires on ${p.expiresOn}, ${inDays}.
-
-${note}
-
----
-${emailFooterText(reason)}
-  `.trim()
-
-  await sendSupportEmail({
-    subject: `${p.plateNumber} registration expires on ${p.expiresOn}`,
-    html:    supportEmailHtml(title, intro, body, reason),
-    text,
-    to:      { email: p.to, name: p.firstName ?? undefined },
-    what:    'registration expiry email',
-  })
-}
-
-// ---------------------------------------------------------------------------
 // Delivery finished, please confirm. Sent to the client when the driver
 // completes the last drop-off (booking -> 'delivered'), alongside the in-app
 // `delivery_confirm` notification. The booking completes on its own after the
@@ -2129,5 +2081,40 @@ export async function sendSupportTicketResolvedEmail(p: {
     cc:      { email: CONTACT_INBOX_EMAIL },
     replyTo: { email: CONTACT_INBOX_EMAIL },
     what:    'support ticket resolved email',
+  })
+}
+
+// ---------------------------------------------------------------------------
+// A driver's license is about to expire (or expires today): the office's copy.
+// Sent to each Company Administrator and Operations Manager, and to the 8338
+// inbox, at one month, 7 days and on the day (license-expiry.scheduler).
+// ---------------------------------------------------------------------------
+export async function sendLicenseExpiryStaffEmail(p: {
+  to:            string
+  toName?:       string | null
+  driverName:    string
+  licenseNumber: string | null
+  expiresOn:     string
+  daysLeft:      number
+}): Promise<void> {
+  const when = p.daysLeft === 0 ? 'today' : p.daysLeft === 1 ? 'tomorrow' : `in ${p.daysLeft} days`
+  const subject = p.daysLeft === 0
+    ? `Driver's license expires today: ${p.driverName}`
+    : `Driver's license expires ${when}: ${p.driverName}`
+  const intro =
+    `${p.driverName}'s driver's license expires on ${p.expiresOn} (${when}). Once it expires they cannot be assigned ` +
+    'to a delivery. When they renew, record the new license (photo and expiry) on their account in User Management.'
+  const rows: Array<[string, string]> = [
+    ['Driver',         p.driverName],
+    ['License number', p.licenseNumber ?? 'Not on file'],
+    ['Expires',        p.expiresOn],
+  ]
+  const footer = `This reminder was sent because a driver's license on ${APP_NAME} is about to expire.`
+  const html = supportEmailHtml('License Expiry Reminder', escapeHtml(intro), supportRowsHtml(rows), footer)
+  const text = [intro, '', ...rows.map(([l, v]) => `${l}: ${v}`), '', '---', emailFooterText(footer)].join('\n')
+  await sendSupportEmail({
+    subject, html, text,
+    to:   { email: p.to, ...(p.toName ? { name: p.toName } : {}) },
+    what: 'license expiry staff email',
   })
 }

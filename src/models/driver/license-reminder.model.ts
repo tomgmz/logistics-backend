@@ -8,8 +8,11 @@ export interface LicenseReminderCandidate {
   license_expiry:  string
   license_reminder_notified_for: string | null
   license_reminder_emailed_for:  string | null
+  /** "<expiry>|<stage>|<channel>" → when sent (the stages after the first month). */
+  license_reminders: Record<string, string>
   email:           string | null
   first_name:      string | null
+  last_name:       string | null
 }
 
 /**
@@ -27,8 +30,8 @@ export async function findExpiringBetween(fromDay: string, toDay: string): Promi
     .from('drivers')
     .select(`
       driver_id, user_id, license_number, license_expiry,
-      license_reminder_notified_for, license_reminder_emailed_for,
-      users!inner ( email, first_name, status, role )
+      license_reminder_notified_for, license_reminder_emailed_for, license_reminders,
+      users!drivers_user_id_fkey!inner ( email, first_name, last_name, status, role )
     `)
     .not('license_expiry', 'is', null)
     .gte('license_expiry', fromDay)
@@ -47,8 +50,10 @@ export async function findExpiringBetween(fromDay: string, toDay: string): Promi
       license_expiry: String(row.license_expiry).slice(0, 10),
       license_reminder_notified_for: row.license_reminder_notified_for ?? null,
       license_reminder_emailed_for:  row.license_reminder_emailed_for ?? null,
+      license_reminders: (row.license_reminders ?? {}) as Record<string, string>,
       email:          user?.email ?? null,
       first_name:     user?.first_name ?? null,
+      last_name:      user?.last_name ?? null,
     }
   })
 }
@@ -65,4 +70,24 @@ export async function markReminded(
     .update({ [column]: expiry })
     .eq('driver_id', driverId)
   if (error) throw error
+}
+
+/** Record one stage + channel as sent for this expiry date (read-modify-write; one pass runs at a time). */
+export async function markStage(driverId: string, key: string): Promise<void> {
+  const { data, error } = await supabase.from('drivers').select('license_reminders').eq('driver_id', driverId).maybeSingle()
+  if (error) throw error
+  const next = { ...((data?.license_reminders ?? {}) as Record<string, string>), [key]: new Date().toISOString() }
+  const { error: upErr } = await supabase.from('drivers').update({ license_reminders: next }).eq('driver_id', driverId)
+  if (upErr) throw upErr
+}
+
+/** The office told in the app: every active Company Administrator and Operations Manager. */
+export async function findOfficeRecipients(): Promise<Array<{ user_id: string; role: string }>> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id, role')
+    .in('role', ['admin', 'operations_manager'])
+    .eq('status', 'active')
+  if (error) throw error
+  return (data ?? []) as Array<{ user_id: string; role: string }>
 }

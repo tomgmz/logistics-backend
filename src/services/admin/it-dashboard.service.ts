@@ -63,13 +63,13 @@ const SCHEDULERS = [
   {
     source:           'license-expiry.scheduler',
     label:            'Driver license expiry reminders',
-    description:      'Emails and notifies each driver one month before their license expires.',
+    description:      'Reminds each driver (app + email), the Company Administrators and Operations Managers (app) and the 8338 inbox (email) one month, 7 days and on the day a license expires.',
     interval_minutes: 60,
   },
   {
     source:           'registration-expiry.scheduler',
     label:            'Vehicle registration expiry reminders',
-    description:      'Emails and notifies Fleet Managers and Company Administrators one month before a vehicle registration expires.',
+    description:      'Notifies Fleet Managers and Company Administrators in the app one month before a vehicle registration expires.',
     interval_minutes: 60,
   },
   {
