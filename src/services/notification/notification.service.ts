@@ -105,6 +105,11 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   // and once that time has passed with the delivery still paused.
   pause_continuation_due:     { type: 'booking.pause_continuation_due',     audience: 'drivers' },
   pause_continuation_overdue: { type: 'booking.pause_continuation_overdue', roles: ['operations_manager'] },
+  // delay.scheduler.ts: the next stop is running 15+ min past its planned window.
+  delivery_delayed:       { type: 'booking.delivery_delayed',       audience: 'client' },
+  delivery_delayed_staff: { type: 'booking.delivery_delayed_staff', roles: ['operations_manager'] },
+  // The office swapped the main and second driver on the road (driving-shift.service).
+  crew_roles_swapped:     { type: 'booking.crew_roles_swapped',     audience: 'drivers' },
   // The driver set off. Ops sees it live on the board; the client is told.
   delivery_started:      { type: 'booking.delivery_started',      audience: 'client' },
   // One hour before the driver's call time (driver-call.scheduler.ts).
@@ -293,6 +298,24 @@ function copyFor(
         body:  `Booking ${label} continues today. Your call time is ${extra?.callTimeLabel ?? 'soon'}` +
                (extra?.minutesLeft ? ` (in ${extra.minutesLeft} min)` : '') +
                '. Wait for the office to resume it before moving.',
+      }
+    case 'crew_roles_swapped':
+      return {
+        title: 'Main and second driver swapped',
+        body:  `The office swapped the main and second driver on booking ${label}${reason ? `: ${reason}` : '.'} ` +
+               'The new main driver confirms the stops and photos from their phone from now on.',
+      }
+    case 'delivery_delayed':
+      return {
+        title: 'Your delivery is running late',
+        body:  `Delivery ${label} is running about ${extra?.minutesLeft ?? 'some'} min behind schedule.` +
+               (extra?.newArrival ? ` Now expected: ${extra.newArrival}.` : ' We will update you as soon as we have a new time.'),
+      }
+    case 'delivery_delayed_staff':
+      return {
+        title: 'Delivery delayed',
+        body:  `Booking ${label} is running about ${extra?.minutesLeft ?? 'some'} min past its planned arrival` +
+               (extra?.newArrival ? ` (now expected ${extra.newArrival}).` : ' and the truck has no recent position.'),
       }
     case 'pause_continuation_overdue':
       return {

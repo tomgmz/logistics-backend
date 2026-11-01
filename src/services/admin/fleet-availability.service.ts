@@ -251,11 +251,45 @@ const BLOCKING_DRIVER_STATUSES: Record<string, string> = {
  * tick is the whole opt-in — a driver who ticked nothing can be assigned
  * nothing.
  */
+/**
+ * Throws when the driver's license has expired, or will have by `onDay` (the
+ * delivery day; today when not given) — they cannot legally drive it. Same
+ * rule as a vehicle's registration, and checked for the second driver too: on
+ * a long run they take the wheel. A license with no date (pre-dating the field)
+ * is not blocked.
+ */
+export async function assertLicenseValid(driverId: string, onDay?: string | null): Promise<void> {
+  const { data, error } = await supabase
+    .from('drivers')
+    .select('license_expiry, is_external, users ( first_name, last_name )')
+    .eq('driver_id', driverId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data?.license_expiry || data.is_external) return
+
+  const today   = phDay()
+  const day     = onDay && String(onDay).slice(0, 10) > today ? String(onDay).slice(0, 10) : today
+  const expires = String(data.license_expiry).slice(0, 10)
+  // Valid through its expiry date.
+  if (expires >= day) return
+
+  const u    = Array.isArray((data as any).users) ? (data as any).users[0] : (data as any).users
+  const name = [u?.first_name, u?.last_name].filter(Boolean).join(' ') || 'This driver'
+  throw new Error(
+    expires < today
+      ? `${name}'s driver's license expired on ${expires}. Record the renewed license in User Management before assigning them`
+      : `${name}'s driver's license expires on ${expires}, before this delivery on ${day}. Record the renewal first or choose another driver`,
+  )
+}
+
 export async function assertDriverAssignable(
   driverId: string,
   currentDriverId?: string | null,
   scheduleDate?: string | null,
 ): Promise<void> {
+  // Before the "already on this booking" exemption, like a vehicle's
+  // registration: re-saving the crew must not keep an expired license on it.
+  await assertLicenseValid(driverId, scheduleDate)
   if (driverId === currentDriverId) return
 
   const { data, error } = await supabase

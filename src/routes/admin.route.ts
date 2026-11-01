@@ -41,6 +41,8 @@ import { replacePermissionsSchema } from '../schema/admin/permissions.schema.js'
 import { uploadSingle }    from '../middlewares/upload.middleware.js'
 import * as UploadController from '../controllers/admin/uploadImage.controller.js'
 import * as DriverOCRController from '../controllers/admin/driver-ocr.controller.js'
+import * as DrivingShiftController from '../controllers/driver/driving-shift.controller.js'
+import { swapDriversSchema } from '../schema/driver/driving-shift.schema.js'
 import {
   createHandlingCodeSchema, updateHandlingCodeSchema,
   createCommoditySchema,    updateCommoditySchema,
@@ -140,6 +142,7 @@ router.post('/drivers/scan-license',       authenticate, isFleet, canManageUsers
 // is never read as a driver id.
 router.get('/drivers/assignable',          authenticate, isFleetRead, DriverController.getAssignableDrivers)
 router.get('/drivers/:id',                 authenticate, isFleetRead, DriverController.getDriverById)
+router.get('/drivers/:id/license-history', authenticate, isFleet, canManageUsers, DriverController.getLicenseHistory)
 router.post('/drivers',                    authenticate, isFleet, canManageUsers, uploadSingle, validate(createDriverSchema), DriverController.createDriver)
 router.patch('/drivers/:id',               authenticate, isFleet, canManageUsers, lockGuard('user', fromParam('id')), uploadSingle, validate(updateDriverSchema), DriverController.updateDriver)
 router.patch('/drivers/:id/deactivate',    authenticate, isItAdmin, lockGuard('user', fromParam('id')), DriverController.deactivateDriver)
@@ -194,6 +197,11 @@ router.patch('/assignments/:bookingId/pause/continuation', authenticate, isPause
 // while the delivery is paused; the booking stays in transit and keeps its
 // record. Same desk and rights as ending a pause.
 router.get('/assignments/:bookingId/replacements', authenticate, isCrewRelease, AssignmentController.listCrewReplacements)
+// Who drove when; and swapping the main and second driver on the road (the main
+// driver's phone is dead). Same desk and rights as a crew replacement.
+router.get('/assignments/:bookingId/driving-shifts', authenticate, isCrewRelease, DrivingShiftController.getShifts)
+router.post('/assignments/:bookingId/swap-drivers', authenticate, isPauseDesk, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(swapDriversSchema), DrivingShiftController.staffSwapCrewRoles)
 router.post('/assignments/:bookingId/replace-crew', authenticate, isPauseDesk, requireModuleFlag('booking-management', 'can_edit'),
   lockGuard('booking', fromParam('bookingId')), validate(replaceCrewSchema), AssignmentController.replaceCrew)
 

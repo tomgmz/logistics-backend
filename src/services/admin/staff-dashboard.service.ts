@@ -81,6 +81,7 @@ async function loadBookings(): Promise<BookingRow[]> {
       booking_id, reference_number, status, gm_status, origin, schedule_date, call_time,
       created_at, delivered_at, completion_confirmed_at,
       client_issue_reported_at, client_issue_resolved_at, fleet_return_at,
+      delayed_since, paused_at,
       clients ( company_name )
     `)
   if (error) throw error
@@ -129,6 +130,9 @@ export async function getStaffDashboard() {
   const dispatchToday  = bookings.filter((b) => b.status === 'assigned' && b.schedule_date === today)
   const dispatchTomorrow = bookings.filter((b) => b.status === 'assigned' && b.schedule_date === tomorrow)
   const inTransit      = bookings.filter((b) => b.status === 'in_transit')
+  // Running 15+ min past the next stop's planned window (delay.scheduler); a
+  // paused one is explained by its pause instead.
+  const delayed        = bookings.filter((b) => b.status === 'in_transit' && !!(b as any).delayed_since && !(b as any).paused_at)
   const openIssues     = bookings.filter((b) =>
     b.status === 'delivered' && !!b.client_issue_reported_at && !b.client_issue_resolved_at)
   const awaitingClient = bookings.filter((b) =>
@@ -193,6 +197,7 @@ export async function getStaffDashboard() {
       dispatch_tomorrow: queue(dispatchTomorrow),
       in_transit:        queue(inTransit),
       open_issues:       queue(openIssues),
+      delayed:           queue(delayed),
       awaiting_client:   queue(awaitingClient),
       awaiting_return:   queue(awaitingReturn),
     },

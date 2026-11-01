@@ -32,6 +32,9 @@ export const createDriverSchema = z.object({
   is_external:       multipartBoolean().optional().default(false),
   vendor_name:       vendorNameField().optional(),
   vendor_contact:    vendorContactField(),
+  // The LTMS check, and the note for details that differ from the card.
+  license_verified:    multipartBoolean().optional(),
+  license_change_note: z.string().trim().max(1000).optional().nullable(),
 }).superRefine((data, ctx) => {
   if (data.is_external && !data.vendor_name) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['vendor_name'],
@@ -54,4 +57,8 @@ export const updateDriverSchema = z.object({
   license_image_url: z.string().url().optional().nullable(),
   vendor_name:       vendorNameField().optional(),
   vendor_contact:    vendorContactUpdateField().optional().nullable(),
+  // A license change: the editor checked the card against LTO's LTMS, and
+  // explains anything unusual the server's checks find (driver-license.service).
+  license_verified:    multipartBoolean().optional(),
+  license_change_note: z.string().trim().max(1000).optional().nullable(),
 })

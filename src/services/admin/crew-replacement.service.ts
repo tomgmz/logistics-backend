@@ -1,3 +1,4 @@
+import { restartWithLead } from '../driver/driving-shift.service.js'
 import { supabase } from '../../lib/supabase.js'
 import { withBookingRowLock } from '../../lib/booking-row-lock.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -325,6 +326,11 @@ export async function replaceCrewService(
       `${helper ? `, helper ${helper}` : ''}` +
       `${replacement.transfer_required ? '; load transfer required' : ''}. Reason: ${note}`,
   })
+
+  // A changed driver ends the shifts at the wheel; the new main driver drives on.
+  if (driverChanged || secondChanged) {
+    void restartWithLead(bookingId, staff.userId ?? null).catch((err) => console.error('[crew] driving shift restart failed', bookingId, err))
+  }
 
   const offUserIds = await userIdsOfDrivers(offIds)
   if (offUserIds.length) void notifyStage('crew_replaced_off', after, { onlyUserIds: offUserIds, reason: note, swapped })

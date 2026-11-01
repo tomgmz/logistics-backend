@@ -90,7 +90,8 @@ async function create(userId: string, dto: CreateDriverDTO) {
   return findById(userId)
 }
 
-async function update(userId: string, dto: UpdateDriverDTO) {
+/** `extra`: driver columns the service worked out (license verification, codes). */
+async function update(userId: string, dto: UpdateDriverDTO, extra: Record<string, unknown> = {}) {
   const userFields: Record<string, any> = {}
   if (dto.first_name  !== undefined) userFields.first_name  = dto.first_name
   if (dto.last_name   !== undefined) userFields.last_name   = dto.last_name
@@ -108,6 +109,7 @@ async function update(userId: string, dto: UpdateDriverDTO) {
   if (dto.license_number    !== undefined) driverFields.license_number    = dto.license_number
   if (dto.license_expiry    !== undefined) driverFields.license_expiry    = dto.license_expiry
   if (dto.license_image_url !== undefined) driverFields.license_image_url = dto.license_image_url
+  Object.assign(driverFields, extra)
 
   // The vendor a driver comes from only means something on a vendor driver. On a
   // company driver it is dropped rather than stored, or the driver would read as

@@ -33,6 +33,7 @@ import {
 } from '../../lib/trip-cargo.js'
 import type { BookingWithRelations } from '../../types/client/booking.types.js'
 import { claimDeliveryStart } from '../driver/start-delivery.service.js'
+import { closeShifts } from '../driver/driving-shift.service.js'
 import { assertNoPendingLoadTransfer, driverIdOf } from '../driver/crew-actor.js'
 
 /**
@@ -705,6 +706,8 @@ export async function driverConfirmFleetReturnService(
   }
 
   await TripModel.setFleetReturn(bookingId, position)
+  // Home: nobody is driving the truck for this booking any more.
+  void closeShifts(bookingId).catch((err) => console.error('[trip] closing driving shifts failed', bookingId, err))
 
   logEvent({
     user_id:     actor.userId,

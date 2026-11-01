@@ -65,6 +65,9 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
     fleet_return_at,
     paused_at,
     pause_reason,
+    delayed_since,
+    delay_minutes,
+    delay_expected_at,
     clients (
       company_name
     )

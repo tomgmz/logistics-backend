@@ -1,6 +1,8 @@
 import { Request, Response }  from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as DriverService        from '../../services/admin/driver.service.js'
+import { LicenseCheckError, licenseHistory } from '../../services/admin/driver-license.service.js'
+import { extractLicenseData, type LicenseOCRResult } from '../../services/admin/driver-ocr.service.js'
 import { putFile, extForMime }   from '../../lib/storage.js'
 
 async function uploadLicense(file: Express.Multer.File): Promise<string> {
@@ -56,14 +58,24 @@ export async function createDriver(req: Request, res: Response) {
       res.status(400).json({ status: 'error', message: 'License image is required' })
       return
     }
-    const { userId }         = getRequestMeta(req)
+    const { userId } = getRequestMeta(req)
+    const { license_verified, license_change_note, ...fields } = req.body ?? {}
+    // Read on the server too, so the checks don't rest on the browser's scan.
+    let scanned: LicenseOCRResult | null = null
+    let scanFailed = false
+    try { scanned = await extractLicenseData(req.file.buffer) } catch { scanFailed = true }
     const license_image_url = await uploadLicense(req.file)
-    const data              = await DriverService.createDriver(
-      { ...req.body, license_image_url },
+    const data = await DriverService.createDriver(
+      { ...fields, license_image_url },
       userId,
+      { scanned, scanFailed, verified: license_verified === true, note: license_change_note ?? null },
     )
     res.status(201).json({ status: 'success', data })
   } catch (error: any) {
+    if (error instanceof LicenseCheckError) {
+      res.status(error.status).json({ status: 'error', message: error.message, code: error.code, issues: error.issues })
+      return
+    }
     res.status(500).json({ status: 'error', message: error.message })
   }
 }
@@ -71,13 +83,26 @@ export async function createDriver(req: Request, res: Response) {
 export async function updateDriver(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
-    // A replacement license photo arrives as multipart; plain JSON edits have no file.
+    const { license_verified, license_change_note, ...fields } = req.body ?? {}
+    // A replacement license photo arrives as multipart; plain JSON edits have no
+    // file. It is read here too, so the checks don't rest on the browser's scan.
+    let scanned: LicenseOCRResult | null = null
+    let scanFailed = false
+    if (req.file) {
+      try { scanned = await extractLicenseData(req.file.buffer) } catch { scanFailed = true }
+    }
     const body = req.file
-      ? { ...req.body, license_image_url: await uploadLicense(req.file) }
-      : req.body
-    const data = await DriverService.updateDriver(param(req.params.id), body, userId)
+      ? { ...fields, license_image_url: await uploadLicense(req.file) }
+      : fields
+    const data = await DriverService.updateDriver(param(req.params.id), body, userId, {
+      scanned, scanFailed, verified: license_verified === true, note: license_change_note ?? null,
+    })
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
+    if (error instanceof LicenseCheckError) {
+      res.status(error.status).json({ status: 'error', message: error.message, code: error.code, issues: error.issues })
+      return
+    }
     res.status(500).json({ status: 'error', message: error.message })
   }
 }
@@ -131,5 +156,14 @@ export async function activateDriver(req: Request, res: Response) {
       : error.message.includes('already') ? 409
       : 500
     res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+/** The licenses a driver held before this one, newest first. */
+export async function getLicenseHistory(req: Request, res: Response) {
+  try {
+    const data = await licenseHistory(param(req.params.id))
+    res.status(200).json({ status: 'success', data })
+  } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message })
   }
 }

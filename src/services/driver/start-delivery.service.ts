@@ -1,3 +1,4 @@
+import { startShiftIfNone } from './driving-shift.service.js'
 import { withBookingRowLock, crewSeatFor } from '../../lib/booking-row-lock.js'
 import { isBeforeScheduledDay } from '../../lib/ph-date.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -50,6 +51,8 @@ export async function claimDeliveryStart(bookingId: string, actor: DriverActor):
         WHERE booking_id = $1`,
       [bookingId, now],
     )
+    // The main driver is at the wheel from here (driving-shift.service).
+    await startShiftIfNone(client, bookingId, now, actor.userId ?? null)
     return true
   })
 }

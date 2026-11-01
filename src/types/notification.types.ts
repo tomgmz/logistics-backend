@@ -31,6 +31,9 @@ export type NotificationType =
   | 'booking.pause_continuation_driver' // ... -> assigned driver(s) (date + call time)
   | 'booking.pause_continuation_due'    // an hour before that call time -> assigned driver(s)
   | 'booking.pause_continuation_overdue' // call time passed, still paused -> ops + admin
+  | 'booking.delivery_delayed'       // next stop 15+ min past its planned window -> client
+  | 'booking.delivery_delayed_staff' // ... -> ops + admin
+  | 'booking.crew_roles_swapped'     // office swapped main/second driver -> the crew
   | 'booking.delivery_started'     // driver started navigation, booking in transit -> client
   | 'booking.driver_call_reminder' // one hour before the driver's call time -> assigned driver(s)
   | 'booking.crew_replaced_off'    // office replaced the crew on the road -> the driver taken off
@@ -114,6 +117,9 @@ export type NotificationStage =
   | 'pause_continuation_driver'
   | 'pause_continuation_due'
   | 'pause_continuation_overdue'
+  | 'delivery_delayed'
+  | 'delivery_delayed_staff'
+  | 'crew_roles_swapped'
   | 'delivery_started'
   | 'driver_call_reminder'
   | 'crew_replaced_off'

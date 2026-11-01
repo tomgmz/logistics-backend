@@ -30,6 +30,7 @@ import { startLicenseExpiryScheduler } from './services/notification/license-exp
 import { startRegistrationExpiryScheduler } from './services/notification/registration-expiry.scheduler.js'
 import { startDriverCallScheduler } from './services/notification/driver-call.scheduler.js'
 import { startPauseContinuationScheduler } from './services/notification/pause-continuation.scheduler.js'
+import { startDelayScheduler } from './services/notification/delay.scheduler.js'
 import { startItAdminRenderScheduler } from './services/admin/it-admin-render.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
 import { reportEmailLinkBaseUrl } from './lib/brevo-mailer.js'
@@ -253,6 +254,8 @@ app.listen(PORT, '0.0.0.0', () => {
   // Paused deliveries: reminds the crew before the continuation call time and
   // the office when it passes still paused.
   startPauseContinuationScheduler();
+  // Flags a delivery running 15+ min past its planned window, and tells the client.
+  startDelayScheduler();
   startItAdminRenderScheduler();
 
   // Drops driver position breadcrumbs past their retention window. The live

@@ -49,6 +49,12 @@ const SCHEDULERS = [
     interval_minutes: 5,
   },
   {
+    source:           'delay.scheduler',
+    label:            'Delayed delivery detection',
+    description:      'Flags a delivery whose next stop is running 15+ minutes past its planned arrival, and tells the client and operations.',
+    interval_minutes: 5,
+  },
+  {
     source:           'pause-continuation.scheduler',
     label:            'Paused delivery continuation',
     description:      'Reminds the crew before a paused delivery continues, and tells operations when its continuation time passes still paused.',

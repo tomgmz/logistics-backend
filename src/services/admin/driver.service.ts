@@ -1,3 +1,5 @@
+import { planLicenseChange, planLicenseCreate, saveLicenseCreateFields } from './driver-license.service.js'
+import type { LicenseOCRResult } from './driver-ocr.service.js'
 import { supabase } from '../../lib/supabase.js'
 import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } from './user-auth-status.service.js'
 import * as DriverModel from '../../models/admin/driver.model.js'
@@ -63,8 +65,23 @@ export async function getDriverById(userId: string) {
   return driver
 }
 
-export async function createDriver(dto: CreateDriverDTO, actorId?: string | null) {
+export async function createDriver(
+  dto: CreateDriverDTO,
+  actorId?: string | null,
+  license: { scanned: LicenseOCRResult | null; scanFailed: boolean; verified?: boolean; note?: string | null } = { scanned: null, scanFailed: false },
+) {
   await assertPhoneAvailable(dto.phone)
+  // Checked before any account is made: the card must be this person's, and
+  // checked against LTO (driver-license.service).
+  const licenseFields = planLicenseCreate({
+    licenseNumber: dto.license_number,
+    licenseExpiry: dto.license_expiry,
+    firstName:     dto.first_name,
+    lastName:      dto.last_name,
+    verified:      license.verified,
+    note:          license.note,
+  }, license.scanned, license.scanFailed, actorId ?? null)
+  const licenseNote = license.note?.trim() ? ` License note: ${license.note.trim()}` : ''
 
   // A vendor driver gets a passkey-only account and a setup link instead of a
   // password and a welcome email. Same details otherwise, so they show up in the
@@ -85,6 +102,11 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
       vendor_contact:    dto.vendor_contact ?? null,
       actorId:           actorId ?? dto.created_by ?? null,
     })
+    await saveLicenseCreateFields(userId, licenseFields)
+    if (licenseNote) {
+      logEvent({ user_id: actorId, log_type: 'user_management', action: 'driver_license_note',
+        description: `Vendor driver ${dto.email} created.${licenseNote}` })
+    }
     requestLicenseExpiryCheck()
     return DriverModel.findById(userId)
   }
@@ -106,6 +128,7 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
 
   try {
     const result = await DriverModel.create(userId, { ...dto, created_by: actorId ?? dto.created_by ?? null })
+    await saveLicenseCreateFields(userId, licenseFields)
 
     sendWelcomeEmail({
       to:        dto.email,
@@ -121,7 +144,7 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
       user_id:     actorId,
       log_type:    'user_management',
       action:      'driver_created',
-      description: `Driver ${dto.email} created (user: ${userId})`,
+      description: `Driver ${dto.email} created (user: ${userId}).${licenseNote}`,
     })
 
     // A license already inside the reminder window is reminded now, not on the
@@ -137,21 +160,44 @@ export async function createDriver(dto: CreateDriverDTO, actorId?: string | null
   }
 }
 
-export async function updateDriver(userId: string, dto: UpdateDriverDTO, actorId?: string | null) {
+/**
+ * `license` carries what only a license change needs: the server's own scan of
+ * a replaced image, the LTMS confirmation and the note (driver-license.service).
+ * The checks run before anything is written.
+ */
+export async function updateDriver(
+  userId: string,
+  dto: UpdateDriverDTO,
+  actorId?: string | null,
+  license: { scanned: LicenseOCRResult | null; scanFailed: boolean; verified?: boolean; note?: string | null } = { scanned: null, scanFailed: false },
+) {
   await assertPhoneAvailable(dto.phone, userId)
+
+  const plan = await planLicenseChange(userId, {
+    newImageUrl:   dto.license_image_url,
+    licenseNumber: dto.license_number,
+    licenseExpiry: dto.license_expiry,
+    firstName:     dto.first_name,
+    middleName:    dto.middle_name,
+    lastName:      dto.last_name,
+    verified:      license.verified,
+    note:          license.note,
+  }, license.scanned, license.scanFailed, actorId ?? null)
 
   if (dto.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, { email: dto.email })
     if (authError) throw new Error(`Auth update failed: ${authError.message}`)
   }
 
-  const result = await DriverModel.update(userId, dto)
+  // The old license goes to history first, so a failed save never loses it.
+  if (plan) await plan.recordHistory()
+  const result = await DriverModel.update(userId, dto, plan?.driverFields)
 
   logEvent({
     user_id:     actorId,
     log_type:    'user_management',
-    action:      'driver_updated',
-    description: `Driver ${userId} updated`,
+    action:      plan ? 'driver_license_changed' : 'driver_updated',
+    description: plan ? `Driver ${userId} license changed: ${plan.summary}` : `Driver ${userId} updated`,
   })
 
   // A new expiry date re-arms the reminder; check it now rather than within the hour.

@@ -88,6 +88,10 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   client_issue_resolution_note,
   paused_at,
   pause_reason,
+  delayed_since,
+  delay_minutes,
+  delay_expected_at,
+  delay_destination_id,
   pauses:booking_pauses!booking_pauses_booking_id_fkey (
     expected_resume_date,
     expected_resume_call_time,

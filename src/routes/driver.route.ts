@@ -11,6 +11,8 @@ import * as TrackingController from '../controllers/driver/tracking.controller.j
 import * as TripController from '../controllers/client/trip.controller.js'
 import * as ReportController from '../controllers/driver/report.controller.js'
 import * as EmergencyCallController from '../controllers/driver/emergency-call.controller.js'
+import * as DrivingShiftController from '../controllers/driver/driving-shift.controller.js'
+import { takeWheelSchema } from '../schema/driver/driving-shift.schema.js'
 import { driverAvailabilityDaysSchema, driverLocationPingSchema } from '../schema/client/booking.schema.js'
 import {
   tripStopProofSchema,
@@ -99,6 +101,13 @@ router.post('/bookings/:bookingId/start',
 
 router.patch('/trips/:tripId/pickup',
   authenticate, authenticatedLimiter, isAny, validate(tripPickupProofSchema), TripController.driverConfirmTripPickup)
+
+// Who is at the wheel: either crew member says "I'm taking the wheel" (through
+// the offline queue), and both read who is driving now.
+router.post('/bookings/:bookingId/driving',
+  authenticate, authenticatedLimiter, isAny, validate(takeWheelSchema), DrivingShiftController.driverTakeWheel)
+router.get('/bookings/:bookingId/driving',
+  authenticate, authenticatedLimiter, isAny, attachDriverScope, DrivingShiftController.getShifts)
 
 // The driver picked which drop-off to do next; saved so the web shows it.
 router.put('/trips/:tripId/stop-order',
