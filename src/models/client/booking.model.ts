@@ -92,6 +92,7 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   delay_minutes,
   delay_expected_at,
   delay_destination_id,
+  delay_max_minutes,
   breakdown_reported_at,
   breakdown_report_id,
   breakdown_note,
@@ -206,8 +207,23 @@ async function countByStatus(clientId?: string | null): Promise<Record<string, n
     all += n
   }
   out.all = all
+
+  // "Delayed" is a flag on in-transit bookings, not a status: running late now
+  // and not paused (a pause explains itself). Not part of "all".
+  const delayed = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::int AS n
+       FROM bookings
+      WHERE ${DELAYED_NOW_SQL('bookings')}
+        ${clientId ? 'AND client_id = $1' : ''}`,
+    clientId ? [clientId] : [],
+  )
+  out.delayed = parseInt(delayed.rows[0]?.n ?? '0', 10) || 0
   return out
 }
+
+/** In transit, flagged late by delay.scheduler, and not paused. */
+const DELAYED_NOW_SQL = (t: string) =>
+  `${t}.status = 'in_transit' AND ${t}.delayed_since IS NOT NULL AND ${t}.paused_at IS NULL`
 
 async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWithRelations[]; total: number }> {
   const page   = Math.max(1, q.page)
@@ -228,7 +244,9 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
     where.push(`b.client_id = $${params.length}`)
   }
 
-  if (status !== 'all') {
+  if (status === 'delayed') {
+    where.push(DELAYED_NOW_SQL('b'))
+  } else if (status !== 'all') {
     params.push(status)
     where.push(`b.status = $${params.length}`)
   }
