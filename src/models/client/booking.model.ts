@@ -168,7 +168,7 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
     trucks (
       plate_number,
       status,
-      truck_models ( vehicle_type, name )
+      truck_models ( vehicle_type, name, image_url )
     )
   ),
   deliveries (
@@ -252,13 +252,17 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
   }
 
   // Only what the search box names: Booking Management's "Search reference,
-  // company, pickup or drop-off"; the client's own history "Search reference,
-  // pickup or drop-off" (every row there is their company). Every word must
-  // be found in one of those, so "BK-0012 Makati" narrows instead of failing.
+  // company, pickup, drop-off or delayed"; the client's own history "Search
+  // reference, pickup, drop-off or delayed" (every row there is their company).
+  // Every word must be found in one of those, so "BK-0012 Makati" narrows
+  // instead of failing. "delayed" / "late" also matches a delivery running late
+  // right now: that is a flag, not a status, so no column holds the word.
   for (const word of search.split(/\s+/).filter(Boolean)) {
     params.push(`%${word.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`)
     const i = params.length
+    const delayWord = /^(delay|late)/i.test(word)
     where.push(`(
+      ${delayWord ? `(${DELAYED_NOW_SQL('b')}) OR` : ''}
       b.reference_number ILIKE $${i} ESCAPE '\\' OR
       ${q.clientId ? '' : `COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\' OR`}
       b.origin ILIKE $${i} ESCAPE '\\' OR

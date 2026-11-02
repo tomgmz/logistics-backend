@@ -133,8 +133,11 @@ function buildWhere(f: TransactionFilters): { whereSql: string; params: unknown[
     const esc = `%${search.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`
     params.push(esc)
     const i = params.length
-    // Exactly what the search box names: reference, company or pickup.
+    // Exactly what the search box names: reference, company, pickup or delayed.
+    // "delayed" / "late" matches every booking that ran late (the Delayed tab).
+    const delayWord = /^(delay|late)/i.test(search)
     where.push(`(
+      ${delayWord ? 'b.delay_max_minutes > 0 OR' : ''}
       b.reference_number ILIKE $${i} ESCAPE '\\' OR
       COALESCE(c.company_name, '') ILIKE $${i} ESCAPE '\\' OR
       COALESCE(c.registered_name, '') ILIKE $${i} ESCAPE '\\' OR

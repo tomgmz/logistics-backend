@@ -2,6 +2,7 @@ import { restartWithLead } from '../driver/driving-shift.service.js'
 import { supabase } from '../../lib/supabase.js'
 import { withBookingRowLock } from '../../lib/booking-row-lock.js'
 import { logEvent } from '../../lib/log-event.js'
+import { checkTruckCapacity } from '../../lib/cargo-capacity.js'
 import { phDay } from '../../lib/ph-date.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import { busyDriversFor, driverBusyMessage } from '../../lib/driver-reservation.js'
@@ -326,6 +327,26 @@ export async function replaceCrewService(
       `${helper ? `, helper ${helper}` : ''}` +
       `${replacement.transfer_required ? '; load transfer required' : ''}. Reason: ${note}`,
   })
+
+  // Same advisory fit check as assigning (lib/cargo-capacity): never blocks, but
+  // sending a vehicle that may not take the load goes on the record. A vendor
+  // vehicle has no capacity on file.
+  if (truckChanged && truckId) {
+    const capacityWarning = await checkTruckCapacity(bookingId, truckId).catch((err) => {
+      console.warn('[crew-replacement] capacity check failed', bookingId, err)
+      return null
+    })
+    if (capacityWarning) {
+      logEvent({
+        user_id:     staff.userId,
+        log_type:    'booking',
+        action:      'assignment_capacity_warning',
+        description:
+          `Booking ${bookingRef(after)}: replacement vehicle may not fit the load — ` +
+          capacityWarning.reasons.join(' '),
+      })
+    }
+  }
 
   // A changed driver ends the shifts at the wheel; the new main driver drives on.
   if (driverChanged || secondChanged) {
