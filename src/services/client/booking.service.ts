@@ -859,6 +859,13 @@ export async function updateDestinationStatusService(
 export interface DriverActor {
   userId?: string | null
   role?:   string | null
+  /**
+   * The Company Administrator or Operations Manager confirming a step from
+   * Booking Management because the driver can't (phone stolen or dead). Acts
+   * as the main driver, skips the 100 m gate and the photo; the reason is
+   * recorded on the stop and in the audit log.
+   */
+  office?: { reason: string } | null
 }
 
 export async function assertDriverOnBooking(bookingId: string, actor: DriverActor): Promise<BookingWithRelations> {
@@ -876,7 +883,7 @@ export async function driverSeatOnBooking(
   const booking = await BookingModel.findById(bookingId)
   if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
 
-  if (actor.role === 'admin') return { booking, seat: 'lead' }
+  if (actor.role === 'admin' || actor.office) return { booking, seat: 'lead' }
 
   const seat = actor.userId ? await BookingModel.driverCrewRole(bookingId, actor.userId) : null
   if (!seat) throw new Error('You are not assigned to this booking')

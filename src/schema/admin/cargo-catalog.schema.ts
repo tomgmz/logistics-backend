@@ -4,7 +4,6 @@ export const createHandlingCodeSchema = z.object({
   code:        z.string().min(1).max(20).trim().toUpperCase(),
   name:        z.string().min(1).max(100).trim(),
   description: z.string().max(500).optional(),
-  type:        z.enum(['standard', 'additional']).default('standard'),
   is_active:   z.boolean().optional(),
 })
 
@@ -12,37 +11,30 @@ export const updateHandlingCodeSchema = z.object({
   code:        z.string().min(1).max(100).trim().toUpperCase().optional(),
   name:        z.string().min(1).max(100).trim().optional(),
   description: z.string().max(500).optional().nullable(),
-  type:        z.enum(['standard', 'additional']).optional(),
   is_active:   z.boolean().optional(),
 })
 
+// A commodity is just a name (category/description dropped from the form
+// 2026-11-04; the columns stay, nothing writes them).
 export const createCommoditySchema = z.object({
   name:        z.string().min(1).max(100).trim(),
-  description: z.string().max(500).optional(),
-  category:    z.string().max(100).trim().optional(),
   is_active:   z.boolean().optional(),
 })
 
 export const updateCommoditySchema = z.object({
   name:        z.string().min(1).max(100).trim().optional(),
-  description: z.string().max(500).optional().nullable(),
-  category:    z.string().max(100).trim().optional().nullable(),
   is_active:   z.boolean().optional(),
 })
 
 export const createProductSchema = z.object({
   commodity_id: z.string().uuid(),
   name:         z.string().min(1).max(100).trim(),
-  description:  z.string().max(500).optional(),
-  unit:         z.string().max(50).trim().optional(),
   is_active:    z.boolean().optional(),
 })
 
 export const updateProductSchema = z.object({
   commodity_id: z.string().uuid().optional(), // optional on update
   name:         z.string().min(1).max(100).trim().optional(),
-  description:  z.string().max(500).optional().nullable(),
-  unit:         z.string().max(50).trim().optional().nullable(),
   is_active:    z.boolean().optional(),
 })
 

@@ -312,6 +312,24 @@ async function applyLoadedCargo(
 /* ── Loading a run ────────────────────────────────────────────────────────── */
 
 /**
+ * The 100 m gate, or, for the office confirming for the driver, no gate: they
+ * are not at the stop, so there is no position to measure. Their reason is
+ * stored where a driver's override reason would be.
+ */
+function stopFence(
+  actor: DriverActor,
+  stop: ReturnType<typeof stopCoordinates>,
+  position: StopProofPosition | null | undefined,
+  label: string,
+) {
+  if (actor.office) return { distance_m: null, override_reason: `Confirmed by the office: ${actor.office.reason}` }
+  return assertStopProximity(stop, position, label)
+}
+
+/** "Driver", or the office acting for them, for the audit log. */
+const actorLabel = (actor: DriverActor) => (actor.office ? 'The office (for the driver)' : 'Driver')
+
+/**
  * The driver confirms the truck is loaded for one run, with the photo taken at
  * the origin. The first such confirmation is what puts the booking `in_transit`.
  *
@@ -321,7 +339,7 @@ async function applyLoadedCargo(
  */
 export async function driverConfirmTripPickupService(
   tripId: string,
-  proofPhotoUrl: string,
+  proofPhotoUrl: string | null,
   actor: DriverActor,
   earlyStart = false,
   position?: StopProofPosition | null,
@@ -341,7 +359,7 @@ export async function driverConfirmTripPickupService(
   if (booking.status !== 'assigned' && booking.status !== 'in_transit') {
     throw new Error(`Cannot load a trip while the booking is '${booking.status}'`)
   }
-  if (!proofPhotoUrl) {
+  if (!proofPhotoUrl && !actor.office) {
     throw new Error('A proof-of-loading photo is required to confirm this pickup')
   }
   // The Fleet Manager pulled the vehicle — no new load goes on it, including a
@@ -372,7 +390,8 @@ export async function driverConfirmTripPickupService(
     )
   }
 
-  const fence = assertStopProximity(
+  const fence = stopFence(
+    actor,
     stopCoordinates((booking as any).origin_latitude, (booking as any).origin_longitude),
     position,
     'pickup point',
@@ -389,13 +408,13 @@ export async function driverConfirmTripPickupService(
   // before the run is marked loaded, while it is still reshapeable.
   await applyLoadedCargo(trip, trips, loaded)
 
-  await TripModel.setTripPickupProof(tripId, proofPhotoUrl, position, fence, await driverIdOf(actor))
+  await TripModel.setTripPickupProof(tripId, proofPhotoUrl || null, position, fence, await driverIdOf(actor))
 
   // The booking-level pickup columns are what the web app and the client's
   // booking detail read. They keep meaning "the first loading",
   // so they are stamped once, by the first run, and left alone after that.
   if (isFirstRun) {
-    await BookingModel.setPickupProof(trip.booking_id, proofPhotoUrl, position, fence)
+    await BookingModel.setPickupProof(trip.booking_id, proofPhotoUrl || null, position, fence)
   }
 
   // The run's real departure replaces its planned one, and moves every run after it.
@@ -407,11 +426,11 @@ export async function driverConfirmTripPickupService(
     log_type:    'booking',
     action:      early ? 'driver_trip_pickup_confirmed_early' : 'driver_trip_pickup_confirmed',
     description:
-      `Driver loaded trip ${trip.trip_number} of ${trips.length} for booking ${bookingRef(booking)}` +
+      `${actorLabel(actor)} loaded trip ${trip.trip_number} of ${trips.length} for booking ${bookingRef(booking)}` +
       (early ? ` EARLY — scheduled for ${booking.schedule_date}` : ''),
   })
 
-  if (fence.override_reason) {
+  if (fence.override_reason && !actor.office) {
     logEvent({
       user_id:     actor.userId,
       log_type:    'booking',
@@ -510,7 +529,7 @@ export async function driverSetStopOrderService(
  */
 export async function driverConfirmTripStopService(
   tripStopId: string,
-  proofPhotoUrl: string,
+  proofPhotoUrl: string | null,
   actor: DriverActor,
   position?: StopProofPosition | null,
 ) {
@@ -524,7 +543,7 @@ export async function driverConfirmTripStopService(
   if (trip.status !== 'in_transit' && trip.status !== 'completed') {
     throw new Error(`Confirm the pickup for trip ${trip.trip_number} before unloading at this drop-off`)
   }
-  if (!proofPhotoUrl) {
+  if (!proofPhotoUrl && !actor.office) {
     throw new Error('A proof-of-delivery photo is required to confirm this drop-off')
   }
   // The crew was replaced with the load still on the old vehicle: nothing is
@@ -535,24 +554,25 @@ export async function driverConfirmTripStopService(
   const destination  = destinations.find((d) => d.destination_id === stop.destination_id)
   if (!destination) throw new Error('This drop-off is no longer on the booking')
 
-  const fence = assertStopProximity(
+  const fence = stopFence(
+    actor,
     stopCoordinates(destination.latitude, destination.longitude),
     position,
     'drop-off',
   )
 
-  const updated = await TripModel.setStopProof(tripStopId, 'delivered', proofPhotoUrl, position, fence, await driverIdOf(actor))
+  const updated = await TripModel.setStopProof(tripStopId, 'delivered', proofPhotoUrl || null, position, fence, await driverIdOf(actor))
 
   logEvent({
     user_id:     actor.userId,
     log_type:    'booking',
     action:      'driver_trip_stop_confirmed',
     description:
-      `Driver unloaded at ${destination.address} on trip ${trip.trip_number} ` +
+      `${actorLabel(actor)} unloaded at ${destination.address} on trip ${trip.trip_number} ` +
       `of booking ${bookingRef(booking)}`,
   })
 
-  if (fence.override_reason) {
+  if (fence.override_reason && !actor.office) {
     logEvent({
       user_id:     actor.userId,
       log_type:    'booking',
@@ -566,7 +586,7 @@ export async function driverConfirmTripStopService(
   // A bay is finished only when EVERY run bound for it has unloaded. On a load
   // that splits across two trips, confirming the first must not tell the client
   // their goods have all arrived.
-  await rollUpDestination(stop.destination_id, proofPhotoUrl, position, fence)
+  await rollUpDestination(stop.destination_id, proofPhotoUrl || null, position, fence)
 
   await completeTripIfAllStopsDone(trip.trip_id, trip.booking_id, actor)
 
@@ -589,7 +609,7 @@ export async function driverConfirmTripStopService(
  */
 async function rollUpDestination(
   destinationId: string,
-  proofPhotoUrl: string,
+  proofPhotoUrl: string | null,
   position?: StopProofPosition | null,
   fence?: { distance_m: number | null; override_reason: string | null } | null,
 ): Promise<void> {
@@ -651,6 +671,9 @@ async function completeTripIfAllStopsDone(
   }
 }
 
+/** For the office's incident report: closes the run (and the booking) once nothing on it is open. */
+export const closeTripIfDone = completeTripIfAllStopsDone
+
 /* ── Evidence that arrives late ───────────────────────────────────────────── */
 
 /**
@@ -674,7 +697,7 @@ async function completeTripIfAllStopsDone(
  */
 export async function attachStopProofService(
   tripStopId: string,
-  proofPhotoUrl: string,
+  proofPhotoUrl: string | null,
   actor: DriverActor,
 ) {
   if (!proofPhotoUrl) throw new Error('A proof photo is required')
@@ -736,7 +759,8 @@ export async function driverConfirmFleetReturnService(
     user_id:     actor.userId,
     log_type:    'vehicle_activity',
     action:      'driver_fleet_return_confirmed',
-    description: `Driver confirmed the vehicle for booking ${bookingRef(booking)} is back in the company parking lot`,
+    description: `${actorLabel(actor)} confirmed the vehicle for booking ${bookingRef(booking)} is back in the company parking lot` +
+      (actor.office ? ` — reason: ${actor.office.reason}` : ''),
   })
 
   // The return expires the vehicle's BLOWBAGETS pass. Put it on hold so the fleet

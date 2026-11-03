@@ -1313,7 +1313,7 @@ async function updateDestinationStatus(
 /** Record the driver's proof-of-pickup photo on the booking. */
 async function setPickupProof(
   bookingId: string,
-  proofPhotoUrl: string,
+  proofPhotoUrl: string | null,
   position?: StopProofPosition | null,
   fence?: GeofenceOutcome | null,
 ): Promise<void> {

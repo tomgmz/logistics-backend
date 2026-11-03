@@ -12,7 +12,8 @@ import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../s
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
 import { updateITAdminSchema, startHandoverSchema, itAdminSuccessorSchema } from '../schema/admin/it-admin.schema.js'
-import { assignBookingSchema, replaceCrewSchema, updateDeliveryStatusSchema } from '../schema/admin/assignment.schema.js'
+import { assignBookingSchema, replaceCrewSchema, updateDeliveryStatusSchema, officeStepSchema, officeIncidentSchema } from '../schema/admin/assignment.schema.js'
+import * as OfficeProgressController from '../controllers/admin/office-progress.controller.js'
 import * as AdminController           from '../controllers/admin/admin.controller.js'
 import * as ClientController          from '../controllers/admin/client.controller.js'
 import * as DriverController          from '../controllers/admin/driver.controller.js'
@@ -208,6 +209,18 @@ router.post('/assignments/:bookingId/swap-drivers', authenticate, isPauseDesk, r
   lockGuard('booking', fromParam('bookingId')), validate(swapDriversSchema), DrivingShiftController.staffSwapCrewRoles)
 router.post('/assignments/:bookingId/replace-crew', authenticate, isPauseDesk, requireModuleFlag('booking-management', 'can_edit'),
   lockGuard('booking', fromParam('bookingId')), validate(replaceCrewSchema), AssignmentController.replaceCrew)
+
+// The office finishing the driver's steps when the driver can't (phone stolen
+// or dead), and recording an incident on the road (theft, accident…). Same desk
+// and rights as pausing; the web keeps the buttons locked until unlocked.
+router.post('/assignments/:bookingId/office/trips/:tripId/pickup', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(officeStepSchema), OfficeProgressController.confirmPickup)
+router.post('/assignments/:bookingId/office/trip-stops/:tripStopId/delivered', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(officeStepSchema), OfficeProgressController.confirmStop)
+router.post('/assignments/:bookingId/office/fleet-return', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(officeStepSchema), OfficeProgressController.confirmFleetReturn)
+router.post('/assignments/:bookingId/office/incident', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(officeIncidentSchema), OfficeProgressController.reportIncident)
 
 // Times at each stop (arrival, docking, start, finish, departure), with the
 // office's corrections. Filling in / correcting one: the pause desk's call.

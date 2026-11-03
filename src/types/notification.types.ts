@@ -21,6 +21,8 @@ export type NotificationType =
   | 'booking.delivery_confirm_reminder' // day before auto-complete -> client
   | 'booking.delivery_issue'       // client reported a problem -> ops + admins
   | 'booking.delivery_issue_resolved' // staff resolved it, 3 days restart -> client
+  | 'booking.delivery_incident'       // office recorded an incident (theft, accident…) -> client
+  | 'booking.delivery_incident_staff' // the same -> ops + admins (with the note)
   | 'booking.trip_paused'          // office paused the delivery -> client (reason only)
   | 'booking.trip_paused_staff'    // office paused the delivery -> ops + admins (with the note)
   | 'booking.trip_paused_by_staff' // office paused the delivery -> assigned driver(s) (with the note)
@@ -110,6 +112,8 @@ export type NotificationStage =
   | 'delivery_confirm_reminder'
   | 'delivery_issue'
   | 'delivery_issue_resolved'
+  | 'delivery_incident'
+  | 'delivery_incident_staff'
   | 'trip_paused'
   | 'trip_paused_staff'
   | 'trip_paused_by_staff'

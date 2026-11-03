@@ -29,7 +29,7 @@ export async function createHandlingCode(req: Request, res: Response) {
     const data = await CargoCatalogService.createHandlingCode(req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (error: any) {
-    res.status(500).json({ status: 'error', message: error.message })
+    res.status(error.status ?? 500).json({ status: 'error', message: error.message })
   }
 }
 
@@ -39,7 +39,7 @@ export async function updateHandlingCode(req: Request, res: Response) {
     const data = await CargoCatalogService.updateHandlingCode(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
-    const status = error.message === 'Handling code not found' ? 404 : 500
+    const status = error.status ?? (error.message === 'Handling code not found' ? 404 : 500)
     res.status(status).json({ status: 'error', message: error.message })
   }
 }
@@ -58,7 +58,7 @@ export async function deleteHandlingCode(req: Request, res: Response) {
 export async function getAllCommodities(req: Request, res: Response) {
   try {
     const data = await CargoCatalogService.getAllCommodities()
-    res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (c) => [c.name, c.category, c.description]) })
+    res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (c) => [c.name]) })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
   }
@@ -80,7 +80,7 @@ export async function createCommodity(req: Request, res: Response) {
     const data = await CargoCatalogService.createCommodity(req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (error: any) {
-    res.status(500).json({ status: 'error', message: error.message })
+    res.status(error.status ?? 500).json({ status: 'error', message: error.message })
   }
 }
 
@@ -90,7 +90,7 @@ export async function updateCommodity(req: Request, res: Response) {
     const data = await CargoCatalogService.updateCommodity(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
-    const status = error.message === 'Commodity not found' ? 404 : 500
+    const status = error.status ?? (error.message === 'Commodity not found' ? 404 : 500)
     res.status(status).json({ status: 'error', message: error.message })
   }
 }

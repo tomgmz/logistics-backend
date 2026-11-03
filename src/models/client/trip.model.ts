@@ -373,7 +373,7 @@ async function createDefaultPlan(bookingId: string): Promise<TripWithStops[]> {
 /** Record the driver's proof of loading for one trip and put it on the road. */
 async function setTripPickupProof(
   tripId: string,
-  proofPhotoUrl: string,
+  proofPhotoUrl: string | null,
   position?: StopProofPosition | null,
   fence?: GeofenceOutcome | null,
   // drivers.driver_id of who loaded it, so it stays theirs after a crew change.
@@ -414,7 +414,7 @@ async function updateTripStatus(tripId: string, status: BookingTrip['status']): 
 async function setStopProof(
   tripStopId: string,
   status: 'delivered' | 'failed',
-  proofPhotoUrl: string,
+  proofPhotoUrl: string | null,
   position?: StopProofPosition | null,
   fence?: GeofenceOutcome | null,
   // drivers.driver_id of who unloaded it, so it stays theirs after a crew change.

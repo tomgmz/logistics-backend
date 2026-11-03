@@ -73,6 +73,19 @@ export const updateDeliveryStatusSchema = z.object({
   delivery_time: z.string().datetime().optional(),
 })
 
+// The office completing a step for the driver (phone stolen or dead).
+export const officeStepSchema = z.object({
+  reason: z.string().trim().min(5, 'Say why the office is confirming this (at least 5 characters)').max(300),
+})
+
+// The office recording an incident on the road; the drop-offs named (or every
+// open one) are marked failed.
+export const officeIncidentSchema = z.object({
+  incident_type: z.enum(['truck_stolen', 'goods_stolen', 'accident', 'goods_damaged', 'client_refused', 'other']),
+  note:          z.string().trim().min(5, 'Describe what happened (at least 5 characters)').max(500),
+  trip_stop_ids: z.array(z.string().uuid()).max(50).optional().nullable(),
+})
+
 // Replacing the crew of a delivery already on the road (paused): the full new
 // crew, with the current members re-sent where they stay. From the 8338 fleet
 // (driver_id + truck_id) or from a vendor (vendor driver + typed vehicle).

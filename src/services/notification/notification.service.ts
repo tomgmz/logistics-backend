@@ -91,6 +91,9 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   delivery_confirm_reminder: { type: 'booking.delivery_confirm_reminder', audience: 'client' },
   delivery_issue:            { type: 'booking.delivery_issue',            roles: ['operations_manager'] },
   delivery_issue_resolved:   { type: 'booking.delivery_issue_resolved',   audience: 'client' },
+  // The office recorded an incident on the road and marked drop-offs failed.
+  delivery_incident:         { type: 'booking.delivery_incident',         audience: 'client' },
+  delivery_incident_staff:   { type: 'booking.delivery_incident_staff',   roles: ['operations_manager'] },
   // The office paused the delivery. The client is told the reason category
   // only; the note goes to the driver and the rest of the office.
   trip_paused:           { type: 'booking.trip_paused',           audience: 'client' },
@@ -232,6 +235,16 @@ function copyFor(
         title: 'Client reported a problem with a delivery',
         body:  `The client reported a problem with booking ${label}${reason ? `: ${reason}` : '.'} ` +
                'It will not complete until you confirm it.',
+      }
+    case 'delivery_incident':
+      return {
+        title: 'A problem occurred on your delivery',
+        body:  `There was a problem with booking ${label}${reason ? ` (${reason})` : ''}. Some drop-offs could not be delivered. Our office will contact you.`,
+      }
+    case 'delivery_incident_staff':
+      return {
+        title: 'Incident recorded on a delivery',
+        body:  `Booking ${label}: ${reason ?? 'incident recorded'}. The affected drop-offs were marked failed.`,
       }
     case 'delivery_issue_resolved':
       return {

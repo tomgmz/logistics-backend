@@ -26,7 +26,7 @@ import type { BookingWithRelations } from '../../types/client/booking.types.js'
 export async function claimDeliveryStart(bookingId: string, actor: DriverActor): Promise<boolean> {
   const now = new Date().toISOString()
   return withBookingRowLock(bookingId, async (client, booking) => {
-    if (actor.role !== 'admin') {
+    if (actor.role !== 'admin' && !actor.office) {
       const seat = actor.userId ? await crewSeatFor(client, bookingId, actor.userId) : null
       if (!seat) throw new Error('You are not assigned to this booking')
       if (seat !== 'lead') {

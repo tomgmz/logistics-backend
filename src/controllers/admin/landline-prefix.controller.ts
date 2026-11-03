@@ -6,7 +6,7 @@ import { pagedList } from '../../lib/paginate.js'
 export async function getAllLandlinePrefixes(req: Request, res: Response) {
   try {
     const data = await LandlinePrefixService.getAllLandlinePrefixes()
-    res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (p) => [p.prefix, p.city, p.region]) })
+    res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (p) => [p.prefix, p.city]) })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
   }

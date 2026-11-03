@@ -7,7 +7,7 @@ import type { DriverActor } from '../client/booking.service.js'
  * missing attribution never blocks a confirmation.
  */
 export async function driverIdOf(actor: DriverActor): Promise<string | null> {
-  if (!actor.userId || actor.role === 'admin') return null
+  if (!actor.userId || actor.role === 'admin' || actor.office) return null
   const { data } = await supabase
     .from('drivers')
     .select('driver_id')
