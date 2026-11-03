@@ -290,6 +290,22 @@ export async function findTargetUser(id: string): Promise<{ user_id: string; sta
 // A client may not send to anyone; staff messages reach them read-only.
 export const CLIENT_MESSAGING_STAFF_ROLES = ['admin', 'operations_manager']
 
+// The IT Administrator does not talk with the Fleet Manager or drivers, in
+// either direction (messaging matrix, 2026-11-03).
+export const IT_ADMIN_BLOCKED_ROLES = ['fleet_manager', 'driver']
+
+function itAdminPairBlocked(a: string, b: string): boolean {
+  return (a === 'it_admin' && IT_ADMIN_BLOCKED_ROLES.includes(b))
+    || (b === 'it_admin' && IT_ADMIN_BLOCKED_ROLES.includes(a))
+}
+
+/** A group may not hold an IT Administrator together with a Fleet Manager or driver. */
+export function groupRolesBlockReason(roles: string[]): string | null {
+  if (roles.includes('it_admin') && roles.some(r => IT_ADMIN_BLOCKED_ROLES.includes(r)))
+    return 'The IT Administrator cannot be in a group with the Fleet Manager or drivers'
+  return null
+}
+
 /**
  * Whether sender may send to target, by the rules above. Returns the reason
  * when not. Reading an existing conversation is never blocked by this.
@@ -308,6 +324,8 @@ export async function messagingBlockReason(
     if (sender.role === 'driver') return 'Drivers and clients cannot message each other'
     return 'Only the Company Administrator and Operations Manager can message clients'
   }
+  if (itAdminPairBlocked(sender.role, target.role))
+    return 'The IT Administrator cannot message, or be messaged by, the Fleet Manager or drivers'
   return null
 }
 
@@ -322,11 +340,11 @@ async function activeUsers(opts: { ids?: string[]; withoutClients?: boolean } = 
 
 export async function getMessagableUsersForStaff(currentUserId: string, role: string): Promise<MessagableUser[]> {
   const users = await activeUsers({ withoutClients: !CLIENT_MESSAGING_STAFF_ROLES.includes(role) })
-  return users.filter(u => u.user_id !== currentUserId)
+  return users.filter(u => u.user_id !== currentUserId && !itAdminPairBlocked(role, u.role))
 }
 
-/** A driver: everyone on staff, never a client. */
+/** A driver: everyone on staff except the IT Administrator, never a client. */
 export async function getMessagableUsersForDriver(driverUserId: string): Promise<MessagableUser[]> {
   const staff = await activeUsers({ withoutClients: true })
-  return staff.filter(u => u.user_id !== driverUserId)
+  return staff.filter(u => u.user_id !== driverUserId && !itAdminPairBlocked('driver', u.role))
 }

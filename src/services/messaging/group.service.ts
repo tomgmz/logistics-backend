@@ -1,5 +1,6 @@
 import * as groupModel from '../../models/messaging/group.model.js'
 import * as push from './push.service.js'
+import { groupRolesBlockReason } from '../../models/messaging/messaging.model.js'
 import { createClient } from '@supabase/supabase-js'
 import type { GroupWithDetails, GroupMessageRow, GroupSystemEvent } from '../../types/messaging.types.js'
 
@@ -38,6 +39,8 @@ export async function createGroup(
     throw Object.assign(new Error('One or more members are invalid or inactive'), { statusCode: 400 })
   if ((users ?? []).some(u => u.role === 'client'))
     throw Object.assign(new Error('Clients cannot be added to group chats'), { statusCode: 400 })
+  const roleBlock = groupRolesBlockReason([creatorRole, ...(users ?? []).map(u => u.role)])
+  if (roleBlock) throw Object.assign(new Error(roleBlock), { statusCode: 400 })
 
   const group = await groupModel.createGroup(name, createdBy, uniqueIds)
 
@@ -197,6 +200,16 @@ async function vetNewMembers(groupId: string, actorId: string, memberIds: string
     throw Object.assign(new Error('One or more members are invalid or inactive'), { statusCode: 400 })
   if ((users ?? []).some(u => u.role === 'client'))
     throw Object.assign(new Error('Clients cannot be added to group chats'), { statusCode: 400 })
+
+  // Everyone already in (invited or joined) plus the newcomers.
+  const { data: currentUsers, error: rErr } = await admin
+    .from('users').select('role').in('user_id', [...inGroup])
+  if (rErr) throw rErr
+  const roleBlock = groupRolesBlockReason([
+    ...(currentUsers ?? []).map(u => u.role),
+    ...(users ?? []).map(u => u.role),
+  ])
+  if (roleBlock) throw Object.assign(new Error(roleBlock), { statusCode: 400 })
 
   return toAdd.map(id => (users ?? []).find(u => u.user_id === id)!) as AddCandidate[]
 }
