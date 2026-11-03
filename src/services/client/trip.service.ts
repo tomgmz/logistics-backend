@@ -443,10 +443,19 @@ export function announceRouteChanged(bookingId: string): void {
  * truck is actually heading, and arrival times are worked out in that order.
  * Only the lead driver of the booking, and only on a run still being driven.
  */
+const STOP_ORDER_REASON: Record<string, string> = {
+  client_asked: 'the client asked',
+  bay_closed:   'a bay was closed or not ready',
+  traffic:      'traffic or a road closure',
+  nearer_first: 'a nearer stop first',
+  other:        'other',
+}
+
 export async function driverSetStopOrderService(
   tripId: string,
   tripStopIds: string[],
   actor: DriverActor,
+  why: { reason: string | null; note: string | null } = { reason: null, note: null },
 ) {
   const trip = await TripModel.findById(tripId)
   if (!trip) throw new Error(`Trip with ID ${tripId} not found`)
@@ -460,14 +469,28 @@ export async function driverSetStopOrderService(
     throw new Error('Those drop-offs are not all on this trip')
   }
 
+  // The nav screen re-sends the saved order on every load: only a real change
+  // is logged and announced to the office.
+  const before = [...trip.booking_trip_stops]
+    .sort((a: any, b: any) => a.sequence_order - b.sequence_order)
+    .map((s: any) => s.trip_stop_id)
+    .filter((id: string) => tripStopIds.includes(id))
+  const changed = before.join(',') !== tripStopIds.join(',')
+
   await TripModel.setStopOrder(tripId, tripStopIds)
 
-  logEvent({
-    user_id:     actor.userId,
-    log_type:    'booking',
-    action:      'driver_stop_order_changed',
-    description: `Driver changed the drop-off order on trip ${trip.trip_number} of booking ${bookingRef(booking)}`,
-  })
+  if (changed) {
+    const reasonText = why.reason
+      ? `${STOP_ORDER_REASON[why.reason] ?? why.reason}${why.note ? ` (${why.note})` : ''}`
+      : 'no reason given'
+    logEvent({
+      user_id:     actor.userId,
+      log_type:    'booking',
+      action:      'driver_stop_order_changed',
+      description: `Driver changed the drop-off order on trip ${trip.trip_number} of booking ${bookingRef(booking)}: ${reasonText}`,
+    })
+    void notifyStage('stop_order_changed', booking, { reason: reasonText, tripNumber: trip.trip_number })
+  }
 
   void invalidateEta(trip.booking_id).catch(() => {})
   void refreshPlannedEta(trip.booking_id)

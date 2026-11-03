@@ -30,6 +30,10 @@ export const tripPickupProofSchema = driverStopProofSchema.extend({
 /** The driver's chosen drop-off order for one trip, as trip stop ids. */
 export const tripStopOrderSchema = z.object({
   trip_stop_ids: z.array(z.string().uuid()).min(1).max(20),
+  // Why the driver changed it (optional): client_asked, bay_closed, traffic,
+  // nearer_first, or other with the text in reason_note.
+  reason:        z.enum(['client_asked', 'bay_closed', 'traffic', 'nearer_first', 'other']).optional().nullable(),
+  reason_note:   z.string().trim().max(200).optional().nullable(),
 })
 
 /**

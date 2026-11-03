@@ -248,6 +248,7 @@ export const driverSetStopOrder = async (req: Request, res: Response) => {
       param(req.params.tripId),
       req.body.trip_stop_ids,
       driverActor(req),
+      { reason: req.body.reason ?? null, note: req.body.reason_note ?? null },
     )
     res.status(200).json({ status: 'success', data: trip })
   } catch (error: any) {

@@ -108,6 +108,8 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   // delay.scheduler.ts: the next stop is running 15+ min past its planned window.
   delivery_delayed:       { type: 'booking.delivery_delayed',       audience: 'client' },
   delivery_delayed_staff: { type: 'booking.delivery_delayed_staff', roles: ['operations_manager'] },
+  // The driver chose a different drop-off order ("Go here next"), with their reason.
+  stop_order_changed:     { type: 'booking.stop_order_changed',     roles: ['operations_manager'] },
   // breakdown.scheduler.ts: a driver-reported breakdown still has no decision.
   breakdown_unhandled:    { type: 'booking.breakdown_unhandled',    roles: ['operations_manager'] },
   // The office swapped the main and second driver on the road (driving-shift.service).
@@ -301,6 +303,13 @@ function copyFor(
                (extra?.minutesLeft ? ` (in ${extra.minutesLeft} min)` : '') +
                '. Wait for the office to resume it before moving.',
       }
+    case 'stop_order_changed':
+      return {
+        title: 'Driver changed the drop-off order',
+        body:  `The driver on booking ${label} changed the drop-off order` +
+               (extra?.tripNumber ? ` on trip ${extra.tripNumber}` : '') +
+               `. Reason: ${reason ?? 'no reason given'}. Arrival times have been re-planned.`,
+      }
     case 'breakdown_unhandled':
       return {
         title: 'Breakdown waiting for a decision',
@@ -428,6 +437,8 @@ export interface NotifyExtra {
   // For `trip_resumed`: the new expected arrival window, when a pause moved it
   // by 30 minutes or more.
   newArrival?:   string
+  /** Which run of a multi-trip booking (stop_order_changed). */
+  tripNumber?:   number
   // Send to exactly these users (all drivers) instead of the stage's audience —
   // e.g. a driver who was just taken off the booking and so isn't on its crew.
   onlyUserIds?:  string[]
