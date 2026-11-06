@@ -65,7 +65,7 @@ const licenseRegex   = /^[A-Z]\d{2}-\d{2}-\d{6}$/
 const licenseMessage = 'Invalid LTO license number format (e.g. A01-23-456789)'
 
 export const licenseNumberField = () =>
-  z.string().regex(licenseRegex, licenseMessage)
+  z.string().trim().toUpperCase().regex(licenseRegex, licenseMessage)
 
 export const licenseExpiryField = () =>
   z
