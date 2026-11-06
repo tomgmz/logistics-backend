@@ -3,6 +3,7 @@ import * as push from '../messaging/push.service.js'
 import { broadcast } from '../../lib/realtime.js'
 import { CreateNotificationInput, NotificationRow } from '../../types/notification.types.js'
 import { PasswordResetRequestRow, ResetHandlerGroup } from '../../types/password-reset.types.js'
+import { getActiveStandinId } from '../../lib/it-standin.js'
 
 /**
  * Fan-out for password-reset requests.
@@ -44,6 +45,18 @@ function roleLabel(role: string): string {
 function requesterLabel(request: PasswordResetRequestRow, name?: string | null): string {
   const who = name?.trim() || request.email
   return `${who} (${roleLabel(request.requested_role)})`
+}
+
+/**
+ * Who staffs a queue: everyone with its role, plus (for the IT Administrator's
+ * queue) the Company Administrator standing in for a departed IT Administrator.
+ */
+async function queueStaff(group: ResetHandlerGroup): Promise<{ user_id: string }[]> {
+  const staff = await notificationModel.resolveRecipientsByRoles([GROUP_ROLE[group]])
+  if (group !== 'it_admin') return staff
+  const standin = await getActiveStandinId()
+  if (!standin || staff.some((r) => r.user_id === standin)) return staff
+  return [...staff, { user_id: standin, role: 'admin' }]
 }
 
 function queueUrl(group: ResetHandlerGroup, requestId: string): string {
@@ -93,7 +106,7 @@ export async function notifyResetRequested(
 ): Promise<void> {
   try {
     const role       = GROUP_ROLE[request.handler_group]
-    const recipients = await notificationModel.resolveRecipientsByRoles([role])
+    const recipients = await queueStaff(request.handler_group)
     if (recipients.length === 0) {
       // Nobody staffs this queue, so the request would sit unseen. Loud, because
       // the user has been told an admin was notified.
@@ -139,7 +152,7 @@ export async function notifyResetCompleted(
   try {
     // One lookup, two uses: it answers both "is the original sender still active?"
     // and "who staffs this queue now?".
-    const active = await notificationModel.resolveRecipientsByRoles([GROUP_ROLE[request.handler_group]])
+    const active = await queueStaff(request.handler_group)
     const sender = active.filter((r) => r.user_id === request.sent_by)
     const recipients = sender.length ? sender : active
 

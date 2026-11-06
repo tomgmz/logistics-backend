@@ -204,6 +204,17 @@ export const driverLocationPingSchema = z.object({
   speed_mps:   z.number().min(-1).max(90).optional().nullable(),
   heading_deg: z.number().min(-1).max(360).optional().nullable(),
   recorded_at: z.string().datetime({ offset: true }),
+  // Sent by the app (2026-11-06+) on the first ping after a silence: why the
+  // fixes in between never went out. Diagnostic only; older apps omit it.
+  gap: z.object({
+    since_ms:     z.number().int().nonnegative().max(7 * 24 * 3600_000),
+    fixes:        z.number().int().nonnegative().max(1_000_000),
+    offline:      z.number().int().nonnegative().max(1_000_000),
+    failed:       z.number().int().nonnegative().max(1_000_000),
+    last_error:   z.string().max(200).nullable().optional(),
+    background:   z.boolean().optional(),
+    restarted:    z.boolean().optional(),
+  }).optional(),
 })
 
 export const updateBookingStatusSchema = z.object({

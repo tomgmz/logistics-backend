@@ -1,4 +1,4 @@
-import { completeMissedHandovers } from './it-admin.service.js'
+import { activateOverdueStandins, completeMissedHandovers } from './it-admin.service.js'
 import { logSystem, logSystemError } from '../../lib/log-system.js'
 
 /**
@@ -21,14 +21,17 @@ async function tick(): Promise<void> {
   running = true
   try {
     const closed = await completeMissedHandovers()
+    // Day 30 with no confirmed replacement: the named Company Administrator
+    // stand-in takes over and the outgoing IT Admin is archived (2026-11-06).
+    const standins = await activateOverdueStandins()
     // Heartbeat on success too, so the IT Admin dashboard can tell a quiet hour
     // from a stopped scheduler.
     logSystem({
       log_level:  'info',
       event_type: 'cron_job',
       source:     'it-admin-render.scheduler',
-      message:    `IT Administrator handover tick: ${closed} missed handover(s) completed`,
-      metadata:   { closed },
+      message:    `IT Administrator handover tick: ${closed} missed handover(s) completed, ${standins} stand-in(s) took over`,
+      metadata:   { closed, standins },
     })
   } catch (err) {
     console.error('[it-admin-render] tick failed', err)

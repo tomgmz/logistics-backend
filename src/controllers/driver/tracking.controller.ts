@@ -1,5 +1,9 @@
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
+import { logSystem } from '../../lib/log-system.js'
+
+/** A device-reported silence longer than this goes to System Logs. */
+const GAP_LOG_MS = 2 * 60 * 1000
 import {
   recordDriverPositionService,
   getLivePositionService,
@@ -33,6 +37,28 @@ export const recordDriverPosition = async (req: Request, res: Response) => {
       },
       driverActor(req),
     )
+
+    // The phone was silent for a while: record why, so a hole in the trail has
+    // a cause (no fixes from the OS = app stopped; offline; requests failing).
+    const gap = req.body.gap as
+      | { since_ms: number; fixes: number; offline: number; failed: number; last_error?: string | null; background?: boolean; restarted?: boolean }
+      | undefined
+    if (gap && gap.since_ms > GAP_LOG_MS) {
+      const minutes = Math.round(gap.since_ms / 60_000)
+      const cause =
+        gap.fixes <= 1   ? 'the phone delivered no location fixes (app stopped or location paused by the OS)' :
+        gap.offline > 0 && gap.failed === 0 ? 'the phone had no connection' :
+        gap.failed > 0   ? `uploads failed (${gap.last_error ?? 'unknown error'})` :
+                           'fixes were held back by the upload gates'
+      logSystem({
+        log_level:  'warn',
+        event_type: 'external_api',
+        source:     'tracking.device',
+        message:    `Driver phone sent no position for ${minutes} min on booking ${param(req.params.bookingId)}: ${cause}.`,
+        metadata:   { booking_id: param(req.params.bookingId), ...gap },
+        user_id:    getRequestMeta(req).userId ?? null,
+      })
+    }
 
     // 202 means "understood, not recorded": the booking isn't running, or the
     // fix was too old to draw. Neither is the app's fault and neither is worth a

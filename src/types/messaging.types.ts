@@ -58,6 +58,8 @@ export type GroupSystemEvent =
   | { event: 'renamed'; name: string; previous_name?: string | null }
   | { event: 'added'; user_ids: string[]; names: string[] }
   | { event: 'removed'; user_id: string; name: string }
+  /** An invited person accepted; the line is sent in their name (2026-11-06). */
+  | { event: 'joined'; user_id: string; name: string }
 
 export interface ConversationParticipant {
   user_id: string

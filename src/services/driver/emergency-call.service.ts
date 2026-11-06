@@ -13,9 +13,8 @@ import type { DriverReport, IncidentType } from '../../types/driver/report.types
 /**
  * The in-app voice call a driver places after a quick alert.
  *
- * Simulring: every active Operations Manager's browser rings at once. Company
- * Administrators are rung only when there are no active Operations Managers at
- * all. The first one to press Answer gets the call (`CallModel.claim`), and the
+ * Simulring: every active Operations Manager's and Company Administrator's
+ * browser rings at once. The first one to press Answer gets the call (`CallModel.claim`), and the
  * others' ringers are told to stop.
  *
  * The phone owns the fallback. It rings for RING_SECONDS, and if nobody picks up
@@ -81,11 +80,16 @@ function toIncoming(call: EmergencyCall, report: DriverReport | null): IncomingC
   }
 }
 
-/** Operations Managers, or Company Administrators when there are none. */
+/**
+ * Every active Operations Manager AND every active Company Administrator, rung
+ * together (user's rule 2026-11-06: the Company Administrator can take an
+ * emergency call even when an Operations Manager is on). Before, administrators
+ * rang only when no Operations Manager account was active, so a manager who was
+ * away from their desk left the driver ringing out to the phone fallback.
+ */
 async function ringTargets(): Promise<string[]> {
-  const managers = await notificationModel.resolveUserIdsByRoles(['operations_manager'])
-  if (managers.length > 0) return managers
-  return notificationModel.resolveUserIdsByRoles(['admin'])
+  const ids = await notificationModel.resolveUserIdsByRoles(['operations_manager', 'admin'])
+  return [...new Set(ids)]
 }
 
 function tellRung(call: EmergencyCall, event: string, payload: unknown, except?: string | null) {

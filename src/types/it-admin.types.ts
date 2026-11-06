@@ -36,6 +36,11 @@ export interface ITAdminHandover {
   ended_at:           string | null
   cancelled_at:       string | null
   created_by:         string | null
+  /** Company Administrator who takes over if no successor confirms by render_due_at (2026-11-06). */
+  standin_id?:           string | null
+  standin_named_at?:     string | null
+  /** Set by the render scheduler when the stand-in took over; the outgoing is archived then. */
+  standin_activated_at?: string | null
 }
 
 /** The successor's details (added at the start of a handover or later). */
@@ -50,8 +55,9 @@ export interface ITAdminSuccessorInput {
 
 /** Starting a handover: why, and the successor if one is already known. */
 export interface StartHandoverInput {
-  reason:     string
-  successor?: ITAdminSuccessorInput | null
+  reason:      string
+  successor?:  ITAdminSuccessorInput | null
+  standin_id:  string
 }
 
 export interface UpdateITAdminInput {

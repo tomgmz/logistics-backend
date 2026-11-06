@@ -235,7 +235,9 @@ export async function me(req: Request, res: Response) {
       return
     }
     const user = await AuthService.getMe(userId)
-    res.status(200).json({ status: 'success', data: user })
+    // The web shows the IT Administrator pages to the Company Administrator who
+    // is standing in for a departed IT Administrator (lib/it-standin.ts).
+    res.status(200).json({ status: 'success', data: { ...user, it_standin: !!req.user?.it_standin } })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error'
     console.error('ME ERROR:', err)

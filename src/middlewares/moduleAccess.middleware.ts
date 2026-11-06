@@ -48,7 +48,7 @@ export async function moduleGuard(req: Request, res: Response, next: NextFunctio
     const user = req.user
     if (!user) return next() // authenticate handles the 401
 
-    if (isBypassRole(user.role)) return next()
+    if (isBypassRole(user.role) || user.it_standin) return next()
     if (!isManagedRole(user.role)) return next()
 
     const moduleKey = moduleForPath(req.path)
@@ -103,7 +103,7 @@ function moduleFlagGate(
       const user = req.user
       if (!user) return next() // authenticate handles the 401
 
-      if (isBypassRole(user.role)) return next()
+      if (isBypassRole(user.role) || user.it_standin) return next()
       if (!isManagedRole(user.role)) return next()
 
       const rows = await getUserPermissions(user.sub)
@@ -174,7 +174,7 @@ export function requireAnyModuleFlag(
       const user = req.user
       if (!user) return next() // authenticate handles the 401
 
-      if (isBypassRole(user.role)) return next()
+      if (isBypassRole(user.role) || user.it_standin) return next()
       if (!isManagedRole(user.role)) return next()
 
       const rows = await getUserPermissions(user.sub)

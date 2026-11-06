@@ -1,4 +1,5 @@
 import * as M from '../../models/admin/it-dashboard.model.js'
+import { getActiveStandinId } from '../../lib/it-standin.js'
 import {
   AccountsSection,
   DashboardLogRow,
@@ -394,6 +395,8 @@ async function accounts(now: number, users: M.UserRow[]): Promise<AccountsSectio
   const dormant = active.filter((u) => u.last_login_at && Date.parse(utc(u.last_login_at)!) < dormantBefore).length
 
   const itAdmin = active.find((u) => u.role === 'it_admin') ?? null
+  const standinId = await getActiveStandinId()
+  const standin   = standinId ? active.find((u) => u.user_id === standinId) ?? null : null
   // it_admin_transitioned is the one-step handover used before 2026-10-25.
   const handover = await M.latestAuditByAction(['it_admin_handover_completed', 'it_admin_transitioned'])
 
@@ -409,6 +412,7 @@ async function accounts(now: number, users: M.UserRow[]): Promise<AccountsSectio
     dormant,
     dormant_days: DORMANT_DAYS,
     it_admin:      itAdmin ? toStaff(itAdmin) : null,
+    it_standin:    standin ? toStaff(standin) : null,
     last_handover: handover ? { at: utc(handover.timestamp)!, description: handover.description } : null,
     administrators,
   }

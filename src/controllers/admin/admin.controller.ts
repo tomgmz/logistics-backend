@@ -47,7 +47,7 @@ export async function deleteAdmin(req: Request, res: Response) {
     await AdminService.deleteAdmin(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Administrator archived successfully' })
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message })
+    res.status(err?.code === 'STANDIN_LOCKED' ? 409 : 500).json({ status: 'error', code: err?.code, message: err.message })
   }
 }
 
@@ -57,10 +57,11 @@ export async function deactivateAdmin(req: Request, res: Response) {
     const data = await AdminService.deactivateAdmin(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Administrator deactivated', data })
   } catch (err: any) {
-    const status = err.message.includes('not found') ? 404
+    const status = err?.code === 'STANDIN_LOCKED' ? 409
+      : err.message.includes('not found') ? 404
       : err.message.includes('already') ? 409
       : 500
-    res.status(status).json({ status: 'error', message: err.message })
+    res.status(status).json({ status: 'error', code: err?.code, message: err.message })
   }
 }
 

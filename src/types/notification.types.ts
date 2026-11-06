@@ -67,6 +67,7 @@ export type NotificationType =
   // admin group: driver/client requests to `admin` (Company Admin), staff
   // requests to `it_admin` — never both.
   | 'auth.password_reset_requested'   // user is locked out / forgot -> the owning admin group
+  | 'it_admin.handover'              // IT Administrator stand-in named / took over (2026-11-06)
   | 'auth.password_reset_completed'   // user set a new password -> the admin who sent the link
   // Client support tickets. Carry `ticket_id` + `reference_number` in `data`;
   // `booking_id` stays null even when the ticket names a booking.

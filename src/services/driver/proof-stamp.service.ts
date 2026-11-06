@@ -15,19 +15,27 @@ import { fromDeviceClock } from '../../lib/device-clock.js'
  * plate, booking number, driver name and street address are all looked up here,
  * so none of what the stamp claims about the job comes from the phone.
  *
- * An app build that predates the stamp sends none of these fields, and neither
- * does the report form (which shares the upload helper). Those photos are
- * stored exactly as before: `stampFieldsFrom` returns null and nothing is drawn.
+ * An app build that predates the stamp sends none of these fields. Those photos
+ * are stored exactly as before: `stampFieldsFrom` returns null and nothing is drawn.
+ *
+ * Report photos are stamped too since 2026-11-06 (stamp_stop 'report', stamp_ref
+ * = the booking id or empty): "INCIDENT REPORT", time, place, driver, and the
+ * plate + booking when the driver is on that booking's crew. A photo picked from
+ * the gallery says so on the stamp, since its time and place are when it was
+ * attached, not when it was taken.
  */
 
 export interface StampFields {
-  stop:       'trip_pickup' | 'trip_stop'
+  stop:       'trip_pickup' | 'trip_stop' | 'report'
+  /** Trip / trip stop id; for a report, the booking id or '' (no booking). */
   refId:      string
   takenAt:    Date | null
   latitude:   number | null
   longitude:  number | null
   accuracyM:  number | null
   addedLater: boolean
+  /** Report photo chosen from the gallery, not taken with the camera just now. */
+  fromGallery: boolean
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -65,7 +73,11 @@ export function stampFieldsFrom(body: Record<string, unknown> | undefined): Stam
   if (!body) return null
   const stop  = body.stamp_stop
   const refId = typeof body.stamp_ref === 'string' ? body.stamp_ref : ''
-  if ((stop !== 'trip_pickup' && stop !== 'trip_stop') || !(UUID.test(refId) || LOCAL_REF.test(refId))) return null
+  if (stop === 'report') {
+    if (refId && !UUID.test(refId)) return null
+  } else if ((stop !== 'trip_pickup' && stop !== 'trip_stop') || !(UUID.test(refId) || LOCAL_REF.test(refId))) {
+    return null
+  }
 
   const lat = num(body.latitude)
   const lng = num(body.longitude)
@@ -82,7 +94,8 @@ export function stampFieldsFrom(body: Record<string, unknown> | undefined): Stam
     latitude:   located ? lat : null,
     longitude:  located ? lng : null,
     accuracyM:  located ? num(body.accuracy_m) : null,
-    addedLater: body.added_later === '1' || body.added_later === 'true',
+    addedLater: stop !== 'report' && (body.added_later === '1' || body.added_later === 'true'),
+    fromGallery: stop === 'report' && (body.from_gallery === '1' || body.from_gallery === 'true'),
   }
 }
 
@@ -103,7 +116,23 @@ interface StopContext {
   plate:           string | null
 }
 
+/** A report's booking: its number and plate (no trip or stop). */
+async function reportContext(bookingId: string): Promise<StopContext | null> {
+  const result = await pool.query<StopContext>(
+    `SELECT b.booking_id, b.reference_number, 1 AS trip_number, 1 AS trip_count,
+            NULL::int AS stop_number, NULL::int AS stop_count,
+            (SELECT CASE WHEN dl.is_vendor_supplied THEN dl.vendor_vehicle_plate ELSE tr.plate_number END
+               FROM deliveries dl LEFT JOIN trucks tr ON tr.truck_id = dl.truck_id
+              WHERE dl.booking_id = b.booking_id
+              ORDER BY dl.created_at DESC LIMIT 1) AS plate
+       FROM bookings b WHERE b.booking_id = $1`,
+    [bookingId],
+  )
+  return result.rows[0] ?? null
+}
+
 async function stopContext(fields: StampFields): Promise<StopContext | null> {
+  if (fields.stop === 'report') return fields.refId ? reportContext(fields.refId) : null
   const refId = await resolveRef(fields)
   if (!refId) return null
   // Trip counts leave out cancelled runs: "trip 2 of 3" must not count a run
@@ -183,7 +212,9 @@ export async function buildStampData(
     // A driver photographing a stop of a booking they are no longer on — the
     // office re-crewed it while the camera was open. The confirmation would be
     // refused anyway; refusing the upload too keeps the photo out of storage.
-    else if (actor.role === 'driver') throw new ProofNotOnCrewError()
+    // A report is never refused: an incident is worth recording whatever the
+    // crew list says; it just prints no booking details.
+    else if (actor.role === 'driver' && fields.stop !== 'report') throw new ProofNotOnCrewError()
   }
 
   const drift   = fields.takenAt ? receivedAt.getTime() - fields.takenAt.getTime() : 0
@@ -191,7 +222,9 @@ export async function buildStampData(
 
   let stopLabel: string | null = null
   let tripLabel: string | null = null
-  if (job) {
+  if (fields.stop === 'report') {
+    stopLabel = 'INCIDENT REPORT'
+  } else if (job) {
     stopLabel = fields.stop === 'trip_pickup'
       ? 'PICKUP'
       : job.stop_count && job.stop_count > 1 && job.stop_number
@@ -215,6 +248,7 @@ export async function buildStampData(
     bookingRef: job ? bookingRef(job) : null,
     driverName: name,
     addedLater: fields.addedLater,
+    warning:    fields.fromGallery ? 'FROM GALLERY · STAMPED WHEN ATTACHED' : null,
   }
 }
 

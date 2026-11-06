@@ -14,7 +14,8 @@ const ALL_STATUSES: ResetRequestStatus[] = [
 ]
 
 function actorFrom(req: Request): ResetService.ResetActor {
-  return { user_id: req.user!.sub, role: req.user!.role }
+  // The IT Administrator stand-in staffs the IT Administrator's reset queue.
+  return { user_id: req.user!.sub, role: req.user!.it_standin ? 'it_admin' : req.user!.role }
 }
 
 /**

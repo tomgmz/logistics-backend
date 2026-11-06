@@ -11,7 +11,7 @@ import { createTruckModelSchema, updateTruckModelSchema }             from '../s
 import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../schema/admin/general_manager.schema.js'
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
-import { updateITAdminSchema, startHandoverSchema, itAdminSuccessorSchema } from '../schema/admin/it-admin.schema.js'
+import { updateITAdminSchema, startHandoverSchema, setStandinSchema, itAdminSuccessorSchema } from '../schema/admin/it-admin.schema.js'
 import { assignBookingSchema, replaceCrewSchema, updateDeliveryStatusSchema, officeStepSchema, officeIncidentSchema } from '../schema/admin/assignment.schema.js'
 import * as OfficeProgressController from '../controllers/admin/office-progress.controller.js'
 import * as AdminController           from '../controllers/admin/admin.controller.js'
@@ -319,6 +319,10 @@ router.post('/it-admins/handover/successor',       authenticate, isItAdmin, vali
 router.post('/it-admins/handover/successor/resend', authenticate, isItAdmin, ITAdminController.resendSuccessor)
 router.delete('/it-admins/handover/successor',     authenticate, isItAdmin, ITAdminController.replaceSuccessor)
 router.post('/it-admins/handover/cancel',          authenticate, isItAdmin, ITAdminController.cancelHandover)
+// The Company Administrator who takes over if no replacement confirms within
+// the 30 days (2026-11-06). Only the outgoing IT Admin names one (the service checks).
+router.get('/it-admins/handover/standin-candidates', authenticate, isItAdmin, ITAdminController.listStandinCandidates)
+router.put('/it-admins/handover/standin',          authenticate, isItAdmin, validate(setStandinSchema), ITAdminController.setStandin)
 router.get('/it-admins/:id',    authenticate, isItAdmin, ITAdminController.getITAdminById)
 router.patch('/it-admins/:id',  authenticate, isItAdmin, lockGuard('user', fromParam('id')), validate(updateITAdminSchema), ITAdminController.updateITAdmin)
 router.patch('/it-admins/:id/deactivate', authenticate, isItAdmin, lockGuard('user', fromParam('id')), ITAdminController.deactivateITAdmin)

@@ -412,6 +412,18 @@ export async function respondToInvite(groupId: string, userId: string, accept: b
   if (!member) throw Object.assign(new Error('Invite not found'), { statusCode: 404 })
   if (member.status !== 'pending') throw Object.assign(new Error('Invite already responded to'), { statusCode: 400 })
   await groupModel.updateMemberStatus(groupId, userId, accept ? 'accepted' : 'declined')
+  // Everyone in the chat sees who joined, in order with the messages (user's
+  // rule 2026-11-06). Sent in the joiner's name; a decline posts nothing (they
+  // were never in the chat). An older app shows the stored sentence.
+  if (accept) {
+    const name = await push.getDisplayName(userId)
+    await postSystemEvent(groupId, userId, `${name} joined the group.`, { event: 'joined', user_id: userId, name })
+  }
+  // The members list ("In the group" / "Invited") and the header count are
+  // open on other people's screens: tell them, live. Without this the invite
+  // stayed "pending" for everyone else until they reloaded. The responder is
+  // named too, so their other devices (web + phone) catch up as well.
+  await announceGroupChange(groupId, [userId])
 }
 
 export async function sendGroupMessage(

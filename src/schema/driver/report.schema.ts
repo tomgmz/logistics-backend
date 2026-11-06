@@ -35,6 +35,12 @@ const incidentTypeSchema = z.enum([
 // the form offers a handful of attachments, not a gallery.
 const mediaUrls = z.array(z.string().url()).max(10)
 
+// Reports take photos only since 2026-11-06 (the user's rule). An old app that
+// still offers "Add video" sends a non-empty list and gets this message back on
+// the form, instead of the video being stored or silently dropped. An empty
+// list (what every app version sends without a video) still passes.
+const noVideos = z.array(z.string()).max(0, 'Videos are no longer accepted. Attach photos instead.')
+
 export const createDriverReportSchema = z.object({
   booking_id: z.string().uuid().optional().nullable(),
   truck_id:   z.string().uuid().optional().nullable(),
@@ -47,7 +53,7 @@ export const createDriverReportSchema = z.object({
   description: z.string().max(4000).optional().nullable(),
 
   photo_urls: mediaUrls.optional(),
-  video_urls: mediaUrls.optional(),
+  video_urls: noVideos.optional(),
 
   latitude:   z.number().min(-90).max(90).optional().nullable(),
   longitude:  z.number().min(-180).max(180).optional().nullable(),
@@ -67,7 +73,7 @@ export const enrichDriverReportSchema = z.object({
   description:       z.string().max(4000).optional().nullable(),
   address:           z.string().max(500).optional().nullable(),
   photo_urls:        mediaUrls.optional(),
-  video_urls:        mediaUrls.optional(),
+  video_urls:        noVideos.optional(),
   blowbagets_items:  blowbagetsItemsSchema.optional().nullable(),
   trip_can_continue: z.boolean().optional().nullable(),
 })

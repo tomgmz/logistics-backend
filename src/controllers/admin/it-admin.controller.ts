@@ -59,7 +59,7 @@ export async function getHandoverStatus(req: Request, res: Response) {
 // Refusals a handover step can raise; each is the caller's to fix, not a server fault.
 const HANDOVER_CONFLICTS = new Set([
   'NOT_SEAT_HOLDER', 'HANDOVER_OPEN', 'NO_OPEN_HANDOVER', 'SUCCESSOR_PENDING',
-  'NO_SUCCESSOR', 'SUCCESSOR_CONFIRMED',
+  'NO_SUCCESSOR', 'SUCCESSOR_CONFIRMED', 'BAD_STANDIN', 'STANDIN_ACTIVE',
 ])
 
 /** One handler shape for every handover step. The actor is always the caller. */
@@ -99,6 +99,21 @@ export const replaceSuccessor = handoverStep(
   (_req, actor) => ITAdminService.replaceSuccessor(actor),
   'Replacement removed. You can add a different one.',
 )
+export const setStandin = handoverStep(
+  (req, actor) => ITAdminService.setStandin(req.body.standin_id ?? null, actor),
+  'Stand-in saved.',
+)
+
+/** Active Company Administrators who can be named stand-in. */
+export async function listStandinCandidates(_req: Request, res: Response) {
+  try {
+    const data = await ITAdminService.listStandinCandidates()
+    res.status(200).json({ status: 'success', data })
+  } catch (err: any) {
+    res.status(500).json({ status: 'error', message: err.message })
+  }
+}
+
 export const cancelHandover = handoverStep(
   (_req, actor) => ITAdminService.cancelHandover(actor),
   'Handover cancelled. You remain the IT Administrator.',

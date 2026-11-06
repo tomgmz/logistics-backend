@@ -5,6 +5,7 @@ import { setContextUser } from '../lib/request-context.js'
 import { logEvent } from '../lib/log-event.js'
 import { logSystem } from '../lib/log-system.js'
 import { hashToken } from '../services/auth/auth.service.js'
+import { isActiveStandin } from '../lib/it-standin.js'
 
 const JWT_SECRET = process.env.JWT_SECRET!
 
@@ -15,6 +16,13 @@ export interface AuthPayload {
   type: 'access' | 'refresh'
   iat: number
   exp: number
+  /**
+   * Set (server-side only, never in the JWT) on the Company Administrator who is
+   * standing in for a departed IT Administrator. Their role stays 'admin';
+   * authorize() and the module guard also let them through as 'it_admin'.
+   * See lib/it-standin.ts.
+   */
+  it_standin?: boolean
 }
 
 declare global {
@@ -122,6 +130,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     req.user = session.users?.role
       ? { ...payload, role: session.users.role }
       : payload
+    if (await isActiveStandin(payload.sub, req.user.role)) req.user.it_standin = true
     req.sessionId = session.id
     // Hand the actor to the ambient request store so logEvent() can attribute
     // rows written deep in a service without every signature carrying a userId.
@@ -161,6 +170,7 @@ export async function optionalAuth(req: Request, res: Response, next: NextFuncti
         req.user = session.users.role
           ? { ...payload, role: session.users.role }
           : payload
+        if (await isActiveStandin(payload.sub, req.user.role)) req.user.it_standin = true
         req.sessionId = session.id
         AuthModel.refreshSessionLastSeen(session.id).catch(() => {})
       }
@@ -176,7 +186,11 @@ export async function optionalAuth(req: Request, res: Response, next: NextFuncti
 
 export function authorize(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    // The IT Administrator stand-in passes any gate the IT Administrator passes.
+    const allowed = !!req.user && (
+      roles.includes(req.user.role) || (!!req.user.it_standin && roles.includes('it_admin'))
+    )
+    if (!allowed) {
       // An attempt to reach something you are not entitled to is a business
       // fact, not a technical one, so it belongs in the audit trail: "did
       // anyone try to open user management before we granted it?" is a question the

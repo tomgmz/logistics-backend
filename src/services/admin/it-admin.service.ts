@@ -10,6 +10,11 @@ import { invalidateUserPermissions } from '../../middlewares/moduleAccess.middle
 import * as ResetModel from '../../models/auth/password-reset.model.js'
 import { assertPhoneAvailable } from '../../lib/phone-unique.js'
 import { errorMessage } from '../../lib/error-message.js'
+import { invalidateStandinCache } from '../../lib/it-standin.js'
+import * as notificationModel from '../../models/notification/notification.model.js'
+import * as push from '../messaging/push.service.js'
+import { broadcast } from '../../lib/realtime.js'
+import type { CreateNotificationInput, NotificationRow } from '../../types/notification.types.js'
 
 /** An error the controller can turn into a specific status code. */
 function coded(message: string, code: string): Error {
@@ -156,13 +161,199 @@ export async function activateITAdmin(
  * password reset routes to the it_admin queue.
  */
 
-/** The open handover run by `actorId`, or a coded refusal. */
-async function openHandoverOf(actorId: string) {
+/**
+ * The open handover `actorId` may act on, or a coded refusal: the outgoing IT
+ * Admin's own, or (with allowStandin) the one whose stand-in the actor is,
+ * once the stand-in has taken over. The stand-in may add / re-send / replace
+ * the successor; only the outgoing IT Admin may cancel or name the stand-in.
+ */
+async function openHandoverOf(actorId: string, opts: { allowStandin?: boolean } = {}) {
   const handover = await ITAdminModel.findOpenHandover()
-  if (!handover || handover.outgoing_id !== actorId) {
+  const isOutgoing = !!handover && handover.outgoing_id === actorId
+  const isStandin  = !!handover && !!opts.allowStandin
+    && handover.standin_id === actorId && !!handover.standin_activated_at
+  if (!handover || (!isOutgoing && !isStandin)) {
     throw coded('There is no handover in progress on your account.', 'NO_OPEN_HANDOVER')
   }
   return handover
+}
+
+/** In-app + push notice to one or more users about the handover. Best effort. */
+async function notifyHandover(userIds: string[], title: string, body: string, actionUrl: string): Promise<void> {
+  try {
+    if (!userIds.length) return
+    const type = 'it_admin.handover'
+    const data = { type, action_url: actionUrl }
+    const rows: CreateNotificationInput[] = userIds.map((user_id) => ({ user_id, type, title, body, booking_id: null, data }))
+    const inserted = await notificationModel.insertMany(rows)
+    void Promise.allSettled(inserted.map((row: NotificationRow) =>
+      broadcast(`notifications:user:${row.user_id}`, 'new_notification', row)))
+    void push.sendToUsers(userIds, { title, body, data })
+  } catch (err) {
+    console.error('[it-admin] handover notice failed', err)
+  }
+}
+
+/** An active Company Administrator, or a coded refusal. */
+async function assertStandinCandidate(userId: string) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id, role, status, first_name, last_name, email')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data || data.role !== 'admin' || data.status !== 'active') {
+    throw coded('The stand-in must be an active Company Administrator.', 'BAD_STANDIN')
+  }
+  return data
+}
+
+function personName(u: { first_name: string | null; last_name: string | null; email?: string | null } | null): string {
+  return (u ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() : '') || u?.email || 'a Company Administrator'
+}
+
+/**
+ * Refuse to deactivate or archive the Company Administrator named as stand-in
+ * on the open handover. Without this the stand-in could be switched off before
+ * (or after) day 30, leaving the IT seat with nobody: exactly what the required
+ * stand-in exists to prevent. The outgoing IT Admin names someone else first;
+ * after the stand-in took over, it lasts until the new IT Admin confirms.
+ */
+export async function assertNotStandin(userId: string): Promise<void> {
+  const handover = await ITAdminModel.findOpenHandover()
+  if (!handover || handover.standin_id !== userId) return
+  throw coded(
+    handover.standin_activated_at
+      ? 'This Company Administrator is standing in as IT Administrator. They can be deactivated or archived once the new IT Administrator has set their password.'
+      : 'This Company Administrator is the named IT Administrator stand-in. Ask the IT Administrator to name a different stand-in first.',
+    'STANDIN_LOCKED',
+  )
+}
+
+/** Active Company Administrators the outgoing IT Admin can name as stand-in. */
+export async function listStandinCandidates() {
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id, first_name, last_name, email')
+    .eq('role', 'admin')
+    .eq('status', 'active')
+    .order('first_name', { ascending: true })
+  if (error) throw error
+  return data ?? []
+}
+
+/**
+ * The outgoing IT Admin names the Company Administrator who takes over if
+ * nobody has confirmed by the render target. Required (2026-11-06): it can be
+ * changed until the stand-in has taken over, never cleared.
+ */
+export async function setStandin(standinId: string | null, actorId: string) {
+  if (!standinId) {
+    throw coded('A stand-in is required: the IT Administrator cannot stay past the render time. Choose a different Company Administrator instead.', 'BAD_STANDIN')
+  }
+  const handover = await openHandoverOf(actorId)
+  if (handover.standin_activated_at) {
+    throw coded('The stand-in has already taken over and can no longer be changed.', 'STANDIN_ACTIVE')
+  }
+  const person   = standinId ? await assertStandinCandidate(standinId) : null
+  const previous = handover.standin_id ?? null
+  if (previous === standinId) return { standin_id: standinId }
+
+  await ITAdminModel.updateHandover(handover.handover_id, {
+    standin_id:       standinId,
+    standin_named_at: standinId ? new Date().toISOString() : null,
+  })
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_management',
+    action:      'it_admin_standin_named',
+    description: standinId
+      ? `Company Administrator ${personName(person)} (${standinId}) named IT Administrator stand-in; takes over on ${handover.render_due_at} if no replacement has confirmed`
+      : 'IT Administrator stand-in cleared',
+  })
+
+  const due = new Date(handover.render_due_at).toLocaleDateString('en-PH', {
+    timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric',
+  })
+  if (standinId) {
+    void notifyHandover([standinId], 'You are the IT Administrator stand-in',
+      `The IT Administrator is leaving. If no replacement has set their password by ${due}, you will take over the IT Administrator's work until the new IT Administrator starts.`,
+      '/admin/dashboard')
+  }
+  if (previous) {
+    void notifyHandover([previous], 'No longer the IT Administrator stand-in',
+      'The IT Administrator named someone else (or nobody) to stand in for them.', '/admin/dashboard')
+  }
+  return { standin_id: standinId }
+}
+
+/**
+ * Day 30 (render scheduler): an overdue handover with a named stand-in and no
+ * confirmed successor hands the IT Administrator powers to the stand-in and
+ * archives the outgoing IT Admin. If the named stand-in is no longer an active
+ * Company Administrator, nothing happens (the outgoing stays, as before) and
+ * the outgoing IT Admin is told. Returns how many stand-ins took over.
+ */
+export async function activateOverdueStandins(): Promise<number> {
+  const handover = await ITAdminModel.findOpenHandover()
+  if (!handover || handover.standin_activated_at || !handover.standin_id) return 0
+  if (new Date(handover.render_due_at).getTime() > Date.now()) return 0
+
+  // A successor who has already set their password is completed by
+  // completeMissedHandovers, not taken over.
+  if (handover.successor_id) {
+    const { data: succ } = await supabase.from('users')
+      .select('must_change_password, status').eq('user_id', handover.successor_id).maybeSingle()
+    if (succ && succ.status === 'active' && !succ.must_change_password) return 0
+  }
+
+  let standin
+  try {
+    standin = await assertStandinCandidate(handover.standin_id)
+  } catch {
+    console.error('[it-admin] stand-in is not an active Company Administrator; the outgoing IT Administrator stays', handover.standin_id)
+    void notifyHandover([handover.outgoing_id], 'Your stand-in cannot take over',
+      'The Company Administrator you named is no longer active. Name another stand-in, or add your replacement.',
+      '/it_admin/dashboard')
+    return 0
+  }
+
+  // Guarded on still-not-activated, so two server instances act once.
+  const { data: claimed, error } = await supabase
+    .from('it_admin_handovers')
+    .update({ standin_activated_at: new Date().toISOString() })
+    .eq('handover_id', handover.handover_id)
+    .is('standin_activated_at', null)
+    .is('ended_at', null)
+    .is('cancelled_at', null)
+    .select('handover_id')
+  if (error) throw error
+  if (!claimed?.length) return 0
+  invalidateStandinCache()
+  invalidateUserPermissions(standin.user_id)
+
+  // The resigned IT Administrator's 30 days are up: their account closes now.
+  await archiveAccount(handover.outgoing_id).catch((err) =>
+    console.error('[it-admin] archiving the outgoing IT Administrator failed', handover.outgoing_id, err))
+
+  logEvent({
+    user_id:     null,
+    log_type:    'user_management',
+    action:      'it_admin_standin_activated',
+    description: `IT Administrator render overdue with no confirmed replacement: Company Administrator ${personName(standin)} (${standin.user_id}) now holds the IT Administrator powers; the outgoing IT Administrator ${handover.outgoing_id} was archived`,
+  })
+
+  void notifyHandover([standin.user_id], 'You are now standing in as IT Administrator',
+    'No replacement IT Administrator confirmed within 30 days. You now have the IT Administrator pages (User Management, password resets, Logs) until the new IT Administrator sets their password. Add them from the IT Administrator dashboard.',
+    '/it_admin/dashboard')
+  // The other Company Administrators should know who holds IT now.
+  const others = (await notificationModel.resolveUserIdsByRoles(['admin']).catch(() => [] as string[]))
+    .filter((id) => id !== standin.user_id)
+  void notifyHandover(others, 'IT Administrator stand-in',
+    `${personName(standin)} is standing in as IT Administrator until a new IT Administrator starts.`,
+    '/admin/dashboard')
+  return 1
 }
 
 /** Turns an RPC's RAISE into the same coded refusal the controller maps. */
@@ -183,8 +374,9 @@ function rpcRefusal(message: string): Error | null {
  * the successor (if any) and whether they have confirmed yet.
  */
 export async function getHandoverStatus(actorId: string) {
-  const handover = await ITAdminModel.findOpenHandover()
-  const mine     = handover && handover.outgoing_id === actorId ? handover : null
+  const handover  = await ITAdminModel.findOpenHandover()
+  const isStandin = !!handover && handover.standin_id === actorId && !!handover.standin_activated_at
+  const mine      = handover && (handover.outgoing_id === actorId || isStandin) ? handover : null
 
   let successor: {
     user_id: string; email: string; first_name: string | null; last_name: string | null
@@ -199,15 +391,29 @@ export async function getHandoverStatus(actorId: string) {
     successor = data ?? null
   }
 
+  let standin: { user_id: string; email: string; first_name: string | null; last_name: string | null } | null = null
+  if (mine?.standin_id) {
+    const { data } = await supabase
+      .from('users')
+      .select('user_id, email, first_name, last_name')
+      .eq('user_id', mine.standin_id)
+      .maybeSingle()
+    standin = data ?? null
+  }
+
   return {
     render_days: RENDER_DAYS,
+    /** 'outgoing' = the resigning IT Admin; 'standin' = the Company Administrator who took over. */
+    viewer: mine ? (isStandin ? 'standin' : 'outgoing') : null,
     handover: mine && {
-      handover_id:   mine.handover_id,
-      reason:        mine.reason,
-      started_at:    mine.started_at,
-      render_due_at: mine.render_due_at,
-      overdue:       new Date(mine.render_due_at).getTime() < Date.now(),
+      handover_id:    mine.handover_id,
+      reason:         mine.reason,
+      started_at:     mine.started_at,
+      render_due_at:  mine.render_due_at,
+      overdue:        new Date(mine.render_due_at).getTime() < Date.now(),
       successor,
+      standin,
+      standin_active: !!mine.standin_activated_at,
     },
   }
 }
@@ -217,6 +423,11 @@ export async function getHandoverStatus(actorId: string) {
  * call (the replacement is already known).
  */
 export async function startHandover(input: StartHandoverInput, actorId: string) {
+  // Checked before the render starts: a handover never exists without a valid
+  // stand-in, so the outgoing IT Admin can't stay past the 30 days.
+  if (!input.standin_id) throw coded('Choose the Company Administrator who stands in after the 30 days.', 'BAD_STANDIN')
+  await assertStandinCandidate(input.standin_id)
+
   const { data, error } = await supabase.rpc('start_it_admin_handover', {
     p_outgoing_id: actorId,
     p_reason:      input.reason,
@@ -234,13 +445,14 @@ export async function startHandover(input: StartHandoverInput, actorId: string) 
 
   // A failed successor here leaves a started handover with none added yet,
   // which the panel shows with "Add your replacement": nothing to undo.
+  await setStandin(input.standin_id, actorId)
   const successor = input.successor ? await addSuccessor(input.successor, actorId) : null
   return { handover, successor }
 }
 
 /** Step 2: the successor's account, created with an emailed temporary password. */
 export async function addSuccessor(input: ITAdminSuccessorInput, actorId: string) {
-  const handover = await openHandoverOf(actorId)
+  const handover = await openHandoverOf(actorId, { allowStandin: true })
   if (handover.successor_id) throw rpcRefusal('SUCCESSOR_PENDING')!
   await assertPhoneAvailable(input.phone)
 
@@ -255,7 +467,9 @@ export async function addSuccessor(input: ITAdminSuccessorInput, actorId: string
   const incomingId = authData.user.id
 
   const { data: created, error: rpcError } = await supabase.rpc('add_it_admin_successor', {
-    p_outgoing_id: actorId,
+    // The RPC finds the handover by its outgoing IT Admin (also when the
+    // stand-in adds the successor; the audit log below names the real actor).
+    p_outgoing_id: handover.outgoing_id,
     p_incoming_id: incomingId,
     p_email:       input.email,
     p_first_name:  input.first_name,
@@ -289,7 +503,7 @@ export async function addSuccessor(input: ITAdminSuccessorInput, actorId: string
 
 /** A new temporary password for a successor who lost or let the first one expire. */
 export async function resendSuccessorSignIn(actorId: string) {
-  const handover = await openHandoverOf(actorId)
+  const handover = await openHandoverOf(actorId, { allowStandin: true })
   if (!handover.successor_id) throw coded('No replacement has been added yet.', 'NO_SUCCESSOR')
 
   const { data: successor, error } = await supabase
@@ -326,7 +540,7 @@ export async function resendSuccessorSignIn(actorId: string) {
 
 /** Archive an unconfirmed successor so a different one can be added. */
 export async function replaceSuccessor(actorId: string) {
-  const handover = await openHandoverOf(actorId)
+  const handover = await openHandoverOf(actorId, { allowStandin: true })
   if (!handover.successor_id) throw coded('No replacement has been added yet.', 'NO_SUCCESSOR')
   await archiveUnconfirmedSuccessor(handover.successor_id, actorId)
   await ITAdminModel.updateHandover(handover.handover_id, { successor_id: null, successor_added_at: null })
@@ -335,6 +549,9 @@ export async function replaceSuccessor(actorId: string) {
 /** Stop the handover before anyone confirmed: the caller keeps the role. */
 export async function cancelHandover(actorId: string) {
   const handover = await openHandoverOf(actorId)
+  if (handover.standin_activated_at) {
+    throw coded('The stand-in has already taken over; the handover ends when the new IT Administrator sets their password.', 'STANDIN_ACTIVE')
+  }
   if (handover.successor_id) await archiveUnconfirmedSuccessor(handover.successor_id, actorId)
 
   await ITAdminModel.updateHandover(handover.handover_id, { cancelled_at: new Date().toISOString() })
@@ -384,7 +601,10 @@ export async function completeHandoverOnConfirm(userId: string): Promise<void> {
     const { data: outgoingId, error } = await supabase.rpc('complete_it_admin_handover', { p_successor_id: userId })
     if (error) throw error
     if (!outgoingId) return
+    // The stand-in (if one took over) loses the IT Administrator powers now.
+    invalidateStandinCache()
 
+    // Already archived when a stand-in took over on day 30; archiving again is harmless.
     await archiveAccount(outgoingId as string)
 
     // The new IT Admin inherits an honest reset queue.

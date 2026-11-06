@@ -70,6 +70,8 @@ export interface ProofStampData {
   nameLabel?:   string | null
   /** The photo was added to a stop already confirmed — not taken at the moment of confirming. */
   addedLater?:  boolean
+  /** An amber warning line of its own (e.g. a report photo picked from the gallery). */
+  warning?:     string | null
 }
 
 /* ── Philippine time ──────────────────────────────────────────────────────── */
@@ -228,8 +230,8 @@ function buildOverlay(width: number, height: number, data: ProofStampData): stri
   y += heroH + 26
 
   /* Row 2 — "added later" warning */
-  if (data.addedLater) {
-    const label = 'PHOTO ADDED AFTER THE STOP WAS CONFIRMED'
+  if (data.addedLater || data.warning) {
+    const label = data.addedLater ? 'PHOTO ADDED AFTER THE STOP WAS CONFIRMED' : String(data.warning)
     const lw    = measure(f.bold, label, 22, 1.5)
     parts.push(`<rect x="${pad}" y="${y}" width="${lw + 28}" height="38" rx="19" fill="${AMBER}"/>`)
     text(f.bold, label, pad + 14, y + 27, 22, INK, 1.5)

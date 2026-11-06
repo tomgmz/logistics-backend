@@ -91,9 +91,14 @@ async function sendExpo(subs: model.PushSubscriptionRow[], payload: PushPayload)
       title: payload.title,
       body:  payload.body,
       data:  payload.data,
-      sound: 'default',
+      // The 8338 chime, bundled in the app since 2026-11-06 (assets/sounds),
+      // on the Android 'alerts' channel the app creates with that sound. An
+      // older app build has neither: iOS then plays its default sound and
+      // Android posts to Expo's fallback channel (still audible, no heads-up
+      // banner), so ship the new APK before (or with) this backend.
+      sound: 'notify.wav',
       priority: 'high',
-      channelId: 'messages',
+      channelId: 'alerts',
       ...(payload.tag && { tag: payload.tag, collapseId: payload.tag }),
     })
   }

@@ -7,6 +7,7 @@ import { logEvent } from '../../lib/log-event.js'
 import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
 import { assertPhoneAvailable } from '../../lib/phone-unique.js'
 import { errorMessage } from '../../lib/error-message.js'
+import { assertNotStandin } from './it-admin.service.js'
 
 export async function getAllAdmin() {
   return AdminModel.findAll()
@@ -89,6 +90,7 @@ export async function updateAdmin(userId: string, input: UpdateAdminInput, actor
 }
 
 export async function deleteAdmin(userId: string, actorId?: string | null) {
+  await assertNotStandin(userId)
   const result = await AdminModel.remove(userId)
   await banArchivedAuthUser(userId)
 
@@ -104,6 +106,7 @@ export async function deleteAdmin(userId: string, actorId?: string | null) {
 }
 
 export async function deactivateAdmin(userId: string, actorId?: string | null) {
+  await assertNotStandin(userId)
   return deactivateUserWithBan(userId, 'admin', 'admin_deactivated', 'Administrator', actorId)
 }
 
