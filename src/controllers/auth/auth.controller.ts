@@ -247,6 +247,16 @@ export async function me(req: Request, res: Response) {
 
 
 
+export async function profile(req: Request, res: Response) {
+  try {
+    const data = await AuthService.getProfile(req.user!.sub)
+    res.status(200).json({ status: 'success', data })
+  } catch (err: unknown) {
+    console.error('PROFILE ERROR:', err)
+    res.status(500).json({ status: 'error', message: 'Could not load your profile.' })
+  }
+}
+
 export async function changePassword(req: Request, res: Response) {
   try {
     const userId   = req.user!.sub

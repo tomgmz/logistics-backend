@@ -28,6 +28,7 @@ import { startFleetRecheckScheduler } from './services/notification/fleet-rechec
 import { startCompletionScheduler } from './services/notification/completion.scheduler.js'
 import { startLicenseExpiryScheduler } from './services/notification/license-expiry.scheduler.js'
 import { startRegistrationExpiryScheduler } from './services/notification/registration-expiry.scheduler.js'
+import { startContractExpiryScheduler } from './services/notification/contract-expiry.scheduler.js'
 import { startDriverCallScheduler } from './services/notification/driver-call.scheduler.js'
 import { startPauseContinuationScheduler } from './services/notification/pause-continuation.scheduler.js'
 import { startDelayScheduler } from './services/notification/delay.scheduler.js'
@@ -39,6 +40,8 @@ import { reportWebauthnConfig } from './lib/webauthn-config.js'
 import { requestContext } from './lib/request-context.js'
 import { logSystem } from './lib/log-system.js'
 import { fileUrls } from './middlewares/fileUrls.middleware.js'
+import filesRoutes from './routes/files.routes.js'
+import { allowedOrigins } from './lib/allowed-origins.js'
 
 dotenv.config();
 
@@ -68,15 +71,6 @@ app.use(helmet({
 }));
 
 // CORS
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
-  'http://localhost:3000',
-  'https://8338logistics.delivery',
-  'https://www.8338logistics.delivery',
-  'https://logistics-frontend-seven.vercel.app',
-  'http://localhost:4000',
-  'http://localhost:8081',
-];
-
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
@@ -154,6 +148,9 @@ app.use(
 // methods, so this only ever applies to a cookie-carrying browser write.
 app.use('/api/auth/csrf', authRoutes)
 app.use('/api/auth', authRoutes);
+
+// Sealed file links (lib/file-links.ts): read-only, the token is the permission.
+app.use('/api/files', filesRoutes);
 
 app.use('/api', verifyCsrfToken);
 
@@ -250,6 +247,7 @@ app.listen(PORT, '0.0.0.0', () => {
   // Tells Fleet Managers + Company Administrators a month before a vehicle's
   // registration expires.
   startRegistrationExpiryScheduler();
+  startContractExpiryScheduler();
   // Reminds the crew one hour before the driver's call time.
   startDriverCallScheduler();
   // Paused deliveries: reminds the crew before the continuation call time and

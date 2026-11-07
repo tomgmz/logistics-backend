@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { logSystemError } from './log-system.js'
+import { refFromSealedUrl, sealFileRef } from './file-links.js'
 
 /**
  * Every uploaded file lives in one PRIVATE Cloudflare R2 bucket. Nothing in it
@@ -136,6 +137,15 @@ export async function fileSha256(refOrKey: string): Promise<string | null> {
   }
 }
 
+/**
+ * Opens a stored file for streaming (GET /api/files). `range` is the
+ * browser's Range header, passed through so video seeking and iOS Safari
+ * (which only plays video in ranges) work.
+ */
+export async function openFile(key: string, range?: string) {
+  return s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key, ...(range ? { Range: range } : {}) }))
+}
+
 export async function deleteFile(refOrKey: string): Promise<void> {
   try {
     await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: keyOf(refOrKey) }))
@@ -192,11 +202,16 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return proto === Object.prototype || proto === null
 }
 
-/** Copy of `value` with every file reference swapped for a signed link. */
-export async function signFileRefsDeep(value: unknown): Promise<unknown> {
+/**
+ * Copy of `value` with every file reference swapped for a link. With
+ * `baseUrl` (every API response since 2026-11-07) the link is a sealed link to
+ * this API (lib/file-links.ts), which hides the storage location; without it,
+ * an R2 signed link.
+ */
+export async function signFileRefsDeep(value: unknown, baseUrl?: string): Promise<unknown> {
   const now = Date.now()
   const walk = async (v: unknown): Promise<unknown> => {
-    if (isFileRef(v)) return signFileRef(v, now)
+    if (isFileRef(v)) return baseUrl ? sealFileRef(v, baseUrl, now) : signFileRef(v, now)
     if (Array.isArray(v)) return Promise.all(v.map(walk))
     if (isPlainObject(v)) {
       const out: Record<string, unknown> = {}
@@ -224,13 +239,14 @@ export class FileRefInTextError extends Error {
 }
 
 /**
- * Copy of a request body with every signed link of ours in a file field
- * swapped back to its reference. Anywhere else a link is left as plain text,
+ * Copy of a request body with every link of ours in a file field (an R2 signed
+ * link from an older app's offline queue, or a sealed link) swapped back to
+ * its reference. Anywhere else a link is left as plain text,
  * and text starting with `r2://` throws FileRefInTextError.
  */
 export function refsFromSignedUrlsDeep(value: unknown, field = '', inFileField = false): unknown {
   if (typeof value === 'string') {
-    if (inFileField) return refFromSignedUrl(value) ?? value
+    if (inFileField) return refFromSignedUrl(value) ?? refFromSealedUrl(value) ?? value
     if (value.trimStart().startsWith(FILE_REF_PREFIX)) throw new FileRefInTextError(field)
     return value
   }

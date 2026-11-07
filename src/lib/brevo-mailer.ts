@@ -2118,3 +2118,80 @@ export async function sendLicenseExpiryStaffEmail(p: {
     what: 'license expiry staff email',
   })
 }
+
+// ---------------------------------------------------------------------------
+// A client's contract with 8338 is about to run out (contract-expiry.scheduler,
+// 2026-11-07). Two copies: the client's own, and the office's (each Company
+// Administrator, General Manager and Operations Manager), at every stage of the
+// shared schedule (1 month, 3/2/1 weeks, 6..1 days, the day itself).
+// ---------------------------------------------------------------------------
+function contractWhen(daysLeft: number): string {
+  if (daysLeft <= 0) return 'today'
+  if (daysLeft === 1) return 'tomorrow'
+  return `in ${daysLeft} days`
+}
+
+export async function sendContractExpiryClientEmail(p: {
+  to:          string
+  firstName:   string | null
+  companyName: string | null
+  expiresOn:   string
+  daysLeft:    number
+}): Promise<void> {
+  const when    = contractWhen(p.daysLeft)
+  const company = p.companyName?.trim() || 'your company'
+  const subject = p.daysLeft <= 0
+    ? `Your ${APP_NAME} contract ends today`
+    : `Your ${APP_NAME} contract ends ${when}`
+  const intro =
+    `Hi ${p.firstName?.trim() || 'there'}, the delivery contract between ${company} and ${APP_NAME} is valid until ` +
+    `${p.expiresOn} (${when}). To keep booking deliveries without a break, please contact us to renew it. ` +
+    'Once it ends, new bookings are closed; you can still sign in and view your data for 7 days, then sign-in closes until the contract is renewed.'
+  const rows: Array<[string, string]> = [
+    ['Company',     company],
+    ['Valid until', p.expiresOn],
+  ]
+  const footer = `This reminder was sent because your ${APP_NAME} client contract is about to end.`
+  const html = supportEmailHtml('Contract Renewal Reminder', escapeHtml(intro), supportRowsHtml(rows), footer)
+  const text = [intro, '', ...rows.map(([l, v]) => `${l}: ${v}`), '', '---', emailFooterText(footer)].join('\n')
+  await sendSupportEmail({
+    subject, html, text,
+    to:      { email: p.to, ...(p.firstName ? { name: p.firstName } : {}) },
+    replyTo: { email: CONTACT_INBOX_EMAIL },
+    what:    'contract expiry client email',
+  })
+}
+
+export async function sendContractExpiryStaffEmail(p: {
+  to:          string
+  toName?:     string | null
+  clientName:  string
+  companyName: string | null
+  clientEmail: string | null
+  expiresOn:   string
+  daysLeft:    number
+}): Promise<void> {
+  const when    = contractWhen(p.daysLeft)
+  const company = p.companyName?.trim() || p.clientName
+  const subject = p.daysLeft <= 0
+    ? `Client contract ends today: ${company}`
+    : `Client contract ends ${when}: ${company}`
+  const intro =
+    `The contract with ${company} is valid until ${p.expiresOn} (${when}). Arrange the renewal with the client, ` +
+    'then update "Contract Valid Until" on their account in User Management. After that date the client cannot book; ' +
+    '7 days later they cannot sign in.'
+  const rows: Array<[string, string]> = [
+    ['Company',     company],
+    ['Contact',     p.clientName],
+    ['Email',       p.clientEmail ?? 'Not on file'],
+    ['Valid until', p.expiresOn],
+  ]
+  const footer = `This reminder was sent because a client contract on ${APP_NAME} is about to end.`
+  const html = supportEmailHtml('Contract Expiry Reminder', escapeHtml(intro), supportRowsHtml(rows), footer)
+  const text = [intro, '', ...rows.map(([l, v]) => `${l}: ${v}`), '', '---', emailFooterText(footer)].join('\n')
+  await sendSupportEmail({
+    subject, html, text,
+    to:   { email: p.to, ...(p.toName ? { name: p.toName } : {}) },
+    what: 'contract expiry staff email',
+  })
+}

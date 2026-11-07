@@ -7,6 +7,7 @@ import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import { assertPhoneAvailable } from '../../lib/phone-unique.js'
 import { errorMessage } from '../../lib/error-message.js'
+import { requestContractExpiryCheck } from '../notification/contract-expiry.scheduler.js'
 
 export async function getAllClient() {
   return ClientModel.findAll()
@@ -61,6 +62,9 @@ export async function createClient(
   
     })
 
+    // A contract already inside the reminder window is reminded straight away.
+    if (input.contract_valid_until) requestContractExpiryCheck()
+
     return result
   } catch (err: unknown) {
     // Roll back the Supabase Auth user so no orphan is left
@@ -88,6 +92,7 @@ export async function updateClient(
   }
 
   const result = await ClientModel.update(userId, input)
+  if (input.contract_valid_until !== undefined) requestContractExpiryCheck()
 
   logEvent({
     user_id:     actorId,

@@ -57,11 +57,16 @@ export type NotificationType =
   | 'driver.report'                   // detailed report the trip survives -> ops + fleet + admins
   // Scheduled, about the driver themselves: their license expires within a month.
   // Carries `license_expiry` in `data`; `booking_id` is always null.
-  | 'driver.license_expiring'         // one month before license_expiry -> that driver
-  | 'driver.license_expiring_staff'    // a driver's license expires within a month / 7 days / today -> Company Administrators + Operations Managers (in-app only)
+  // All expiry reminders follow lib/expiry-reminder-stages: 1 month, 3/2/1 weeks, 6..1 days, the day.
+  | 'driver.license_expiring'         // license_expiry approaching -> that driver (app, push, email)
+  | 'driver.license_expiring_staff'    // a driver's license approaching expiry -> Company Administrators + Operations Managers (app + push)
   // Scheduled, about a fleet vehicle: its registration expires within a month.
   // Carries `truck_id`, `plate_number`, `registration_expiry` in `data`; no booking.
-  | 'vehicle.registration_expiring'   // one month before registration_expiry -> Fleet Managers + Company Administrators
+  | 'vehicle.registration_expiring'   // registration_expiry approaching -> Fleet Managers + Company Administrators (app + push)
+  // Scheduled, about a client's contract (clients.contract_valid_until). Carries
+  // `contract_valid_until` (+ `client_id`, `company_name` for staff); no booking.
+  | 'client.contract_expiring'        // the client's own contract ends soon -> that client (app, push, email)
+  | 'client.contract_expiring_staff'  // a client's contract ends soon -> Company Administrators + General Managers + Operations Managers (app, push, email)
   // Password resets. Scoped to a reset REQUEST, not a booking, so they carry
   // `request_id` in `data` and leave `booking_id` null. Routed to exactly one
   // admin group: driver/client requests to `admin` (Company Admin), staff

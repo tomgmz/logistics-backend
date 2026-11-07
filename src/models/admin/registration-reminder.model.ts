@@ -7,6 +7,8 @@ export interface RegistrationReminderCandidate {
   registration_expiry: string
   registration_reminder_notified_for: string | null
   registration_reminder_emailed_for:  string | null
+  /** "<expiry>|<stage>|staff_app" → when sent (the stages after the first month). */
+  registration_reminders: Record<string, string>
 }
 
 /** Someone the company-side reminder goes to. */
@@ -30,7 +32,7 @@ export async function findExpiringBetween(fromDay: string, toDay: string): Promi
     .from('trucks')
     .select(`
       truck_id, plate_number, registration_expiry,
-      registration_reminder_notified_for, registration_reminder_emailed_for
+      registration_reminder_notified_for, registration_reminder_emailed_for, registration_reminders
     `)
     .not('registration_expiry', 'is', null)
     .gte('registration_expiry', fromDay)
@@ -45,6 +47,7 @@ export async function findExpiringBetween(fromDay: string, toDay: string): Promi
     registration_expiry: String(row.registration_expiry).slice(0, 10),
     registration_reminder_notified_for: row.registration_reminder_notified_for ?? null,
     registration_reminder_emailed_for:  row.registration_reminder_emailed_for ?? null,
+    registration_reminders: (row.registration_reminders ?? {}) as Record<string, string>,
   }))
 }
 
@@ -74,4 +77,13 @@ export async function markReminded(
     .update({ [column]: expiry })
     .eq('truck_id', truckId)
   if (error) throw error
+}
+
+/** Record one stage as sent for this expiry date (read-modify-write; one pass runs at a time). */
+export async function markStage(truckId: string, key: string): Promise<void> {
+  const { data, error } = await supabase.from('trucks').select('registration_reminders').eq('truck_id', truckId).maybeSingle()
+  if (error) throw error
+  const next = { ...((data?.registration_reminders ?? {}) as Record<string, string>), [key]: new Date().toISOString() }
+  const { error: upErr } = await supabase.from('trucks').update({ registration_reminders: next }).eq('truck_id', truckId)
+  if (upErr) throw upErr
 }

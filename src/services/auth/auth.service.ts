@@ -1,4 +1,7 @@
 import crypto from 'crypto'
+import { contractStatus, contractStatusForUser, contractEndedError } from '../../lib/contract-status.js'
+import { phDay } from '../../lib/ph-date.js'
+import { daysBetween } from '../../lib/registration-expiry.js'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import type { SignOptions } from 'jsonwebtoken'
@@ -188,10 +191,51 @@ export async function changePassword(
   })
 }
 
+/** What the Profile page shows about the signed-in account (2026-11-07). */
+export async function getProfile(userId: string) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id, email, phone, role, status, first_name, middle_name, last_name, suffix, created_at, last_login_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('User not found')
+  if (data.role !== 'client') return data
+
+  // A client's Profile has a Contract validity card (2026-11-07): the company,
+  // the last valid day, and days left counted in Philippine time.
+  const { data: client, error: cErr } = await supabase
+    .from('clients')
+    .select('company_name, contract_valid_until')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (cErr) throw cErr
+  const today    = phDay()
+  const contract = contractStatus(client?.contract_valid_until ?? null, today)
+  return {
+    ...data,
+    company_name: client?.company_name ?? null,
+    contract: {
+      ...contract,
+      today,
+      days_left: contract.valid_until ? daysBetween(today, contract.valid_until) : null,
+    },
+  }
+}
+
+
 async function createTokensAndSession(
   user: { user_id: string; role: UserRole; email: string },
   deviceInfo?: string,
 ): Promise<{ accessToken: string; refreshToken: string; accessExpiresAt: Date; refreshExpiresAt: Date }> {
+  // Every sign-in path (password, emailed code, passkey) mints its session
+  // here, after the credential checked out: a client whose contract ended more
+  // than 7 days ago is refused (lib/contract-status, 2026-11-07).
+  if (user.role === 'client') {
+    const contract = await contractStatusForUser(user.user_id)
+    if (contract.state === 'ended') throw contractEndedError(contract)
+  }
+
   const accessExpiresAt  = new Date(Date.now() + parseDuration(JWT_EXPIRES_IN as string))
   const refreshExpiresAt = new Date(Date.now() + parseDuration(JWT_REFRESH_EXPIRES as string))
 
@@ -851,6 +895,15 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
   if (user.status !== 'active') {
     throw sessionInvalid('Your account is no longer active. Please contact your Administrator.', 'ACCOUNT_INACTIVE')
   }
+  // A signed-in client whose access closed (contract ended 8+ days ago) is
+  // signed out at the next refresh, so within one access-token lifetime.
+  if (user.role === 'client') {
+    const contract = await contractStatusForUser(user.user_id)
+    if (contract.state === 'ended') {
+      await AuthModel.revokeSession(session.token).catch(() => {})
+      throw sessionInvalid(contractEndedError(contract).message, 'CONTRACT_ENDED')
+    }
+  }
 
   const accessExpiresAt = new Date(Date.now() + parseDuration(JWT_EXPIRES_IN as string))
   const accessToken = jwt.sign(
@@ -893,8 +946,15 @@ export async function getMe(userId: string) {
       if (!data) throw new Error('User not found')
       return { ...data, driver_id: data.drivers?.driver_id ?? null }
     }
-    case 'client':
-      return AuthModel.findUserWithClient(userId)
+    case 'client': {
+      // The contract status drives the "contract ended" banner and the closed
+      // Book buttons in the client portal.
+      const [data, contract] = await Promise.all([
+        AuthModel.findUserWithClient(userId),
+        contractStatusForUser(userId),
+      ])
+      return data ? { ...data, contract } : data
+    }
     default: {
       // Attach per-module permissions so the web app can gate UI for managed staff.
       if (isManagedRole(user.role)) {

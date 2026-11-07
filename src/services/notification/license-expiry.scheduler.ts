@@ -5,23 +5,26 @@ import { broadcast } from '../../lib/realtime.js'
 import { phDay } from '../../lib/ph-date.js'
 import { sendLicenseExpiryEmail, sendLicenseExpiryStaffEmail, supportInboxEmail } from '../../lib/brevo-mailer.js'
 import { logSystem, logSystemError } from '../../lib/log-system.js'
+import { addOneMonth, daysBetween } from '../../lib/registration-expiry.js'
+import { reminderStageFor, inDaysPhrase, formatDay, reminderKey, type ReminderStage } from '../../lib/expiry-reminder-stages.js'
 import { NotificationRow } from '../../types/notification.types.js'
 
 /**
- * Driver's license expiry reminders, in three stages: one calendar month
- * before, 7 days before, and on the expiry day itself.
+ * Driver's license expiry reminders, on the shared schedule
+ * (lib/expiry-reminder-stages): 1 month, 3 weeks, 2 weeks, 1 week, then 6..1
+ * days before, and on the expiry day.
  *
- *   - the driver: in the app (row + realtime + push) and by email;
- *   - every active Company Administrator and Operations Manager: in the app only
- *     (the user's call — no email to staff), so whoever assigns and whoever
- *     updates the record knows before the assignment block bites;
- *   - the 8338 inbox: by email, for the company's own record.
+ *   - the driver: in the app (row + realtime + push) and by email, every stage;
+ *   - every active Company Administrator and Operations Manager: in the app and
+ *     push, every stage (no email, the user's call);
+ *   - the 8338 inbox: by email, for the company's own record, only at 1 month,
+ *     1 week and on the day (as before 2026-11-07), so it is not flooded.
  *
  * Each stage goes out once per expiry date, per channel. A driver whose date is
  * entered already inside the window gets only the most urgent stage, not a
- * burst of three. A renewal changes license_expiry, nothing matches any more,
- * and the new date starts over. Each mark is written only after its send lands,
- * so a failure is retried on the next hourly tick without repeating the others.
+ * burst. A renewal changes license_expiry, nothing matches any more, and the
+ * new date starts over. Each mark is written only after its send lands, so a
+ * failure is retried on the next hourly tick without repeating the others.
  *
  * The driver's one-month reminder keeps its original stamps
  * (license_reminder_notified_for / _emailed_for); everything else is recorded
@@ -29,52 +32,26 @@ import { NotificationRow } from '../../types/notification.types.js'
  */
 
 const TICK_MS = 60 * 60 * 1000
-const DAY_MS  = 24 * 60 * 60 * 1000
 
 const TYPE       = 'driver.license_expiring' as const
 const STAFF_TYPE = 'driver.license_expiring_staff' as const
 
-type Stage   = 'month' | 'week' | 'day'
+type Stage   = ReminderStage
 type Channel = 'driver_app' | 'driver_email' | 'staff_app' | 'inbox_email'
 
-/** `YYYY-MM-DD` plus one calendar month, clamped to the end of a shorter month. */
-function addOneMonth(day: string): string {
-  const [y, m, d] = day.split('-').map(Number)
-  const lastOfNext = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
-  return new Date(Date.UTC(y, m, Math.min(d, lastOfNext))).toISOString().slice(0, 10)
-}
-
-function daysBetween(fromDay: string, toDay: string): number {
-  return Math.round((Date.parse(`${toDay}T00:00:00Z`) - Date.parse(`${fromDay}T00:00:00Z`)) / DAY_MS)
-}
-
-/** "November 4, 2026" — a plain date, so it is formatted as UTC to avoid a day shift. */
-function formatDay(day: string): string {
-  return new Intl.DateTimeFormat('en-PH', { dateStyle: 'long', timeZone: 'UTC' })
-    .format(new Date(`${day}T00:00:00Z`))
-}
-
-function inDaysPhrase(days: number): string {
-  if (days === 0) return 'today'
-  if (days === 1) return 'tomorrow'
-  return `in ${days} days`
-}
-
-/** The most urgent stage that applies today. */
-function stageFor(daysLeft: number): Stage {
-  return daysLeft <= 0 ? 'day' : daysLeft <= 7 ? 'week' : 'month'
-}
+/** The stages the 8338 inbox still gets an email for. */
+const INBOX_STAGES: ReadonlySet<Stage> = new Set<Stage>(['month', 'week', 'day'])
 
 function sent(c: reminderModel.LicenseReminderCandidate, stage: Stage, channel: Channel): boolean {
   if (stage === 'month' && channel === 'driver_app')   return c.license_reminder_notified_for === c.license_expiry
   if (stage === 'month' && channel === 'driver_email') return c.license_reminder_emailed_for === c.license_expiry
-  return !!c.license_reminders[`${c.license_expiry}|${stage}|${channel}`]
+  return !!c.license_reminders[reminderKey(c.license_expiry, stage, channel)]
 }
 
 async function mark(c: reminderModel.LicenseReminderCandidate, stage: Stage, channel: Channel): Promise<void> {
   if (stage === 'month' && channel === 'driver_app')   return reminderModel.markReminded(c.driver_id, 'notified', c.license_expiry)
   if (stage === 'month' && channel === 'driver_email') return reminderModel.markReminded(c.driver_id, 'emailed', c.license_expiry)
-  const key = `${c.license_expiry}|${stage}|${channel}`
+  const key = reminderKey(c.license_expiry, stage, channel)
   await reminderModel.markStage(c.driver_id, key)
   c.license_reminders[key] = new Date().toISOString()
 }
@@ -154,7 +131,8 @@ export async function runLicenseExpiryTick(now = new Date()): Promise<Record<Cha
   for (const c of rows) {
     const expiresOn = formatDay(c.license_expiry)
     const daysLeft  = daysBetween(today, c.license_expiry)
-    const stage     = stageFor(daysLeft)
+    const stage     = reminderStageFor(today, c.license_expiry)
+    if (!stage) continue
 
     await attempt(c, stage, 'driver_app', () => notifyDriver(c, expiresOn, daysLeft))
     // No email on file (a vendor driver can be passkey-only) is not a failure:
@@ -166,9 +144,11 @@ export async function runLicenseExpiryTick(now = new Date()): Promise<Record<Cha
     }
     // Nobody in the office yet: leave it unmarked so it goes out once someone is.
     if (office.length > 0) await attempt(c, stage, 'staff_app', () => notifyOffice(c, office, expiresOn, daysLeft))
-    await attempt(c, stage, 'inbox_email', () => sendLicenseExpiryStaffEmail({
-      to: inbox, driverName: driverName(c), licenseNumber: c.license_number, expiresOn, daysLeft,
-    }))
+    if (INBOX_STAGES.has(stage)) {
+      await attempt(c, stage, 'inbox_email', () => sendLicenseExpiryStaffEmail({
+        to: inbox, driverName: driverName(c), licenseNumber: c.license_number, expiresOn, daysLeft,
+      }))
+    }
   }
 
   // Heartbeat on success too, so the IT Admin dashboard can tell a quiet day

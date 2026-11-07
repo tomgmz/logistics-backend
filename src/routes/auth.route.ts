@@ -91,5 +91,8 @@ router.delete('/passkey/credentials/:credentialPk', authenticate, authenticatedL
 router.post('/logout',     authenticate, authenticatedLimiter, AuthController.logout)
 router.post('/logout-all', authenticate, authenticatedLimiter, AuthController.logoutAll)
 router.get('/me',          authenticate, authenticatedLimiter, AuthController.me)
+// Profile page (2026-11-07): the account's own details. No password change
+// here: passwords are reset through the Company Administrator.
+router.get('/profile',    authenticate, authenticatedLimiter, AuthController.profile)
 
 export default router

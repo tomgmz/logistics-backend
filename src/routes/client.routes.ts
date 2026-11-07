@@ -18,6 +18,7 @@ import * as BookingController from '../controllers/client/booking.controller.js'
 import * as TrackingController from '../controllers/driver/tracking.controller.js'
 import { requireGmApprover } from '../middlewares/gmApprover.middleware.js'
 import { lockGuard, fromParam, bookingOfDestination } from '../lib/record-lock.js'
+import { requireOpenContract } from '../middlewares/contract.middleware.js'
 
 const router = Router()
 
@@ -86,11 +87,11 @@ router.get('/:id/revisions',    authenticate, authenticatedLimiter, canViewBooki
 // on the page with a broken socket polls it every 30 s.
 router.get('/:id/live-position', authenticate, trackingLimiter, canViewBookings, attachClientScope, attachDriverScope, TrackingController.getLivePosition)
 
-router.post('/',                authenticate, authenticatedLimiter, isClient, attachClientScope, validate(createBookingSchema),       BookingController.createBooking)
-router.patch('/:id',            authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), validate(updateBookingSchema),       BookingController.updateBooking)
+router.post('/',                authenticate, authenticatedLimiter, isClient, attachClientScope, requireOpenContract, validate(createBookingSchema),       BookingController.createBooking)
+router.patch('/:id',            authenticate, authenticatedLimiter, isClient, attachClientScope, requireOpenContract, lockGuard('booking', fromParam('id')), validate(updateBookingSchema),       BookingController.updateBooking)
 // A booking 8338 turned down goes back to the client: they correct and resubmit
 // it (it re-enters the General Manager's queue), or cancel it for good.
-router.post('/:id/resubmit',    authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), validate(resubmitBookingSchema), BookingController.resubmitBooking)
+router.post('/:id/resubmit',    authenticate, authenticatedLimiter, isClient, attachClientScope, requireOpenContract, lockGuard('booking', fromParam('id')), validate(resubmitBookingSchema), BookingController.resubmitBooking)
 router.post('/:id/close',       authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), BookingController.closeRejectedBooking)
 router.patch('/:id/status',     authenticate, authenticatedLimiter, isAdmin,  attachClientScope, canManageBooking, lockGuard('booking', fromParam('id')), validate(updateBookingStatusSchema), BookingController.updateBookingStatus)
 router.delete('/:id',           authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), BookingController.deleteBooking)

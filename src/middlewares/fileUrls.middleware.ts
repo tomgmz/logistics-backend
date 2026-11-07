@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express'
 import { signFileRefsDeep, refsFromSignedUrlsDeep, FileRefInTextError } from '../lib/storage.js'
 import { logSystemError } from '../lib/log-system.js'
+import { publicBaseUrl } from '../lib/file-links.js'
 
 /**
  * The two halves of private file storage (see lib/storage.ts):
@@ -9,7 +10,8 @@ import { logSystemError } from '../lib/log-system.js'
  *        `r2://` reference again, so what gets validated and stored is never an
  *        expiring URL (free text keeps a pasted link as text; text starting
  *        with `r2://` is refused with 400);
- *   out: any `r2://` reference in a JSON response becomes a signed link.
+ *   out: any `r2://` reference in a JSON response becomes a sealed link to
+ *        GET /api/files (lib/file-links.ts), never the storage URL itself.
  *
  * Mounted once, after the body parser and before the routes, so every route
  * gets both without knowing about storage. A route only ever puts rows in its
@@ -46,7 +48,7 @@ export function fileUrls(req: Request, res: Response, next: NextFunction) {
 
   const json = res.json.bind(res)
   res.json = ((body: unknown) => {
-    signFileRefsDeep(body)
+    signFileRefsDeep(body, publicBaseUrl(req))
       .then((signed) => json(signed))
       .catch((err) => {
         logSystemError('storage.sign', 'external_api', err, { path: req.originalUrl })
