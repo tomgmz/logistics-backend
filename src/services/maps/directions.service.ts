@@ -150,69 +150,6 @@ async function snapPolylineToGoogleRoads(points: Point[]): Promise<Point[] | nul
   }
 }
 
-function encodePolyline(points: Point[]): string {
-  let prevLat = 0, prevLng = 0
-  let result  = ''
-
-  const encodeValue = (value: number) => {
-    let v = Math.round(value * 1e5)
-    v = v < 0 ? ~(v << 1) : v << 1
-    while (v >= 0x20) {
-      result += String.fromCharCode((0x20 | (v & 0x1f)) + 63)
-      v >>= 5
-    }
-    result += String.fromCharCode(v + 63)
-  }
-
-  for (const point of points) {
-    encodeValue(point.latitude  - prevLat)
-    encodeValue(point.longitude - prevLng)
-    prevLat = point.latitude
-    prevLng = point.longitude
-  }
-
-  return result
-}
-
-function buildStraightLineFallback(payload: ComputeDirectionsInput): DirectionsResult {
-  const toPoint = (wp: ComputeDirectionsInput['origin']): Point => ({
-    latitude:  wp.location.latLng.latitude,
-    longitude: wp.location.latLng.longitude,
-  })
-
-  const allPoints: Point[] = [
-    toPoint(payload.origin),
-    ...((payload.intermediates ?? []).map(toPoint)),
-    toPoint(payload.destination),
-  ]
-
-  const encodedPolyline = encodePolyline(allPoints)
-
-  let totalMeters = 0
-  for (let i = 0; i < allPoints.length - 1; i++) {
-    totalMeters += haversine(allPoints[i], allPoints[i + 1])
-  }
-  const estimatedSeconds = Math.round(totalMeters / (50_000 / 3_600))
-  const durationStr      = `${estimatedSeconds}s`
-
-  const legs = allPoints.slice(0, -1).map((a, i) => {
-    const legMeters  = haversine(a, allPoints[i + 1])
-    const legSeconds = Math.round(legMeters / (50_000 / 3_600))
-    return { duration: `${legSeconds}s`, staticDuration: `${legSeconds}s` }
-  })
-
-  return {
-    routes: [{
-      polyline:       { encodedPolyline },
-      duration:       durationStr,
-      staticDuration: durationStr,
-      distanceMeters: Math.round(totalMeters),
-      legs,
-      travelAdvisory: { speedReadingIntervals: [] },
-    }],
-  }
-}
-
 export async function computeDirectionsService(
   payload: ComputeDirectionsInput,
 ): Promise<DirectionsResult> {
@@ -259,8 +196,9 @@ export async function computeDirectionsService(
   }
 
   if (!data.routes?.length) {
-    console.warn('[computeDirectionsService] No routes from Google, returning straight-line fallback')
-    return buildStraightLineFallback(payload)
+    // No road route (e.g. an island with no ferry). Say so: callers draw no
+    // line rather than a made-up straight one.
+    return { routes: [] }
   }
 
   // Fast mode: the client uses the raw Google polyline, so skip the snap and

@@ -306,7 +306,7 @@ export async function assertDriverAssignable(
   // has to get past — and the company path's guarantees (a vetted licence, a
   // ticked calendar, BLOWBAGETS on the paired vehicle) do not apply to them.
   if (data.is_external) {
-    throw new Error('This is a vendor-supplied driver and cannot be assigned as company crew')
+    throw new Error('This is a vendor-supplied driver and cannot be assigned as a company driver')
   }
 
   // A driver still flagged 'assigned' from a delivery that no longer exists is
@@ -371,7 +371,7 @@ export async function reserveCrew(
   // this pair of events is the trail that explains why.
   logEvent({
     log_type:    'vehicle_activity',
-    action:      'crew_reserved',
+    action:      'driver_vehicle_reserved',
     description: `Reserved driver ${driverId ?? '—'}${secondDriverId ? ` + second driver ${secondDriverId}` : ''} / vehicle ${truckId ?? '—'}`,
   })
 }
@@ -398,7 +398,7 @@ export async function releaseCrew(
 
   logEvent({
     log_type:    'vehicle_activity',
-    action:      'crew_released',
+    action:      'driver_vehicle_released',
     description: `Released driver ${driverId ?? '—'}${secondDriverId ? ` + second driver ${secondDriverId}` : ''} / vehicle ${truckId ?? '—'}`,
   })
 }

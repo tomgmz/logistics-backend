@@ -48,7 +48,8 @@ export function fileUrls(req: Request, res: Response, next: NextFunction) {
 
   const json = res.json.bind(res)
   res.json = ((body: unknown) => {
-    signFileRefsDeep(body, publicBaseUrl(req))
+    // req.user is set by authenticate() by the time the route answers.
+    signFileRefsDeep(body, { baseUrl: publicBaseUrl(req), userId: req.user?.sub ?? null })
       .then((signed) => json(signed))
       .catch((err) => {
         logSystemError('storage.sign', 'external_api', err, { path: req.originalUrl })

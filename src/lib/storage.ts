@@ -203,15 +203,18 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 /**
- * Copy of `value` with every file reference swapped for a link. With
- * `baseUrl` (every API response since 2026-11-07) the link is a sealed link to
- * this API (lib/file-links.ts), which hides the storage location; without it,
- * an R2 signed link.
+ * Copy of `value` with every file reference swapped for a link. With `sealed`
+ * (every API response since 2026-11-07) the link is a sealed link to this API
+ * for the signed-in user (lib/file-links.ts), which hides the storage location
+ * and only opens for that user; without it, an R2 signed link.
  */
-export async function signFileRefsDeep(value: unknown, baseUrl?: string): Promise<unknown> {
+export async function signFileRefsDeep(
+  value: unknown,
+  sealed?: { baseUrl: string; userId: string | null },
+): Promise<unknown> {
   const now = Date.now()
   const walk = async (v: unknown): Promise<unknown> => {
-    if (isFileRef(v)) return baseUrl ? sealFileRef(v, baseUrl, now) : signFileRef(v, now)
+    if (isFileRef(v)) return sealed ? sealFileRef(v, sealed.baseUrl, sealed.userId, now) : signFileRef(v, now)
     if (Array.isArray(v)) return Promise.all(v.map(walk))
     if (isPlainObject(v)) {
       const out: Record<string, unknown> = {}

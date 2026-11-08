@@ -32,3 +32,6 @@ Thumbs.db
 # IDE settings
 .vscode/
 .idea/
+
+# Seed data manifest (holds the shared test password)
+scripts/seed-scenarios.manifest*.json

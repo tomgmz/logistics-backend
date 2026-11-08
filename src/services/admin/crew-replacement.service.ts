@@ -87,7 +87,7 @@ export async function replaceCrewService(
   staff: StaffActor,
 ) {
   const note = input.reason_note?.trim() ?? ''
-  if (note.length < 3) throw new Error('Say why the crew is being replaced')
+  if (note.length < 3) throw new Error('Say why the driver or vehicle is being replaced')
 
   // The vendor path reads its drivers from the registry before anything is
   // written, so a revoked or deleted vendor driver is refused up front.
@@ -118,7 +118,7 @@ export async function replaceCrewService(
   const booking = await BookingModel.findById(bookingId)
   if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
   if (booking.status !== 'in_transit') {
-    throw new Error('Cannot replace the crew: only a delivery that has started can be replaced. Use Change vehicle and driver instead.')
+    throw new Error('Cannot replace the driver or vehicle: only a delivery that has started can be replaced. Use Change vehicle and driver instead.')
   }
 
   const previous  = await crewOnBooking(bookingId)
@@ -187,7 +187,7 @@ export async function replaceCrewService(
   const now = new Date().toISOString()
   const replacement = await withBookingRowLock(bookingId, async (client, locked) => {
     if (locked.status !== 'in_transit') {
-      throw new Error(`Cannot replace the crew of a booking that is '${locked.status}'`)
+      throw new Error(`Cannot replace the driver or vehicle of a booking that is '${locked.status}'`)
     }
     const { rows: [pause] } = await client.query<{
       pause_id: string; trip_id: string | null; report_id: string | null; latitude: string | null; longitude: string | null
@@ -197,7 +197,7 @@ export async function replaceCrewService(
       [bookingId],
     )
     if (!pause) {
-      throw new Error('Cannot replace the crew while the delivery is moving. The driver has to pause it first (for example for a breakdown).')
+      throw new Error('Cannot replace the driver or vehicle while the delivery is moving. The driver has to pause it first (for example for a breakdown).')
     }
 
     // The run whose load is on the old vehicle right now, if any.
@@ -320,7 +320,7 @@ export async function replaceCrewService(
   logEvent({
     user_id:     staff.userId,
     log_type:    'booking',
-    action:      'booking_crew_replaced',
+    action:      'booking_driver_vehicle_replaced',
     description:
       `Booking ${bookingRef(after)}: ${swapped} replaced on the road — driver ${previous.driver_id ?? 'none'} → ${leadId}${vendor ? ' (vendor)' : ''}, ` +
       `vehicle ${replacement.old_truck_id ?? replacement.old_vehicle_plate ?? 'none'} → ${truckId ?? plate}` +

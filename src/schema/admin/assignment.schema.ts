@@ -94,7 +94,7 @@ export const replaceCrewSchema = z.object({
   truck_id:         z.string().uuid('truck_id must be a valid UUID').optional(),
   second_driver_id: z.string().uuid('second_driver_id must be a valid UUID').nullable().optional(),
   helper_name:      z.string().trim().max(120, 'Helper name is too long').nullable().optional(),
-  reason_note:      z.string().trim().min(3, 'Say why the crew is being replaced').max(500),
+  reason_note:      z.string().trim().min(3, 'Say why the driver or vehicle is being replaced').max(500),
   is_vendor_supplied:           z.boolean().optional().default(false),
   vendor_driver_user_id:        z.string().uuid('Choose a vendor driver').optional(),
   second_vendor_driver_user_id: z.string().uuid('Choose a valid second vendor driver').nullable().optional(),
@@ -106,7 +106,7 @@ export const replaceCrewSchema = z.object({
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['vendor_driver_user_id'], message: 'Choose the vendor driver' })
     }
     if (!data.vendor_vehicle_plate) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['vendor_vehicle_plate'], message: 'Vehicle plate is required for a vendor crew' })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['vendor_vehicle_plate'], message: 'Vehicle plate is required for a vendor vehicle' })
     }
   } else {
     if (!data.driver_id) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['driver_id'], message: 'driver_id is required' })

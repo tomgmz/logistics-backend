@@ -159,7 +159,7 @@ export async function driverTakeWheelService(
       user_id:     actor.userId,
       log_type:    'booking',
       action:      'driver_took_wheel',
-      description: `A crew member took the wheel on booking ${bookingRef(booking)}`,
+      description: `A driver took the wheel on booking ${bookingRef(booking)}`,
     })
     void announce(bookingId)
   }
@@ -233,7 +233,7 @@ export async function staffSwapCrewRolesService(bookingId: string, reason: strin
   logEvent({
     user_id:     staffUserId,
     log_type:    'booking',
-    action:      'crew_roles_swapped',
+    action:      'drivers_swapped',
     description: `Main and second driver swapped on booking ${booking ? bookingRef(booking) : bookingId}: ${note}`,
   })
   if (booking) void notifyStage('crew_roles_swapped', booking, { reason: note })

@@ -64,7 +64,7 @@ const SCHEDULERS = [
   {
     source:           'pause-continuation.scheduler',
     label:            'Paused delivery continuation',
-    description:      'Reminds the crew before a paused delivery continues, and tells operations when its continuation time passes still paused.',
+    description:      'Reminds the drivers before a paused delivery continues, and tells operations when its continuation time passes still paused.',
     interval_minutes: 5,
   },
   {
