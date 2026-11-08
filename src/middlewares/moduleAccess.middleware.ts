@@ -9,7 +9,6 @@ import {
   ModuleKey,
   ModulePermissionFlags,
 } from '../constants/modules.js'
-import { logEvent } from '../lib/log-event.js'
 import { logSystem } from '../lib/log-system.js'
 
 // Small per-user TTL cache so we don't hit the DB on every admin request.
@@ -62,12 +61,14 @@ export async function moduleGuard(req: Request, res: Response, next: NextFunctio
 
     const row = rows.find((r) => r.module_name === moduleKey)
     if (!row || !row[requiredFlag]) {
-      // Audit, not system: who was refused which module is a governance fact.
-      logEvent({
-        user_id:     user.sub,
-        log_type:    'access_control',
-        action:      'module_access_denied',
-        description: `${user.role} denied ${requiredFlag} on ${moduleKey} (${req.method} ${req.originalUrl})`,
+      // System, not audit: a refusal is the software's decision (user 2026-11-08).
+      logSystem({
+        log_level:  'warn',
+        event_type: 'auth_event',
+        source:     'auth.moduleAccess',
+        user_id:    user.sub,
+        message:    `${user.role} denied ${requiredFlag} on ${moduleKey} (${req.method} ${req.originalUrl})`,
+        metadata:   { action: 'module_access_denied' },
       })
       res.status(403).json({
         status:  'error',
@@ -114,11 +115,13 @@ function moduleFlagGate(
 
       const row = rows.find((r) => r.module_name === moduleKey)
       if (!row || !row[requiredFlag]) {
-        logEvent({
-          user_id:     user.sub,
-          log_type:    'access_control',
-          action:      'module_access_denied',
-          description: `${user.role} denied ${requiredFlag} on ${moduleKey} (${req.method} ${req.originalUrl})`,
+        logSystem({
+          log_level:  'warn',
+          event_type: 'auth_event',
+          source:     'auth.moduleAccess',
+          user_id:    user.sub,
+          message:    `${user.role} denied ${requiredFlag} on ${moduleKey} (${req.method} ${req.originalUrl})`,
+          metadata:   { action: 'module_access_denied' },
         })
         res.status(403).json({
           status:  'error',
@@ -182,11 +185,13 @@ export function requireAnyModuleFlag(
 
       if (rows.some((r) => moduleKeys.includes(r.module_name as ModuleKey) && r[flag])) return next()
 
-      logEvent({
-        user_id:     user.sub,
-        log_type:    'access_control',
-        action:      'module_access_denied',
-        description: `${user.role} denied ${flag} on ${moduleKeys.join('|')} (${req.method} ${req.originalUrl})`,
+      logSystem({
+        log_level:  'warn',
+        event_type: 'auth_event',
+        source:     'auth.moduleAccess',
+        user_id:    user.sub,
+        message:    `${user.role} denied ${flag} on ${moduleKeys.join('|')} (${req.method} ${req.originalUrl})`,
+        metadata:   { action: 'module_access_denied' },
       })
       res.status(403).json({
         status:  'error',

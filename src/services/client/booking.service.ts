@@ -16,6 +16,7 @@ import { optimizeDestinationsService } from '../maps/routeOptimization.service.j
 import { invalidateEta } from '../maps/eta.service.js'
 import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 import { logEvent } from '../../lib/log-event.js'
+import { logSystem } from '../../lib/log-system.js'
 import { badRequest, conflict, notFound } from '../../lib/http-error.js'
 import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay, phDay, phDayPlusMonth, phTimeHHMM, SAME_DAY_LATEST_CALL_TIME, sameDayBookingOpen } from '../../lib/ph-date.js'
@@ -1317,10 +1318,13 @@ export async function autoCompleteBookingService(bookingId: string): Promise<boo
   if (!done) return false
   const ref = await bookingRefById(bookingId)
   void revokeVendorCrewAfterCompletion(bookingId, ref)
-  logEvent({
-    log_type:    'booking',
-    action:      'booking_auto_completed',
-    description: `Booking ${ref} completed automatically — no confirmation or problem report within ${AUTO_COMPLETE_DAYS} days of delivery`,
+  // No person did this: it is the scheduler's record (system log, not audit).
+  logSystem({
+    log_level:  'info',
+    event_type: 'cron_job',
+    source:     'completion.scheduler',
+    message:    `Booking ${ref} completed automatically — no confirmation or problem report within ${AUTO_COMPLETE_DAYS} days of delivery`,
+    metadata:   { action: 'booking_auto_completed', booking_id: bookingId },
   })
   return true
 }

@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase.js'
 import { GetLogsQuery } from '../../types/audit-logs.types.js'
 import { readInPages } from '../../lib/read-in-pages.js'
 import { searchOrFilters, searchWords } from '../../lib/paginate.js'
+import { readableLogs } from '../../lib/log-text.js'
 
 /**
  * For each word of the search, the users whose first or last name holds it:
@@ -19,6 +20,25 @@ async function nameMatches(search: string | undefined): Promise<Map<string, stri
   }
   return out
 }
+
+/**
+ * Actions that are the software's doing (a scheduler, a middleware refusal, a
+ * status side effect of an assignment), not a person acting on a record. They
+ * belong in the system log; new ones are written there. Older rows that were
+ * written to audit_logs stay in the table but are never shown as audit rows.
+ */
+export const SYSTEM_ONLY_AUDIT_ACTIONS = [
+  'permission_denied',
+  'module_access_denied',
+  'booking_auto_completed',
+  'gm_auto_approved',
+  'crew_reserved',
+  'crew_released',
+  'driver_vehicle_reserved',
+  'driver_vehicle_released',
+] as const
+
+const NOT_SYSTEM_ONLY = `(${SYSTEM_ONLY_AUDIT_ACTIONS.join(',')})`
 
 // The list and the export share this, so "export what I'm looking at" really
 // does export the same filtered, same-ordered rows.
@@ -38,6 +58,7 @@ function filteredQuery(
       timestamp,
       users ( role, first_name, last_name )
     `, options)
+    .not('action', 'in', NOT_SYSTEM_ONLY)
 
   if (log_type) q = q.eq('log_type', log_type)
   // Whole Manila days (+08:00), both ends included.
@@ -67,16 +88,17 @@ export async function findAll(query: GetLogsQuery = {}) {
     .order('log_id')
     .range(from, from + limit - 1)
   if (error) throw error
-  return { data: data ?? [], total: count ?? 0, page, limit }
+  return { data: await readableLogs(data ?? [], 'description'), total: count ?? 0, page, limit }
 }
 
 export async function findForExport(query: GetLogsQuery, cap: number) {
   const names = await nameMatches(query.search)
-  return readInPages(
+  const rows = await readInPages(
     // log_id breaks timestamp ties so paging never skips or repeats a row.
     (from, to) => filteredQuery(query, names).order('log_id').range(from, to),
     cap,
   )
+  return readableLogs(rows as Array<Record<string, any>>, 'description')
 }
 
 export async function findById(logId: string) {
@@ -92,16 +114,18 @@ export async function findById(logId: string) {
       users ( role, first_name, last_name )
     `)
     .eq('log_id', logId)
+    .not('action', 'in', NOT_SYSTEM_ONLY)
     .maybeSingle()
 
   if (error) throw error
-  return data
+  return data ? (await readableLogs([data], 'description'))[0] : null
 }
 
 export async function getStats() {
   const { data, error } = await supabase
     .from('audit_logs')
     .select('log_type')
+    .not('action', 'in', NOT_SYSTEM_ONLY)
 
   if (error) throw error
 

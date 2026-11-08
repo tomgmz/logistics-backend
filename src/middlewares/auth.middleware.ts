@@ -191,17 +191,17 @@ export function authorize(...roles: string[]) {
       roles.includes(req.user.role) || (!!req.user.it_standin && roles.includes('it_admin'))
     )
     if (!allowed) {
-      // An attempt to reach something you are not entitled to is a business
-      // fact, not a technical one, so it belongs in the audit trail: "did
-      // anyone try to open user management before we granted it?" is a question the
-      // Company Admin asks. Only logged when we know who asked — an
-      // unauthenticated caller never got past authenticate().
+      // A refused request is the software's decision, not a person acting on a
+      // record, so it goes to the system log (user 2026-11-08: audit logs show
+      // only audit things). Only logged when we know who asked.
       if (req.user) {
-        logEvent({
-          user_id:     req.user.sub,
-          log_type:    'access_control',
-          action:      'permission_denied',
-          description: `${req.user.role} denied ${req.method} ${req.originalUrl} (requires: ${roles.join(', ')})`,
+        logSystem({
+          log_level:  'warn',
+          event_type: 'auth_event',
+          source:     'auth.authorize',
+          user_id:    req.user.sub,
+          message:    `${req.user.role} denied ${req.method} ${req.originalUrl} (requires: ${roles.join(', ')})`,
+          metadata:   { action: 'permission_denied', role: req.user.role, requires: roles },
         })
       }
       res.status(403).json({ status: 'error', message: 'Insufficient permissions' })

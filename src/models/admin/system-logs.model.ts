@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase.js'
 import { GetSystemLogsQuery } from '../../types/system-logs.types.js'
 import { readInPages } from '../../lib/read-in-pages.js'
 import { searchOrFilters } from '../../lib/paginate.js'
+import { readableLogs } from '../../lib/log-text.js'
 
 /**
  * Reads the system_logs table.
@@ -51,15 +52,16 @@ export async function findAll(query: GetSystemLogsQuery = {}) {
   const { data, error, count } = await filteredQuery(query, { count: 'exact' })
     .range(from, from + limit - 1)
   if (error) throw error
-  return { data: data ?? [], total: count ?? 0, page, limit }
+  return { data: await readableLogs(data ?? [], 'message'), total: count ?? 0, page, limit }
 }
 
 export async function findForExport(query: GetSystemLogsQuery, cap: number) {
-  return readInPages(
+  const rows = await readInPages(
     // log_id breaks timestamp ties so paging never skips or repeats a row.
     (from, to) => filteredQuery(query).order('log_id').range(from, to),
     cap,
   )
+  return readableLogs(rows as Array<Record<string, any>>, 'message')
 }
 
 export async function findById(logId: string) {
@@ -70,7 +72,7 @@ export async function findById(logId: string) {
     .maybeSingle()
 
   if (error) throw error
-  return data
+  return data ? (await readableLogs([data], 'message'))[0] : null
 }
 
 export async function setResolved(logId: string, resolved: boolean) {

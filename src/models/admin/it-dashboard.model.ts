@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { readableLogs } from '../../lib/log-text.js'
 
 /**
  * Reads behind the IT Admin dashboard. Every log-table read here is either a
@@ -38,10 +39,10 @@ export async function latestSystemLogs(filter: Filter, limit: number) {
     .order('timestamp', { ascending: false })
     .limit(limit)
   if (error) throw error
-  return (data ?? []) as Array<{
+  return readableLogs((data ?? []) as Array<{
     log_id: string; log_level: string; event_type: string
     source: string; message: string; timestamp: string
-  }>
+  }>, 'message')
 }
 
 /** Emails behind failed sign-ins since `sinceIso`, capped so a burst stays cheap. */

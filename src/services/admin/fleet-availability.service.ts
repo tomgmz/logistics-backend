@@ -7,7 +7,7 @@ import {
 } from '../../lib/driver-reservation.js'
 import { driverCalendarAllows } from '../driver/availability.service.js'
 import type { BlowbagetsItems } from '../../types/client/booking.types.js'
-import { logEvent } from '../../lib/log-event.js'
+import { logSystem } from '../../lib/log-system.js'
 import { assertServiceNotOverdue, assertReturnOdometerRecorded } from './truck-upkeep.service.js'
 import * as TruckModel from '../../models/admin/truck.model.js'
 import { phDay } from '../../lib/ph-date.js'
@@ -369,10 +369,14 @@ export async function reserveCrew(
 
   // These silently change who is available. When a booking cannot be staffed,
   // this pair of events is the trail that explains why.
-  logEvent({
-    log_type:    'vehicle_activity',
-    action:      'driver_vehicle_reserved',
-    description: `Reserved driver ${driverId ?? '—'}${secondDriverId ? ` + second driver ${secondDriverId}` : ''} / vehicle ${truckId ?? '—'}`,
+  // A status side effect of assigning / finishing (the person's act is the
+  // booking's own audit row), so it goes to the system log.
+  logSystem({
+    log_level:  'info',
+    event_type: 'db_event',
+    source:     'fleet-availability',
+    message:    `Reserved driver ${driverId ?? '—'}${secondDriverId ? ` + second driver ${secondDriverId}` : ''} / vehicle ${truckId ?? '—'}`,
+    metadata:   { action: 'driver_vehicle_reserved' },
   })
 }
 
@@ -396,10 +400,14 @@ export async function releaseCrew(
   if (secondDriverId) await setDriverStatus(secondDriverId, 'available')
   if (truckId)        await setTruckStatus(truckId, 'available')
 
-  logEvent({
-    log_type:    'vehicle_activity',
-    action:      'driver_vehicle_released',
-    description: `Released driver ${driverId ?? '—'}${secondDriverId ? ` + second driver ${secondDriverId}` : ''} / vehicle ${truckId ?? '—'}`,
+  // A status side effect of assigning / finishing (the person's act is the
+  // booking's own audit row), so it goes to the system log.
+  logSystem({
+    log_level:  'info',
+    event_type: 'db_event',
+    source:     'fleet-availability',
+    message:    `Released driver ${driverId ?? '—'}${secondDriverId ? ` + second driver ${secondDriverId}` : ''} / vehicle ${truckId ?? '—'}`,
+    metadata:   { action: 'driver_vehicle_released' },
   })
 }
 
