@@ -34,8 +34,8 @@ export const FILE_REF_PREFIX = 'r2://'
 
 const MINUTE = 60 * 1000
 
-/** The most sensitive files: driver licences, booking paperwork (DRs, staff documents) and client contracts. */
-const SENSITIVE_KEY = /^(driver_licenses|booking_documents|client_documents)\//
+/** The most sensitive files: driver licences, booking paperwork (DRs, staff documents), client contracts and vehicle papers (registration, insurance). */
+const SENSITIVE_KEY = /^(driver_licenses|booking_documents|client_documents|vehicle_documents)\//
 
 export function linkPolicy(key: string): { windowMs: number; expiresInSec: number } {
   return SENSITIVE_KEY.test(key)

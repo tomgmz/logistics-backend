@@ -3,17 +3,20 @@ import  { CreateTruckModelInput, UpdateTruckModelInput, TruckModel } from '../..
 // Postgres "undefined_column": the archived_at migration has not been applied.
 const MISSING_COLUMN = '42703'
 
-/** The catalog: every model that has not been archived. */
-async function findAll(): Promise<TruckModel[]> {
-  const { data, error } = await supabase
-    .from('truck_models')
-    .select('*')
-    .is('archived_at', null)
-    .order('name', { ascending: true })
+/**
+ * The catalog: every model that has not been archived. `archivedOnly` lists the
+ * archived ones instead (Manage Models' Archived tab, newest archive first).
+ */
+async function findAll(archivedOnly = false): Promise<TruckModel[]> {
+  const base = supabase.from('truck_models').select('*')
+  const { data, error } = archivedOnly
+    ? await base.not('archived_at', 'is', null).order('archived_at', { ascending: false })
+    : await base.is('archived_at', null).order('name', { ascending: true })
 
   // Before migration 20260927000000 nothing can be archived yet, so the
   // unfiltered list is the right answer — don't take the catalog down over it.
   if (error?.code === MISSING_COLUMN) {
+    if (archivedOnly) return []
     const fallback = await supabase.from('truck_models').select('*').order('name', { ascending: true })
     if (fallback.error) throw fallback.error
     return fallback.data ?? []

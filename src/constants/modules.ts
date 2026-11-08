@@ -92,7 +92,7 @@ export const MODULES_BY_ROLE: Record<ManagedRole, ModuleKey[]> = {
     'transaction-history',
     'document-management',
   ],
-  fleet_manager: ['booking-management', 'vehicle-management', 'transit-tracking', 'reports'],
+  fleet_manager: ['booking-management', 'vehicle-management', 'transit-tracking', 'reports', 'document-management'],
   operations_manager: ['booking-management', 'vehicle-management', 'document-management', 'transit-tracking', 'reports', 'support-tickets'],
 }
 
@@ -132,6 +132,9 @@ export const ROLE_MODULE_DEFAULTS: Record<ManagedRole, Partial<Record<ModuleKey,
     // Vehicle-related reports only (breakdowns, accidents) — the scoping is
     // done server-side in the report service, not by this tier.
     'reports':            'all',
+    // Vehicle files only (odometer photos, service receipts, vehicle
+    // paperwork); the scoping is done in documents.controller, not this tier.
+    'document-management': 'all',
   },
   operations_manager: {
     'booking-management':  'all',

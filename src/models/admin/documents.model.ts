@@ -28,7 +28,9 @@ const LIBRARY_SQL = `
   SELECT
     'staff:' || d.document_id          AS doc_key,
     d.document_type::text               AS doc_type,
-    CASE WHEN d.booking_id IS NULL AND d.client_id IS NOT NULL THEN 'client' ELSE 'booking' END AS doc_group,
+    CASE WHEN d.truck_id IS NOT NULL THEN 'fleet'
+         WHEN d.booking_id IS NULL AND d.client_id IS NOT NULL THEN 'client'
+         ELSE 'booking' END             AS doc_group,
     'staff'                             AS source,
     d.file_url,
     COALESCE(d.original_name, regexp_replace(d.file_url, '^.*/', '')) AS file_name,
@@ -37,7 +39,7 @@ const LIBRARY_SQL = `
     d.notes,
     NULL::text                          AS override_reason,
     d.booking_id,
-    NULL::uuid                          AS truck_id,
+    d.truck_id,
     d.uploaded_by,
     d.document_id,
     d.status::text                      AS review_status,
@@ -47,7 +49,7 @@ const LIBRARY_SQL = `
     d.archived_at,
     d.bytes
   FROM documents d
-  WHERE d.booking_id IS NOT NULL OR d.client_id IS NOT NULL
+  WHERE d.booking_id IS NOT NULL OR d.client_id IS NOT NULL OR d.truck_id IS NOT NULL
 
   UNION ALL
   SELECT
@@ -223,9 +225,13 @@ function buildWhere(f: Filters, omit: { types?: boolean; review?: boolean } = {}
   const where: string[] = []
   const params: unknown[] = []
 
-  // Ticked rows are fetched as they are, archived or not; no other filter applies.
+  // Ticked rows are fetched as they are, archived or not; no other filter
+  // applies except the group, which is how the Fleet Manager's scope is held
+  // (a ticked key from outside the Fleet group returns nothing for them).
   if (f.keys && f.keys.length > 0) {
-    return { whereSql: 'WHERE l.doc_key = ANY($1::text[])', params: [f.keys] }
+    return f.group
+      ? { whereSql: 'WHERE l.doc_key = ANY($1::text[]) AND l.doc_group = $2', params: [f.keys, f.group] }
+      : { whereSql: 'WHERE l.doc_key = ANY($1::text[])', params: [f.keys] }
   }
 
   // Archiving only exists for staff documents; derived rows are never archived.
@@ -465,6 +471,7 @@ export async function findFolders(q: DocumentFolderQuery): Promise<DocumentFolde
 export interface StaffDocumentRow {
   document_id:   string
   booking_id:    string | null
+  truck_id:      string | null
   document_type: StaffDocumentType
   file_url:      string
   original_name: string | null
@@ -477,6 +484,8 @@ export interface NewStaffDocument {
   /** Null for a contract, which is filed under the client instead. */
   booking_id:    string | null
   client_id:     string | null
+  /** A vehicle's paperwork; booking_id and client_id are then null. */
+  truck_id:      string | null
   document_type: StaffDocumentType
   other_label:   string | null
   file_url:      string
@@ -490,7 +499,7 @@ export interface NewStaffDocument {
 
 export async function insertStaffDocuments(docs: NewStaffDocument[]): Promise<string[]> {
   if (docs.length === 0) return []
-  const cols = ['booking_id', 'client_id', 'document_type', 'other_label', 'file_url', 'original_name', 'public_id', 'file_format', 'bytes', 'notes', 'uploaded_by'] as const
+  const cols = ['booking_id', 'client_id', 'truck_id', 'document_type', 'other_label', 'file_url', 'original_name', 'public_id', 'file_format', 'bytes', 'notes', 'uploaded_by'] as const
   const params: unknown[] = []
   const tuples = docs.map((d) => {
     const slots = cols.map((c) => {
@@ -509,7 +518,7 @@ export async function insertStaffDocuments(docs: NewStaffDocument[]): Promise<st
 
 export async function findStaffDocument(documentId: string): Promise<StaffDocumentRow | null> {
   const { rows } = await pool.query<StaffDocumentRow>(
-    `SELECT document_id, booking_id, document_type, file_url, original_name, uploaded_by, status, archived_at
+    `SELECT document_id, booking_id, truck_id, document_type, file_url, original_name, uploaded_by, status, archived_at
        FROM documents WHERE document_id = $1`,
     [documentId],
   )
@@ -596,6 +605,17 @@ export async function findBookingAttachedFiles(bookingId: string): Promise<{ nam
   return rows
 }
 
+/** A vehicle's paperwork (not archived), for numbering and refusing the same file twice. */
+export async function findVehicleDocuments(truckId: string): Promise<{ name: string; url: string }[]> {
+  const { rows } = await pool.query<{ name: string; url: string }>(
+    `SELECT COALESCE(original_name, regexp_replace(file_url, '^.*/', '')) AS name, file_url AS url
+       FROM documents
+      WHERE truck_id = $1 AND archived_at IS NULL`,
+    [truckId],
+  )
+  return rows
+}
+
 /** A client's contracts (not archived), for numbering and refusing the same file twice. */
 export async function findClientContracts(clientId: string): Promise<{ name: string; url: string }[]> {
   const { rows } = await pool.query<{ name: string; url: string }>(
@@ -626,11 +646,15 @@ export async function findContractFolderStats(clientId: string, archived: 'hide'
  * picks "Invoice" instead of typing "invoice" or "INV". Spellings that differ
  * only in case count as one, shown the way it was typed most often.
  */
-export async function findOtherLabels(limit = 50): Promise<string[]> {
+export async function findOtherLabels(target: 'booking' | 'vehicle', limit = 50): Promise<string[]> {
+  // Suggestions follow where the file is going: a vehicle's Other types are
+  // not offered for a booking, and the Fleet Manager never sees the types
+  // typed on bookings.
   const { rows } = await pool.query<{ label: string }>(
     `SELECT mode() WITHIN GROUP (ORDER BY btrim(other_label)) AS label
        FROM documents
       WHERE document_type = 'other' AND other_label IS NOT NULL
+        AND ${target === 'vehicle' ? 'truck_id IS NOT NULL' : 'truck_id IS NULL'}
       GROUP BY lower(btrim(other_label))
       ORDER BY COUNT(*) DESC, 1
       LIMIT $1`,
@@ -669,6 +693,43 @@ export async function findClient(clientId: string): Promise<ClientOption | null>
   const { rows } = await pool.query<ClientOption>(
     `SELECT client_id::text AS client_id, company_name FROM clients WHERE client_id = $1`,
     [clientId],
+  )
+  return rows[0] ?? null
+}
+
+export interface VehicleOption {
+  truck_id:     string
+  plate_number: string | null
+  /** Model and type, for telling two vehicles apart in the picker. */
+  description:  string | null
+}
+
+/** The vehicle picker for uploading a vehicle's paperwork: every vehicle not archived. */
+export async function searchVehicles(search: string, limit = 10): Promise<VehicleOption[]> {
+  const params: unknown[] = []
+  let where = `t.status <> 'archived'`
+  if (search.trim()) {
+    params.push(likeTerm(search.trim()))
+    where += ` AND COALESCE(t.plate_number, '') ILIKE $1 ESCAPE '\\'`
+  }
+  params.push(limit)
+  const { rows } = await pool.query<VehicleOption>(
+    `SELECT t.truck_id::text AS truck_id, t.plate_number,
+            NULLIF(concat_ws(' · ', tm.name, tm.vehicle_type), '') AS description
+       FROM trucks t
+       LEFT JOIN truck_models tm ON tm.model_id = t.model_id
+      WHERE ${where}
+      ORDER BY t.plate_number ASC NULLS LAST
+      LIMIT $${params.length}`,
+    params,
+  )
+  return rows
+}
+
+export async function findVehicle(truckId: string): Promise<{ truck_id: string; plate_number: string | null; status: string } | null> {
+  const { rows } = await pool.query<{ truck_id: string; plate_number: string | null; status: string }>(
+    `SELECT truck_id::text AS truck_id, plate_number, status::text AS status FROM trucks WHERE truck_id = $1`,
+    [truckId],
   )
   return rows[0] ?? null
 }

@@ -4,12 +4,24 @@ import { logEvent } from '../../lib/log-event.js'
 import { logSystemError } from '../../lib/log-system.js'
 import { badRequest, conflict, HttpError, notFound } from '../../lib/http-error.js'
 import * as DocumentsModel from '../../models/admin/documents.model.js'
-import { OTHER_LABEL_MAX } from '../../types/documents.types.js'
+import { OTHER_LABEL_MAX, VEHICLE_DOCUMENT_TYPES } from '../../types/documents.types.js'
 import type {
   DocumentFolderQuery,
   DocumentListQuery,
+  DocumentScope,
   StaffDocumentType,
 } from '../../types/documents.types.js'
+
+const OUT_OF_SCOPE = 'You can only work with vehicle documents.'
+
+/** For the audit description. */
+const TYPE_WORDS: Record<StaffDocumentType, string> = {
+  contract:             'Contract',
+  proof_of_delivery:    'Proof of Delivery',
+  vehicle_registration: 'Vehicle Registration',
+  vehicle_insurance:    'Insurance',
+  other:                'Other',
+}
 
 export const DOCUMENT_EXPORT_ROW_CAP = 5_000
 
@@ -51,8 +63,12 @@ export function searchClientsForUpload(search: string) {
   return DocumentsModel.searchClients(search)
 }
 
-export function listOtherLabels() {
-  return DocumentsModel.findOtherLabels()
+export function listOtherLabels(target: 'booking' | 'vehicle') {
+  return DocumentsModel.findOtherLabels(target)
+}
+
+export function searchVehiclesForUpload(search: string) {
+  return DocumentsModel.searchVehicles(search)
 }
 
 export function contractFolderStats(clientId: string, archived: 'hide' | 'only') {
@@ -84,32 +100,49 @@ async function uploadOne(file: Express.Multer.File, folder: string, displayName:
 export async function uploadStaffDocuments(input: {
   bookingId:    string | null
   clientId:     string | null
+  truckId:      string | null
   documentType: StaffDocumentType
   otherLabel:   string | null
   notes:        string | null
   files:        Express.Multer.File[]
   uploadedBy:   string | null
+  scope:        DocumentScope
 }) {
   if (input.files.length === 0) throw badRequest('Choose at least one file to upload.')
+  // The Fleet Manager files on vehicles only.
+  if (input.scope === 'fleet' && !input.truckId) throw new HttpError(403, OUT_OF_SCOPE)
 
   const otherLabel = input.documentType === 'other' ? input.otherLabel?.trim().replace(/\s+/g, ' ') ?? '' : null
   if (otherLabel !== null && !otherLabel) throw badRequest('Type what kind of document this is.')
   if (otherLabel && otherLabel.length > OTHER_LABEL_MAX) throw badRequest(`Keep the document type to ${OTHER_LABEL_MAX} characters.`)
 
   // Where it is filed, and what is already there to compare against.
-  let target: { booking_id: string | null; client_id: string | null; folder: string; label: string }
+  let target: { booking_id: string | null; client_id: string | null; truck_id: string | null; folder: string; label: string }
   let existing: { name: string; url: string }[]
-  if (input.documentType === 'contract') {
+  if (input.truckId) {
+    if (!(VEHICLE_DOCUMENT_TYPES as readonly string[]).includes(input.documentType)) {
+      throw badRequest('That type cannot be filed on a vehicle.')
+    }
+    const truck = await DocumentsModel.findVehicle(input.truckId)
+    if (!truck) throw notFound('That vehicle could not be found.')
+    if (truck.status === 'archived') throw conflict('That vehicle is archived. Restore it before adding documents.')
+    // Under vehicle_documents/, a sensitive prefix (lib/storage.ts): short-lived links.
+    target   = { booking_id: null, client_id: null, truck_id: truck.truck_id, folder: `vehicle_documents/${truck.truck_id}`, label: `vehicle ${truck.plate_number ?? truck.truck_id}` }
+    existing = await DocumentsModel.findVehicleDocuments(truck.truck_id)
+  } else if (input.documentType === 'contract') {
     if (!input.clientId) throw badRequest('Choose the client this contract is for.')
     const client = await DocumentsModel.findClient(input.clientId)
     if (!client) throw notFound('That client could not be found.')
-    target   = { booking_id: null, client_id: client.client_id, folder: `client_documents/${client.client_id}/contracts`, label: `client ${client.company_name ?? client.client_id}` }
+    target   = { booking_id: null, client_id: client.client_id, truck_id: null, folder: `client_documents/${client.client_id}/contracts`, label: `client ${client.company_name ?? client.client_id}` }
     existing = await DocumentsModel.findClientContracts(client.client_id)
   } else {
+    if (input.documentType === 'vehicle_registration' || input.documentType === 'vehicle_insurance') {
+      throw badRequest('Choose the vehicle this document belongs to.')
+    }
     if (!input.bookingId) throw badRequest('Choose the booking this document is for.')
     const booking = await DocumentsModel.findBookingRef(input.bookingId)
     if (!booking) throw notFound('That booking could not be found.')
-    target   = { booking_id: booking.booking_id, client_id: null, folder: `${FOLDER}/${booking.reference_number ?? booking.booking_id}/staff`, label: `booking ${booking.reference_number ?? booking.booking_id}` }
+    target   = { booking_id: booking.booking_id, client_id: null, truck_id: null, folder: `${FOLDER}/${booking.reference_number ?? booking.booking_id}/staff`, label: `booking ${booking.reference_number ?? booking.booking_id}` }
     existing = await DocumentsModel.findBookingAttachedFiles(booking.booking_id)
   }
 
@@ -118,7 +151,11 @@ export async function uploadStaffDocuments(input: {
     plan = await planBookingUploads(input.files, existing.map((e) => ({ name: e.name, ref: isFileRef(e.url) ? e.url : null })))
   } catch (err) {
     if (err instanceof DuplicateBookingFileError) {
-      throw conflict(input.documentType === 'contract' ? err.message.replace('this booking', 'this client') : err.message)
+      throw conflict(
+        target.truck_id ? err.message.replace('this booking', 'this vehicle')
+          : input.documentType === 'contract' ? err.message.replace('this booking', 'this client')
+          : err.message,
+      )
     }
     throw err
   }
@@ -128,6 +165,7 @@ export async function uploadStaffDocuments(input: {
   const ids = await DocumentsModel.insertStaffDocuments(uploaded.map((u, i) => ({
     booking_id:    target.booking_id,
     client_id:     target.client_id,
+    truck_id:      target.truck_id,
     document_type: input.documentType,
     other_label:   otherLabel,
     file_url:      u.url,
@@ -142,7 +180,7 @@ export async function uploadStaffDocuments(input: {
   logEvent({
     log_type:    'document_activity',
     action:      'document_uploaded',
-    description: `${ids.length} ${otherLabel ? `Other (${otherLabel})` : input.documentType} document(s) attached to ${target.label}: ${input.files.map((f) => f.originalname).join(', ')}`,
+    description: `${ids.length} ${otherLabel ? `Other (${otherLabel})` : TYPE_WORDS[input.documentType]} document(s) attached to ${target.label}:${input.files.map((f) => f.originalname).join(', ')}`,
   })
 
   return { document_ids: ids }
@@ -153,9 +191,11 @@ export async function reviewStaffDocument(input: {
   decision:   'approved' | 'rejected'
   reason:     string | null
   reviewerId: string | null
+  scope:      DocumentScope
 }) {
   const doc = await DocumentsModel.findStaffDocument(input.documentId)
-  if (!doc) throw notFound('Document not found.')
+  // Out of scope reads as not found: the Fleet Manager learns nothing about other files.
+  if (!doc || (input.scope === 'fleet' && !doc.truck_id)) throw notFound('Document not found.')
   if (doc.archived_at) throw conflict('This document is archived. Restore it before reviewing.')
   // Four eyes: whoever attached a document does not also sign it off.
   if (input.reviewerId && doc.uploaded_by === input.reviewerId) {
@@ -178,9 +218,9 @@ export async function reviewStaffDocument(input: {
   })
 }
 
-export async function setDocumentArchived(documentId: string, archived: boolean, actorId: string | null) {
+export async function setDocumentArchived(documentId: string, archived: boolean, actorId: string | null, scope: DocumentScope) {
   const doc = await DocumentsModel.findStaffDocument(documentId)
-  if (!doc) throw notFound('Document not found.')
+  if (!doc || (scope === 'fleet' && !doc.truck_id)) throw notFound('Document not found.')
 
   const ok = await DocumentsModel.setArchived(documentId, archived, actorId)
   if (!ok) throw conflict(archived ? 'This document is already archived.' : 'This document is not archived.')

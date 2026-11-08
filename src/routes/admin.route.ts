@@ -103,7 +103,8 @@ const isCallTimeDesk  = authorize('admin', 'operations_manager')
 const isFleetUpkeep = authorize('admin', 'it_admin', 'fleet_manager')
 // Document Management: the portals that carry the module. What each may do
 // (view / upload / review / archive / export) is the document-management tier.
-const isDocuments = authorize('admin', 'it_admin', 'general_manager', 'operations_manager')
+// The Fleet Manager sees vehicle files only: documents.controller scopeOf().
+const isDocuments = authorize('admin', 'it_admin', 'general_manager', 'operations_manager', 'fleet_manager')
 
 // multer reports a rejected type or an oversized file through `err`; answer it
 // as a 400 instead of letting it surface as a 500.
@@ -392,6 +393,7 @@ router.get('/documents',                authenticate, isDocuments, DocumentsCont
 router.get('/documents/export',         authenticate, isDocuments, requireModuleFlag('document-management', 'can_export'), DocumentsController.exportDocuments)
 router.get('/documents/bookings',       authenticate, isDocuments, DocumentsController.searchBookings)
 router.get('/documents/clients',        authenticate, isDocuments, DocumentsController.searchClients)
+router.get('/documents/vehicles',       authenticate, isDocuments, DocumentsController.searchVehicles)
 router.get('/documents/other-labels',   authenticate, isDocuments, DocumentsController.listOtherLabels)
 router.get('/documents/folders',        authenticate, isDocuments, DocumentsController.listFolders)
 router.post('/documents',               authenticate, isDocuments, handleDocumentUpload, validate(uploadStaffDocumentsSchema), DocumentsController.uploadDocuments)

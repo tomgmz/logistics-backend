@@ -3,8 +3,8 @@ import { CreateTruckModelInput, UpdateTruckModelInput } from '../../types/truck-
 import { logEvent } from '../../lib/log-event.js'
 import { resolveModelVehicleType } from './vehicle-type.service.js'
 
-export async function getAllTruckModels() {
-  return TruckModelModel.findAll()
+export async function getAllTruckModels(archivedOnly = false) {
+  return TruckModelModel.findAll(archivedOnly)
 }
 
 export async function getTruckModelById(modelId: string) {

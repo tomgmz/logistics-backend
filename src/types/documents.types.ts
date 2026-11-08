@@ -14,13 +14,29 @@
  * order the upload form lists them. A Contract belongs to a client, not a
  * booking, and is staff only. Proof of Delivery and Other go on a booking;
  * Other carries the type the uploader typed in (other_label) and is staff only.
+ * Vehicle Registration and Insurance go on a vehicle (its Fleet folder); Other
+ * may go on a vehicle too (2026-11-08).
  */
 export const STAFF_DOCUMENT_TYPES = [
   'contract',
   'proof_of_delivery',
+  'vehicle_registration',
+  'vehicle_insurance',
   'other',
 ] as const
 export type StaffDocumentType = (typeof STAFF_DOCUMENT_TYPES)[number]
+
+/** What can be filed on a vehicle (documents.truck_id; chk_documents_vehicle). */
+export const VEHICLE_DOCUMENT_TYPES = ['vehicle_registration', 'vehicle_insurance', 'other'] as const satisfies readonly StaffDocumentType[]
+/** What can be filed on a booking. */
+export const BOOKING_DOCUMENT_TYPES = ['proof_of_delivery', 'other'] as const satisfies readonly StaffDocumentType[]
+
+/**
+ * How much of the library a caller may see. The Fleet Manager sees only the
+ * Fleet group: vehicle files (odometer photos, service receipts) and vehicle
+ * paperwork, never a booking's or a client's files.
+ */
+export type DocumentScope = 'all' | 'fleet'
 
 /** The longest type an uploader may type in for Other. */
 export const OTHER_LABEL_MAX = 60

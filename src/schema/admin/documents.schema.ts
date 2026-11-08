@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { OTHER_LABEL_MAX, STAFF_DOCUMENT_TYPES } from '../../types/documents.types.js'
+import { OTHER_LABEL_MAX, STAFF_DOCUMENT_TYPES, VEHICLE_DOCUMENT_TYPES } from '../../types/documents.types.js'
 
 // Multipart bodies arrive as strings; the files themselves are checked by the
 // uploadDocuments multer middleware (type, size, count).
@@ -8,19 +8,29 @@ const blankToNull = (v: unknown) => (typeof v === 'string' && v.trim() === '' ? 
 
 /**
  * Proof of Delivery and Other need a booking; Other also needs its typed-in
- * type. A Contract needs a client instead (it is never a booking's).
+ * type. A Contract needs a client instead (it is never a booking's). Vehicle
+ * Registration and Insurance need a vehicle; Other may name a vehicle instead
+ * of a booking (one or the other, never both).
  */
 export const uploadStaffDocumentsSchema = z.object({
   booking_id:    z.preprocess(blankToNull, z.string().uuid('Choose the booking this document belongs to').nullable().optional()),
   client_id:     z.preprocess(blankToNull, z.string().uuid('Choose the client this contract is for').nullable().optional()),
+  truck_id:      z.preprocess(blankToNull, z.string().uuid('Choose the vehicle this document belongs to').nullable().optional()),
   document_type: z.enum(STAFF_DOCUMENT_TYPES),
   other_label:   z.preprocess(blankToNull, z.string().trim().max(OTHER_LABEL_MAX, `Keep the document type to ${OTHER_LABEL_MAX} characters`).nullable().optional()),
   notes:         z.string().trim().max(500).optional().nullable(),
 }).superRefine((v, ctx) => {
+  const vehicleOnly = v.document_type === 'vehicle_registration' || v.document_type === 'vehicle_insurance'
   if (v.document_type === 'contract') {
     if (!v.client_id) ctx.addIssue({ code: 'custom', path: ['client_id'], message: 'Choose the client this contract is for' })
+  } else if (vehicleOnly || (v.document_type === 'other' && v.truck_id)) {
+    if (!v.truck_id) ctx.addIssue({ code: 'custom', path: ['truck_id'], message: 'Choose the vehicle this document belongs to' })
+    if (v.booking_id) ctx.addIssue({ code: 'custom', path: ['booking_id'], message: 'A vehicle document is not filed on a booking' })
   } else if (!v.booking_id) {
     ctx.addIssue({ code: 'custom', path: ['booking_id'], message: 'Choose the booking this document belongs to' })
+  }
+  if (v.truck_id && !(VEHICLE_DOCUMENT_TYPES as readonly string[]).includes(v.document_type)) {
+    ctx.addIssue({ code: 'custom', path: ['document_type'], message: 'That type cannot be filed on a vehicle' })
   }
   if (v.document_type === 'other' && !v.other_label) {
     ctx.addIssue({ code: 'custom', path: ['other_label'], message: 'Type what kind of document this is' })

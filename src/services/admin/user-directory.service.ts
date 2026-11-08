@@ -19,15 +19,15 @@ export { parseFilterRules }
  * The rules are the ones the page used to apply itself:
  *   - Filters arrive as the Filters panel's rules, [{ field, op: 'is'|'is_not', value }].
  *     Rules on one field: any "is" matches, every "is not" must hold.
- *   - Archived is a status like the rest. The per-role lists hide archived
- *     accounts, so the Status filter decides whether the archived list (from
- *     /users?status=archived) is read instead of, or as well as, the current one.
+ *   - Archived accounts are read (from /users?status=archived) only when the
+ *     Status filter names Archived; the pages send that from their Archived tab
+ *     only (2026-11-08). With no status picked every tab holds current accounts.
  *   - The All tab filters role and status in SQL and searches there too.
  *
  * The IT Administrator's Administrator Management uses the same endpoint with
  * the staff tabs (all-admins, admins, general-managers, fleet-admins,
- * operations-admins). There the Status dropdown is one status or none, and none
- * means every status, archived included.
+ * operations-admins). There the Status dropdown is one status or none; none
+ * means every current status.
  */
 
 type PeopleTab = 'all' | 'clients' | 'drivers' | 'vendor-drivers'
@@ -64,20 +64,22 @@ async function listStaff(
 ): Promise<any[]> {
   const pick = split(filters, 'status').is[0] ?? null
   if (tab === 'all-admins') {
+    // The Archived tab also narrows by role.
+    const role = allowedValues(filters, 'role', STAFF_ROLES.split(','))
     const { data } = await FetchUsersService.getUsers({
-      role:   STAFF_ROLES,
-      status: pick ?? [...CURRENT_STATUSES, 'archived'].join(','),
+      role:   role?.length ? role.join(',') : STAFF_ROLES,
+      status: pick ?? CURRENT_STATUSES.join(','),
       excludeId,
     })
     return data.filter((u: any) => matchesWords(search, staffSearchFields(u)))
   }
-  const archived = () => FetchUsersService.getUsers({ role: STAFF_ROLE[tab], status: 'archived', excludeId }).then((r) => r.data)
   const all =
-    pick === 'archived' ? await archived()
+    pick === 'archived'
+      ? (await FetchUsersService.getUsers({ role: STAFF_ROLE[tab], status: 'archived', excludeId })).data
     // One current status: the role's list (archived accounts are not in it), narrowed.
     : pick ? (await staffRows(tab)).filter((u) => u.status === pick)
-    // None picked: current and archived together.
-    : (await Promise.all([staffRows(tab), archived()])).flat()
+    // None picked: current accounts only. Archived ones have their own tab.
+    : await staffRows(tab)
   return all.filter((u) => matchesWords(search, staffSearchFields(u)))
 }
 
@@ -163,7 +165,9 @@ export async function listDirectory(params: {
 
   if (tab === 'all') {
     const role   = allowedValues(filters, 'role', ['client', 'driver'])
-    const status = allowedValues(filters, 'status', CURRENT_STATUSES) ?? [...CURRENT_STATUSES, 'archived']
+    // No status picked: current accounts only. Archived ones show only when
+    // Archived is asked for by name (the page's Archived tab).
+    const status = allowedValues(filters, 'status', CURRENT_STATUSES) ?? CURRENT_STATUSES
     const { data } = await FetchUsersService.getUsers({
       role:    role?.length ? role.join(',') : 'client,driver',
       status:  status.length ? status.join(',') : undefined,

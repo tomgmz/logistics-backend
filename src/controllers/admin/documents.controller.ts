@@ -7,9 +7,23 @@ import {
   LIBRARY_DOCUMENT_TYPES,
   type DocumentFolderLevel,
   type DocumentListQuery,
+  type DocumentScope,
   type LibraryDocumentType,
   type ReviewStatus,
 } from '../../types/documents.types.js'
+
+/**
+ * The Fleet Manager's Document Management holds vehicle files only (the
+ * Fleet group). Every endpoint applies this on the server; the page hiding
+ * clients and bookings is only the view of it.
+ */
+function scopeOf(req: Request): DocumentScope {
+  return req.user?.role === 'fleet_manager' ? 'fleet' : 'all'
+}
+
+function outOfScope(res: Response) {
+  res.status(403).json({ status: 'error', message: 'You can only work with vehicle documents.' })
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -36,11 +50,13 @@ function filtersFrom(req: Request): Omit<DocumentListQuery, 'page' | 'limit'> {
   const from   = str(req.query.date_from)
   const to     = str(req.query.date_to)
   const keys   = (str(req.query.keys) ?? '').split(',').filter((k) => DOC_KEY_RE.test(k)).slice(0, MAX_DOWNLOAD_KEYS)
+  const fleetOnly = scopeOf(req) === 'fleet'
 
   return {
     search:        str(req.query.search)?.slice(0, 100),
     types:         types.length ? types : undefined,
-    group:         group === 'booking' || group === 'fleet' || group === 'client' ? group : undefined,
+    // The Fleet Manager's group is always Fleet, whatever was asked for.
+    group:         fleetOnly ? 'fleet' : group === 'booking' || group === 'fleet' || group === 'client' ? group : undefined,
     review_status: ['pending', 'approved', 'rejected'].includes(review ?? '') ? review as ReviewStatus : undefined,
     booking_id:    booking && UUID_RE.test(booking) ? booking : undefined,
     truck_id:      truck && UUID_RE.test(truck) ? truck : undefined,
@@ -85,6 +101,9 @@ export async function listFolders(req: Request, res: Response) {
     const archived = req.query.archived === 'only' ? 'only' as const : 'hide' as const
     const paging  = pageQuery(req)
 
+    // The Fleet Manager's folders are the vehicles, nothing above or beside them.
+    if (scopeOf(req) === 'fleet' && level !== 'vehicles') return outOfScope(res)
+
     // The Documents page's top level, paged: every client folder, then (while
     // searching) the matching bookings across all clients, then the Fleet
     // folder (not while searching, and not on the clients-only view). Each row
@@ -105,7 +124,8 @@ export async function listFolders(req: Request, res: Response) {
           booking_status: null, schedule_date: null,
           booking_count:  vehicles.length,
           file_count:     vehicles.reduce((n, v) => n + v.file_count, 0),
-          pending_review: 0,
+          // Vehicle paperwork goes through review too (2026-11-08).
+          pending_review: vehicles.reduce((n, v) => n + v.pending_review, 0),
           last_upload:    vehicles.reduce<string | null>((m, v) => (v.last_upload && (!m || v.last_upload > m) ? v.last_upload : m), null),
         })
       }
@@ -154,6 +174,7 @@ export async function exportDocuments(req: Request, res: Response) {
 }
 
 export async function searchBookings(req: Request, res: Response) {
+  if (scopeOf(req) === 'fleet') return outOfScope(res)
   try {
     const data = await DocumentsService.searchBookingsForUpload(str(req.query.search)?.slice(0, 100) ?? '')
     res.status(200).json({ status: 'success', data })
@@ -164,6 +185,7 @@ export async function searchBookings(req: Request, res: Response) {
 
 /** The client picker for uploading a contract. */
 export async function searchClients(req: Request, res: Response) {
+  if (scopeOf(req) === 'fleet') return outOfScope(res)
   try {
     const data = await DocumentsService.searchClientsForUpload(str(req.query.search)?.slice(0, 100) ?? '')
     res.status(200).json({ status: 'success', data })
@@ -172,10 +194,25 @@ export async function searchClients(req: Request, res: Response) {
   }
 }
 
-/** Types typed in for Other before, most used first: the suggestions under the field. */
-export async function listOtherLabels(_req: Request, res: Response) {
+/** The vehicle picker for uploading a vehicle's paperwork. */
+export async function searchVehicles(req: Request, res: Response) {
   try {
-    res.status(200).json({ status: 'success', data: await DocumentsService.listOtherLabels() })
+    const data = await DocumentsService.searchVehiclesForUpload(str(req.query.search)?.slice(0, 100) ?? '')
+    res.status(200).json({ status: 'success', data })
+  } catch (err) {
+    fail(res, err)
+  }
+}
+
+/**
+ * Types typed in for Other before, most used first: the suggestions under the
+ * field. `?for=vehicle` lists the ones typed on vehicles; the Fleet Manager
+ * always gets those.
+ */
+export async function listOtherLabels(req: Request, res: Response) {
+  try {
+    const target = scopeOf(req) === 'fleet' || req.query.for === 'vehicle' ? 'vehicle' : 'booking'
+    res.status(200).json({ status: 'success', data: await DocumentsService.listOtherLabels(target) })
   } catch (err) {
     fail(res, err)
   }
@@ -187,11 +224,13 @@ export async function uploadDocuments(req: Request, res: Response) {
     const data = await DocumentsService.uploadStaffDocuments({
       bookingId:    req.body.booking_id ?? null,
       clientId:     req.body.client_id ?? null,
+      truckId:      req.body.truck_id ?? null,
       documentType: req.body.document_type,
       otherLabel:   req.body.other_label ?? null,
       notes:        req.body.notes?.trim() || null,
       files:        (req.files as Express.Multer.File[] | undefined) ?? [],
       uploadedBy:   userId,
+      scope:        scopeOf(req),
     })
     res.status(201).json({ status: 'success', data })
   } catch (err) {
@@ -207,6 +246,7 @@ export async function reviewDocument(req: Request, res: Response) {
       decision:   req.body.decision,
       reason:     req.body.reason ?? null,
       reviewerId: userId,
+      scope:      scopeOf(req),
     })
     res.status(200).json({ status: 'success' })
   } catch (err) {
@@ -217,7 +257,7 @@ export async function reviewDocument(req: Request, res: Response) {
 export async function archiveDocument(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
-    await DocumentsService.setDocumentArchived(param(req.params.id), true, userId)
+    await DocumentsService.setDocumentArchived(param(req.params.id), true, userId, scopeOf(req))
     res.status(200).json({ status: 'success' })
   } catch (err) {
     fail(res, err)
@@ -227,7 +267,7 @@ export async function archiveDocument(req: Request, res: Response) {
 export async function restoreDocument(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
-    await DocumentsService.setDocumentArchived(param(req.params.id), false, userId)
+    await DocumentsService.setDocumentArchived(param(req.params.id), false, userId, scopeOf(req))
     res.status(200).json({ status: 'success' })
   } catch (err) {
     fail(res, err)
