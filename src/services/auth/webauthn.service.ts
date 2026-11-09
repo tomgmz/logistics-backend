@@ -336,13 +336,9 @@ export async function finishAuthentication(
       user_id:    credential.user_id,
       metadata:   { credential_id: credential.credential_id.slice(0, 12) },
     })
-    // A company driver still has their email code and password, so they are
-    // pointed there; a vendor driver has no way in but a new setup link.
-    throw new Error(
-      await AuthModel.isExternalDriver(credential.user_id)
-        ? 'This passkey has been revoked. Ask your dispatcher to send a new setup link.'
-        : 'This passkey has been removed. Sign in with your email instead, then set up a new one.',
-    )
+    // Every driver (company or vendor, since 2026-11-09) still has the email
+    // code and password.
+    throw new Error('This passkey has been removed. Sign in with your email instead, then set up a new one.')
   }
 
   const user = await loadUser(credential.user_id)
@@ -465,13 +461,6 @@ export async function removeMyPasskey(userId: string, credentialPk: string): Pro
   const rows = await WebauthnModel.listCredentialsForUser(userId)
   const target = rows.find((r) => r.credential_pk === credentialPk)
   if (!target) throw new Error('Passkey not found')
-
-  // Removing the only passkey would lock a vendor driver out of an account that
-  // has no other way in, and the re-invite has to come from an admin. A company
-  // driver still has the email code and password, so theirs can go.
-  if (rows.length === 1 && await AuthModel.isExternalDriver(userId)) {
-    throw new Error('This is your only passkey. Add another device before removing this one.')
-  }
 
   await WebauthnModel.revokeCredential(credentialPk, userId, 'Removed by the driver')
 }

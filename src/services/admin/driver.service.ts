@@ -83,9 +83,10 @@ export async function createDriver(
   }, license.scanned, license.scanFailed, actorId ?? null)
   const licenseNote = license.note?.trim() ? ` License note: ${license.note.trim()}` : ''
 
-  // A vendor driver gets a passkey-only account and a setup link instead of a
-  // password and a welcome email. Same details otherwise, so they show up in the
-  // license reminder and the Driver Management flag like any company driver.
+  // A vendor driver gets the same password and welcome email (since 2026-11-09)
+  // plus the vendor fields and the flag that keeps them out of the company
+  // pool, so they show up in the license reminder and the Driver Management
+  // flag like any company driver.
   if (dto.is_external) {
     if (!dto.vendor_name?.trim()) throw new Error('Company name is required for a vendor driver')
     const { userId } = await createExternalDriver({

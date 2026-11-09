@@ -352,19 +352,6 @@ export async function requestOtp(
     return
   }
 
-  // An outside-vendor driver signs in with the passkey on their phone only. An
-  // emailed code would be a way in around it, so none is sent. Silent, like the
-  // refusals above, so this endpoint is no enumeration oracle.
-  if (await AuthModel.isExternalDriver(user.user_id)) {
-    await AuthModel.createLoginHistory({
-      user_id: user.user_id,
-      email,
-      attempt_status: 'failed_inactive',
-      failure_reason: 'Sign-in code requested for a passkey-only external driver',
-    })
-    return
-  }
-
   const latestOtp = await AuthModel.findLatestOtp(user.user_id)
   if (latestOtp) {
     const secondsSinceLast = (Date.now() - new Date(latestOtp.created_at).getTime()) / 1000
@@ -441,20 +428,6 @@ export async function verifyOtp(
       failure_reason: `Account status: ${user.status}`,
     })
     throw new Error('Invalid credentials')
-  }
-
-  // Checked again here, not only when the code was requested: a code could have
-  // been issued before the account became a vendor driver.
-  if (await AuthModel.isExternalDriver(user.user_id)) {
-    await AuthModel.createLoginHistory({
-      user_id: user.user_id,
-      email,
-      device_info: input.device_info,
-      user_agent: userAgent,
-      attempt_status: 'failed_inactive',
-      failure_reason: 'External driver attempted sign-in code login',
-    })
-    throw new Error('This account signs in with a passkey. Open the app and use "Sign in with a passkey".')
   }
 
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
@@ -637,12 +610,7 @@ export async function loginWithPassword(
 ): Promise<AuthResponse> {
   const email = input.email.trim().toLowerCase()
 
-  // Fetched together to save a database round trip; the checks below still
-  // run in their original order.
-  const [user, externalDriver] = await Promise.all([
-    AuthModel.findUserByEmail(email),
-    AuthModel.isExternalDriverByEmail(email),
-  ])
+  const user = await AuthModel.findUserByEmail(email)
 
   if (!user) {
     throw new Error('Invalid credentials')
@@ -680,20 +648,6 @@ export async function loginWithPassword(
       failure_reason: `Account locked for ${minutesLeft} more minutes`,
     })
     throw new Error(`Account temporarily locked. Please try again in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''}.`)
-  }
-
-  // An outside-vendor driver has a password in auth.users only because Supabase
-  // requires one; it is random, was never shown to anyone, and their way in is
-  // the passkey on their phone. Refuse before reaching signInWithPassword so
-  // this stays a closed door rather than an unguessable one.
-  if (externalDriver) {
-    await AuthModel.createLoginHistory({
-      user_id: user.user_id, email,
-      device_info: input.device_info, user_agent: userAgent,
-      attempt_status: 'failed_inactive',
-      failure_reason: 'External driver attempted password login',
-    })
-    throw new Error('This account signs in with a passkey. Open the app and use "Sign in with a passkey".')
   }
 
   const { data: authData, error: authError } = await supabaseAnon.auth.signInWithPassword({

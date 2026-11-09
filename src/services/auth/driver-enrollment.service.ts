@@ -1,11 +1,10 @@
-import crypto from 'node:crypto'
 import { supabase } from '../../lib/supabase.js'
 import { createUserWithProfile } from '../../lib/user-provisioning.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import { unbanAuthUser } from '../admin/user-auth-status.service.js'
 import { logEvent } from '../../lib/log-event.js'
 import { busyDriversFor } from '../../lib/driver-reservation.js'
-import { buildDriverSetupUrl, sendDriverEnrollmentEmail } from '../../lib/brevo-mailer.js'
+import { buildDriverSetupUrl, generateSecurePassword, sendDriverEnrollmentEmail, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
 import { INVITE_TTL_MS } from '../../lib/webauthn-config.js'
 import { hashToken } from './auth.service.js'
 import { generateInviteToken } from './webauthn.service.js'
@@ -23,10 +22,12 @@ import * as DriverModel from '../../models/admin/driver.model.js'
  * copies their details onto the delivery snapshot, which remains the record of
  * who drove. Only the vehicle is typed per booking.
  *
- * The account is deliberately thin. It is role='driver' (access is scoped by
- * driver_assignments, not by role string), it is flagged is_external so it can
- * never be offered as company crew, and it has no usable password — the only way
- * in is a passkey the driver enrols on their own phone.
+ * The account is role='driver' (access is scoped by driver_assignments, not by
+ * role string) and flagged is_external so it can never be offered as company
+ * crew. Since 2026-11-09 it signs in like a company driver: a temporary password
+ * in the welcome email (changed on first sign-in), the emailed code, and a
+ * passkey as an option. Passkey-only was dropped because a phone without Google
+ * Play (Huawei) could never get in.
  */
 
 export interface CreateExternalDriverInput {
@@ -48,8 +49,6 @@ export interface CreateExternalDriverInput {
 export interface ExternalDriverForAssignment {
   userId:      string
   driverId:    string
-  /** True when the driver has no working passkey, so a setup link must go out. */
-  needsInvite: boolean
   firstName:   string | null
   snapshot: {
     vendor_name:           string | null
@@ -83,12 +82,12 @@ async function findUserByEmail(email: string) {
 }
 
 /**
- * Register a vendor's driver from Driver Management and email them a passkey
- * setup link.
+ * Register a vendor's driver from Driver Management and email them the same
+ * welcome email (temporary password) a company driver gets.
  *
  * Same details as a company driver (name, contact, license number, expiry and
  * photo) so the license expiry reminder and the Driver Management flag cover
- * them too. What differs is the sign-in: no password is ever issued.
+ * them too. A passkey setup link can still be sent from the Vendor tab.
  */
 export async function createExternalDriver(
   input: CreateExternalDriverInput,
@@ -111,16 +110,15 @@ export async function createExternalDriver(
     throw new Error(`License number ${input.license_number} is already registered to another driver.`)
   }
 
-  // The password exists only because auth.users requires one. It is never sent
-  // anywhere, never emailed, and loginWithPassword refuses external drivers
-  // outright — the passkey is the only way in.
-  const unusablePassword = crypto.randomBytes(32).toString('base64url')
+  // Emailed once in the welcome email and changed on first sign-in, exactly as
+  // for a company driver.
+  const password  = generateSecurePassword()
   const phone     = input.phone?.trim() || null
   const e164Phone = phone ? (phone.startsWith('0') ? '+63' + phone.slice(1) : phone) : undefined
 
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email,
-    password:      unusablePassword,
+    password,
     email_confirm: true,
     phone:         e164Phone,
     user_metadata: { role: 'driver', external: true },
@@ -141,10 +139,8 @@ export async function createExternalDriver(
         suffix:      input.suffix ?? null,
         phone,
         created_by:  input.actorId ?? null,
-        // The opposite of a company driver, and deliberately so. There is no
-        // password to change, and a true here would bounce the driver into
-        // /change-password after a successful passkey sign-in with no way out.
-        must_change_password: false,
+        // Same as a company driver: the emailed password is temporary.
+        must_change_password: true,
       },
       {
         license_number:    input.license_number,
@@ -183,11 +179,11 @@ export async function createExternalDriver(
     description: `Registered vendor driver ${fullName(input)} (${email}) from ${input.vendor_name}`,
   })
 
-  // Fire-and-forget, like the welcome email for a company driver: the account is
-  // made and correct, and a Brevo outage must not undo it. "Resend setup link"
-  // on the Vendor tab covers a lost email.
-  void issueInvite({ userId, email, firstName: input.first_name, actorId: input.actorId ?? null })
-    .catch((err) => console.error('[vendor-driver] failed to send setup link', userId, err))
+  // Fire-and-forget, like the company driver's: the account is made and correct,
+  // and a Brevo outage must not undo it. A lost email is covered by "Forgot
+  // password" or the emailed sign-in code.
+  sendWelcomeEmail({ to: email, firstName: input.first_name ?? null, role: 'driver', password })
+    .catch((err: unknown) => console.error('[vendor-driver] WELCOME_EMAIL_FAILED', userId, err))
 
   return { userId, driverId }
 }
@@ -222,11 +218,9 @@ export async function findExternalDriverForAssignment(userId: string): Promise<E
     throw new Error('This vendor driver\'s access is turned off. Ask the IT Administrator to restore it first.')
   }
 
-  const active = await WebauthnModel.listCredentialsForUser(row.user_id)
   return {
     userId:      row.user_id,
     driverId:    profile.driver_id,
-    needsInvite: active.length === 0,
     firstName:   row.first_name ?? null,
     snapshot: {
       vendor_name:           profile.vendor_name ?? null,
@@ -328,7 +322,7 @@ export async function reinvite(userId: string, actorId?: string | null): Promise
     throw new Error('Only vendor-supplied drivers use passkey setup links.')
   }
   if (data.status !== 'active') {
-    throw new Error('This driver\'s access was revoked. Use "Restore access" to turn it back on and send a new setup link.')
+    throw new Error('This driver\'s access was revoked. Use "Restore access" to turn it back on first.')
   }
 
   await issueInvite({
@@ -400,12 +394,13 @@ export async function revokeExternalDriver(
 }
 
 /**
- * Undo revokeExternalDriver: reactivate the account and send a fresh setup link.
+ * Undo revokeExternalDriver: reactivate the account. Since 2026-11-09 no setup
+ * link is sent: the driver signs in again with their password or the emailed
+ * code, like a company driver.
  *
  * The old passkeys stay revoked — revocation is final for a credential, because
- * the phone that held it may no longer be the driver's. The driver enrols again,
- * and since a revoked credential is never in the exclusion list, a phone still
- * holding the stale copy simply replaces it.
+ * the phone that held it may no longer be the driver's. A new one can be set up
+ * from the app's account menu, or a setup link sent from the Vendor tab.
  */
 export async function restoreExternalDriver(userId: string, actorId?: string | null): Promise<void> {
   const { data, error } = await supabase
@@ -421,7 +416,7 @@ export async function restoreExternalDriver(userId: string, actorId?: string | n
     throw new Error('This is not a vendor-supplied driver.')
   }
   if (data.status === 'active') {
-    throw new Error('This driver\'s access is already active. Use "Resend setup link" instead.')
+    throw new Error('This driver\'s access is already active.')
   }
 
   await reactivateAccount(userId)
@@ -437,13 +432,6 @@ export async function restoreExternalDriver(userId: string, actorId?: string | n
     log_type:    'user_management',
     action:      'external_driver_restored',
     description: `Restored app access for ${data.email}`,
-  })
-
-  await issueInvite({
-    userId:    data.user_id,
-    email:     data.email,
-    firstName: data.first_name,
-    actorId,
   })
 }
 

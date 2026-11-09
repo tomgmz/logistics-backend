@@ -19,43 +19,6 @@ export async function findUserByEmail(email: string): Promise<AuthUser | null> {
   return data ?? null
 }
 
-/**
- * Is this account an outside-vendor driver?
- *
- * Their auth.users row carries a random password that exists only to satisfy
- * Supabase — it is never sent to anyone. Every password-shaped route has to ask
- * this, or the password and reset flows become a way around the passkey
- * requirement rather than an alternative to it.
- *
- * Kept as its own lookup instead of widening findUserByEmail's select, because
- * that result is typed AuthUser and consumed all over the login paths.
- */
-export async function isExternalDriver(userId: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('drivers')
-    .select('is_external')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  if (error) throw error
-  return data?.is_external === true
-}
-
-/**
- * isExternalDriver keyed on the email, so password sign-in can run it alongside
- * findUserByEmail instead of waiting for the user_id first.
- */
-export async function isExternalDriverByEmail(email: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('drivers')
-    .select('is_external, users!inner ( email )')
-    .eq('users.email', email)
-    .maybeSingle()
-
-  if (error) throw error
-  return data?.is_external === true
-}
-
 export async function clearMustChangePassword(userId: string): Promise<void> {
   const { error } = await supabase
     .from('users')

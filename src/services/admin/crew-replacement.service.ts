@@ -16,7 +16,6 @@ import { assertLeadDriverOnBooking, type DriverActor } from '../client/booking.s
 import { driverIdOf, pendingLoadTransfer } from '../driver/crew-actor.js'
 import {
   findExternalDriverForAssignment,
-  issueInvite,
   type ExternalDriverForAssignment,
 } from '../auth/driver-enrollment.service.js'
 import {
@@ -293,21 +292,6 @@ export async function replaceCrewService(
   )
   // The company reservation state machine is fleet-only; a vendor crew is not in it.
   if (!vendor) await reserveCrew(leadId, truckId, second)
-
-  // A vendor driver with no working passkey gets a setup link, as on assigning.
-  for (const driver of [external, externalSecond]) {
-    if (!driver?.needsInvite) continue
-    void issueInvite({
-      userId:     driver.userId,
-      email:      driver.snapshot.vendor_driver_email,
-      bookingId,
-      bookingRef: bookingRef(booking),
-      firstName:  driver.firstName,
-      actorId:    staff.userId,
-    }).catch((err) => {
-      console.error('[crew-replacement] failed to send vendor driver invite', bookingId, err)
-    })
-  }
 
   const after = (await BookingModel.findById(bookingId)) ?? booking
   const swapped =

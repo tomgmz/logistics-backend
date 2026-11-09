@@ -6,8 +6,7 @@ import * as EnrollmentService from '../../services/auth/driver-enrollment.servic
  *
  * Deliberately few: resend the setup link, revoke everything, restore a revoked
  * account, and look at the current state. Anything more (editing the account, resetting a password)
- * either does not apply to a passkey-only account or belongs on the assignment
- * that created it.
+ * goes through the same paths as a company driver.
  */
 
 export async function list(_req: Request, res: Response) {

@@ -10,7 +10,6 @@ import { getRouteDistance, type RouteDistance } from '../maps/route-distance.ser
 import { busyDriversFor, driverBusyMessage } from '../../lib/driver-reservation.js'
 import {
   findExternalDriverForAssignment,
-  issueInvite,
   type ExternalDriverForAssignment,
 } from '../auth/driver-enrollment.service.js'
 import {
@@ -247,25 +246,9 @@ export async function assignBookingService(
   )
   await reserveCrew(nextDriverId, nextTruckId, nextSecondId)
 
-  // A vendor driver who has not set up the app yet gets a fresh setup link now,
-  // naming this booking. Fire-and-forget, like the welcome email on driver
-  // creation: the assignment is already committed and correct, and a Brevo
-  // outage must not undo it. If the email fails the invite is re-sendable from
-  // the booking's assignment card.
-  const ref = external?.needsInvite || externalSecond?.needsInvite ? await bookingRefById(bookingId) : null
-  for (const driver of [external, externalSecond]) {
-    if (!driver?.needsInvite) continue
-    void issueInvite({
-      userId:     driver.userId,
-      email:      driver.snapshot.vendor_driver_email,
-      bookingId,
-      bookingRef: ref,
-      firstName:  driver.firstName,
-      actorId:    userId ?? null,
-    }).catch((err) => {
-      console.error('[assignment] failed to send driver enrollment invite', bookingId, err)
-    })
-  }
+  // No setup link on assignment any more (2026-11-09): a vendor driver signs in
+  // with the password from their welcome email, or the emailed code, like a
+  // company driver. A passkey is optional and its link is sent from the Vendor tab.
 
   // The booking is now crewed: tell the driver they have a delivery, and tell the
   // fleet manager one of their vehicles has been taken.

@@ -25,10 +25,10 @@ import {
   ResetRequestStatus,
 } from '../../types/password-reset.types.js'
 
-// How long a sent link stays usable. Short enough that an intercepted or
-// forwarded email goes stale, long enough that a driver can read it at the end
-// of a run.
-const TOKEN_TTL_MINS = 60
+// How long a sent link stays usable (user 2026-11-08: 5 minutes). An intercepted
+// or forwarded email goes stale almost at once; someone who misses the window
+// asks again and the admin resends from the queue.
+const TOKEN_TTL_MINS = 5
 
 // Re-notifying the admin queue is throttled so a user tapping "forgot password"
 // repeatedly cannot bury the bell. The request itself is always reused.
@@ -149,21 +149,6 @@ export async function requestPasswordReset(input: {
         email,
         attempt_status: 'failed_inactive',
         failure_reason: `Password reset requested on ${user.status} account`,
-      })
-      return
-    }
-
-    // An outside-vendor driver has no password to reset. Left open, this flow
-    // would set one and hand back a way in that bypasses the passkey entirely —
-    // the reset queue becoming a back door around the thing it sits beside.
-    // Returns silently like every other refusal here, so the endpoint stays free
-    // of an enumeration oracle.
-    if (await AuthModel.isExternalDriver(user.user_id)) {
-      await AuthModel.createLoginHistory({
-        user_id: user.user_id,
-        email,
-        attempt_status: 'failed_inactive',
-        failure_reason: 'Password reset requested for a passkey-only external driver',
       })
       return
     }
@@ -375,16 +360,6 @@ export async function completeReset(
   if (!request) {
     const err = new Error('This reset link is invalid or has expired. Please request a new one.')
     ;(err as any).code = 'RESET_TOKEN_INVALID'
-    throw err
-  }
-
-  // Checked again at completion, not just at request time. A token could have
-  // been minted before the account became external, and this is the call that
-  // actually writes a usable password.
-  if (await AuthModel.isExternalDriver(request.user_id)) {
-    await ResetModel.markCompleted(request.request_id).catch(() => {})
-    const err = new Error('This account signs in with a passkey and has no password to reset.')
-    ;(err as any).code = 'RESET_NOT_APPLICABLE'
     throw err
   }
 
