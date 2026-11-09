@@ -79,6 +79,11 @@ export type NotificationType =
   | 'support.ticket_opened'           // client opened a ticket -> Company Administrators
   | 'support.ticket_resolved'         // staff resolved it -> the client
   | 'support.ticket_logged'           // staff opened a ticket for a client -> that client
+  // Brevo's webhook says an email we sent was not delivered (bounce, block,
+  // invalid address, receiver error). Carries `recipient`, `email_kind`,
+  // `reason` in `data`; no booking. Client/driver/unknown -> Company
+  // Administrators; staff -> IT Administrator (email-delivery.service.ts).
+  | 'email.undelivered'
 
 export interface NotificationRow {
   notification_id: string

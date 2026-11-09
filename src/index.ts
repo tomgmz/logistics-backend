@@ -41,6 +41,7 @@ import { requestContext } from './lib/request-context.js'
 import { logSystem } from './lib/log-system.js'
 import { fileUrls } from './middlewares/fileUrls.middleware.js'
 import filesRoutes from './routes/files.routes.js'
+import webhooksRoutes from './routes/webhooks.routes.js'
 import { allowedOrigins } from './lib/allowed-origins.js'
 
 dotenv.config();
@@ -151,6 +152,10 @@ app.use('/api/auth', authRoutes);
 
 // Sealed file links (lib/file-links.ts): read-only, the token is the permission.
 app.use('/api/files', filesRoutes);
+
+// Callbacks from outside services (Brevo delivery events). No cookie session:
+// each route checks its own shared secret, so CSRF does not apply.
+app.use('/api/webhooks', webhooksRoutes);
 
 app.use('/api', verifyCsrfToken);
 

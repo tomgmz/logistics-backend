@@ -109,7 +109,9 @@ const SERVICES: { key: string; label: string; description: string; filter: (q: a
     key:         'email',
     label:       'Email (Brevo)',
     description: 'One-time codes, password resets, welcome and enrolment emails.',
-    filter:      (q) => q.eq('event_type', 'email_event'),
+    // A recipient's server refusing one email (brevo.delivery) is about that
+    // address, not Brevo being down; those rows stay in System Logs only.
+    filter:      (q) => q.eq('event_type', 'email_event').neq('source', 'brevo.delivery'),
   },
   {
     key:         'storage',
