@@ -191,20 +191,31 @@ export async function namesForIds(texts: Array<string | null | undefined>): Prom
     { table: 'driver_reports', key: 'report_id', select: 'report_id', label: () => '' },
   ]
 
+  // Every table is asked at once (each call is a round trip to the database;
+  // one after another they added up to most of the page's wait). Results are
+  // applied in the list's order, so an id found in two tables keeps the
+  // earlier table's name, as before.
   const all = [...ids]
-  for (const { table, key, select, label } of lookups) {
-    const missing = all.filter((id) => !names.has(id))
-    if (!missing.length) break
-    for (let i = 0; i < missing.length; i += 150) {
-      const { data, error } = await supabase.from(table).select(select).in(key, missing.slice(i, i + 150))
+  const chunks: string[][] = []
+  for (let i = 0; i < all.length; i += 150) chunks.push(all.slice(i, i + 150))
+
+  const results = await Promise.all(lookups.map(({ table, key, select }) =>
+    Promise.all(chunks.map(async (chunk) => {
+      const { data, error } = await supabase.from(table).select(select).in(key, chunk)
       // A lookup that fails leaves the id unnamed; the log still reads.
-      if (error) { console.error('[log-text]', table, error.message); continue }
-      for (const r of (data ?? []) as any[]) {
-        const n = label(r)
-        names.set(String(r[key]).toLowerCase(), n ? n : '')
-      }
+      if (error) { console.error('[log-text]', table, error.message); return [] as any[] }
+      return (data ?? []) as any[]
+    })).then((parts) => parts.flat()),
+  ))
+
+  lookups.forEach(({ key, label }, i) => {
+    for (const r of results[i]) {
+      const id = String(r[key]).toLowerCase()
+      if (names.has(id)) continue
+      const n = label(r)
+      names.set(id, n ? n : '')
     }
-  }
+  })
   return names
 }
 
