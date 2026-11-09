@@ -40,7 +40,7 @@ async function withLatestInspection<T extends { truck_id: string }>(rows: T[]) {
   if (rows.length === 0) return [] as Enriched[]
 
   const [latest, returns] = await Promise.all([
-    InspectionModel.latestByTruck(),
+    InspectionModel.latestByTruck(rows.map((r) => r.truck_id)),
     lastFleetReturnsFor(rows.map((r) => r.truck_id)),
   ])
 

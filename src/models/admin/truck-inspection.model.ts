@@ -70,18 +70,23 @@ export async function listForTruck(truckId: string, limit = 20): Promise<TruckIn
 }
 
 /**
- * The latest inspection for every truck that has one. Callers zip this onto a
- * truck list so the UI can show readiness without an N+1 query.
+ * The latest inspection for each of `truckIds` that has one. Callers zip this
+ * onto a truck list so the UI can show readiness without an N+1 query.
+ * Only the listed trucks' inspections are read (index truck_id, inspected_at),
+ * not the whole history, so a page of 20 vehicles stays cheap as it grows.
  */
-export async function latestByTruck(): Promise<Map<string, TruckInspection>> {
+export async function latestByTruck(truckIds: string[]): Promise<Map<string, TruckInspection>> {
+  const byTruck = new Map<string, TruckInspection>()
+  if (truckIds.length === 0) return byTruck
+
   const { data, error } = await supabase
     .from('truck_inspections')
     .select(SELECT)
+    .in('truck_id', [...new Set(truckIds)])
     .order('inspected_at', { ascending: false })
 
   if (error) throw error
 
-  const byTruck = new Map<string, TruckInspection>()
   for (const row of (data ?? []) as unknown as TruckInspection[]) {
     if (!byTruck.has(row.truck_id)) byTruck.set(row.truck_id, row)
   }
