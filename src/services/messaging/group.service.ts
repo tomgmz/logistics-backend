@@ -2,6 +2,7 @@ import * as groupModel from '../../models/messaging/group.model.js'
 import * as push from './push.service.js'
 import { groupRolesBlockReason } from '../../models/messaging/messaging.model.js'
 import { createClient } from '@supabase/supabase-js'
+import { broadcast } from '../../lib/realtime.js'
 import type { GroupWithDetails, GroupMessageRow, GroupSystemEvent } from '../../types/messaging.types.js'
 
 import { messageBodyColumns } from './photo.service.js'
@@ -9,10 +10,6 @@ import { PHOTO_PLACEHOLDER } from '../../schema/messaging/messaging.schema.js'
 
 const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
-async function broadcast(channel: string, event: string, payload: unknown): Promise<void> {
-  const ch = admin.channel(channel)
-  await ch.send({ type: 'broadcast', event, payload })
-}
 
 async function broadcastMany(channels: string[], event: string, payload: unknown): Promise<void> {
   await Promise.allSettled(channels.map(c => broadcast(c, event, payload)))

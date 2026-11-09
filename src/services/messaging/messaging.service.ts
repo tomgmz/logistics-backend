@@ -1,6 +1,7 @@
 import * as model from '../../models/messaging/messaging.model.js'
 import * as push from './push.service.js'
 import { createClient } from '@supabase/supabase-js'
+import { broadcast } from '../../lib/realtime.js'
 import type { ConversationWithDetails, MessageRow, MessagableUser } from '../../types/messaging.types.js'
 import { logEvent } from '../../lib/log-event.js'
 import { messageBodyColumns } from './photo.service.js'
@@ -9,9 +10,6 @@ import { PHOTO_PLACEHOLDER } from '../../schema/messaging/messaging.schema.js'
 const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 
-async function broadcast(channel: string, event: string, payload: unknown): Promise<void> {
-  await admin.channel(channel).send({ type: 'broadcast', event, payload })
-}
 
 async function assertCanMessage(currentUserId: string, currentUserRole: string, targetUserId: string) {
   if (currentUserId === targetUserId) throw Object.assign(new Error('Cannot message yourself'), { statusCode: 400 })
