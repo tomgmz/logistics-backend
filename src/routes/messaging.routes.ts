@@ -11,8 +11,13 @@ import { attachClientScope, attachDriverScope } from '../middlewares/clientScope
 
 const router = Router()
 
+// Every messaging route shares this budget, sends included. It is a backstop
+// against a runaway client, not a quota on working (as authenticatedLimiter):
+// opening one chat costs 2–4 requests, so 60 a minute was reached by someone
+// simply clicking through their chats. 300 is only reachable by a loop. Spam
+// is held by sendLimit below, which stays at 30.
 const readLimit = rateLimit({
-  windowMs: 60_000, max: 60,
+  windowMs: 60_000, max: 300,
   keyGenerator: (req) => (req as any).user?.sub ?? ipKeyGenerator(clientIp(req)),
   standardHeaders: true, legacyHeaders: false,
   message: { success: false, message: 'Too many requests, please slow down' },

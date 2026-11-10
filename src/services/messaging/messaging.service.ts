@@ -240,7 +240,9 @@ export async function toggleReaction(
 
   const result  = await model.toggleMessageReaction(messageId, userId, emoji)
   const otherId = conv.participant_a_id === userId ? conv.participant_b_id : conv.participant_a_id
-  const payload = { message_id: messageId, user_id: userId, emoji, action: result.action }
+  // conversation_id lets a closed chat know a reaction changed it (the inbox
+  // listens on the user channels); older apps ignore the extra field.
+  const payload = { message_id: messageId, user_id: userId, emoji, action: result.action, conversation_id: conversationId }
 
   void Promise.allSettled([
     broadcast(`messaging:conv:${conversationId}`, 'reaction_toggle', payload),

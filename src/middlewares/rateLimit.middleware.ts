@@ -231,13 +231,40 @@ export const passkeyEnrollLimiter = rateLimit({
  * single handset, since several drivers may sign in from the same connection at
  * the start of a shift.
  */
+/**
+ * Passkey sign-in, step 1: hand out a challenge. The request carries no
+ * identity (the phone picks the passkey afterwards), so it can only be counted
+ * per network address. Everyone in one office, or many drivers behind one
+ * mobile carrier address, shares it, so the ceiling is high: it only stops a
+ * flood. Guessing is not possible here; the signature is checked in step 2.
+ */
+export const passkeyOptionsLimiter = rateLimit({
+  handler: limitTripped('passkeyOptionsLimiter', 'error'),
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
+  message: { status: 'error', message: 'Too many sign-in attempts. Please try again in a few minutes.' },
+})
+
+/**
+ * Passkey sign-in, step 2: check the signed answer. Counted per PASSKEY (its
+ * credential id), the way the reset limit counts per link, so one person's
+ * failed tries never lock out the next person on the same network. A request
+ * without a credential id falls back to the network address.
+ */
 export const passkeyAuthLimiter = rateLimit({
   handler: limitTripped('passkeyAuthLimiter', 'error'),
   windowMs: 15 * 60 * 1000,
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
+  keyGenerator: (req) => {
+    const id = req.body?.credential?.id
+    if (typeof id === 'string' && id.length > 0 && id.length <= 1024) return `passkey:${id}`
+    return ipKeyGenerator(clientIp(req))
+  },
   message: { status: 'error', message: 'Too many sign-in attempts. Please try again in a few minutes.' },
 })
 

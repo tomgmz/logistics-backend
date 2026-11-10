@@ -4,7 +4,7 @@ import { authenticate } from '../middlewares/auth.middleware.js'
 import {
   authenticatedLimiter, authLimiter,
   passwordResetLimiter, resetRequestIpLimiter,
-  passkeyEnrollLimiter, passkeyAuthLimiter,
+  passkeyEnrollLimiter, passkeyAuthLimiter, passkeyOptionsLimiter,
 } from '../middlewares/rateLimit.middleware.js'
 import {
   requestOtpSchema,
@@ -78,7 +78,7 @@ router.post('/passkey/enroll/verify',        passkeyEnrollLimiter, validate(enro
 // Sign-in. The options request carries NO body at all — discoverable credentials
 // mean the device offers what it holds and the server learns who is signing in
 // only from the assertion, which is what leaves nothing here to enumerate.
-router.post('/passkey/authenticate/options', passkeyAuthLimiter, WebauthnController.authOptions)
+router.post('/passkey/authenticate/options', passkeyOptionsLimiter, WebauthnController.authOptions)
 router.post('/passkey/authenticate/verify',  passkeyAuthLimiter, validate(authVerifySchema), WebauthnController.authVerify)
 
 // Protected
