@@ -115,6 +115,11 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   stop_order_changed:     { type: 'booking.stop_order_changed',     roles: ['operations_manager'] },
   // breakdown.scheduler.ts: a driver-reported breakdown still has no decision.
   breakdown_unhandled:    { type: 'booking.breakdown_unhandled',    roles: ['operations_manager'] },
+  // late-confirmation.service: the previous main driver's drop-off confirmation
+  // arrived after a driver swap and failed the evidence check; the office
+  // accepts or dismisses it. Reminded every 15 min (late-confirmation.scheduler).
+  late_confirmation:           { type: 'booking.late_confirmation',           roles: ['operations_manager'] },
+  late_confirmation_unhandled: { type: 'booking.late_confirmation_unhandled', roles: ['operations_manager'] },
   // The office swapped the main and second driver on the road (driving-shift.service).
   crew_roles_swapped:     { type: 'booking.crew_roles_swapped',     audience: 'drivers' },
   // The driver set off. Ops sees it live on the board; the client is told.
@@ -134,7 +139,9 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
 const ROLE_PATHS: Record<string, string> = {
   general_manager:  '/general_manager/booking-management',
   operations_manager: '/operations_admin/booking-management',
-  fleet_manager:      '/fleet_admin/booking-management',
+  // No Booking Management for the Fleet Manager (2026-11-11): their booking
+  // notices (e.g. vehicle assigned) open Vehicle Management.
+  fleet_manager:      '/fleet_admin/vehicle-management',
   admin:            '/admin/booking-management',
   // Client rejection notifications open the booking in Transaction History (the
   // read view), not /client/booking which is the new-booking wizard.
@@ -328,6 +335,18 @@ function copyFor(
         title: 'Breakdown waiting for a decision',
         body:  `The driver on booking ${label} reported a breakdown ${extra?.minutesLeft ?? 15} min ago and the trip can't continue. ` +
                'Pause the delivery for the breakdown (then replace the vehicle or set a continuation date), or confirm the truck is moving again.',
+      }
+    case 'late_confirmation':
+      return {
+        title: 'Late confirmation to check',
+        body:  `The previous main driver on booking ${label} sent a loading or drop-off confirmation that arrived after the drivers were changed. ` +
+               `It was not recorded automatically${reason ? ` (${reason})` : ''}. Check the photo and location, then accept or dismiss it in Booking Management.`,
+      }
+    case 'late_confirmation_unhandled':
+      return {
+        title: 'Late confirmation still waiting',
+        body:  `A late confirmation on booking ${label} has waited ${extra?.minutesLeft ?? 15} min for a decision. ` +
+               'The delivery cannot finish until it is accepted, dismissed, or confirmed another way.',
       }
     case 'crew_roles_swapped':
       return {

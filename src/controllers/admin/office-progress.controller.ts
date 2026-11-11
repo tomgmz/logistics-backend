@@ -6,11 +6,19 @@ import {
   officeConfirmFleetReturnService,
   officeReportIncidentService,
 } from '../../services/admin/office-progress.service.js'
+import {
+  acceptLateConfirmation,
+  deliveryEvents,
+  dismissLateConfirmation,
+  listLateConfirmations,
+  swapPreview,
+} from '../../services/admin/late-confirmation-office.service.js'
 
 /** 404 missing, 409 out of order / wrong state (the same words the driver flow uses), 500 otherwise. */
 function statusFor(message: string): number {
   if (message.includes('not found')) return 404
   if (message.includes('invalid input syntax for type uuid')) return 400
+  if (message.includes('Say why')) return 400
   if (
     message.includes('Cannot ')       ||
     message.includes('Confirm ')      ||
@@ -45,3 +53,17 @@ export const confirmFleetReturn = run((req, userId, role) =>
 
 export const reportIncident = run((req, userId, role) =>
   officeReportIncidentService(param(req.params.bookingId), req.body, userId, role))
+
+// Late drop-off confirmations (after a driver swap), the swap dialog's data, and
+// one list of what happened on the road (late-confirmation-office.service).
+export const listLate = run((req) => listLateConfirmations(param(req.params.bookingId)))
+
+export const acceptLate = run((req, userId) =>
+  acceptLateConfirmation(param(req.params.bookingId), param(req.params.lateId), req.body?.note ?? null, userId ?? null))
+
+export const dismissLate = run((req, userId) =>
+  dismissLateConfirmation(param(req.params.bookingId), param(req.params.lateId), req.body?.reason ?? '', userId ?? null))
+
+export const getSwapPreview = run((req) => swapPreview(param(req.params.bookingId)))
+
+export const getEvents = run((req) => deliveryEvents(param(req.params.bookingId)))

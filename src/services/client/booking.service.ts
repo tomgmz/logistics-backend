@@ -22,7 +22,6 @@ import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay, phDay, phDayPlusMonth, phTimeHHMM, SAME_DAY_LATEST_CALL_TIME, sameDayBookingOpen } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers, emailDeliveryConfirm } from '../notification/notification.service.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
-import { revokeVendorCrewAfterCompletion } from '../auth/driver-enrollment.service.js'
 import { assertBookingVehicleInService, crewOnBooking, releaseCrew } from '../admin/fleet-availability.service.js'
 import {
   assertStopProximity,
@@ -1224,7 +1223,6 @@ export async function confirmCompletionService(
     action:      'booking_completion_confirmed_by_client',
     description: `Client confirmed booking ${bookingRef(booking)} is complete`,
   })
-  void revokeVendorCrewAfterCompletion(bookingId, bookingRef(booking))
 
   return booking
 }
@@ -1317,7 +1315,6 @@ export async function autoCompleteBookingService(bookingId: string): Promise<boo
   const done = await BookingModel.markCompleted(bookingId, { by: null, role: null, auto: true })
   if (!done) return false
   const ref = await bookingRefById(bookingId)
-  void revokeVendorCrewAfterCompletion(bookingId, ref)
   // No person did this: it is the scheduler's record (system log, not audit).
   logSystem({
     log_level:  'info',

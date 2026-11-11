@@ -8,7 +8,7 @@ import {
 import { driverCalendarAllows } from '../driver/availability.service.js'
 import type { BlowbagetsItems } from '../../types/client/booking.types.js'
 import { logSystem } from '../../lib/log-system.js'
-import { assertServiceNotOverdue, assertReturnOdometerRecorded } from './truck-upkeep.service.js'
+import { assertServiceNotOverdue, assertReturnOdometerRecorded } from './truck-maintenance.service.js'
 import * as TruckModel from '../../models/admin/truck.model.js'
 import { phDay } from '../../lib/ph-date.js'
 import { registrationStatus } from '../../lib/registration-expiry.js'
@@ -123,7 +123,7 @@ export async function assertBookingVehicleInService(bookingId: string): Promise<
  * Throws when the vehicle's registration has expired, or will have by `onDay`
  * (`YYYY-MM-DD`, the delivery day; today when not given) — it cannot legally go
  * on the road. A vehicle with no date entered yet (one from before the field
- * existed) is flagged on Upkeep but not blocked, so operations do not stop
+ * existed) is flagged on Maintenance but not blocked, so operations do not stop
  * while the dates are filled in.
  */
 export async function assertRegistrationValid(truckId: string, onDay?: string | null): Promise<void> {

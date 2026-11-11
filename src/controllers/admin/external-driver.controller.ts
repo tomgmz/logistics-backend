@@ -4,9 +4,10 @@ import * as EnrollmentService from '../../services/auth/driver-enrollment.servic
 /**
  * Admin actions on a vendor-supplied driver's app access.
  *
- * Deliberately few: resend the setup link, revoke everything, restore a revoked
- * account, and look at the current state. Anything more (editing the account, resetting a password)
- * goes through the same paths as a company driver.
+ * Deliberately few: send the optional passkey setup link and look at the
+ * current state. Everything else (editing, Activate / Deactivate / Archive,
+ * password resets) goes through the same paths as a company driver; there is
+ * no separate Revoke / Restore since 2026-11-11.
  */
 
 export async function list(_req: Request, res: Response) {
@@ -36,35 +37,5 @@ export async function reinvite(req: Request, res: Response) {
   } catch (err: any) {
     console.error('EXTERNAL DRIVER REINVITE ERROR:', err)
     res.status(400).json({ status: 'error', message: err?.message ?? 'Could not send the setup link.' })
-  }
-}
-
-export async function revoke(req: Request, res: Response) {
-  try {
-    const result = await EnrollmentService.revokeExternalDriver(
-      String(req.params.userId),
-      req.user?.sub ?? null,
-      typeof req.body?.reason === 'string' && req.body.reason.trim()
-        ? req.body.reason.trim().slice(0, 200)
-        : 'Revoked by IT Administrator',
-    )
-    res.status(200).json({
-      status:  'success',
-      message: `Access revoked (${result.credentialsRevoked} passkey(s)).`,
-      data:    result,
-    })
-  } catch (err: any) {
-    console.error('EXTERNAL DRIVER REVOKE ERROR:', err)
-    res.status(400).json({ status: 'error', message: err?.message ?? 'Could not revoke access.' })
-  }
-}
-
-export async function restore(req: Request, res: Response) {
-  try {
-    await EnrollmentService.restoreExternalDriver(String(req.params.userId), req.user?.sub ?? null)
-    res.status(200).json({ status: 'success', message: 'Access restored. A new setup link was sent.' })
-  } catch (err: any) {
-    console.error('EXTERNAL DRIVER RESTORE ERROR:', err)
-    res.status(400).json({ status: 'error', message: err?.message ?? 'Could not restore access.' })
   }
 }

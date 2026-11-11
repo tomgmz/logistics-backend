@@ -65,6 +65,9 @@ export interface GetUsersResult {
 export interface UserStatsResult {
   total:    number
   active:   number
-  inactive: number
-  archived: number
+  inactive:    number
+  deactivated: number
+  /** status 'permanently_locked' */
+  locked:      number
+  archived:    number
 }

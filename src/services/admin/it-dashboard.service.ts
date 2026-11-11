@@ -56,6 +56,12 @@ const SCHEDULERS = [
     interval_minutes: 5,
   },
   {
+    source:           'late-confirmation.scheduler',
+    label:            'Late confirmation reminders',
+    description:      'Reminds the Operations Manager and Company Administrator every 15 minutes about a late drop-off confirmation (sent after a driver swap) still waiting to be accepted or dismissed.',
+    interval_minutes: 5,
+  },
+  {
     source:           'delay.scheduler',
     label:            'Delayed delivery detection',
     description:      'Flags a delivery whose next stop is running 15+ minutes past its planned arrival, and tells the client and operations.',

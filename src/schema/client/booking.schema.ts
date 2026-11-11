@@ -185,6 +185,11 @@ export const driverStopProofSchema = z.object({
   // The driver's stated reason for confirming a stop the distance gate would
   // have refused. Recorded on the stop and flagged to operations.
   override_reason: z.string().trim().min(3).max(300).optional(),
+
+  // When the driver did it (phone clock, corrected by X-Device-Time). A
+  // confirmation that sat in the offline queue through a driver swap is judged
+  // by this time, not by when it arrived (late-confirmation.service).
+  confirmed_at: z.string().max(40).optional(),
 })
 
 // A single position ping from the driver app while a booking is in transit.

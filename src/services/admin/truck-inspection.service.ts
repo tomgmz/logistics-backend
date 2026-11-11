@@ -23,7 +23,7 @@ export interface RecordInspectionInput {
  * out of the operations selection list until it passes a re-check.
  *
  * The odometer is no longer taken here. It is its own record (Update Odometer,
- * truck-upkeep.service): set at creation, owed when the vehicle comes back from
+ * truck-maintenance.service): set at creation, owed when the vehicle comes back from
  * a job, and updatable whenever the Fleet Manager or Company Administrator reads
  * it, so a re-check before a resumed multi-trip run needs no new reading.
  */

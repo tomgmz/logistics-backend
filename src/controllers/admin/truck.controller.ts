@@ -2,15 +2,15 @@ import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as TruckService from '../../services/admin/truck.service.js'
 import * as InspectionService from '../../services/admin/truck-inspection.service.js'
-import * as UpkeepService from '../../services/admin/truck-upkeep.service.js'
-import { toProblems, filterProblems } from '../../services/admin/upkeep-problems.js'
+import * as MaintenanceService from '../../services/admin/truck-maintenance.service.js'
+import { toProblems, filterProblems } from '../../services/admin/maintenance-problems.js'
 import { pageQuery, paginate, queryString } from '../../lib/paginate.js'
 
 /**
- * Upkeep refusals are the Fleet Manager's to fix (a typo'd odometer, a missing
+ * Maintenance refusals are the Fleet Manager's to fix (a typo'd odometer, a missing
  * return reading), so they come back as 4xx with the message, not a 500.
  */
-function upkeepStatus(message: string): number {
+function maintenanceStatus(message: string): number {
   if (message === 'Truck not found') return 404
   if (/odometer|service|return reading|return odometer|kilometres|cannot be|Describe the work/i.test(message)) return 400
   return 500
@@ -42,7 +42,7 @@ export async function getMaintenanceQueue(req: Request, res: Response) {
   try {
     const data = await TruckService.getMaintenanceQueue()
 
-    // The Upkeep table: one row per problem, filtered and paged here.
+    // The Maintenance table: one row per problem, filtered and paged here.
     // Without page/limit the page's badge and Vehicles-tab tags get the whole queue.
     const paging = pageQuery(req)
     if (paging) {
@@ -87,7 +87,7 @@ export async function createTruck(req: Request, res: Response) {
     const data = await TruckService.createTruck(req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (err: any) {
-    res.status(upkeepStatus(err.message)).json({ status: 'error', message: err.message })
+    res.status(maintenanceStatus(err.message)).json({ status: 'error', message: err.message })
   }
 }
 
@@ -97,7 +97,7 @@ export async function updateTruck(req: Request, res: Response) {
     const data = await TruckService.updateTruck(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
-    const status = /already the regular driver|is on booking|set automatically/.test(err.message) ? 409 : upkeepStatus(err.message)
+    const status = /already the regular driver|is on booking|set automatically/.test(err.message) ? 409 : maintenanceStatus(err.message)
     res.status(status).json({ status: 'error', message: err.message })
   }
 }
@@ -110,7 +110,7 @@ export async function recordTruckInspection(req: Request, res: Response) {
     const data = await InspectionService.recordInspection(param(req.params.id), req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (err: any) {
-    res.status(upkeepStatus(err.message)).json({ status: 'error', message: err.message })
+    res.status(maintenanceStatus(err.message)).json({ status: 'error', message: err.message })
   }
 }
 
@@ -140,10 +140,10 @@ export async function archiveTruck(req: Request, res: Response) {
 export async function recordOdometer(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
-    const data = await UpkeepService.recordOdometerReading(param(req.params.id), req.body, userId)
+    const data = await MaintenanceService.recordOdometerReading(param(req.params.id), req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (err: any) {
-    res.status(upkeepStatus(err.message)).json({ status: 'error', message: err.message })
+    res.status(maintenanceStatus(err.message)).json({ status: 'error', message: err.message })
   }
 }
 
@@ -151,17 +151,17 @@ export async function recordOdometer(req: Request, res: Response) {
 export async function recordService(req: Request, res: Response) {
   try {
     const { userId } = getRequestMeta(req)
-    const data = await UpkeepService.recordService(param(req.params.id), req.body, userId)
+    const data = await MaintenanceService.recordService(param(req.params.id), req.body, userId)
     res.status(201).json({ status: 'success', data })
   } catch (err: any) {
-    res.status(upkeepStatus(err.message)).json({ status: 'error', message: err.message })
+    res.status(maintenanceStatus(err.message)).json({ status: 'error', message: err.message })
   }
 }
 
 // Service history + odometer readings for the vehicle details.
-export async function getUpkeepHistory(req: Request, res: Response) {
+export async function getMaintenanceHistory(req: Request, res: Response) {
   try {
-    const data = await UpkeepService.getUpkeepHistory(param(req.params.id))
+    const data = await MaintenanceService.getMaintenanceHistory(param(req.params.id))
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
     res.status(500).json({ status: 'error', message: err.message })

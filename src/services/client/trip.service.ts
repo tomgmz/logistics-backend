@@ -12,6 +12,7 @@ import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { requestDriverCallCheck } from '../notification/driver-call.scheduler.js'
 import {
   assertStopProximity,
+  distanceInMetres,
   stopCoordinates,
   type StopProofPosition,
 } from '../../lib/stop-geofence.js'
@@ -19,8 +20,17 @@ import {
   assertDriverOnBooking,
   assertLeadDriverOnBooking,
   driverCompleteBookingService,
+  driverSeatOnBooking,
   type DriverActor,
 } from './booking.service.js'
+import {
+  confirmedAtMs,
+  judgeLateConfirmation,
+  LATE_REASON_TEXT,
+  saveLateConfirmation,
+  supersedeLateConfirmations,
+  wasReplacedOff,
+} from '../driver/late-confirmation.service.js'
 import type { CargoQuantity, TripPlanInput, TripWithStops } from '../../types/client/trip.types.js'
 import { isStartedTrip } from '../../models/client/trip.model.js'
 import {
@@ -344,15 +354,101 @@ export async function driverConfirmTripPickupService(
   earlyStart = false,
   position?: StopProofPosition | null,
   loaded?: CargoQuantity[],
-): Promise<TripWithStops> {
+  confirmedAt?: string | null,
+): Promise<any> {
   const trip = await TripModel.findById(tripId)
   if (!trip) throw new Error(`Trip with ID ${tripId} not found`)
 
-  const booking = await assertLeadDriverOnBooking(trip.booking_id, actor)
+  // The office: acts as the main driver.
+  if (actor.office || actor.role === 'admin') {
+    const booking = await assertLeadDriverOnBooking(trip.booking_id, actor)
+    if (trip.status === 'in_transit' || trip.status === 'completed') return { ...trip, outcome: 'already_done' }
+    return recordTripLoaded(trip, booking, proofPhotoUrl, actor, earlyStart, position, loaded)
+  }
 
-  // Already loaded, or already run and back. Either way there is nothing to do
-  // and the queue is retrying — hand back what stands.
-  if (trip.status === 'in_transit' || trip.status === 'completed') return trip
+  const driverId = await driverIdOf(actor)
+  let seat: 'lead' | 'second' | 'former'
+  let booking: BookingWithRelations | null
+  try {
+    const r = await driverSeatOnBooking(trip.booking_id, actor)
+    seat = r.seat
+    booking = r.booking
+  } catch (err: any) {
+    if (!/not assigned/i.test(err?.message ?? '') || !driverId || !(await wasReplacedOff(trip.booking_id, driverId))) throw err
+    seat = 'former'
+    booking = await BookingModel.findById(trip.booking_id)
+    if (!booking) throw err
+  }
+
+  // Duplicate guard first: already loaded (or run and back) by anyone. Answered
+  // as success so the phone's queue drops it.
+  if (trip.status === 'in_transit' || trip.status === 'completed') return { ...trip, outcome: 'already_done' }
+
+  if (seat === 'lead') return recordTripLoaded(trip, booking, proofPhotoUrl, actor, earlyStart, position, loaded)
+
+  // No longer the main driver: judged like a late drop-off (late-confirmation.service).
+  const atMs    = confirmedAtMs(confirmedAt)
+  const verdict = await judgeLateConfirmation({
+    bookingId: trip.booking_id,
+    driverId:  driverId!,
+    stop:      stopCoordinates((booking as any).origin_latitude, (booking as any).origin_longitude),
+    proofPhotoUrl,
+    position,
+    atMs,
+  })
+  if (verdict.ok) {
+    const rec = await recordTripLoaded(trip, booking, proofPhotoUrl, actor, true, position, loaded, {
+      late: true, confirmedByDriverId: driverId,
+    })
+    logEvent({
+      user_id:     actor.userId,
+      log_type:    'booking',
+      action:      'late_confirmation_accepted_auto',
+      description:
+        `Loading of trip ${trip.trip_number} on booking ${bookingRef(booking)} was confirmed by the previous main driver ` +
+        `before the change and arrived late; it passed the time, photo, 100 m and GPS checks and was recorded`,
+    })
+    return { ...rec, outcome: 'accepted_late' }
+  }
+
+  const saved = await saveLateConfirmation({
+    kind: 'pickup', bookingId: trip.booking_id, tripId, tripStopId: null, driverId: driverId!,
+    driverUserId: actor.userId ?? null, atMs, proofPhotoUrl, position, verdict, loaded: loaded ?? null,
+  })
+  if (saved.created) {
+    const reasons = verdict.reasons.map((r) => LATE_REASON_TEXT[r]).join('; ')
+    logEvent({
+      user_id:     actor.userId,
+      log_type:    'booking',
+      action:      'late_confirmation_flagged',
+      description:
+        `A late loading confirmation for trip ${trip.trip_number} on booking ${bookingRef(booking)} was sent to the office ` +
+        `to accept or dismiss: ${reasons}`,
+    })
+    void notifyStage('late_confirmation', booking, { reason: reasons })
+    announceRouteChanged(trip.booking_id)
+  }
+  return { ...trip, outcome: 'sent_to_office', late_id: saved.late_id }
+}
+
+/**
+ * Record one run as loaded. Shared by the main driver, the office, a late
+ * loading confirmation that passed the evidence check, and the office
+ * accepting a flagged one. `opts.late`: done before the change of driver, so
+ * the 100 m gate was already judged, and the main-driver re-check and the
+ * vehicle check (it may be the replaced vehicle) are skipped.
+ */
+export async function recordTripLoaded(
+  trip: NonNullable<Awaited<ReturnType<typeof TripModel.findById>>>,
+  booking: BookingWithRelations,
+  proofPhotoUrl: string | null,
+  actor: DriverActor,
+  earlyStart = false,
+  position?: StopProofPosition | null,
+  loaded?: CargoQuantity[] | null,
+  opts: { late?: boolean; confirmedByDriverId?: string | null } = {},
+): Promise<TripWithStops> {
+  const tripId = trip.trip_id
   if (trip.status === 'cancelled') {
     throw new Error(`Trip ${trip.trip_number} was cancelled and cannot be loaded`)
   }
@@ -364,7 +460,9 @@ export async function driverConfirmTripPickupService(
   }
   // The Fleet Manager pulled the vehicle — no new load goes on it, including a
   // later run of a booking already under way.
-  await assertBookingVehicleInService(trip.booking_id)
+  // Not for a late confirmation: the load went on before the change, possibly
+  // onto the vehicle since replaced.
+  if (!opts.late) await assertBookingVehicleInService(trip.booking_id)
 
   // One truck, one load at a time. Loading run 3 while run 2 is still out would
   // mean the vehicle is in two places, and the resulting proof trail could not
@@ -390,25 +488,33 @@ export async function driverConfirmTripPickupService(
     )
   }
 
-  const fence = stopFence(
-    actor,
-    stopCoordinates((booking as any).origin_latitude, (booking as any).origin_longitude),
-    position,
-    'pickup point',
-  )
+  const origin = stopCoordinates((booking as any).origin_latitude, (booking as any).origin_longitude)
+  const fence = opts.late
+    ? {
+        distance_m: origin && position && Number.isFinite(position.latitude) && Number.isFinite(position.longitude)
+          ? Math.round(distanceInMetres(origin, position))
+          : null,
+        override_reason: position?.override_reason?.trim() || null,
+      }
+    : stopFence(actor, origin, position, 'pickup point')
 
   // Settle the crew before anything is written: under the booking row lock this
   // re-checks that the caller is still the main driver (the office may have
   // re-crewed the booking a moment ago) and moves an 'assigned' booking to
   // 'in_transit', after which it can no longer be re-assigned. Usually Start
   // Navigation already did it; a start made offline lands here.
-  await claimDeliveryStart(trip.booking_id, actor)
+  // A late confirmation: a driver swap only happens in transit, so the booking
+  // is already moving, and the main-driver re-check would refuse the old driver.
+  if (!opts.late) await claimDeliveryStart(trip.booking_id, actor)
 
   // What actually went on the truck, and the rest moved to the later runs —
   // before the run is marked loaded, while it is still reshapeable.
-  await applyLoadedCargo(trip, trips, loaded)
+  await applyLoadedCargo(trip, trips, loaded ?? undefined)
 
-  await TripModel.setTripPickupProof(tripId, proofPhotoUrl || null, position, fence, await driverIdOf(actor))
+  const confirmedBy = opts.confirmedByDriverId !== undefined ? opts.confirmedByDriverId : await driverIdOf(actor)
+  await TripModel.setTripPickupProof(tripId, proofPhotoUrl || null, position, fence, confirmedBy)
+  // Any open late-confirmation flag on this run's loading is now moot.
+  void supersedeLateConfirmations({ tripId })
 
   // The booking-level pickup columns are what the web app and the client's
   // booking detail read. They keep meaning "the first loading",
@@ -527,19 +633,123 @@ export async function driverSetStopOrderService(
  * (delivered once no run still owes it a load), and the TRIP (completed once no
  * stop on it is outstanding). Completing the last trip completes the booking.
  */
+export type StopConfirmOutcome = 'confirmed' | 'already_done' | 'accepted_late' | 'sent_to_office'
+
+type FoundStop = NonNullable<Awaited<ReturnType<typeof TripModel.findStopById>>>
+
 export async function driverConfirmTripStopService(
   tripStopId: string,
   proofPhotoUrl: string | null,
   actor: DriverActor,
   position?: StopProofPosition | null,
-) {
+  confirmedAt?: string | null,
+): Promise<any> {
   const stop = await TripModel.findStopById(tripStopId)
   if (!stop) throw new Error(`Trip stop with ID ${tripStopId} not found`)
+  const trip = stop.booking_trips
 
-  const trip    = stop.booking_trips
-  const booking = await assertLeadDriverOnBooking(trip.booking_id, actor)
+  // The office: the normal path, acting as the main driver.
+  if (actor.office || actor.role === 'admin') {
+    const booking = await assertLeadDriverOnBooking(trip.booking_id, actor)
+    if (stop.status === 'delivered' || stop.status === 'failed') return { ...stop, outcome: 'already_done' }
+    return recordStopDelivered(stop, booking, proofPhotoUrl, actor, position)
+  }
 
-  if (stop.status === 'delivered') return stop
+  // A driver. Who are they on this booking now?
+  const driverId = await driverIdOf(actor)
+  let seat: 'lead' | 'second' | 'former'
+  let booking: BookingWithRelations | null
+  try {
+    const r = await driverSeatOnBooking(trip.booking_id, actor)
+    seat = r.seat
+    booking = r.booking
+  } catch (err: any) {
+    // Taken off by a crew replacement: still judged, never silently lost.
+    if (!/not assigned/i.test(err?.message ?? '') || !driverId || !(await wasReplacedOff(trip.booking_id, driverId))) throw err
+    seat = 'former'
+    booking = await BookingModel.findById(trip.booking_id)
+    if (!booking) throw err
+  }
+
+  // Duplicate guard, before anything else: a stop already recorded (by the new
+  // main driver, the office, or this phone's earlier send) is never applied
+  // twice. Answered as success so the phone's queue drops it.
+  if (stop.status === 'delivered' || stop.status === 'failed') return { ...stop, outcome: 'already_done' }
+
+  if (seat === 'lead') return recordStopDelivered(stop, booking, proofPhotoUrl, actor, position)
+
+  // No longer (or never) the main driver: judged by when it was done and the
+  // evidence it carries (late-confirmation.service).
+  const destinations = await BookingModel.findDestinationsByBookingId(trip.booking_id) ?? []
+  const destination  = destinations.find((d) => d.destination_id === stop.destination_id)
+  if (!destination) throw new Error('This drop-off is no longer on the booking')
+  const atMs    = confirmedAtMs(confirmedAt)
+  const verdict = await judgeLateConfirmation({
+    bookingId: trip.booking_id,
+    driverId:  driverId!,
+    stop:      stopCoordinates(destination.latitude, destination.longitude),
+    proofPhotoUrl,
+    position,
+    atMs,
+  })
+
+  if (verdict.ok) {
+    const rec = await recordStopDelivered(stop, booking, proofPhotoUrl, actor, position, {
+      skipTransferCheck: true, confirmedByDriverId: driverId, late: true,
+    })
+    logEvent({
+      user_id:     actor.userId,
+      log_type:    'booking',
+      action:      'late_confirmation_accepted_auto',
+      description:
+        `A drop-off at ${destination.address} on booking ${bookingRef(booking)} was confirmed by the previous main driver ` +
+        `before the change and arrived late; it passed the time, photo, 100 m and GPS checks and was recorded`,
+    })
+    return { ...rec, outcome: 'accepted_late' }
+  }
+
+  const saved = await saveLateConfirmation({
+    kind: 'dropoff', bookingId: trip.booking_id, tripId: trip.trip_id, tripStopId, driverId: driverId!, driverUserId: actor.userId ?? null,
+    atMs, proofPhotoUrl, position, verdict,
+  })
+  if (saved.created) {
+    const reasons = verdict.reasons.map((r) => LATE_REASON_TEXT[r]).join('; ')
+    logEvent({
+      user_id:     actor.userId,
+      log_type:    'booking',
+      action:      'late_confirmation_flagged',
+      description:
+        `A late drop-off confirmation for ${destination.address} on booking ${bookingRef(booking)} was sent to the office ` +
+        `to accept or dismiss: ${reasons}`,
+    })
+    void notifyStage('late_confirmation', booking, { reason: reasons })
+    announceRouteChanged(trip.booking_id)
+  }
+  return { ...stop, outcome: 'sent_to_office', late_id: saved.late_id }
+}
+
+/**
+ * Record one drop-off as unloaded: the stop, then the drop-off, the run and the
+ * booking as they finish. Shared by the driver, the office, a late confirmation
+ * that passed the evidence check, and the office accepting a flagged one.
+ */
+export async function recordStopDelivered(
+  stop: FoundStop,
+  booking: BookingWithRelations,
+  proofPhotoUrl: string | null,
+  actor: DriverActor,
+  position?: StopProofPosition | null,
+  opts: {
+    /** Done before a replacement: the load-transfer rule (new vehicle) doesn't apply. */
+    skipTransferCheck?: boolean
+    /** Whose confirmation this is, when not the signed-in actor (late / accepted). */
+    confirmedByDriverId?: string | null
+    /** The 100 m check was already judged (late confirmations): record the measurement, don't gate. */
+    late?: boolean
+  } = {},
+) {
+  const trip       = stop.booking_trips
+  const tripStopId = stop.trip_stop_id
   if (trip.status !== 'in_transit' && trip.status !== 'completed') {
     throw new Error(`Confirm the pickup for trip ${trip.trip_number} before unloading at this drop-off`)
   }
@@ -548,20 +758,26 @@ export async function driverConfirmTripStopService(
   }
   // The crew was replaced with the load still on the old vehicle: nothing is
   // unloaded from the new one until the transfer onto it is on record.
-  await assertNoPendingLoadTransfer(trip.booking_id)
+  if (!opts.skipTransferCheck) await assertNoPendingLoadTransfer(trip.booking_id)
 
   const destinations = await BookingModel.findDestinationsByBookingId(trip.booking_id) ?? []
   const destination  = destinations.find((d) => d.destination_id === stop.destination_id)
   if (!destination) throw new Error('This drop-off is no longer on the booking')
+  const coords = stopCoordinates(destination.latitude, destination.longitude)
 
-  const fence = stopFence(
-    actor,
-    stopCoordinates(destination.latitude, destination.longitude),
-    position,
-    'drop-off',
-  )
+  const fence = opts.late
+    ? {
+        distance_m: coords && position && Number.isFinite(position.latitude) && Number.isFinite(position.longitude)
+          ? Math.round(distanceInMetres(coords, position))
+          : null,
+        override_reason: position?.override_reason?.trim() || null,
+      }
+    : stopFence(actor, coords, position, 'drop-off')
 
-  const updated = await TripModel.setStopProof(tripStopId, 'delivered', proofPhotoUrl || null, position, fence, await driverIdOf(actor))
+  const confirmedBy = opts.confirmedByDriverId !== undefined ? opts.confirmedByDriverId : await driverIdOf(actor)
+  const updated = await TripModel.setStopProof(tripStopId, 'delivered', proofPhotoUrl || null, position, fence, confirmedBy)
+  // Any open late-confirmation flag on this stop is now moot.
+  void supersedeLateConfirmations({ tripStopId })
 
   logEvent({
     user_id:     actor.userId,

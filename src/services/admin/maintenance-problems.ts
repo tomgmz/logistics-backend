@@ -2,7 +2,7 @@ import type { MaintenanceReason } from './truck.service.js'
 import { matchesWords } from '../../lib/paginate.js'
 
 /**
- * Vehicle Management → Upkeep, ONE ROW PER PROBLEM, built on the server so the
+ * Vehicle Management → Maintenance, ONE ROW PER PROBLEM, built on the server so the
  * table can page there. A truck with an overdue service and a failed inspection
  * is two rows; each open driver report is a row of its own.
  *
@@ -29,7 +29,7 @@ const NEEDS: Record<MaintenanceReason, { group: NeedGroup; blocking: boolean; ty
   registration_missing:     { group: 'vehicle_maintenance', blocking: false, type: 'registration' },
 }
 
-export interface UpkeepProblem {
+export interface MaintenanceProblem {
   key:      string
   truck:    any
   reason:   MaintenanceReason
@@ -57,8 +57,8 @@ function sinceOf(t: any, reason: MaintenanceReason): string | null {
 }
 
 /** Explode each vehicle of the maintenance queue into one row per problem, in queue order. */
-export function toProblems(trucks: any[]): UpkeepProblem[] {
-  const out: UpkeepProblem[] = []
+export function toProblems(trucks: any[]): MaintenanceProblem[] {
+  const out: MaintenanceProblem[] = []
   for (const t of trucks) {
     for (const reason of t.maintenance_reasons as MaintenanceReason[]) {
       // A failed inspection takes the truck out of service as well; one row says it all.
@@ -82,14 +82,14 @@ export function toProblems(trucks: any[]): UpkeepProblem[] {
 }
 
 /**
- * The rows the Upkeep table shows: the group filter ('all', a need group, or
+ * The rows the Maintenance table shows: the group filter ('all', a need group, or
  * 'odometer'), the search (plate, model, vehicle type, regular driver), and the
  * focused vehicle's rows moved to the top.
  */
 export function filterProblems(
-  problems: UpkeepProblem[],
+  problems: MaintenanceProblem[],
   opts: { group: string; search: string; focusId: string | null },
-): UpkeepProblem[] {
+): MaintenanceProblem[] {
   const q = opts.search.trim().toLowerCase()
   const visible = problems.filter((p) => {
     if (opts.group === 'odometer' && p.type !== 'odometer') return false

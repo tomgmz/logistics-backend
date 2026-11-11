@@ -1,12 +1,12 @@
 import * as TruckModel from '../../models/admin/truck.model.js'
-import * as UpkeepModel from '../../models/admin/truck-upkeep.model.js'
+import * as MaintenanceModel from '../../models/admin/truck-maintenance.model.js'
 import { lastFleetReturnFor } from '../../lib/driver-reservation.js'
 import { serviceStatus, type ServiceScheduleFields } from '../../lib/service-schedule.js'
 import { asDay, phDay } from '../../lib/ph-date.js'
 import { logEvent } from '../../lib/log-event.js'
 
 /**
- * Odometer and routine-service upkeep for a vehicle.
+ * Odometer and routine-service maintenance for a vehicle.
  *
  * The odometer is kept apart from the BLOWBAGETS inspection. The Fleet Manager
  * or Company Administrator types it, with a photo of the dash:
@@ -98,12 +98,12 @@ export async function recordOdometerReading(
   const isReturn = returnOdometerDue(truck, await lastFleetReturnFor(truckId))
   assertReadingPlausible(truck, input.reading_km, { isReturn })
 
-  const reading = await UpkeepModel.insertReading({
+  const reading = await MaintenanceModel.insertReading({
     truck_id:    truckId,
     reading_km:  input.reading_km,
     kind:        isReturn ? 'post_trip' : 'manual',
     photo_url:   input.photo_url,
-    booking_id:  isReturn ? await UpkeepModel.lastReturnedBookingId(truckId) : null,
+    booking_id:  isReturn ? await MaintenanceModel.lastReturnedBookingId(truckId) : null,
     recorded_by: actorId ?? null,
   })
 
@@ -145,7 +145,7 @@ export async function recordService(
   }
   if (!input.work_done.trim()) throw new Error('Describe the work done')
 
-  const service = await UpkeepModel.insertService(
+  const service = await MaintenanceModel.insertService(
     { truck_id: truckId, ...input, work_done: input.work_done.trim(), recorded_by: actorId ?? null },
     truck.odometer_km ?? null,
   )
@@ -161,10 +161,10 @@ export async function recordService(
   return service
 }
 
-export async function getUpkeepHistory(truckId: string) {
+export async function getMaintenanceHistory(truckId: string) {
   const [services, readings] = await Promise.all([
-    UpkeepModel.listServices(truckId),
-    UpkeepModel.listReadings(truckId),
+    MaintenanceModel.listServices(truckId),
+    MaintenanceModel.listReadings(truckId),
   ])
   return { services, readings }
 }

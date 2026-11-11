@@ -92,7 +92,8 @@ export const MODULES_BY_ROLE: Record<ManagedRole, ModuleKey[]> = {
     'transaction-history',
     'document-management',
   ],
-  fleet_manager: ['booking-management', 'vehicle-management', 'transit-tracking', 'reports', 'document-management'],
+  // No booking-management (user 2026-11-11): vehicles are readied in Vehicle Management.
+  fleet_manager: ['vehicle-management', 'transit-tracking', 'reports', 'document-management'],
   operations_manager: ['booking-management', 'vehicle-management', 'document-management', 'transit-tracking', 'reports', 'support-tickets'],
 }
 
@@ -123,10 +124,6 @@ export const ROLE_MODULE_DEFAULTS: Record<ManagedRole, Partial<Record<ModuleKey,
     'document-management': 'read',
   },
   fleet_manager: {
-    // Read-only: fleet no longer approves bookings, it just sees which of its
-    // vehicles went where. BLOWBAGETS inspections are recorded against the
-    // VEHICLE, so they are governed by the vehicle-management tier below.
-    'booking-management': 'read',
     'vehicle-management': 'all',
     'transit-tracking':   'read',
     // Vehicle-related reports only (breakdowns, accidents) — the scoping is

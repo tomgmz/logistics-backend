@@ -2,14 +2,14 @@ import * as TruckModel from '../../models/admin/truck.model.js'
 import * as InspectionModel from '../../models/admin/truck-inspection.model.js'
 import { CreateTruckInput, UpdateTruckInput } from '../../types/truck.types.js'
 import { logEvent } from '../../lib/log-event.js'
-import { lastFleetReturnsFor, liveBookingForTruck, type TruckBooking } from '../../lib/driver-reservation.js'
+import { lastFleetReturnsFor, liveBookingForTruck, liveBookingsForTrucks, type TruckBooking } from '../../lib/driver-reservation.js'
 import { isOutOfService } from './fleet-availability.service.js'
 import { BookingModel } from '../../models/client/booking.model.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { listOpenVehicleReportsService } from '../driver/report.service.js'
 import type { DriverReport } from '../../types/driver/report.types.js'
-import * as UpkeepModel from '../../models/admin/truck-upkeep.model.js'
-import { scheduleOf, returnOdometerDue, assertReadingPlausible } from './truck-upkeep.service.js'
+import * as MaintenanceModel from '../../models/admin/truck-maintenance.model.js'
+import { scheduleOf, returnOdometerDue, assertReadingPlausible } from './truck-maintenance.service.js'
 import { serviceStatus, type ServiceStatus } from '../../lib/service-schedule.js'
 import { phDay, asDay } from '../../lib/ph-date.js'
 import { registrationStatus, type RegistrationStatus } from '../../lib/registration-expiry.js'
@@ -36,12 +36,15 @@ async function withLatestInspection<T extends { truck_id: string }>(rows: T[]) {
     return_odometer_due:  boolean
     registration_expiry:  string | null
     registration_status:  RegistrationStatus
+    /** The booking the vehicle is out on (assigned until back at the yard), shown in Vehicle Management. */
+    current_booking:      TruckBooking | null
   }
   if (rows.length === 0) return [] as Enriched[]
 
-  const [latest, returns] = await Promise.all([
+  const [latest, returns, onBooking] = await Promise.all([
     InspectionModel.latestByTruck(rows.map((r) => r.truck_id)),
     lastFleetReturnsFor(rows.map((r) => r.truck_id)),
+    liveBookingsForTrucks(rows.map((r) => r.truck_id)),
   ])
 
   const today = phDay()
@@ -61,6 +64,7 @@ async function withLatestInspection<T extends { truck_id: string }>(rows: T[]) {
       registration_expiry:  asDay((row as any).registration_expiry),
       // Expired blocks assignment; worked out here so every screen agrees.
       registration_status:  registrationStatus((row as any).registration_expiry, today),
+      current_booking:      onBooking.get(row.truck_id) ?? null,
     }
   }) as Enriched[]
 }
@@ -101,7 +105,7 @@ export async function getAllTrucks() {
 }
 
 /**
- * What a vehicle needs before it can go out — the Upkeep tab, one row per
+ * What a vehicle needs before it can go out — the Maintenance tab, one row per
  * reason. A truck can carry several at once (a failed inspection also sets
  * under_maintenance, for instance).
  *
@@ -200,7 +204,7 @@ export async function createTruck(input: CreateTruckInput, actorId?: string | nu
 
   const result = await TruckModel.create(input)
   if (result && input.odometer_km != null) {
-    await UpkeepModel.insertReading({
+    await MaintenanceModel.insertReading({
       truck_id:    result.truck_id,
       reading_km:  input.odometer_km,
       kind:        'initial',
@@ -275,7 +279,7 @@ export async function updateTruck(truckId: string, input: UpdateTruckInput, acto
 
   const result = await TruckModel.update(truckId, fields)
   if (initialOdometer !== undefined) {
-    await UpkeepModel.insertReading({
+    await MaintenanceModel.insertReading({
       truck_id: truckId, reading_km: initialOdometer, kind: 'initial', recorded_by: actorId ?? null,
     })
   }

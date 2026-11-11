@@ -189,8 +189,8 @@ export async function listShifts(bookingId: string): Promise<DrivingShift[]> {
  * recorded at the wheel. A reason is required; both drivers are told.
  *
  * What the old main driver's phone still has queued (a stop it confirmed
- * offline) is refused once they are second — the reason the drivers are told to
- * sync, and the office to check the stops, before swapping.
+ * offline) is judged by when it was done (late-confirmation.service): accepted
+ * when it passes the evidence check, otherwise kept for the office to decide.
  */
 export async function staffSwapCrewRolesService(bookingId: string, reason: string, staffUserId: string | null) {
   const note = reason.trim()
@@ -217,6 +217,12 @@ export async function staffSwapCrewRolesService(bookingId: string, reason: strin
           SET crew_role = CASE WHEN driver_id = $2 THEN 'second' ELSE 'lead' END
         WHERE booking_id = $1 AND driver_id IN ($2, $3)`,
       [bookingId, del.driver_id, del.second_driver_id])
+    // The swap's own record: late confirmations from the old main driver's
+    // phone are judged against this time (late-confirmation.service).
+    await client.query(
+      `INSERT INTO booking_crew_swaps (booking_id, old_lead_driver_id, new_lead_driver_id, swapped_by, reason)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [bookingId, del.driver_id, del.second_driver_id, staffUserId, note])
     await switchTo(client, bookingId, del.second_driver_id, new Date().toISOString(), 'staff', staffUserId)
 
     const { rows: [u] } = await client.query(`SELECT user_id FROM drivers WHERE driver_id = $1`, [del.second_driver_id])

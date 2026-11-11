@@ -49,6 +49,12 @@ function driverActor(req: Request) {
  * confirmation MUST be a 409 — anything else and a queued delivery is dropped.
  */
 function tripProgressStatus(message: string): number {
+  // The office swapped the drivers after this was queued on the old main
+  // driver's phone. 410, not 403/500: every app version's queue drops a 410
+  // (it can never apply for this driver) instead of holding everything behind
+  // it. Drop-off confirmations never reach here; they are judged instead
+  // (late-confirmation.service).
+  if (message.includes('Only the main driver')) return 410
   if (message.includes('not assigned'))    return 403
   if (message.includes('not found'))       return 404
   // A malformed id in the URL reaches Postgres as an invalid uuid. That is the
@@ -163,8 +169,17 @@ export const driverConfirmTripPickup = async (req: Request, res: Response) => {
       req.body.early_start === true,
       stopProofPosition(req),
       req.body.loaded,
+      typeof req.body.confirmed_at === 'string' ? req.body.confirmed_at : null,
     )
-    res.status(200).json({ status: 'success', data: trip })
+    // 202: a late loading confirmation kept for the office (see driverConfirmTripStop).
+    res.status(trip?.outcome === 'sent_to_office' ? 202 : 200).json({
+      status:  'success',
+      outcome: trip?.outcome ?? 'confirmed',
+      message: trip?.outcome === 'sent_to_office'
+        ? 'Received. You are no longer the main driver on this delivery, so the office will review this confirmation.'
+        : undefined,
+      data:    trip,
+    })
   } catch (error: any) {
     stopProofFailure(res, error)
   }
@@ -235,8 +250,18 @@ export const driverConfirmTripStop = async (req: Request, res: Response) => {
       req.body.proof_photo_url,
       driverActor(req),
       stopProofPosition(req),
+      typeof req.body.confirmed_at === 'string' ? req.body.confirmed_at : null,
     )
-    res.status(200).json({ status: 'success', data: stop })
+    // 202: kept for the office to decide (late confirmation). Still a success,
+    // so every app version's offline queue drops it instead of retrying.
+    res.status(stop?.outcome === 'sent_to_office' ? 202 : 200).json({
+      status:  'success',
+      outcome: stop?.outcome ?? 'confirmed',
+      message: stop?.outcome === 'sent_to_office'
+        ? 'Received. You are no longer the main driver on this delivery, so the office will review this confirmation.'
+        : undefined,
+      data:    stop,
+    })
   } catch (error: any) {
     stopProofFailure(res, error)
   }

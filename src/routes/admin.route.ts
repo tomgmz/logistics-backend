@@ -12,7 +12,7 @@ import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../s
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
 import { updateITAdminSchema, startHandoverSchema, setStandinSchema, itAdminSuccessorSchema } from '../schema/admin/it-admin.schema.js'
-import { assignBookingSchema, replaceCrewSchema, updateDeliveryStatusSchema, officeStepSchema, officeIncidentSchema } from '../schema/admin/assignment.schema.js'
+import { assignBookingSchema, replaceCrewSchema, updateDeliveryStatusSchema, officeStepSchema, officeIncidentSchema, lateAcceptSchema, lateDismissSchema } from '../schema/admin/assignment.schema.js'
 import * as OfficeProgressController from '../controllers/admin/office-progress.controller.js'
 import * as AdminController           from '../controllers/admin/admin.controller.js'
 import * as ClientController          from '../controllers/admin/client.controller.js'
@@ -98,9 +98,9 @@ const isPauseDesk     = authorize('admin', 'it_admin', 'operations_manager')
 const isPauseControl  = authorize('admin', 'operations_manager')
 // The driver's call time in the Trip Planner: the same two desks.
 const isCallTimeDesk  = authorize('admin', 'operations_manager')
-// Vehicle upkeep records (odometer readings, services): the Company
+// Vehicle maintenance records (odometer readings, services): the Company
 // Administrator and the Fleet Manager. Staff only — isFleet admits 'client'.
-const isFleetUpkeep = authorize('admin', 'it_admin', 'fleet_manager')
+const isFleetMaintenance = authorize('admin', 'it_admin', 'fleet_manager')
 // Document Management: the portals that carry the module. What each may do
 // (view / upload / review / archive / export) is the document-management tier.
 // The Fleet Manager sees vehicle files only: documents.controller scopeOf().
@@ -223,6 +223,18 @@ router.post('/assignments/:bookingId/office/fleet-return', authenticate, isPause
 router.post('/assignments/:bookingId/office/incident', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
   lockGuard('booking', fromParam('bookingId')), validate(officeIncidentSchema), OfficeProgressController.reportIncident)
 
+// Late drop-off confirmations from a previous main driver's phone (after a
+// swap), kept for the office: list, accept (recorded with the driver's photo
+// and position), dismiss (reason required). The swap dialog's data and the
+// delivery's event list are reads like the driving shifts.
+router.get('/assignments/:bookingId/late-confirmations', authenticate, isCrewRelease, OfficeProgressController.listLate)
+router.post('/assignments/:bookingId/late-confirmations/:lateId/accept', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(lateAcceptSchema), OfficeProgressController.acceptLate)
+router.post('/assignments/:bookingId/late-confirmations/:lateId/dismiss', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(lateDismissSchema), OfficeProgressController.dismissLate)
+router.get('/assignments/:bookingId/swap-preview', authenticate, isCrewRelease, OfficeProgressController.getSwapPreview)
+router.get('/assignments/:bookingId/events', authenticate, isCrewRelease, OfficeProgressController.getEvents)
+
 // Times at each stop (arrival, docking, start, finish, departure), with the
 // office's corrections. Filling in / correcting one: the pause desk's call.
 router.get('/assignments/:bookingId/timeline', authenticate, isCrewRelease, TripController.staffGetTimeline)
@@ -262,9 +274,9 @@ router.post('/trucks/:id/inspections', authenticate, isFleet, lockGuard('truck',
 // Odometer and routine service. The before-delivery reading rides on the
 // inspection above; this is the after-delivery one, once the driver has
 // stamped the vehicle back in the lot.
-router.post('/trucks/:id/odometer', authenticate, isFleetUpkeep, lockGuard('truck', fromParam('id')), validate(recordOdometerSchema), TruckController.recordOdometer)
-router.post('/trucks/:id/services', authenticate, isFleetUpkeep, lockGuard('truck', fromParam('id')), validate(recordServiceSchema), TruckController.recordService)
-router.get('/trucks/:id/upkeep',    authenticate, isCrewRelease, TruckController.getUpkeepHistory)
+router.post('/trucks/:id/odometer', authenticate, isFleetMaintenance, lockGuard('truck', fromParam('id')), validate(recordOdometerSchema), TruckController.recordOdometer)
+router.post('/trucks/:id/services', authenticate, isFleetMaintenance, lockGuard('truck', fromParam('id')), validate(recordServiceSchema), TruckController.recordService)
+router.get('/trucks/:id/maintenance', authenticate, isCrewRelease, TruckController.getMaintenanceHistory)
 router.post('/trucks',       authenticate, isFleet, validate(createTruckSchema), TruckController.createTruck)
 router.patch('/trucks/:id',  authenticate, isFleet, lockGuard('truck', fromParam('id')), validate(updateTruckSchema), TruckController.updateTruck)
 router.post('/trucks/:id/archive', authenticate, isFleet, canArchiveFleet, lockGuard('truck', fromParam('id')), TruckController.archiveTruck)
@@ -344,13 +356,12 @@ router.post('/password-resets/:id/send',   authenticate, isAdmin, lockGuard('pas
 router.patch('/password-resets/:id/cancel', authenticate, isAdmin, lockGuard('password_reset', fromParam('id')), PasswordResetController.cancelRequest)
 
 // App access for vendor-supplied drivers. Reading the access state stays open to
-// the crew desk (the booking crew picker shows it); re-inviting, revoking and
-// restoring belong to the IT Administrator since 2026-10-24.
+// the booking desk (the driver picker shows it); sending a passkey link is the
+// IT Administrator's. No Revoke / Restore since 2026-11-11: a vendor driver is
+// deactivated or archived like a company driver.
 router.get('/external-drivers',                  authenticate, isCrewRelease, ExternalDriverController.list)
 router.get('/external-drivers/:userId/access',   authenticate, isCrewRelease, ExternalDriverController.getAccessStatus)
 router.post('/external-drivers/:userId/reinvite', authenticate, isItAdmin, lockGuard('user', fromParam('userId')), ExternalDriverController.reinvite)
-router.post('/external-drivers/:userId/revoke',   authenticate, isItAdmin, lockGuard('user', fromParam('userId')), ExternalDriverController.revoke)
-router.post('/external-drivers/:userId/restore',  authenticate, isItAdmin, lockGuard('user', fromParam('userId')), ExternalDriverController.restore)
 
 //Module permissions (RBAC) — managed by admin / it_admin
 router.get('/users/:id/permissions', authenticate, isAdmin, PermissionsController.getUserPermissions)
@@ -403,7 +414,7 @@ router.post('/documents/:id/restore',   authenticate, isDocuments, requireModule
 
 //upload
 router.post('/upload/image', authenticate, isFleet, uploadSingle, UploadController.uploadImage)
-router.post('/upload/fleet-photo', authenticate, isFleetUpkeep, uploadSingle, UploadController.uploadFleetRecordPhoto)
+router.post('/upload/fleet-photo', authenticate, isFleetMaintenance, uploadSingle, UploadController.uploadFleetRecordPhoto)
 
 // Handling Codes
 router.get('/handling-codes',        authenticate, isOperations, CargoCatalogController.getAllHandlingCodes)

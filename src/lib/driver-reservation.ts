@@ -164,6 +164,37 @@ export async function lastFleetReturnFor(truckId: string): Promise<string | null
   return (await lastFleetReturnsFor([truckId])).get(truckId) ?? null
 }
 
+/**
+ * liveBookingForTruck for a page of vehicles in one query: truck_id → the
+ * booking it is out on (crewed and not yet back at the yard). A booking still
+ * running has no fleet_return_at either, so "not returned" covers both cases.
+ */
+export async function liveBookingsForTrucks(truckIds: string[]): Promise<Map<string, TruckBooking>> {
+  const byTruck = new Map<string, TruckBooking>()
+  if (truckIds.length === 0) return byTruck
+
+  const { data, error } = await supabase
+    .from('deliveries')
+    .select('truck_id, bookings!inner ( booking_id, reference_number, status, schedule_date, fleet_return_at )')
+    .in('truck_id', truckIds)
+    .neq('bookings.status', 'cancelled')
+    .is('bookings.fleet_return_at', null)
+
+  if (error) throw error
+
+  for (const row of (data ?? []) as any[]) {
+    const b = row.bookings
+    if (!row.truck_id || !b || byTruck.has(row.truck_id)) continue
+    byTruck.set(row.truck_id, {
+      booking_id:       b.booking_id,
+      reference_number: b.reference_number ?? null,
+      status:           b.status,
+      schedule_date:    b.schedule_date ?? null,
+    })
+  }
+  return byTruck
+}
+
 /** The booking a vehicle is tied to right now, if any. */
 export interface TruckBooking {
   booking_id:       string

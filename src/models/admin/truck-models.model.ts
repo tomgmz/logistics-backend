@@ -5,7 +5,7 @@ const MISSING_COLUMN = '42703'
 
 /**
  * The catalog: every model that has not been archived. `archivedOnly` lists the
- * archived ones instead (Manage Models' Archived tab, newest archive first).
+ * archived ones instead (the Archive module's Models tab, newest archive first).
  */
 async function findAll(archivedOnly = false): Promise<TruckModel[]> {
   const base = supabase.from('truck_models').select('*')

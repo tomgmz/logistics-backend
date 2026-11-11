@@ -112,7 +112,9 @@ export async function countUsersByStatus(roles?: string[], excludeId?: string): 
   return {
     total:    data.length,
     active:   data.filter((u) => u.status === 'active').length,
-    inactive: data.filter((u) => u.status === 'inactive').length,
-    archived: data.filter((u) => u.status === 'archived').length,
+    inactive:    data.filter((u) => u.status === 'inactive').length,
+    deactivated: data.filter((u) => u.status === 'deactivated').length,
+    locked:      data.filter((u) => u.status === 'permanently_locked').length,
+    archived:    data.filter((u) => u.status === 'archived').length,
   }
 }

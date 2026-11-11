@@ -276,6 +276,8 @@ export const updateDestinationStatus = async (req: Request, res: Response) => {
 // isn't the assigned driver, 404 for a missing booking/destination, 409 when the
 // stop is confirmed out of order, 500 otherwise.
 function driverProgressStatus(message: string): number {
+  // No longer the main driver (office swap): 410 so the phone's queue drops it.
+  if (message.includes('Only the main driver')) return 410
   if (message.includes('not assigned'))  return 403
   if (message.includes('not found'))     return 404
   if (message.includes('invalid input syntax for type uuid')) return 400

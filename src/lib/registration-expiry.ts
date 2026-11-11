@@ -6,7 +6,7 @@ import { phDay, asDay } from './ph-date.js'
  * Mirrored in logistics-frontend/src/lib/registration-expiry.ts.
  *
  *   missing  — no date entered yet (vehicles from before the field existed);
- *              flagged on Upkeep, not blocked
+ *              flagged on Maintenance, not blocked
  *   ok       — valid for more than a calendar month
  *   expiring — expires within one calendar month (the reminder window)
  *   expired  — past the date; the vehicle cannot be assigned

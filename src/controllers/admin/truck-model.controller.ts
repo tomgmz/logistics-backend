@@ -6,7 +6,7 @@ import { pagedList } from '../../lib/paginate.js'
 
 export async function getAllTruckModels(req: Request, res: Response) {
   try {
-    // ?archived=only: the archived models (Manage Models' Archived tab). Every
+    // ?archived=only: the archived models (the Archive module's Models tab). Every
     // other caller (pickers, forms) gets the live catalog as before.
     const data = await TruckModelService.getAllTruckModels(req.query.archived === 'only')
     res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (m) => [m.name, m.vehicle_type, m.suitable_for]) })

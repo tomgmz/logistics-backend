@@ -4,6 +4,7 @@ import { logEvent } from '../../lib/log-event.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { invalidateEta } from '../maps/eta.service.js'
+import { supersedeLateConfirmations } from '../driver/late-confirmation.service.js'
 import {
   driverConfirmTripPickupService,
   driverConfirmTripStopService,
@@ -106,6 +107,7 @@ export async function officeReportIncidentService(
 
   for (const s of chosen) {
     await TripModel.setStopProof(s.trip_stop_id, 'failed', null, null, fence, null)
+    await supersedeLateConfirmations({ tripStopId: s.trip_stop_id })
     // The bay is failed once nothing else is still bound for it.
     const siblings = await TripModel.findStopsByDestinationId(s.destination_id)
     if (!siblings.some((x) => x.status === 'pending')) {

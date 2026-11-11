@@ -33,6 +33,7 @@ import { startDriverCallScheduler } from './services/notification/driver-call.sc
 import { startPauseContinuationScheduler } from './services/notification/pause-continuation.scheduler.js'
 import { startDelayScheduler } from './services/notification/delay.scheduler.js'
 import { startBreakdownScheduler } from './services/notification/breakdown.scheduler.js'
+import { startLateConfirmationScheduler } from './services/notification/late-confirmation.scheduler.js'
 import { startItAdminRenderScheduler } from './services/admin/it-admin-render.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
 import { reportEmailLinkBaseUrl } from './lib/brevo-mailer.js'
@@ -262,6 +263,7 @@ app.listen(PORT, '0.0.0.0', () => {
   startDelayScheduler();
   // Reminds the office every 15 min about a driver-reported breakdown with no decision.
   startBreakdownScheduler();
+  startLateConfirmationScheduler();
   startItAdminRenderScheduler();
 
   // Drops driver position breadcrumbs past their retention window. The live

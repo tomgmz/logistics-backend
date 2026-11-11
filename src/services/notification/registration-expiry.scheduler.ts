@@ -23,7 +23,7 @@ import { NotificationRow } from '../../types/notification.types.js'
  * are recorded in trucks.registration_reminders as "<expiry>|<stage>|staff_app".
  * A renewal changes registration_expiry, nothing matches any more, and the new
  * date starts over. A date entered inside the window gets only the most urgent
- * stage; one already past is left to the Upkeep tab and the assignment block.
+ * stage; one already past is left to the Maintenance tab and the assignment block.
  */
 
 const TICK_MS = 60 * 60 * 1000
@@ -31,7 +31,7 @@ const TICK_MS = 60 * 60 * 1000
 const TYPE = 'vehicle.registration_expiring' as const
 
 /** Vehicle Management's Maintenance tab in the recipient's own portal. */
-function upkeepUrlForRole(role: string): string {
+function maintenanceUrlForRole(role: string): string {
   return role === 'fleet_manager'
     ? '/fleet_admin/vehicle-management?tab=maintenance'
     : '/admin/vehicle-management?tab=maintenance'
@@ -65,7 +65,7 @@ async function notifyInApp(
 
   const rows = await notificationModel.insertMany(recipients.map((r) => ({
     user_id: r.user_id, type: TYPE, title, body, booking_id: null,
-    data:    { ...data, action_url: upkeepUrlForRole(r.role) },
+    data:    { ...data, action_url: maintenanceUrlForRole(r.role) },
   })))
 
   // Realtime and push are best effort; the stored rows are the notification.
@@ -76,7 +76,7 @@ async function notifyInApp(
   // Grouped by link so each person's push opens their own portal.
   for (const role of new Set(recipients.map((r) => r.role))) {
     const ids = recipients.filter((r) => r.role === role).map((r) => r.user_id)
-    void push.sendToUsers(ids, { title, body, data: { ...data, action_url: upkeepUrlForRole(role) } })
+    void push.sendToUsers(ids, { title, body, data: { ...data, action_url: maintenanceUrlForRole(role) } })
   }
 }
 

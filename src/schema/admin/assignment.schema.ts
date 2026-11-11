@@ -116,3 +116,12 @@ export const replaceCrewSchema = z.object({
 
 export type AssignBookingInput       = z.infer<typeof assignBookingSchema>
 export type UpdateDeliveryStatusInput = z.infer<typeof updateDeliveryStatusSchema>
+/** The office accepting a late drop-off confirmation (optional note). */
+export const lateAcceptSchema = z.object({
+  note: z.string().trim().max(300).optional().nullable(),
+})
+
+/** The office dismissing one: a reason is required. */
+export const lateDismissSchema = z.object({
+  reason: z.string().trim().min(3, 'Say why this late confirmation is being dismissed').max(300),
+})

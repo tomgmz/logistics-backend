@@ -20,7 +20,7 @@ export { parseFilterRules }
  *   - Filters arrive as the Filters panel's rules, [{ field, op: 'is'|'is_not', value }].
  *     Rules on one field: any "is" matches, every "is not" must hold.
  *   - Archived accounts are read (from /users?status=archived) only when the
- *     Status filter names Archived; the pages send that from their Archived tab
+ *     Status filter names Archived; the pages send that from the Archive module
  *     only (2026-11-08). With no status picked every tab holds current accounts.
  *   - The All tab filters role and status in SQL and searches there too.
  *
@@ -64,7 +64,7 @@ async function listStaff(
 ): Promise<any[]> {
   const pick = split(filters, 'status').is[0] ?? null
   if (tab === 'all-admins') {
-    // The Archived tab also narrows by role.
+    // The Archive module also narrows by role.
     const role = allowedValues(filters, 'role', STAFF_ROLES.split(','))
     const { data } = await FetchUsersService.getUsers({
       role:   role?.length ? role.join(',') : STAFF_ROLES,
@@ -166,7 +166,7 @@ export async function listDirectory(params: {
   if (tab === 'all') {
     const role   = allowedValues(filters, 'role', ['client', 'driver'])
     // No status picked: current accounts only. Archived ones show only when
-    // Archived is asked for by name (the page's Archived tab).
+    // Archived is asked for by name (the Archive module).
     const status = allowedValues(filters, 'status', CURRENT_STATUSES) ?? CURRENT_STATUSES
     const { data } = await FetchUsersService.getUsers({
       role:    role?.length ? role.join(',') : 'client,driver',

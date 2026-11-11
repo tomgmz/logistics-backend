@@ -37,6 +37,8 @@ export type NotificationType =
   | 'booking.delivery_delayed_staff' // ... -> ops + admin
   | 'booking.crew_roles_swapped'     // office swapped main/second driver -> the crew
   | 'booking.breakdown_unhandled'    // driver-reported breakdown, no pause/dismissal after 15 min -> ops + admin
+  | 'booking.late_confirmation'            // old main driver's late drop-off confirmation awaits Accept/Dismiss -> ops + admin
+  | 'booking.late_confirmation_unhandled'  // still undecided, every 15 min -> ops + admin
   | 'booking.stop_order_changed'     // driver changed the drop-off order (reason optional) -> ops + admin
   | 'booking.delivery_started'     // driver started navigation, booking in transit -> client
   | 'booking.driver_call_reminder' // one hour before the driver's call time -> assigned driver(s)
@@ -139,6 +141,8 @@ export type NotificationStage =
   | 'delivery_delayed_staff'
   | 'crew_roles_swapped'
   | 'breakdown_unhandled'
+  | 'late_confirmation'
+  | 'late_confirmation_unhandled'
   | 'stop_order_changed'
   | 'delivery_started'
   | 'driver_call_reminder'
