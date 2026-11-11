@@ -4,7 +4,7 @@ import { BookingModel } from '../../models/client/booking.model.js'
 import { logEvent } from '../../lib/log-event.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import { announceRouteChanged, recordStopDelivered, recordTripLoaded } from '../client/trip.service.js'
-import { LATE_REASON_TEXT, type LateReason } from '../driver/late-confirmation.service.js'
+import { LATE_REASON_TEXT, signalLateChanged, type LateReason } from '../driver/late-confirmation.service.js'
 
 /**
  * The office's side of a late drop-off confirmation (late-confirmation.service):
@@ -160,6 +160,7 @@ export async function acceptLateConfirmation(
       `recorded with the driver's photo and position${note?.trim() ? `. Note: ${note.trim()}` : ''}`,
   })
   announceRouteChanged(bookingId)
+  signalLateChanged(bookingId)
   return listLateConfirmations(bookingId)
 }
 
@@ -183,6 +184,7 @@ export async function dismissLateConfirmation(
     description: `Dismissed a late drop-off confirmation on booking ${booking ? bookingRef(booking) : bookingId}: ${note}`,
   })
   announceRouteChanged(bookingId)
+  signalLateChanged(bookingId)
   return listLateConfirmations(bookingId)
 }
 

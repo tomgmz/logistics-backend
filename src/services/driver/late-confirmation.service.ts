@@ -1,6 +1,7 @@
 import { pool } from '../../lib/database.js'
 import { distanceInMetres, STOP_PROOF_RADIUS_M, type StopProofPosition } from '../../lib/stop-geofence.js'
 import { fromDeviceClock } from '../../lib/device-clock.js'
+import { broadcast } from '../../lib/realtime.js'
 
 /**
  * A drop-off confirmed on a phone that is no longer the main driver's.
@@ -29,6 +30,15 @@ import { fromDeviceClock } from '../../lib/device-clock.js'
  * Dismiss, and the phone is told it was received, so its queue moves on.
  * Tapping Start gives no right to confirm: it proves nothing about the road.
  */
+
+/**
+ * Tell open Booking Management screens (list badge, booking panel, dashboard)
+ * that a booking's late confirmations changed: the same id-only signal the
+ * bookings / booking_pauses triggers send on live:bookings.
+ */
+export function signalLateChanged(bookingId: string): void {
+  void broadcast('live:bookings', 'changed', { table: 'late_confirmations', id: bookingId }).catch(() => {})
+}
 
 export const TRAIL_WINDOW_MS = 10 * 60_000
 export const TRAIL_RADIUS_M  = 500
@@ -198,6 +208,7 @@ export async function saveLateConfirmation(input: {
         input.verdict.reasons,
       ],
     )
+    signalLateChanged(input.bookingId)
     return { late_id: row.late_id, created: true }
   } catch (err: any) {
     // Two sends at the same moment: the unique index let one in.
@@ -215,7 +226,10 @@ export async function supersedeLateConfirmations(ref: { tripStopId?: string; tri
   await pool.query(
     `UPDATE late_confirmations SET status = 'superseded', resolved_at = now(),
             resolution_note = COALESCE(resolution_note, $2)
-      WHERE ${byStop ? `kind = 'dropoff' AND trip_stop_id = $1` : `kind = 'pickup' AND trip_id = $1`} AND status = 'pending'`,
+      WHERE ${byStop ? `kind = 'dropoff' AND trip_stop_id = $1` : `kind = 'pickup' AND trip_id = $1`} AND status = 'pending'
+      RETURNING booking_id`,
     [byStop ? ref.tripStopId : ref.tripId, byStop ? 'The drop-off was recorded another way' : 'The loading was recorded another way'],
-  ).catch((err) => console.error('[late-confirmations] supersede failed', ref, err))
+  ).then(({ rows }) => {
+    for (const id of new Set(rows.map((r: { booking_id: string }) => r.booking_id))) signalLateChanged(id)
+  }).catch((err) => console.error('[late-confirmations] supersede failed', ref, err))
 }

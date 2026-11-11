@@ -2,6 +2,7 @@ import { pool } from '../../lib/database.js'
 import { BookingModel } from '../../models/client/booking.model.js'
 import { notifyStage } from './notification.service.js'
 import { logSystem, logSystemError } from '../../lib/log-system.js'
+import { signalLateChanged } from '../driver/late-confirmation.service.js'
 
 /**
  * Chases the office about late drop-off confirmations still waiting for Accept
@@ -52,6 +53,7 @@ export async function runLateConfirmationTick(now = Date.now()): Promise<{ remin
         [r.late_id, r.stop_status !== 'pending'
           ? 'Recorded another way'
           : `The booking is no longer on the road (${r.booking_status})`])
+      signalLateChanged(r.booking_id)
       closed++
       continue
     }

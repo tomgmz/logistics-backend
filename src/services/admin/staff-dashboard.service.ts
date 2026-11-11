@@ -1,3 +1,4 @@
+import { pool } from '../../lib/database.js'
 import { supabase } from '../../lib/supabase.js'
 import { phDay } from '../../lib/ph-date.js'
 import { getAllTrucks } from './truck.service.js'
@@ -121,6 +122,10 @@ export async function getStaffDashboard() {
     flaggedVendorDrivers(),
     listTickets('open'),
   ])
+  // Late confirmations (after a driver swap) waiting for Accept / Dismiss.
+  const { rows: lateRows } = await pool.query<{ booking_id: string }>(
+    `SELECT DISTINCT booking_id FROM late_confirmations WHERE status = 'pending'`).catch(() => ({ rows: [] as { booking_id: string }[] }))
+  const lateIds = new Set(lateRows.map((r) => r.booking_id))
 
   const today    = phDay()
   const tomorrow = phDay(Date.now() + DAY_MS)
@@ -133,6 +138,7 @@ export async function getStaffDashboard() {
   // Running 15+ min past the next stop's planned window (delay.scheduler); a
   // paused one is explained by its pause instead.
   const delayed        = bookings.filter((b) => b.status === 'in_transit' && !!(b as any).delayed_since && !(b as any).paused_at)
+  const lateConfirmations = bookings.filter((b) => lateIds.has(b.booking_id))
   const openIssues     = bookings.filter((b) =>
     b.status === 'delivered' && !!b.client_issue_reported_at && !b.client_issue_resolved_at)
   const awaitingClient = bookings.filter((b) =>
@@ -198,6 +204,7 @@ export async function getStaffDashboard() {
       in_transit:        queue(inTransit),
       open_issues:       queue(openIssues),
       delayed:           queue(delayed),
+      late_confirmations: queue(lateConfirmations),
       awaiting_client:   queue(awaitingClient),
       awaiting_return:   queue(awaitingReturn),
     },

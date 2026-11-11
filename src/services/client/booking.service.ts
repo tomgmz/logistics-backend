@@ -1,4 +1,5 @@
 import { BookingModel } from '../../models/client/booking.model.js'
+import { pool } from '../../lib/database.js'
 import {
   CreateBookingRequest,
   ResubmitBookingInput,
@@ -170,6 +171,15 @@ async function assertDestinationOwnership(
   }
 }
 
+/** Pending late confirmations per booking (late-confirmation.service). */
+export async function pendingLateCounts(bookingIds: string[]): Promise<Map<string, number>> {
+  const { rows } = await pool.query<{ booking_id: string; n: number }>(
+    `SELECT booking_id, count(*)::int AS n FROM late_confirmations
+      WHERE status = 'pending' AND booking_id = ANY($1::uuid[]) GROUP BY booking_id`,
+    [bookingIds])
+  return new Map(rows.map((r) => [r.booking_id, r.n]))
+}
+
 export interface PaginatedBookingsMeta {
   total:        number
   page:         number
@@ -206,6 +216,13 @@ export async function getAllBookingsPaginatedService(params: {
     BookingModel.findAllPaginated({ page, limit, status: params.status, search: params.search, dateFrom: params.dateFrom, dateTo: params.dateTo, clientId, order: params.order }),
     BookingModel.countByStatus(clientId),
   ])
+
+  // Staff only: how many late confirmations (after a driver swap) wait for the
+  // office on each row, for the list's "Late confirmation" badge.
+  if (!isClientViewer(viewer) && rows.length > 0) {
+    const counts = await pendingLateCounts(rows.map((r) => r.booking_id)).catch(() => new Map<string, number>())
+    for (const r of rows as any[]) r.late_pending = counts.get(r.booking_id) ?? 0
+  }
 
   return {
     data: rows,
