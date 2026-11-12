@@ -1,3 +1,4 @@
+import { pausedRefusal, sendPausedRefusal } from '../../services/driver/pause-guard.js'
 import { dismissBreakdownService } from '../../services/client/breakdown.service.js'
 import { Request, Response } from 'express'
 import {
@@ -162,6 +163,9 @@ export const driverConfirmTripPickup = async (req: Request, res: Response) => {
     const tripId = req.params.tripNumber
       ? await resolveTripByNumber(param(req.params.bookingId), Number(req.params.tripNumber))
       : param(req.params.tripId)
+    // Paused by the office: no new loading (a step done before the pause passes).
+    const paused = await pausedRefusal({ tripId }, req.body.confirmed_at)
+    if (paused) { sendPausedRefusal(res, paused); return }
     const trip = await driverConfirmTripPickupService(
       tripId,
       req.body.proof_photo_url,
@@ -245,6 +249,9 @@ export const driverConfirmTripStop = async (req: Request, res: Response) => {
       ? await resolveTripStopByDestination(
           param(req.params.bookingId), Number(req.params.tripNumber), param(req.params.destinationId))
       : param(req.params.tripStopId)
+    // Paused by the office: no new drop-off (a step done before the pause passes).
+    const paused = await pausedRefusal({ tripStopId }, req.body.confirmed_at)
+    if (paused) { sendPausedRefusal(res, paused); return }
     const stop = await driverConfirmTripStopService(
       tripStopId,
       req.body.proof_photo_url,

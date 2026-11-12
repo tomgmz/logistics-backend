@@ -1,3 +1,4 @@
+import { pausedRefusal, sendPausedRefusal } from '../../services/driver/pause-guard.js'
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import { statusOf } from '../../lib/http-error.js'
@@ -345,6 +346,9 @@ function stopProofFailure(res: Response, error: any) {
 
 export const driverConfirmPickup = async (req: Request, res: Response) => {
   try {
+    // Paused by the office: no new progress (older single-trip route, same rule).
+    const paused = await pausedRefusal({ bookingId: param(req.params.bookingId) }, req.body?.confirmed_at)
+    if (paused) { sendPausedRefusal(res, paused); return }
     const booking = await driverConfirmPickupService(
       param(req.params.bookingId),
       req.body.proof_photo_url,
@@ -360,6 +364,8 @@ export const driverConfirmPickup = async (req: Request, res: Response) => {
 
 export const driverConfirmDelivery = async (req: Request, res: Response) => {
   try {
+    const paused = await pausedRefusal({ bookingId: param(req.params.bookingId) }, req.body?.confirmed_at)
+    if (paused) { sendPausedRefusal(res, paused); return }
     const destination = await driverConfirmDeliveryService(
       param(req.params.bookingId),
       param(req.params.destinationId),

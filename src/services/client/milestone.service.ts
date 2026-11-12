@@ -11,17 +11,20 @@ import { fromDeviceClock, hasDeviceClock } from '../../lib/device-clock.js'
 /**
  * The times at each stop visit — see the stop_milestones migrations.
  *
- *   arrived → started → finished
+ *   arrived → started → finished → proof
  *
- * `arrived` is sent by the phone on its own when navigation detects the
- * arrival; `started` is the driver's one tap ("Start loading" / "Start
- * unloading"). `finished` is not stored here: it IS the proof confirmation (the
- * run's pickup_proof_at for the loading, the visit's delivered_at for a
- * drop-off), so a stop can never show a finish without its photo. The office can
- * fill in or correct the other two.
+ * `arrived` is sent by the phone on its own when navigation detects the arrival
+ * (or the driver's "I've arrived" within 300 m of the stop); `started` is "Start
+ * loading" / "Start unloading"; `finished` is "Loading finished" / "Unloading
+ * finished" (its own step since 2026-11-12, migration
+ * 20261112000000_stop_times_finished; before that "finished" was the proof
+ * time). `proof` is not stored here: it IS the proof confirmation (the run's
+ * pickup_proof_at, the visit's delivered_at). An older app sends no `finished`;
+ * its proof is still accepted and the step reads as not recorded. The office
+ * can fill in or correct arrived, started and finished.
  */
 
-export const MILESTONE_STAGES = ['arrived', 'started'] as const
+export const MILESTONE_STAGES = ['arrived', 'started', 'finished'] as const
 export type MilestoneStage = typeof MILESTONE_STAGES[number]
 
 /**
@@ -35,8 +38,11 @@ const LEGACY_ALIAS: Record<string, MilestoneStage | null> = {
   departed:        null,
 }
 
-/** Order of the steps, `finished` included, for the "never before the step before" bound. */
-const ORDER = ['arrived', 'started', 'finished'] as const
+/** Order of the steps, the proof included, for the "never before the step before" bound. */
+const ORDER = ['arrived', 'started', 'finished', 'proof'] as const
+
+/** "I've arrived" / a detected arrival must be this close to the stop (user 2026-11-12). */
+export const ARRIVAL_RADIUS_M = 300
 
 /**
  * A tap that reached us within this long of when the phone says it happened is
@@ -60,7 +66,10 @@ export interface StepTime {
 export interface StopTimes {
   arrived:  StepTime | null
   started:  StepTime | null
+  /** "Loading/Unloading finished". Null on a visit an older app confirmed (no such step then). */
   finished: StepTime | null
+  /** The proof confirmation (photo). */
+  proof:    StepTime | null
 }
 
 export interface TimelineStop extends StopTimes {
@@ -82,7 +91,7 @@ export interface TimelineTrip {
   stops:       TimelineStop[]
 }
 
-const emptyTimes = (): StopTimes => ({ arrived: null, started: null, finished: null })
+const emptyTimes = (): StopTimes => ({ arrived: null, started: null, finished: null, proof: null })
 const shownStage = (stage: string): stage is MilestoneStage => (MILESTONE_STAGES as readonly string[]).includes(stage)
 
 /** Every run of the booking, with the times at its loading and each drop-off. */
@@ -129,7 +138,7 @@ export async function bookingTimeline(bookingId: string, { withNotes = false } =
 
   return trips.map((t: any) => {
     const loading = emptyTimes()
-    if (t.pickup_proof_at) loading.finished = { at: iso(t.pickup_proof_at), source: 'proof' }
+    if (t.pickup_proof_at) loading.proof = { at: iso(t.pickup_proof_at), source: 'proof' }
     for (const m of marks) {
       const st: string = m.stage
       if (m.trip_id === t.trip_id && !m.trip_stop_id && shownStage(st)) loading[st] = step(m)
@@ -143,7 +152,7 @@ export async function bookingTimeline(bookingId: string, { withNotes = false } =
       loading,
       stops: stops.filter((s: any) => s.trip_id === t.trip_id).map((s: any) => {
         const times = emptyTimes()
-        if (s.delivered_at) times.finished = { at: iso(s.delivered_at), source: 'proof' }
+        if (s.delivered_at) times.proof = { at: iso(s.delivered_at), source: 'proof' }
         for (const m of marks) {
           const st: string = m.stage
           if (m.trip_stop_id === s.trip_stop_id && shownStage(st)) times[st] = step(m)
@@ -183,7 +192,7 @@ async function resolveTarget(bookingId: string, body: Record<string, any>): Prom
   return { tripId, tripStopId }
 }
 
-/** The times already on this stop visit, `finished` included, as epoch ms. */
+/** The times already on this stop visit, the proof included, as epoch ms. */
 async function timesOf(target: Target): Promise<Partial<Record<typeof ORDER[number], number>>> {
   const out: Partial<Record<typeof ORDER[number], number>> = {}
   const { rows } = await pool.query(
@@ -197,7 +206,7 @@ async function timesOf(target: Target): Promise<Partial<Record<typeof ORDER[numb
   const { rows: [fin] } = target.tripStopId
     ? await pool.query(`SELECT delivered_at AS at FROM booking_trip_stops WHERE trip_stop_id = $1`, [target.tripStopId])
     : await pool.query(`SELECT pickup_proof_at AS at FROM booking_trips WHERE trip_id = $1`, [target.tripId])
-  if (fin?.at) out.finished = new Date(fin.at).getTime()
+  if (fin?.at) out.proof = new Date(fin.at).getTime()
   return out
 }
 
@@ -213,8 +222,27 @@ function ceilingFor(stage: MilestoneStage, times: Partial<Record<typeof ORDER[nu
 }
 
 const STAGE_LABEL: Record<MilestoneStage, string> = {
-  arrived: 'arrival',
-  started: 'start of loading or unloading',
+  arrived:  'arrival',
+  started:  'start of loading or unloading',
+  finished: 'end of loading or unloading',
+}
+
+/** Where the visit is: the pickup (booking origin) or the drop-off. Null when not on file. */
+async function placeOf(bookingId: string, target: Target): Promise<{ lat: number; lng: number } | null> {
+  const { rows: [r] } = target.tripStopId
+    ? await pool.query(
+        `SELECT d.latitude AS lat, d.longitude AS lng FROM booking_trip_stops s
+           JOIN booking_destinations d ON d.destination_id = s.destination_id WHERE s.trip_stop_id = $1`,
+        [target.tripStopId])
+    : await pool.query(`SELECT origin_latitude AS lat, origin_longitude AS lng FROM bookings WHERE booking_id = $1`, [bookingId])
+  return r?.lat != null && r?.lng != null ? { lat: Number(r.lat), lng: Number(r.lng) } : null
+}
+
+function metresBetween(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6_371_000, rad = Math.PI / 180
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(h))
 }
 
 /**
@@ -236,6 +264,27 @@ export async function driverRecordMilestoneService(
   }
   const target = await resolveTarget(bookingId, body)
   const times  = await timesOf(target)
+
+  // No step skipped (user 2026-11-12): finished needs started, started needs
+  // arrived. The app runs them in this order; a later step already on file
+  // (e.g. the office filled it in) satisfies it too.
+  const has = (st: typeof ORDER[number]) => times[st] != null || ORDER.slice(ORDER.indexOf(st) + 1).some((x) => times[x] != null)
+  if (stage === 'started'  && !has('arrived')) throw new Error('Cannot start before the arrival is recorded')
+  if (stage === 'finished' && !has('started')) throw new Error('Cannot finish before loading or unloading has started')
+
+  // The arrival is logged at the stop, not before (user 2026-11-12: within
+  // 300 m). Checked when the phone sent its position; the GPS accuracy is given
+  // the benefit of the doubt. No position (an older app) is not refused.
+  if (stage === 'arrived' && typeof body.latitude === 'number' && typeof body.longitude === 'number') {
+    const place = await placeOf(bookingId, target)
+    if (place) {
+      const off = metresBetween(place, { lat: body.latitude, lng: body.longitude })
+      const slack = typeof body.accuracy_m === 'number' ? Math.min(Math.max(body.accuracy_m, 0), 100) : 0
+      if (off - slack > ARRIVAL_RADIUS_M) {
+        throw new Error(`Cannot record the arrival ${Math.round(off)} m from the stop; it must be within ${ARRIVAL_RADIUS_M} m`)
+      }
+    }
+  }
 
   // When it happened: the phone's time of the tap, corrected by how far off the
   // phone's clock was when it sent this request (lib/device-clock). An app that
