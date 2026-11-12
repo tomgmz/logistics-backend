@@ -113,6 +113,8 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   delivery_delayed_staff: { type: 'booking.delivery_delayed_staff', roles: ['operations_manager'] },
   // The driver chose a different drop-off order ("Go here next"), with their reason.
   stop_order_changed:     { type: 'booking.stop_order_changed',     roles: ['operations_manager'] },
+  // ...and that moves one of the client's drop-offs 30+ min later (stop-order-client-notice.ts).
+  dropoff_order_later:    { type: 'booking.dropoff_order_later',    audience: 'client' },
   // breakdown.scheduler.ts: a driver-reported breakdown still has no decision.
   breakdown_unhandled:    { type: 'booking.breakdown_unhandled',    roles: ['operations_manager'] },
   // late-confirmation.service: the previous main driver's drop-off confirmation
@@ -330,6 +332,13 @@ function copyFor(
                (extra?.tripNumber ? ` on trip ${extra.tripNumber}` : '') +
                `. Reason: ${reason ?? 'no reason given'}. Arrival times have been re-planned.`,
       }
+    case 'dropoff_order_later':
+      return {
+        title: 'Your drop-off is later than planned',
+        body:  `The driver on delivery ${label} changed the drop-off order` +
+               (reason ? ` (${reason})` : '') +
+               `. ${extra?.dropoffsLater ?? 'One of your drop-offs is now later'}. The live arrival time is on your tracking page.`,
+      }
     case 'breakdown_unhandled':
       return {
         title: 'Breakdown waiting for a decision',
@@ -471,6 +480,8 @@ export interface NotifyExtra {
   newArrival?:   string
   /** Which run of a multi-trip booking (stop_order_changed). */
   tripNumber?:   number
+  /** dropoff_order_later: "Drop-off 2 (EDSA …) about 40 min later, now around 3:10 PM; …". */
+  dropoffsLater?: string
   // Send to exactly these users (all drivers) instead of the stage's audience —
   // e.g. a driver who was just taken off the booking and so isn't on its crew.
   onlyUserIds?:  string[]

@@ -31,7 +31,7 @@ const ROUTES_API_URL  = 'https://routes.googleapis.com/directions/v2:computeRout
 const FIELD_MASK      = 'routes.legs.duration'
 
 /** Unloading at each drop-off. A typical FMCG receiving bay; per-client later. */
-const UNLOAD_MINUTES_PER_STOP = 30
+export const UNLOAD_MINUTES_PER_STOP = 30
 /**
  * Loading at the origin before each run. Also applied after the call time for
  * trip 1: call time is when the truck reports to the warehouse, not when it

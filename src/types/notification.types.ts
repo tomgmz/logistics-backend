@@ -34,6 +34,7 @@ export type NotificationType =
   | 'booking.pause_continuation_due'    // an hour before that call time -> assigned driver(s)
   | 'booking.pause_continuation_overdue' // call time passed, still paused -> ops + admin
   | 'booking.delivery_delayed'       // next stop 15+ min past its planned window -> client
+  | 'booking.dropoff_order_later'    // driver's new drop-off order moves a drop-off 30+ min later -> client
   | 'booking.delivery_delayed_staff' // ... -> ops + admin
   | 'booking.crew_roles_swapped'     // office swapped main/second driver -> the crew
   | 'booking.breakdown_unhandled'    // driver-reported breakdown, no pause/dismissal after 15 min -> ops + admin
@@ -144,6 +145,7 @@ export type NotificationStage =
   | 'late_confirmation'
   | 'late_confirmation_unhandled'
   | 'stop_order_changed'
+  | 'dropoff_order_later'
   | 'delivery_started'
   | 'driver_call_reminder'
   | 'crew_replaced_off'

@@ -39,7 +39,13 @@ export interface DrivingShift {
 }
 
 async function announce(bookingId: string): Promise<void> {
-  await broadcast(`route:booking:${bookingId}`, 'route_changed', { booking_id: bookingId, kind: 'driving' }).catch(() => {})
+  await Promise.all([
+    broadcast(`route:booking:${bookingId}`, 'route_changed', { booking_id: bookingId, kind: 'driving' }).catch(() => {}),
+    // booking_driving_shifts has no DB trigger: the phone's "At the wheel" card,
+    // the booking screen and the web's driving-shift list listen here, so the
+    // other driver taking the wheel shows at once (2026-11-13).
+    broadcast('live:bookings', 'changed', { table: 'booking_driving_shifts', id: bookingId }).catch(() => {}),
+  ])
 }
 
 /** Close the open shift at `at` and open one for `driverId` — in one transaction. */
@@ -212,11 +218,22 @@ export async function staffSwapCrewRolesService(bookingId: string, reason: strin
     await client.query(
       `UPDATE deliveries SET driver_id = $2, second_driver_id = $3, updated_at = now() WHERE delivery_id = $1`,
       [del.delivery_id, del.second_driver_id, del.driver_id])
-    await client.query(
-      `UPDATE driver_assignments
-          SET crew_role = CASE WHEN driver_id = $2 THEN 'second' ELSE 'lead' END
-        WHERE booking_id = $1 AND driver_id IN ($2, $3)`,
+    // Swap the two rows' roles. Not one UPDATE: (booking_id, crew_role) and
+    // (booking_id, driver_id) are both unique and not deferrable, so Postgres
+    // checks each row as it goes and the half-swapped state collides (seen
+    // 2026-11-13: every swap answered 500 "uq_driver_assignment_booking_role").
+    // Delete both and put them back with the roles exchanged, same ids and
+    // times, in this transaction. No trigger or FK hangs off these rows.
+    const { rows: crew } = await client.query(
+      `DELETE FROM driver_assignments WHERE booking_id = $1 AND driver_id IN ($2, $3) RETURNING *`,
       [bookingId, del.driver_id, del.second_driver_id])
+    for (const r of crew) {
+      await client.query(
+        `INSERT INTO driver_assignments (assignment_id, booking_id, driver_id, assigned_at, assigned_by, crew_role)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [r.assignment_id, r.booking_id, r.driver_id, r.assigned_at, r.assigned_by,
+         r.driver_id === del.driver_id ? 'second' : 'lead'])
+    }
     // The swap's own record: late confirmations from the old main driver's
     // phone are judged against this time (late-confirmation.service).
     await client.query(

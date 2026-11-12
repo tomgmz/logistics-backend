@@ -1,5 +1,6 @@
 import TripModel from '../../models/client/trip.model.js'
 import { BookingModel } from '../../models/client/booking.model.js'
+import { noticeClientOfLaterDropoffs } from '../notification/stop-order-client-notice.js'
 import { logEvent } from '../../lib/log-event.js'
 import * as TruckModel from '../../models/admin/truck.model.js'
 import { assertBookingVehicleInService, crewNamesOnBooking, crewOnBooking } from '../admin/fleet-availability.service.js'
@@ -615,6 +616,11 @@ export async function driverSetStopOrderService(
       description: `Driver changed the drop-off order on trip ${trip.trip_number} of booking ${bookingRef(booking)}: ${reasonText}`,
     })
     void notifyStage('stop_order_changed', booking, { reason: reasonText, tripNumber: trip.trip_number })
+    // The client too, when it moves one of their drop-offs 30+ min later
+    // (user 2026-11-13). Their wording for the reason; "other" stays unsaid.
+    const clientReason = why.reason && why.reason !== 'other' ? STOP_ORDER_REASON[why.reason] ?? null : null
+    void noticeClientOfLaterDropoffs(trip.booking_id, before, tripStopIds, clientReason)
+      .catch((e) => console.warn('[stop-order] client notice failed:', e?.message))
   }
 
   void invalidateEta(trip.booking_id).catch(() => {})

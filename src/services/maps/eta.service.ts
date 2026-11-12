@@ -141,7 +141,7 @@ function isCacheFresh(
  * Google outage must not take the live position down with it — the caller keeps
  * whatever it had and tries again on the next eligible ping.
  */
-async function computeLegEtas(
+export async function computeLegEtas(
   from:  { latitude: number; longitude: number },
   stops: EtaStop[],
 ): Promise<StopEta[] | null> {
