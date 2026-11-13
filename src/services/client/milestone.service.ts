@@ -323,6 +323,9 @@ export async function driverRecordMilestoneService(
   return { recorded: !!row, at: new Date(at).toISOString(), clock_adjusted: clockAdjusted }
 }
 
+/** Booking statuses whose stop times the office may fill in or correct. */
+export const STOP_TIME_EDITABLE = ['in_transit', 'delivered', 'completed']
+
 /**
  * The office fills in or corrects a step (the driver forgot to tap, or tapped
  * late). A reason is required; the previous value goes to the audit log.
@@ -339,7 +342,23 @@ export async function staffSetMilestoneService(
   if (!Number.isFinite(at)) throw new Error('Cannot read that time')
   if (at > Date.now() + 60_000) throw new Error('Cannot set a time in the future')
 
+  // Stop times are what happened on the road, so there is nothing to fill in
+  // before the delivery has started (Assigned = the truck hasn't left yet).
+  // Corrections stay open after delivery; each one is in the audit log.
+  const { data: bk } = await supabase.from('bookings').select('status').eq('booking_id', bookingId).maybeSingle()
+  if (!bk) throw new Error('Booking not found')
+  if (!STOP_TIME_EDITABLE.includes(bk.status)) {
+    throw new Error('Cannot set stop times before the delivery has started')
+  }
+
   const target = await resolveTarget(bookingId, body)
+  // A drop-off can't be reached before its run was loaded.
+  if (target.tripStopId) {
+    const { data: trip } = await supabase.from('booking_trips').select('status').eq('trip_id', target.tripId).maybeSingle()
+    if (trip && trip.status !== 'in_transit' && trip.status !== 'completed') {
+      throw new Error('Cannot set a drop-off time before this run was loaded')
+    }
+  }
   const times  = await timesOf(target)
   const floor  = floorFor(body.stage, times)
   const ceil   = ceilingFor(body.stage, times)
