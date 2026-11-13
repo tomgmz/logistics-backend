@@ -218,10 +218,24 @@ async function countByStatus(clientId?: string | null): Promise<Record<string, n
     clientId ? [clientId] : [],
   )
   out.delayed = parseInt(delayed.rows[0]?.n ?? '0', 10) || 0
+
+  // "Resubmitted" is a tag too (corrected after a rejection, any status now),
+  // the same rows as the Resubmitted badge. Not part of "all".
+  const resub = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::int AS n
+       FROM bookings
+      WHERE ${RESUBMITTED_SQL('bookings')}
+        ${clientId ? 'AND client_id = $1' : ''}`,
+    clientId ? [clientId] : [],
+  )
+  out.resubmitted = parseInt(resub.rows[0]?.n ?? '0', 10) || 0
   return out
 }
 
 /** In transit, flagged late by delay.scheduler, and not paused. */
+/** Corrected and resubmitted by the client at least once (the Resubmitted badge). */
+const RESUBMITTED_SQL = (t: string) => `COALESCE(${t}.resubmission_count, 0) > 0`
+
 const DELAYED_NOW_SQL = (t: string) =>
   `${t}.status = 'in_transit' AND ${t}.delayed_since IS NOT NULL AND ${t}.paused_at IS NULL`
 
@@ -246,6 +260,8 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
 
   if (status === 'delayed') {
     where.push(DELAYED_NOW_SQL('b'))
+  } else if (status === 'resubmitted') {
+    where.push(RESUBMITTED_SQL('b'))
   } else if (status !== 'all') {
     params.push(status)
     where.push(`b.status = $${params.length}`)

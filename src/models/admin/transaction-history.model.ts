@@ -123,6 +123,9 @@ function buildWhere(f: TransactionFilters): { whereSql: string; params: unknown[
     // History keeps every booking that ran late at any point: delay_max_minutes
     // stays after the flag clears (delay.scheduler, for on-time reporting).
     where.push('b.delay_max_minutes > 0')
+  } else if (status === 'resubmitted') {
+    // Corrected and resubmitted by the client at least once (the badge).
+    where.push('COALESCE(b.resubmission_count, 0) > 0')
   } else if (status && status !== 'all') {
     params.push(status)
     where.push(`b.status = $${params.length}`)
@@ -284,6 +287,15 @@ async function countByStatus(f: TransactionFilters): Promise<Record<string, numb
     params,
   )
   out.delayed = parseInt(delayed.rows[0]?.n ?? '0', 10) || 0
+
+  // "Resubmitted" cuts across the statuses too.
+  const resub = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::int AS n
+     ${FROM_SQL}
+     ${whereSql ? `${whereSql} AND` : 'WHERE'} COALESCE(b.resubmission_count, 0) > 0`,
+    params,
+  )
+  out.resubmitted = parseInt(resub.rows[0]?.n ?? '0', 10) || 0
   return out
 }
 
