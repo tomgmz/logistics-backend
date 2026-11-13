@@ -48,6 +48,17 @@ export async function officeConfirmPickupService(
   bookingId: string, tripId: string, reason: string, userId?: string | null, role?: string | null,
 ) {
   await tripOnBooking(bookingId, tripId)
+  // Not before the driver has started (user 2026-11-13): an office load on an
+  // Assigned booking would start the delivery without the driver. Before Start
+  // the office re-assigns instead.
+  const booking = await BookingModel.findById(bookingId)
+  if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
+  if (booking.status !== 'in_transit') {
+    throw new Error(
+      `Cannot confirm a step for the driver on a booking that is '${booking.status}'. ` +
+      `The driver starts the delivery with Start Navigation; before that, assign another driver if needed`,
+    )
+  }
   // An office load is never "early" by accident: the office chose to do it now.
   return driverConfirmTripPickupService(tripId, '', officeActor(userId, role, reason), true, null)
 }
