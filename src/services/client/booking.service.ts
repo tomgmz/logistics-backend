@@ -639,6 +639,9 @@ export async function gmReviewService(
   return advanced ?? booking
 }
 
+/** How many times one booking can be corrected and resubmitted after a rejection. */
+export const MAX_RESUBMISSIONS = 3
+
 /**
  * Whether a booking is an 8338 rejection still waiting on the client: turned
  * down by the General Manager or cancelled by the Company Administrator, never
@@ -672,6 +675,11 @@ export async function resubmitBookingService(
 
   if (!isAwaitingClientAfterRejection(existing)) {
     throw conflict('Only a rejected booking can be resubmitted')
+  }
+  // Three corrections per booking; after the third rejection the client can
+  // only cancel it (and make a new booking if still needed).
+  if ((existing.resubmission_count ?? 0) >= MAX_RESUBMISSIONS) {
+    throw conflict(`This booking was already resubmitted ${MAX_RESUBMISSIONS} times, the most allowed. Cancel it and make a new booking instead.`)
   }
 
   if (!input.destinations || input.destinations.length === 0) {

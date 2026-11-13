@@ -182,6 +182,11 @@ function bookingLabel(booking: BookingWithRelations): string {
 
 // What the client can do about a rejection, appended to both rejection messages.
 const NEXT_STEP_AFTER_REJECTION = 'You can edit the booking and resubmit it for another review, or cancel it.'
+// After the third resubmission (MAX_RESUBMISSIONS) only cancelling is left.
+const nextStepAfterRejection = (booking: { resubmission_count?: number | null }) =>
+  (booking.resubmission_count ?? 0) >= 3
+    ? 'It was already resubmitted 3 times, the most allowed, so it cannot be resubmitted again. Cancel it and make a new booking if you still need the delivery.'
+    : NEXT_STEP_AFTER_REJECTION
 
 function copyFor(
   stage: NotificationStage,
@@ -197,10 +202,10 @@ function copyFor(
         ? { title: 'Resubmitted booking awaiting your approval', body: `Booking ${label} was corrected and resubmitted by the client after being rejected, and needs your approval.` }
         : { title: 'New booking awaiting your approval', body: `Booking ${label} was submitted by the client and needs your approval.` }
     case 'rejected_gm':
-      return { title: 'Booking rejected', body: `Your booking ${label} was rejected by the General Manager${reason ? `: ${reason}` : '.'} ${NEXT_STEP_AFTER_REJECTION}` }
+      return { title: 'Booking rejected', body: `Your booking ${label} was rejected by the General Manager${reason ? `: ${reason}` : '.'} ${nextStepAfterRejection(booking)}` }
     // Turned down by the administrator directly, without going to the GM.
     case 'rejected_admin':
-      return { title: 'Booking rejected', body: `Your booking ${label} was not approved${reason ? `: ${reason}` : '.'} ${NEXT_STEP_AFTER_REJECTION}` }
+      return { title: 'Booking rejected', body: `Your booking ${label} was not approved${reason ? `: ${reason}` : '.'} ${nextStepAfterRejection(booking)}` }
     // `reason` carries the approver's remarks, required on every approval.
     case 'approved_gm':
       return {

@@ -643,6 +643,7 @@ async function resubmit(
     const locked = await client.query<{ resubmission_count: number | null }>(
       `SELECT resubmission_count FROM bookings
         WHERE booking_id = $1 AND status = 'cancelled' AND client_closed_at IS NULL
+          AND COALESCE(resubmission_count, 0) < 3   -- MAX_RESUBMISSIONS (booking.service)
         FOR UPDATE`,
       [bookingId],
     )
