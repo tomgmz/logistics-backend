@@ -6,12 +6,12 @@
  * town, the driver's house — and the record looks identical to one confirmed at
  * the gate. This is the check that makes those two different.
  *
- * It is not fraud-proof and is not meant to be: a determined driver can feed the
- * phone a false position. What it does is make an off-site confirmation
- * deliberate and visible instead of routine and silent.
+ * It is not fraud-proof: a determined driver can feed the phone a false
+ * position. There is no "confirm anyway" from the app; the office confirms a
+ * step the driver can't (Booking Management, reason required).
  */
 
-/** Metres. A stop confirmed further out than this needs an explicit override. */
+/** Metres. A driver can't confirm a stop further out than this. */
 export const STOP_PROOF_RADIUS_M = 100
 
 /** Earth's mean radius in metres, for the haversine below. */
@@ -59,23 +59,26 @@ export function stopCoordinates(
 export interface StopProofPosition extends Coordinates {
   /** The phone's own estimate of its error, in metres, when it reported one. */
   accuracy_m?: number | null
-  /** Set when the driver forced a confirmation the gate would have refused. */
-  override_reason?: string | null
 }
 
 export interface GeofenceOutcome {
   /** Null when the stop has no coordinates to measure against. */
   distance_m: number | null
-  /** The reason carried through to the record; null for a clean confirmation. */
+  /**
+   * Always null for a driver's confirmation: drivers can no longer confirm from
+   * outside the radius with a reason (removed 2026-11-14, it was for testing).
+   * The office's own confirmations still record their reason here.
+   */
   override_reason: string | null
 }
 
 /**
- * Decide whether this confirmation may stand, and what to record about it.
+ * Decide whether this confirmation may stand.
  *
- * Throws when the driver is outside the radius and offered no reason. Returns
- * the measured distance either way, so an override is stored with the number it
- * overrode rather than just the fact that someone pressed through.
+ * Throws when the position can't be read or the driver is outside the radius;
+ * there is no way past it from the app. A driver who really is at the stop with
+ * no usable GPS (inside a dock) asks the office, which confirms the step from
+ * Booking Management with its own reason.
  *
  * A stop with no coordinates cannot be measured — older bookings predate
  * geocoding — and is allowed rather than blocked: refusing a delivery over
@@ -86,49 +89,29 @@ export function assertStopProximity(
   position:  StopProofPosition | null | undefined,
   stopLabel: string,
 ): GeofenceOutcome {
-  // The reason is read off the position when there is one, but it has to survive
-  // the case where there isn't: a driver standing inside a dock with no signal
-  // still needs a way to say so.
-  const reason = position?.override_reason?.trim() || null
-
-  // No fix at all. Common and legitimate — GPS dies inside most warehouse docks
-  // — but it is exactly what the gate exists to notice, so it is refused unless
-  // the driver says why. An app that simply never sends a position is refused
-  // for the same reason: silence must not become the way past the check.
+  // No fix at all. An app that never sends a position is refused for the same
+  // reason: silence must not become the way past the check.
   if (!position || !Number.isFinite(position.latitude) || !Number.isFinite(position.longitude)) {
-    if (!reason) {
-      throw new StopTooFarError(
-        `Your location could not be read, so this ${stopLabel} cannot be confirmed automatically. Turn location on and try again, or confirm anyway with a reason.`,
-        null,
-      )
-    }
-    return { distance_m: null, override_reason: reason }
-  }
-
-  // The stop itself has no coordinates — older bookings predate geocoding.
-  // Nothing to measure against, so this is allowed: refusing a delivery over
-  // missing reference data punishes the driver for the office's gap.
-  if (!stop) return { distance_m: null, override_reason: reason }
-
-  const distance = Math.round(distanceInMetres(stop, position))
-  if (distance <= STOP_PROOF_RADIUS_M) {
-    // Inside the fence: an override the driver sent anyway is not recorded as
-    // one, or the review queue fills up with confirmations that were fine.
-    return { distance_m: distance, override_reason: null }
-  }
-
-  if (!reason) {
     throw new StopTooFarError(
-      `You are about ${distance} m from the ${stopLabel} — move within ${STOP_PROOF_RADIUS_M} m to confirm it, or confirm anyway with a reason.`,
-      distance,
+      `Your location could not be read, so this ${stopLabel} cannot be confirmed. Turn location on and try again, or ask the office to confirm it.`,
+      null,
     )
   }
 
-  return { distance_m: distance, override_reason: reason }
+  if (!stop) return { distance_m: null, override_reason: null }
+
+  const distance = Math.round(distanceInMetres(stop, position))
+  if (distance > STOP_PROOF_RADIUS_M) {
+    throw new StopTooFarError(
+      `You are about ${distance} m from the ${stopLabel}. Move within ${STOP_PROOF_RADIUS_M} m to confirm it.`,
+      distance,
+    )
+  }
+  return { distance_m: distance, override_reason: null }
 }
 
 /**
- * Raised when a stop is confirmed too far away with no reason given.
+ * Raised when a stop is confirmed too far away, or with no position.
  *
  * Its own type so the route can answer 422 — the request was well-formed and
  * the driver is who they say they are; it is the position that is wrong, and

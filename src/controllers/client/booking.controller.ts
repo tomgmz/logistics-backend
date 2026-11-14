@@ -306,22 +306,16 @@ function driverActor(req: Request) {
  * quietly let through or shown a distance of zero.
  */
 function stopProofPosition(req: Request): StopProofPosition | null {
-  const { latitude, longitude, accuracy_m, override_reason } = req.body ?? {}
+  // override_reason from an older app is ignored: drivers can't confirm from
+  // outside the radius any more (removed 2026-11-14).
+  const { latitude, longitude, accuracy_m } = req.body ?? {}
   const hasFix = typeof latitude === 'number' && typeof longitude === 'number'
-
-  if (!hasFix) {
-    // No coordinates, but a reason may still have been given — the geofence
-    // needs to see it, so pass a position carrying only that.
-    return override_reason
-      ? { latitude: NaN, longitude: NaN, override_reason: String(override_reason) }
-      : null
-  }
+  if (!hasFix) return null
 
   return {
     latitude,
     longitude,
-    accuracy_m:      typeof accuracy_m === 'number' ? accuracy_m : null,
-    override_reason: override_reason ? String(override_reason) : null,
+    accuracy_m: typeof accuracy_m === 'number' ? accuracy_m : null,
   }
 }
 

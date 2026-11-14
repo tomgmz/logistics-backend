@@ -182,8 +182,9 @@ export const driverStopProofSchema = z.object({
   longitude:  z.number().min(-180).max(180).optional(),
   accuracy_m: z.number().nonnegative().optional(),
 
-  // The driver's stated reason for confirming a stop the distance gate would
-  // have refused. Recorded on the stop and flagged to operations.
+  // Accepted only so an older app's queued confirmation isn't refused as
+  // malformed; IGNORED since 2026-11-14 (drivers can't confirm from outside the
+  // radius any more). The stop is judged on its position alone.
   override_reason: z.string().trim().min(3).max(300).optional(),
 
   // When the driver did it (phone clock, corrected by X-Device-Time). A

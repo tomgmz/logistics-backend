@@ -495,7 +495,7 @@ export async function recordTripLoaded(
         distance_m: origin && position && Number.isFinite(position.latitude) && Number.isFinite(position.longitude)
           ? Math.round(distanceInMetres(origin, position))
           : null,
-        override_reason: position?.override_reason?.trim() || null,
+        override_reason: null,
       }
     : stopFence(actor, origin, position, 'pickup point')
 
@@ -776,7 +776,7 @@ export async function recordStopDelivered(
         distance_m: coords && position && Number.isFinite(position.latitude) && Number.isFinite(position.longitude)
           ? Math.round(distanceInMetres(coords, position))
           : null,
-        override_reason: position?.override_reason?.trim() || null,
+        override_reason: null,
       }
     : stopFence(actor, coords, position, 'drop-off')
 

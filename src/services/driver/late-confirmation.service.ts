@@ -143,9 +143,7 @@ export async function judgeLateConfirmation(e: LateEvidence): Promise<LateVerdic
     reasons.push('no_position')
   } else if (e.stop) {
     distance = Math.round(distanceInMetres(e.stop, pos!))
-    if (distance > STOP_PROOF_RADIUS_M || pos!.override_reason?.trim()) reasons.push('too_far')
-  } else if (pos!.override_reason?.trim()) {
-    reasons.push('too_far')
+    if (distance > STOP_PROOF_RADIUS_M) reasons.push('too_far')
   }
 
   if (e.atMs != null && e.stop) {
@@ -204,7 +202,7 @@ export async function saveLateConfirmation(input: {
         p && Number.isFinite(p.longitude) ? p.longitude : null,
         p?.accuracy_m ?? null,
         input.verdict.distance_m,
-        p?.override_reason?.trim() || null,
+        null, // drivers can't send an override reason any more
         input.verdict.reasons,
       ],
     )
