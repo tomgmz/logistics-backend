@@ -1,7 +1,8 @@
 /**
  * Fills every module with test data covering every scenario the system has,
- * padded to about 100 rows per table so tables, filters and pagination can be
- * checked too.
+ * about 20 rows per module (user 2026-11-14). A module goes over 20 only where
+ * its scenarios need it: every booking scenario is kept, and each live
+ * delivery needs its own driver and vehicle.
  *
  *   npx tsx scripts/seed-scenarios.mjs --dry-run   # build everything, then roll back + remove auth users/files
  *   npx tsx scripts/seed-scenarios.mjs             # insert for real
@@ -96,7 +97,9 @@ const PLACES = [
   { a: 'Mac Arthur Highway, San Fernando, Pampanga', lat: 15.0286, lng: 120.6898 },
   { a: 'Governor\'s Drive, Dasmarinas, Cavite', lat: 14.3294, lng: 120.9367 },
 ]
-const COMMODITIES = ['Beverages', 'Snacks', 'Personal Care', 'Household Cleaning', 'Canned Goods', 'Dairy']
+/** Live deliveries only drive between these (all inland), so a truck on the map never sits in Manila Bay or Laguna de Bay. */
+const INLAND = PLACES.slice(0, 9)
+const COMMODITIES =['Beverages', 'Snacks', 'Personal Care', 'Household Cleaning', 'Canned Goods', 'Dairy']
 const PRODUCTS    = ['Bottled Water 500ml', 'Potato Chips 60g', 'Shampoo Sachet', 'Dishwashing Liquid 250ml', 'Corned Beef 150g', 'Evaporated Milk 370ml']
 const ALL_PASS    = { air: true, gas: true, oil: true, self: true, tires: true, water: true, brakes: true, engine: true, lights: true, battery: true }
 
@@ -179,17 +182,103 @@ async function removeAuthAndFiles() {
   console.log(`Cleaned up: ${a}/${manifest.auth_user_ids.length} auth users, ${f}/${manifest.files.length} files.`)
 }
 
+/**
+ * One entry per scenario. phase:
+ *   none     no crew yet (pending / approved / cancelled)
+ *   planned  crewed, trips planned, not started
+ *   loading  started, at the warehouse, no pickup proof yet
+ *   enroute  loaded, heading to the first drop-off
+ *   midway   first drop-off done, arrived at the next (needs 2+ stops)
+ *   trip2    multi-trip: run 1 done, run 2 on the road
+ *   done     every run finished
+ */
+const S = [
+  // waiting for the General Manager
+  { label: 'Pending, new',                            status: 'pending',   day: 3 },
+  { label: 'Pending, 3 drop-offs, palletized',        status: 'pending',   day: 5, stops: 3 },
+  { label: 'Pending, booked for tomorrow',            status: 'pending',   day: 1, stops: 2 },
+  { label: 'Pending, Sunday delivery',                status: 'pending',   day: 'sunday' },
+  { label: 'Pending, resubmitted after a rejection',  status: 'pending',   day: 6, resubmitted: true },
+  { label: 'Pending, catalog items + handling codes', status: 'pending',   day: 4, catalog: true },
+  // decided by 8338
+  { label: 'Rejected by the General Manager',         status: 'cancelled', day: 4, gm: 'rejected' },
+  { label: 'Rejected by the Company Administrator',   status: 'cancelled', day: 4, gm: 'rejected', byAdmin: true },
+  { label: 'Rejected, client closed it',              status: 'cancelled', day: -2, gm: 'rejected', clientClosed: true },
+  { label: 'Rejected 3 times, cannot be resubmitted', status: 'cancelled', day: 5, gm: 'rejected', resubmitted: 3 },
+  { label: 'Cancelled by the client before approval', status: 'cancelled', day: 7, clientCancel: true },
+  { label: 'Cancelled by the client after approval',  status: 'cancelled', day: 8, gm: 'approved', clientCancel: true },
+  { label: 'Approved, waiting for a vehicle',         status: 'approved',  day: 2, gm: 'approved', remarks: true },
+  { label: 'Approved by the Company Administrator',   status: 'approved',  day: 3, gm: 'approved', byAdmin: true, stops: 2 },
+  { label: 'Approved, for tomorrow (urgent to assign)', status: 'approved', day: 1, gm: 'approved' },
+  // crewed, not started
+  { label: 'Assigned',                                status: 'assigned',  day: 1, phase: 'planned', callTime: true },
+  { label: 'Assigned for today',                      status: 'assigned',  day: 0, phase: 'planned', callTime: true },
+  { label: 'Assigned, long route with a second driver', status: 'assigned', day: 2, phase: 'planned', second: true, far: true, stops: 2 },
+  { label: 'Assigned, with a helper',                 status: 'assigned',  day: 2, phase: 'planned', helper: true },
+  { label: 'Assigned, vendor-supplied vehicle',       status: 'assigned',  day: 3, phase: 'planned', vendor: true },
+  { label: 'Assigned, two trips',                     status: 'assigned',  day: 4, phase: 'planned', trips: 2, stops: 2 },
+  { label: 'Assigned, licence expires on the delivery day', status: 'assigned', day: 3, phase: 'planned', driverIdx: 9 },
+  { label: 'Assigned, licence expires 2 days after',  status: 'assigned',  day: 3, phase: 'planned', driverIdx: 10 },
+  // on the road
+  { label: 'In transit, at the warehouse loading',    status: 'in_transit', day: 0, phase: 'loading' },
+  { label: 'In transit, loaded, en route',            status: 'in_transit', day: 0, phase: 'enroute', stops: 2 },
+  { label: 'In transit, 1 of 3 delivered',            status: 'in_transit', day: 0, phase: 'midway', stops: 3 },
+  { label: 'In transit, delayed 40 min',              status: 'in_transit', day: 0, phase: 'enroute', delayed: 40, stops: 2 },
+  { label: 'In transit, late with no signal',         status: 'in_transit', day: 0, phase: 'enroute', delayed: 75, noSignal: true },
+  { label: 'In transit, paused (typhoon), continues tomorrow', status: 'in_transit', day: 0, phase: 'enroute', pause: 'weather_set' },
+  { label: 'In transit, paused, date to be confirmed', status: 'in_transit', day: -1, phase: 'enroute', pause: 'closed_tbc', stops: 2 },
+  { label: 'In transit, paused, continuation overdue', status: 'in_transit', day: -1, phase: 'midway', pause: 'overdue', stops: 2 },
+  { label: 'In transit, breakdown, needs a decision', status: 'in_transit', day: 0, phase: 'enroute', breakdown: 'pending' },
+  { label: 'In transit, paused for breakdown',        status: 'in_transit', day: 0, phase: 'enroute', breakdown: 'paused' },
+  { label: 'In transit, crew replaced, load transfer pending', status: 'in_transit', day: 0, phase: 'enroute', crewReplaced: true },
+  { label: 'In transit, second driver at the wheel',  status: 'in_transit', day: 0, phase: 'midway', second: true, far: true, wheel: 'switch', stops: 2 },
+  { label: 'In transit, office swapped main and second driver', status: 'in_transit', day: 0, phase: 'enroute', second: true, far: true, wheel: 'staff' },
+  { label: 'In transit, drop-off confirmed by the office', status: 'in_transit', day: 0, phase: 'midway', officeConfirm: true, stops: 2 },
+  { label: 'In transit, run 1 done, run 2 on the road', status: 'in_transit', day: 0, phase: 'trip2', trips: 2, stops: 2 },
+  { label: 'In transit, vendor-supplied vehicle',     status: 'in_transit', day: 0, phase: 'enroute', vendor: true },
+  { label: 'In transit, late drop-off confirmation waiting', status: 'in_transit', day: 0, phase: 'enroute', second: true, wheel: 'staff', lateConfirm: true, stops: 2 },
+  // delivered, waiting on the client
+  { label: 'Delivered, waiting for the client',       status: 'delivered', day: 0, phase: 'done', returned: false },
+  { label: 'Delivered, reminder sent',                status: 'delivered', day: -2, phase: 'done', reminder: true },
+  { label: 'Delivered, client reported a problem',    status: 'delivered', day: -1, phase: 'done', issue: 'open' },
+  { label: 'Delivered, problem resolved by 8338',     status: 'delivered', day: -2, phase: 'done', issue: 'resolved' },
+  { label: 'Delivered, goods stolen (incident)',      status: 'delivered', day: -1, phase: 'done', failed: 'all', stops: 2 },
+  { label: 'Delivered, client refused one drop-off',  status: 'delivered', day: -1, phase: 'done', failed: 'one', stops: 2 },
+  { label: 'Delivered, office confirmed every step',  status: 'delivered', day: 0, phase: 'done', officeConfirm: true },
+  { label: 'Delivered, vehicle not back yet',         status: 'delivered', day: 0, phase: 'done', returned: false, stops: 2 },
+  // finished
+  { label: 'Completed, confirmed by the client',      status: 'completed', day: -4, phase: 'done' },
+  { label: 'Completed automatically after 3 days',    status: 'completed', day: -6, phase: 'done', auto: true },
+  { label: 'Completed, ran 55 min late',              status: 'completed', day: -5, phase: 'done', wasDelayed: 55, stops: 2 },
+  { label: 'Completed, two trips',                    status: 'completed', day: -7, phase: 'done', trips: 2, stops: 3 },
+  { label: 'Completed, vendor-supplied vehicle',      status: 'completed', day: -8, phase: 'done', vendor: true },
+  { label: 'Completed, second driver',                status: 'completed', day: -9, phase: 'done', second: true, far: true },
+  { label: 'Completed, was paused and resumed',       status: 'completed', day: -10, phase: 'done', pastPause: true },
+  { label: 'Completed last month (older app: no finished step)', status: 'completed', day: -35, phase: 'done', stops: 3, oldApp: true },
+]
+/** A crewed company booking that holds its driver + vehicle (the rest reuse the live pool). */
+const holdsCrew = (sc) => !!sc.phase && !sc.vendor && (['in_transit', 'assigned'].includes(sc.status) || (sc.status === 'delivered' && sc.returned === false))
+// Company drivers + vehicles: 0–16 carry the driver / Vehicle Management scenarios,
+// then one per live delivery (+1 for the crew replacement), then the second drivers,
+// then (drivers only) the account states.
+const LIVE_START  = 17
+const LIVE_COUNT  = S.filter(holdsCrew).length + S.filter((sc) => sc.crewReplaced).length
+const SECOND_START = LIVE_START + LIVE_COUNT
+const SECOND_COUNT = S.filter((sc) => holdsCrew(sc) && sc.second).length
+const N_TRUCKS  = SECOND_START
+const N_DRIVERS = SECOND_START + SECOND_COUNT + 6
+
 let people
 try {
   console.log('Creating sign-in accounts…')
   people = {
-    client: await createGroup('clients', 'client', 'client', 100),
-    driver: await createGroup('company drivers', 'driver', 'driver', 100),
-    vendor: await createGroup('vendor drivers', 'driver', 'vendor', 20),
-    admin:  await createGroup('Company Administrators', 'admin', 'admin', 25),
+    client: await createGroup('clients', 'client', 'client', 20),
+    driver: await createGroup('company drivers', 'driver', 'driver', N_DRIVERS),
+    vendor: await createGroup('vendor drivers', 'driver', 'vendor', 10),
+    admin:  await createGroup('Company Administrators', 'admin', 'admin', 7),
     gm:     await createGroup('General Managers (archived)', 'general_manager', 'gm', 3),
-    ops:    await createGroup('Operations Managers', 'operations_manager', 'ops', 25),
-    fleet:  await createGroup('Fleet Managers', 'fleet_manager', 'fleet', 25),
+    ops:    await createGroup('Operations Managers', 'operations_manager', 'ops', 8),
+    fleet:  await createGroup('Fleet Managers', 'fleet_manager', 'fleet', 6),
   }
 } catch (err) {
   console.error('Creating accounts failed:', err.message)
@@ -231,7 +320,6 @@ try {
    * every kind carry them; everything else is active.
    */
   const ACCOUNT_STATES = {
-    inactive:           { status: 'inactive' },
     deactivated:        { status: 'deactivated' },
     permanently_locked: { status: 'permanently_locked', failed_login_attempts: 5, lockup_count: 3 },
     archived:           { status: 'archived' },
@@ -239,9 +327,14 @@ try {
     temp_password:      { status: 'active', must_change_password: true },
     never_signed_in:    { status: 'active', last_login_at: null },
   }
-  const stateFor = (p, n) => {
+  // Clients and company drivers show every state; staff share them out, 2 per role.
+  const STATES_BY_KIND = {
+    client: Object.keys(ACCOUNT_STATES), driver: Object.keys(ACCOUNT_STATES),
+    admin: ['deactivated', 'locked'], ops: ['archived', 'temp_password'], fleet: ['permanently_locked', 'never_signed_in'],
+  }
+  const stateFor = (p, n, kind) => {
+    const names = STATES_BY_KIND[kind] ?? []
     const fromEnd = n - 1 - p.i
-    const names = Object.keys(ACCOUNT_STATES)
     return fromEnd < names.length ? names[fromEnd] : null
   }
   const sizes = Object.fromEntries(Object.entries(people).map(([k, v]) => [k, v.length]))
@@ -250,7 +343,7 @@ try {
     for (const p of list) {
       const k = nameSeq++
       // Only one General Manager may be un-archived, and that is the real one.
-      const state = kind === 'gm' ? 'archived' : kind === 'vendor' ? null : stateFor(p, sizes[kind])
+      const state = kind === 'gm' ? 'archived' : kind === 'vendor' ? null : stateFor(p, sizes[kind], kind)
       const extra = state ? ACCOUNT_STATES[state] : { status: 'active' }
       p.state = state ?? 'active'
       p.first = pick(FIRST, k)
@@ -334,11 +427,11 @@ try {
 
   // ---------------------------------------------------------------- drivers
   /**
-   * Company drivers. 0–9 carry the licence scenarios; 20–69 crew the live
-   * bookings; 70–79 are second drivers; 90–99 are the account states.
+   * Company drivers. 0–10 carry the licence / status scenarios; LIVE_START.. crew
+   * the live bookings; SECOND_START.. are second drivers; the last 6 are the account states.
    */
   const LICENSE = { 0: -10, 1: 0, 2: 1, 3: 7, 4: 30, 9: 3, 10: 5 }
-  const STATUS  = { 6: 'on_leave', 7: 'inactive', 8: 'unavailable', 93: 'inactive', 94: 'inactive', 96: 'inactive' }
+  const STATUS  = { 6: 'on_leave', 7: 'inactive', 8: 'unavailable' }
   const drivers = []
   for (const p of people.driver) {
     const expiry = phDay(p.i in LICENSE ? LICENSE[p.i] : 300 + p.i * 9)
@@ -369,16 +462,14 @@ try {
     }
   }
 
-  // Vendor drivers: passkey only; some never enrolled, one with access revoked.
+  // Vendor drivers: password / emailed code like company drivers; a passkey is optional.
   const vendors = []
   for (const p of people.vendor) {
-    const revoked = p.i === 19
     const id = await ins('drivers', 'driver_id', {
       user_id: p.id, license_number: `V${10 + p.i}-25-${pad(p.i + 1, 6)}`,
       license_expiry: p.i % 4 === 3 ? null : phDay(200 + p.i * 11), status: 'available', is_external: true,
       vendor_name: `${pick(['JRS', 'Bulacan', 'Southline', 'RedRoute'], p.i)} Trucking Services`, vendor_contact: `0918${pad(p.i, 7)}`,
       emergency_contact_name: `${pick(FIRST, p.i + 9)} ${pick(LAST, p.i + 2)}`, emergency_contact_phone: `0919${pad(p.i, 7)}`,
-      access_revoked_at: revoked ? ago(60 * 24 * 3) : null, access_revoked_reason: revoked ? 'Contract with the vendor ended' : null,
     })
     vendors.push({ ...p, driver_id: id })
     const inviteState = pick(['consumed', 'sent', 'expired', 'revoked', 'consumed'], p.i)
@@ -393,7 +484,7 @@ try {
   // ------------------------------------------------------- vehicle models + vehicles
   const types = (await db.query(`select name from vehicle_types where is_active order by name`)).rows.map((r) => r.name)
   const models = []
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 20; i++) {
     const wheels = pick([4, 6, 6, 10, 12], i)
     const type = pick(types, i)
     const name = `${pick(['Isuzu', 'Fuso', 'Hino', 'Foton', 'Hyundai'], i)} ${wheels}-Wheeler ${type} ${pad(i + 1)}`
@@ -401,15 +492,15 @@ try {
       name, vehicle_type: type, suitable_for: 'FMCG', stackable_friendly: i % 2 === 0,
       max_weight_kg: wheels * 1200, max_volume_cbm: wheels * 5, max_length_cm: 400 + wheels * 60,
       length_mm: 4000 + wheels * 600, width_mm: 2100, height_mm: 2200, image_url: FILES.model.ref,
-      archived_at: i >= 95 ? ago(60 * 24 * 10) : null,
+      archived_at: i >= 18 ? ago(60 * 24 * 10) : null,
     })
     models.push({ id, name, type })
   }
-  const liveModels = models.slice(0, 95)
+  const liveModels = models.slice(0, 18)
 
   /**
-   * Vehicle i belongs to company driver i. 0–19 carry the Vehicle Management
-   * scenarios; 20–69 crew bookings; 70–99 sit available.
+   * Vehicle i belongs to company driver i. 0–16 carry the Vehicle Management
+   * scenarios; LIVE_START.. crew the live bookings.
    */
   const TRUCK = {
     0:  { status: 'available', inspection: 'none' },                         // never inspected
@@ -431,7 +522,7 @@ try {
     16: { status: 'available', inspection: 'pass', odometerDue: true },
   }
   const trucks = []
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < N_TRUCKS; i++) {
     const t = TRUCK[i] ?? { status: 'available', inspection: 'pass' }
     const service = t.service ?? 'ok'
     const lastService = service === 'overdue' ? phDay(-240) : service === 'due_soon' ? phDay(-175) : service === 'none' ? null : phDay(-30 - (i % 40))
@@ -485,96 +576,12 @@ try {
   for (const r of plates) trucks.find((t) => t.id === r.truck_id).plate = r.plate_number
 
   // ---------------------------------------------------------------- bookings
-  /**
-   * One entry per scenario. phase:
-   *   none     no crew yet (pending / approved / cancelled)
-   *   planned  crewed, trips planned, not started
-   *   loading  started, at the warehouse, no pickup proof yet
-   *   enroute  loaded, heading to the first drop-off
-   *   midway   first drop-off done, arrived at the next (needs 2+ stops)
-   *   trip2    multi-trip: run 1 done, run 2 on the road
-   *   done     every run finished
-   */
-  const S = [
-    // waiting for the General Manager
-    { label: 'Pending, new',                            status: 'pending',   day: 3 },
-    { label: 'Pending, 3 drop-offs, palletized',        status: 'pending',   day: 5, stops: 3 },
-    { label: 'Pending, booked for tomorrow',            status: 'pending',   day: 1, stops: 2 },
-    { label: 'Pending, Sunday delivery',                status: 'pending',   day: 'sunday' },
-    { label: 'Pending, resubmitted after a rejection',  status: 'pending',   day: 6, resubmitted: true },
-    { label: 'Pending, catalog items + handling codes', status: 'pending',   day: 4, catalog: true },
-    // decided by 8338
-    { label: 'Rejected by the General Manager',         status: 'cancelled', day: 4, gm: 'rejected' },
-    { label: 'Rejected by the Company Administrator',   status: 'cancelled', day: 4, gm: 'rejected', byAdmin: true },
-    { label: 'Rejected, client closed it',              status: 'cancelled', day: -2, gm: 'rejected', clientClosed: true },
-    { label: 'Cancelled by the client before approval', status: 'cancelled', day: 7, clientCancel: true },
-    { label: 'Cancelled by the client after approval',  status: 'cancelled', day: 8, gm: 'approved', clientCancel: true },
-    { label: 'Approved, waiting for a vehicle',         status: 'approved',  day: 2, gm: 'approved', remarks: true },
-    { label: 'Approved by the Company Administrator',   status: 'approved',  day: 3, gm: 'approved', byAdmin: true, stops: 2 },
-    { label: 'Approved, for tomorrow (urgent to assign)', status: 'approved', day: 1, gm: 'approved' },
-    // crewed, not started
-    { label: 'Assigned',                                status: 'assigned',  day: 1, phase: 'planned', callTime: true },
-    { label: 'Assigned for today',                      status: 'assigned',  day: 0, phase: 'planned', callTime: true },
-    { label: 'Assigned, long route with a second driver', status: 'assigned', day: 2, phase: 'planned', second: true, far: true, stops: 2 },
-    { label: 'Assigned, with a helper',                 status: 'assigned',  day: 2, phase: 'planned', helper: true },
-    { label: 'Assigned, vendor-supplied vehicle',       status: 'assigned',  day: 3, phase: 'planned', vendor: true },
-    { label: 'Assigned, two trips',                     status: 'assigned',  day: 4, phase: 'planned', trips: 2, stops: 2 },
-    { label: 'Assigned, licence expires on the delivery day', status: 'assigned', day: 3, phase: 'planned', driverIdx: 9 },
-    { label: 'Assigned, licence expires 2 days after',  status: 'assigned',  day: 3, phase: 'planned', driverIdx: 10 },
-    // on the road
-    { label: 'In transit, at the warehouse loading',    status: 'in_transit', day: 0, phase: 'loading' },
-    { label: 'In transit, loaded, en route',            status: 'in_transit', day: 0, phase: 'enroute', stops: 2 },
-    { label: 'In transit, 1 of 3 delivered',            status: 'in_transit', day: 0, phase: 'midway', stops: 3 },
-    { label: 'In transit, delayed 40 min',              status: 'in_transit', day: 0, phase: 'enroute', delayed: 40, stops: 2 },
-    { label: 'In transit, late with no signal',         status: 'in_transit', day: 0, phase: 'enroute', delayed: 75, noSignal: true },
-    { label: 'In transit, paused (typhoon), continues tomorrow', status: 'in_transit', day: 0, phase: 'enroute', pause: 'weather_set' },
-    { label: 'In transit, paused, date to be confirmed', status: 'in_transit', day: -1, phase: 'enroute', pause: 'closed_tbc', stops: 2 },
-    { label: 'In transit, paused, continuation overdue', status: 'in_transit', day: -1, phase: 'midway', pause: 'overdue', stops: 2 },
-    { label: 'In transit, breakdown, needs a decision', status: 'in_transit', day: 0, phase: 'enroute', breakdown: 'pending' },
-    { label: 'In transit, paused for breakdown',        status: 'in_transit', day: 0, phase: 'enroute', breakdown: 'paused' },
-    { label: 'In transit, crew replaced, load transfer pending', status: 'in_transit', day: 0, phase: 'enroute', crewReplaced: true },
-    { label: 'In transit, second driver at the wheel',  status: 'in_transit', day: 0, phase: 'midway', second: true, far: true, wheel: 'switch', stops: 2 },
-    { label: 'In transit, office swapped main and second driver', status: 'in_transit', day: 0, phase: 'enroute', second: true, far: true, wheel: 'staff' },
-    { label: 'In transit, drop-off confirmed by the office', status: 'in_transit', day: 0, phase: 'midway', officeConfirm: true, stops: 2 },
-    { label: 'In transit, run 1 done, run 2 on the road', status: 'in_transit', day: 0, phase: 'trip2', trips: 2, stops: 2 },
-    { label: 'In transit, vendor-supplied vehicle',     status: 'in_transit', day: 0, phase: 'enroute', vendor: true },
-    // delivered, waiting on the client
-    { label: 'Delivered, waiting for the client',       status: 'delivered', day: 0, phase: 'done', returned: false },
-    { label: 'Delivered, reminder sent',                status: 'delivered', day: -2, phase: 'done', reminder: true },
-    { label: 'Delivered, client reported a problem',    status: 'delivered', day: -1, phase: 'done', issue: 'open' },
-    { label: 'Delivered, problem resolved by 8338',     status: 'delivered', day: -2, phase: 'done', issue: 'resolved' },
-    { label: 'Delivered, goods stolen (incident)',      status: 'delivered', day: -1, phase: 'done', failed: 'all', stops: 2 },
-    { label: 'Delivered, client refused one drop-off',  status: 'delivered', day: -1, phase: 'done', failed: 'one', stops: 2 },
-    { label: 'Delivered, office confirmed every step',  status: 'delivered', day: 0, phase: 'done', officeConfirm: true },
-    { label: 'Delivered, vehicle not back yet',         status: 'delivered', day: 0, phase: 'done', returned: false, stops: 2 },
-    // finished
-    { label: 'Completed, confirmed by the client',      status: 'completed', day: -4, phase: 'done' },
-    { label: 'Completed automatically after 3 days',    status: 'completed', day: -6, phase: 'done', auto: true },
-    { label: 'Completed, ran 55 min late',              status: 'completed', day: -5, phase: 'done', wasDelayed: 55, stops: 2 },
-    { label: 'Completed, two trips',                    status: 'completed', day: -7, phase: 'done', trips: 2, stops: 3 },
-    { label: 'Completed, vendor-supplied vehicle',      status: 'completed', day: -8, phase: 'done', vendor: true },
-    { label: 'Completed, second driver',                status: 'completed', day: -9, phase: 'done', second: true, far: true },
-    { label: 'Completed, was paused and resumed',       status: 'completed', day: -10, phase: 'done', pastPause: true },
-    { label: 'Completed last month',                    status: 'completed', day: -35, phase: 'done', stops: 3 },
-  ]
-  // Pad to 120 with the quiet kinds (no scheduler acts on them).
-  const FILL = [
-    { label: 'Pending (fill)', status: 'pending' }, { label: 'Approved (fill)', status: 'approved', gm: 'approved' },
-    { label: 'Completed (fill)', status: 'completed', phase: 'done' }, { label: 'Completed (fill)', status: 'completed', phase: 'done' },
-    { label: 'Cancelled (fill)', status: 'cancelled', clientCancel: true }, { label: 'Rejected (fill)', status: 'cancelled', gm: 'rejected' },
-    { label: 'Completed (fill)', status: 'completed', phase: 'done', stops: 2 },
-  ]
-  for (let k = 0; S.length < 120; k++) {
-    const f = pick(FILL, k)
-    const future = ['pending', 'approved', 'cancelled'].includes(f.status)
-    S.push({ ...f, day: future ? 5 + (k % 20) : -(11 + k * 2) })
-  }
 
   const counterBefore = (await db.query(`select period, last_value from booking_reference_counters`)).rows
   const nextSunday = (() => { for (let k = 1; k <= 7; k++) { if (new Date(`${phDay(k)}T00:00:00Z`).getUTCDay() === 0) return k } })()
 
-  // Crew pools: live bookings take driver+vehicle 20, 21, … and second drivers 70, 71, …
-  let livePtr = 20, secondPtr = 70, histPtr = 0, vendorPtr = 0
+  // Crew pools: live bookings take driver+vehicle LIVE_START, … and second drivers SECOND_START, …
+  let livePtr = LIVE_START, secondPtr = SECOND_START, histPtr = 0, vendorPtr = 0
   const liveDrivers = new Set(), liveTrucks = new Set()
   const scenarioRows = []
   const reportIds = []
@@ -584,8 +591,12 @@ try {
     const dayOffset = sc.day === 'sunday' ? nextSunday : sc.day
     const sched = phDay(dayOffset)
     const nStops = sc.stops ?? (n % 2) + 1
-    const origin = sc.far ? PLACES[12] : pick(PLACES, n)
-    const stops = Array.from({ length: nStops }, (_, s) => pick(PLACES.slice(0, 11), n * 3 + s + 2))
+    // On-road deliveries stay inland (the map draws straight lines between fixes);
+    // the long route comes down from Pampanga through Valenzuela first.
+    const onMap = sc.status === 'in_transit'
+    const origin = sc.far ? PLACES[12] : pick(onMap ? INLAND : PLACES, n)
+    const stops = Array.from({ length: nStops }, (_, s) =>
+      sc.far && s === 0 ? PLACES[5] : pick(onMap || sc.far ? INLAND.filter((p) => p !== origin && p !== PLACES[5]) : PLACES.slice(0, 11), n * 3 + s + 2))
     const route = [origin, ...stops]
     const km = route.slice(1).reduce((sum, p, k) => sum + roadKm(route[k], p), 0)
     const callTime = pick(['06:00', '07:30', '08:00', '09:15', '13:00'], n)
@@ -602,7 +613,7 @@ try {
     let mainD = null, mainT = null, secondD = null, vendor = null
     if (crewed) {
       if (sc.vendor) {
-        vendor = vendors[vendorPtr++ % 15]
+        vendor = vendors[vendorPtr++ % vendors.length]
       } else if (live) {
         const idx = livePtr++
         mainT = trucks[idx]
@@ -610,9 +621,9 @@ try {
         liveDrivers.add(mainD.driver_id); liveTrucks.add(mainT.id)
         if (sc.second) { secondD = drivers[secondPtr++]; liveDrivers.add(secondD.driver_id) }
       } else {
-        const idx = 20 + (histPtr++ % 50)
+        const idx = LIVE_START + (histPtr++ % LIVE_COUNT)
         mainD = drivers[idx]; mainT = trucks[idx]
-        if (sc.second) secondD = drivers[70 + (histPtr % 10)]
+        if (sc.second) secondD = drivers[SECOND_START + (histPtr % SECOND_COUNT)]
       }
       // The office swapped the seats: the old second driver is now the main driver.
       if (sc.wheel === 'staff') [mainD, secondD] = [secondD, mainD]
@@ -642,7 +653,7 @@ try {
       cancelled_by: sc.status === 'cancelled' ? (gm === 'rejected' ? reviewer.id : client.id) : null,
       cancelled_at: sc.status === 'cancelled' ? plus(createdAt, 180) : null,
       client_closed_at: sc.clientClosed ? plus(createdAt, 60 * 26) : null,
-      resubmission_count: sc.resubmitted ? 1 : 0,
+      resubmission_count: sc.resubmitted === true ? 1 : sc.resubmitted || 0,
       delivered_at: deliveredAt,
       completion_confirmed_by: sc.status === 'completed' && !sc.auto ? client.id : null,
       completion_confirmed_role: sc.status === 'completed' && !sc.auto ? 'client' : null,
@@ -686,10 +697,11 @@ try {
     }
     await upd('bookings', 'booking_id', bookingId, { required_weight_kg: weight, required_volume_cbm: +volume.toFixed(2), required_net_weight_kg: Math.round(weight * 0.92) })
 
-    if (sc.resubmitted) {
+    const revisions = sc.resubmitted === true ? 1 : sc.resubmitted || 0
+    for (let rv = 1; rv <= revisions; rv++) {
       await ins('booking_revisions', 'revision_id', {
-        booking_id: bookingId, revision_number: 1, resubmitted_by: client.id, created_at: ago(60 * 5),
-        before_snapshot: { schedule_date: phDay(2), origin: origin.a, rejection_reason: 'Drop-off address is incomplete' },
+        booking_id: bookingId, revision_number: rv, resubmitted_by: client.id, created_at: ago(60 * (5 + (revisions - rv) * 24)),
+        before_snapshot: { schedule_date: phDay(1 + rv), origin: origin.a, rejection_reason: pick(['Drop-off address is incomplete', 'Cargo exceeds what the client declared; please split the booking', 'Route not serviceable on the requested date'], rv) },
         after_snapshot: { schedule_date: sched, origin: origin.a },
       })
     }
@@ -726,6 +738,7 @@ try {
     const pickupAt = onRoad ? agoR(100) : plus(doneBase, 50)
     const lead = vendor ?? mainD
     rec.trips = []
+    rec.stops = []
     for (let t = 1; t <= nTrips; t++) {
       // trip state
       let tripStatus = 'pending'
@@ -754,6 +767,7 @@ try {
       if (tripStatus !== 'pending') {
         await ins('stop_milestones', 'milestone_id', { booking_id: bookingId, trip_id: tripId, trip_stop_id: null, stage: 'arrived', at: plus(tPickup, -40), source: 'driver', driver_id: lead.driver_id, latitude: origin.lat, longitude: origin.lng, accuracy_m: 10 })
         await ins('stop_milestones', 'milestone_id', { booking_id: bookingId, trip_id: tripId, trip_stop_id: null, stage: 'started', at: plus(tPickup, -30), source: 'driver', driver_id: lead.driver_id })
+        if (loaded && !sc.oldApp) await ins('stop_milestones', 'milestone_id', { booking_id: bookingId, trip_id: tripId, trip_stop_id: null, stage: 'finished', at: plus(tPickup, -4), source: 'driver', driver_id: lead.driver_id })
       }
       for (const [s, d] of dests.entries()) {
         // how far along this trip is
@@ -779,6 +793,7 @@ try {
           proof_override_reason: office ? 'Confirmed by the office: receiver emailed the signed DR; driver had no signal' : stopStatus === 'failed' ? failReason : null,
           confirmed_by: stopStatus === 'delivered' && !office ? lead.driver_id : null,
         })
+        if (t === 1) rec.stops.push(stopId)
         await ins('booking_trip_cargo', 'trip_cargo_id', {
           booking_id: bookingId, trip_id: tripId, trip_stop_id: stopId, item_id: d.itemId,
           planned_qty: nTrips > 1 ? d.qty / 2 : d.qty, loaded_qty: loaded ? (nTrips > 1 ? d.qty / 2 : d.qty) : null,
@@ -789,6 +804,10 @@ try {
           await ins('stop_milestones', 'milestone_id', { booking_id: bookingId, trip_id: tripId, trip_stop_id: stopId, stage: 'arrived', at: arr, source: office ? 'staff' : 'driver', driver_id: office ? null : lead.driver_id, corrected_by: office ? ME.id : null, corrected_at: office ? NOW : null, correction_note: office ? 'Filled in from the warehouse log' : null })
           if (stopStatus !== 'pending' || s === 1) {
             await ins('stop_milestones', 'milestone_id', { booking_id: bookingId, trip_id: tripId, trip_stop_id: stopId, stage: 'started', at: plus(arr, 5), source: office ? 'staff' : 'driver', driver_id: office ? null : lead.driver_id })
+          }
+          // "Unloading finished" comes right before the proof; an older app never sent it.
+          if (stopStatus === 'delivered' && !sc.oldApp) {
+            await ins('stop_milestones', 'milestone_id', { booking_id: bookingId, trip_id: tripId, trip_stop_id: stopId, stage: 'finished', at: plus(deliveredStopAt, -3), source: office ? 'staff' : 'driver', driver_id: office ? null : lead.driver_id })
           }
         }
         // destination roll-up (one trip carries everything when single-trip)
@@ -824,6 +843,10 @@ try {
         // seats already swapped above: the one who started is now the second driver
         await ins('booking_driving_shifts', 'shift_id', { booking_id: bookingId, driver_id: secondD.driver_id, started_at: startedAt, ended_at: ago(60), source: 'start', latitude: origin.lat, longitude: origin.lng })
         await ins('booking_driving_shifts', 'shift_id', { booking_id: bookingId, driver_id: leadId, started_at: ago(60), source: 'staff', recorded_by: ops.id })
+        await ins('booking_crew_swaps', 'swap_id', {
+          booking_id: bookingId, old_lead_driver_id: secondD.driver_id, new_lead_driver_id: leadId, swapped_at: ago(60), swapped_by: ops.id,
+          reason: sc.lateConfirm ? 'Main driver phone died; second driver takes over the stops.' : 'Main driver felt unwell; second driver takes the wheel.',
+        })
       } else if (!sc.crewReplaced) {
         await ins('booking_driving_shifts', 'shift_id', { booking_id: bookingId, driver_id: leadId, started_at: startedAt, ended_at: shiftEnd ?? (delivered ? deliveredAt : null), source: 'start', latitude: origin.lat, longitude: origin.lng })
       }
@@ -833,13 +856,15 @@ try {
     if (onRoad && !(sc.pause === 'closed_tbc')) {
       const posDriver = (rec.mainD ?? vendor).driver_id
       const nextPlace = dests.find((d) => d.destId === rec.nextDest)?.place ?? dests[0].place
+      // From the last place reached (origin, or the drop-off just done) toward the next one.
+      const from = sc.phase === 'midway' ? dests[0].place : origin
       const f = sc.phase === 'loading' ? 0 : 0.55
-      const lat = origin.lat + (nextPlace.lat - origin.lat) * f, lng = origin.lng + (nextPlace.lng - origin.lng) * f
+      const lat = from.lat + (nextPlace.lat - from.lat) * f, lng = from.lng + (nextPlace.lng - from.lng) * f
       const fixAt = sc.noSignal ? ago(48) : ago(1)
       for (let k = 12; k >= 1; k--) {
         const g = f * (1 - k / 13)
         await ins('driver_location_history', 'location_id', {
-          driver_id: posDriver, booking_id: bookingId, latitude: origin.lat + (nextPlace.lat - origin.lat) * g, longitude: origin.lng + (nextPlace.lng - origin.lng) * g,
+          driver_id: posDriver, booking_id: bookingId, latitude: from.lat + (nextPlace.lat - from.lat) * g, longitude: from.lng + (nextPlace.lng - from.lng) * g,
           accuracy_m: 6 + (k % 5), speed_mps: sc.phase === 'loading' ? 0 : 9 + (k % 4), heading_deg: 45, recorded_at: plus(fixAt, -k * 4),
         })
       }
@@ -954,11 +979,28 @@ try {
     liveDrivers.delete(oldD.driver_id)
   }
 
+  // a drop-off the old main driver confirmed offline, received after the office swapped the drivers
+  {
+    const r = byLabel('In transit, late drop-off confirmation')
+    const old = r.secondD   // seats were swapped: the second driver now is the one who confirmed
+    const place = r.dests[0].place
+    await ins('late_confirmations', 'late_id', {
+      booking_id: r.bookingId, kind: 'dropoff', trip_id: r.trips[0], trip_stop_id: r.stops[0],
+      driver_id: old.driver_id, driver_user_id: old.id, confirmed_at: ago(75), received_at: ago(20),
+      proof_photo_url: FILES.dropoff.ref, latitude: place.lat + 0.003, longitude: place.lng, accuracy_m: 12, distance_m: 340,
+      override_reason: 'Receiver asked us to unload at the side gate', reasons: ['too_far'], status: 'pending', created_at: ago(20),
+    })
+  }
+
   // a past breakdown that left vehicle 15's twin under maintenance is covered by TRUCK[15];
   // vehicle 12 came back from a delivered job (recheck due): point it at one.
   {
     const r = byLabel('Delivered, waiting for the client')
     await ins('truck_odometer_readings', 'reading_id', { truck_id: trucks[12].id, reading_km: trucks[12].odo, kind: 'post_trip', booking_id: r.bookingId, photo_url: FILES.odometer.ref, recorded_by: fleets[0].id, recorded_at: ago(30) })
+  }
+
+  if (livePtr !== LIVE_START + LIVE_COUNT || secondPtr !== SECOND_START + SECOND_COUNT) {
+    throw new Error(`crew pools off: live ${livePtr}/${LIVE_START + LIVE_COUNT}, second ${secondPtr}/${SECOND_START + SECOND_COUNT}`)
   }
 
   // ------------------------------------------------- driver / vehicle states
@@ -974,12 +1016,12 @@ try {
   // ---------------------------------------------------------- driver reports
   const INCIDENTS = ['accident', 'vehicle_breakdown', 'health_emergency', 'security_threat']
   const onRoadRows = scenarioRows.filter((r) => r.status === 'in_transit' && r.mainD)
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < 20; i++) {
     const status = pick(['reported', 'acknowledged', 'resolved', 'resolved'], i)
     const place = pick(PLACES, i)
-    const d = drivers[20 + (i % 50)], t = trucks[20 + (i % 50)]
+    const d = drivers[LIVE_START + (i % LIVE_COUNT)], t = trucks[LIVE_START + (i % LIVE_COUNT)]
     const quick = i % 5 === 0
-    const linked = i < 12 ? pick(onRoadRows, i) : null
+    const linked = i < 8 ? pick(onRoadRows, i) : null
     const rid = await ins('driver_reports', 'report_id', {
       driver_id: linked ? linked.mainD.driver_id : d.driver_id, booking_id: linked?.bookingId ?? null, truck_id: linked ? linked.mainT.id : t.id,
       source: quick ? 'quick' : 'detailed', incident_type: quick && i % 10 === 0 ? null : pick(INCIDENTS, i),
@@ -1008,7 +1050,7 @@ try {
   // --------------------------------------------------------------- documents
   const docRows = scenarioRows.filter((r) => ['delivered', 'completed'].includes(r.status))
   let docs = 0
-  for (const c of clients.slice(0, 40)) {
+  for (const c of clients.slice(0, 8)) {
     const status = pick(['approved', 'approved', 'pending', 'rejected', 'archived'], c.i)
     await ins('documents', 'document_id', {
       client_id: c.client_id, document_type: 'contract', file_url: FILES.contract.ref, original_name: `Service-Agreement-${pad(c.i + 1)}.jpg`,
@@ -1033,10 +1075,26 @@ try {
     }
   }
 
+  // vehicle papers (Fleet folder): registration, insurance, other
+  for (const [k, [type, label, status]] of [
+    ['vehicle_registration', null, 'approved'], ['vehicle_insurance', null, 'pending'],
+    ['other', 'Emission Test Certificate', 'rejected'], ['vehicle_registration', null, 'archived'],
+  ].entries()) {
+    const t = trucks[3 + k]
+    await ins('documents', 'document_id', {
+      truck_id: t.id, document_type: type, other_label: label, file_url: FILES.document.ref,
+      original_name: `${type === 'vehicle_insurance' ? 'Insurance' : type === 'other' ? 'Emission-Test' : 'OR-CR'}-${t.plate.replace(' ', '')}.jpg`,
+      file_format: 'jpg', bytes: FILES.document.bytes, uploaded_by: pick(fleets, k).id, status, uploaded_at: ago(60 * 24 * (k + 1)),
+      reviewed_by: status === 'pending' ? null : pick(admins, k).id, reviewed_at: status === 'pending' ? null : ago(60 * 24 * k + 60),
+      rejection_reason: status === 'rejected' ? 'Wrong plate on the certificate; please upload the one for this vehicle' : null,
+      archived_at: status === 'archived' ? ago(60 * 12) : null, archived_by: status === 'archived' ? pick(admins, k).id : null,
+    }); docs++
+  }
+
   // ----------------------------------------------------------- support tickets
   const CATS = ['booking', 'delivery', 'tracking', 'documents', 'account', 'other']
   const SUBJ = ['Where is my delivery?', 'Need a copy of the signed DR', 'Cannot change my company name', 'Wrong drop-off address on my booking', 'Driver arrived earlier than the call time', 'How do I renew our contract?']
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 20; i++) {
     const c = pick(bookingClients, i * 3)
     const resolved = i % 3 === 0
     const byStaff = i % 7 === 0
@@ -1056,8 +1114,8 @@ try {
 
   // --------------------------------------------------- password reset requests
   const resetPeople = [
-    ...people.client.slice(9, 39), ...people.driver.slice(80, 90),
-    ...people.admin.slice(2, 12), ...people.ops.slice(2, 12), ...people.fleet.slice(2, 12),
+    ...people.client.slice(9, 14), ...people.driver.slice(11, 17),
+    ...people.admin.slice(2, 5), ...people.ops.slice(2, 5), ...people.fleet.slice(2, 4),
   ]
   for (const [i, p] of resetPeople.entries()) {
     const status = pick(['pending', 'sent', 'completed', 'cancelled', 'expired', 'pending', 'completed'], i)
@@ -1120,11 +1178,11 @@ try {
     'Noted, thank you.', 'The bay is closed until 1 PM.', 'Okay, we will wait at the parking area.', 'Received the goods, all complete.', 'Thanks for the update!',
   ]
   const pairs = []
-  for (let k = 0; k < 10; k++) pairs.push([pick(admins, k), clients[10 + k]])           // Company Administrator ↔ client
-  for (let k = 0; k < 10; k++) pairs.push([pick(opss, k), clients[20 + k]])             // Operations Manager ↔ client
-  for (let k = 0; k < 10; k++) pairs.push([pick(opss, k + 3), drivers[20 + k]])          // Operations Manager ↔ driver
-  for (let k = 0; k < 5; k++)  pairs.push([pick(fleets, k), drivers[30 + k]])            // Fleet Manager ↔ driver
-  for (let k = 0; k < 5; k++)  pairs.push([pick(admins, k + 4), pick(opss, k + 6)])      // staff ↔ staff
+  for (let k = 0; k < 4; k++) pairs.push([pick(admins, k), clients[9 + k]])            // Company Administrator ↔ client
+  for (let k = 0; k < 4; k++) pairs.push([pick(opss, k), clients[1 + k]])             // Operations Manager ↔ client
+  for (let k = 0; k < 6; k++) pairs.push([pick(opss, k + 3), drivers[LIVE_START + k]]) // Operations Manager ↔ driver
+  for (let k = 0; k < 3; k++) pairs.push([pick(fleets, k), drivers[LIVE_START + 6 + k]]) // Fleet Manager ↔ driver
+  for (let k = 0; k < 3; k++) pairs.push([pick(admins, k + 2), pick(opss, k + 4)])    // staff ↔ staff
   let msgs = 0
   for (const [k, [a, b]] of pairs.entries()) {
     const convo = await ins('conversations', 'conversation_id', {
@@ -1184,7 +1242,7 @@ try {
   // ---------------------------------------------------------- logs + sign-ins
   const LOGIN = ['success', 'success', 'success', 'failed_password', 'failed_otp', 'failed_locked', 'failed_inactive', 'success', 'failed_permanently_locked']
   const everyone = Object.values(people).flat()
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 20; i++) {
     const p = pick(everyone, i * 7)
     const st = pick(LOGIN, i)
     await ins('login_history', 'id', {
@@ -1207,7 +1265,7 @@ try {
   ]
   const staff = [...admins, ...opss, ...fleets]
   const allRefs = (await db.query(`select reference_number from bookings where booking_id = any($1)`, [scenarioRows.map((r) => r.bookingId)])).rows.map((r) => r.reference_number)
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 20; i++) {
     const [type, action, text] = pick(AUDIT, i)
     await ins('audit_logs', 'log_id', { user_id: pick(staff, i).id, log_type: type, action, description: text.replace('{ref}', pick(allRefs, i)), timestamp: ago(i * 23 + 3) })
   }
@@ -1218,7 +1276,7 @@ try {
     ['warn', 'external_api', 'tracking.device', 'Phone silent for 14 min while in transit: no location fixes (battery optimisation?)'],
     ['error', 'email_event', 'brevo', 'Email to a client bounced'], ['info', 'cron_job', 'contract-expiry.scheduler', 'Contract reminders: 2 sent'],
   ]
-  for (let i = 0; i < 120; i++) {
+  for (let i = 0; i < 20; i++) {
     const [level, ev, source, message] = pick(SYS, i)
     await ins('system_logs', 'log_id', { log_level: level, event_type: ev, source, message, metadata: { seed: true }, resolved: level === 'info' || i % 4 === 0, timestamp: ago(i * 29 + 4) })
   }
