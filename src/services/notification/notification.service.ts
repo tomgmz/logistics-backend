@@ -94,6 +94,9 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   // The office recorded an incident on the road and marked drop-offs failed.
   delivery_incident:         { type: 'booking.delivery_incident',         audience: 'client' },
   delivery_incident_staff:   { type: 'booking.delivery_incident_staff',   roles: ['operations_manager'] },
+  // No drop-off was delivered: the booking ended Failed (user 2026-11-14).
+  delivery_failed:           { type: 'booking.delivery_failed',           audience: 'client' },
+  delivery_failed_staff:     { type: 'booking.delivery_failed_staff',     roles: ['operations_manager'] },
   // The office paused the delivery. The client is told the reason category
   // only; the note goes to the driver and the rest of the office.
   trip_paused:           { type: 'booking.trip_paused',           audience: 'client' },
@@ -259,6 +262,18 @@ function copyFor(
       return {
         title: 'Incident recorded on a delivery',
         body:  `Booking ${label}: ${reason ?? 'incident recorded'}. The affected drop-offs were marked failed.`,
+      }
+    case 'delivery_failed':
+      return {
+        title: 'Your delivery could not be completed',
+        body:  `None of the drop-offs on booking ${label} could be delivered${reason ? ` (${reason})` : ''}. ` +
+               'We opened a support ticket for you and will contact you about what happens next.',
+      }
+    case 'delivery_failed_staff':
+      return {
+        title: 'Booking failed',
+        body:  `No drop-off on booking ${label} was delivered${reason ? `: ${reason}` : ' (the driver marked every drop-off failed)'}. ` +
+               'The booking ended Failed and a support ticket was opened for the client.',
       }
     case 'delivery_issue_resolved':
       return {

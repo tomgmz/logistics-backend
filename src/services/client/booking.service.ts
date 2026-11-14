@@ -31,6 +31,7 @@ import {
   type StopProofPosition,
 } from '../../lib/stop-geofence.js'
 import { claimDeliveryStart } from '../driver/start-delivery.service.js'
+import { openFailedDeliveryTicket } from '../support/support.service.js'
 import { assertNoPendingLoadTransfer } from '../driver/crew-actor.js'
 
 /**
@@ -76,7 +77,7 @@ function validateScheduleDate(scheduleDate: string, callTime?: string): void {
   }
 }
 
-const NON_DELETABLE_STATUSES = ['approved', 'assigned', 'in_transit', 'delivered', 'completed']
+const NON_DELETABLE_STATUSES = ['approved', 'assigned', 'in_transit', 'delivered', 'completed', 'failed']
 
 /**
  * Who is asking, resolved from the session by `attachClientScope`.
@@ -485,6 +486,13 @@ export async function updateBookingStatusService(
   const newIndex     = statusOrder.indexOf(status)
 
   if (newIndex === currentIndex) return existing
+
+  // Failed is final, like Completed: set only when no drop-off was delivered,
+  // never changed by hand (it isn't in statusOrder, so the order check below
+  // would otherwise let anything through).
+  if (existing.status === 'failed' || status === 'failed') {
+    throw new Error("A failed booking is final; its status can't be changed by hand")
+  }
 
   // Past the drop-offs, the only way forward is confirmation. The crew is
   // already released and the delivery settled, so none of the completion side
@@ -946,7 +954,7 @@ export async function driverConfirmPickupService(
 
   // Already loaded (a queue retry), or long past it. 'in_transit' alone no longer
   // means loaded: Start Navigation puts the booking there on the way TO the pickup.
-  if (booking.pickup_proof_photo_url || booking.status === 'delivered' || booking.status === 'completed') return booking
+  if (booking.pickup_proof_photo_url || booking.status === 'delivered' || booking.status === 'completed' || booking.status === 'failed') return booking
   if (booking.status !== 'assigned' && booking.status !== 'in_transit') {
     throw new Error(`Cannot confirm pickup while the booking is '${booking.status}'`)
   }
@@ -1107,7 +1115,7 @@ export async function driverCompleteBookingService(
 ): Promise<BookingWithRelations> {
   const booking = await assertLeadDriverOnBooking(bookingId, actor)
 
-  if (booking.status === 'delivered' || booking.status === 'completed') return booking
+  if (booking.status === 'delivered' || booking.status === 'completed' || booking.status === 'failed') return booking
   if (booking.status !== 'in_transit') {
     throw new Error(`Cannot complete a booking that is '${booking.status}'`)
   }
@@ -1119,6 +1127,35 @@ export async function driverCompleteBookingService(
   const remaining = destinations.filter((d) => d.status !== 'delivered' && d.status !== 'failed')
   if (remaining.length > 0) {
     throw new Error(`${remaining.length} drop-off(s) still pending — confirm every drop-off before completing`)
+  }
+
+  // Nothing arrived anywhere (user 2026-11-14): the booking ends Failed, not
+  // Delivered. Final like Cancelled: the client isn't asked to confirm, it never
+  // auto-completes, and 8338 opens the follow-up ticket for them. One drop-off
+  // delivered = Delivered (with the "Partly failed" tag), as couriers do.
+  if (!destinations.some((d) => d.status === 'delivered')) {
+    const failed = await BookingModel.markFailed(bookingId)
+    if (!failed) throw new Error('Failed to update booking status')
+    if (failed.status !== 'failed') return failed // someone else closed it first
+    const reason = actor.office?.reason ?? null
+    logEvent({
+      user_id:     actor.userId,
+      log_type:    'booking',
+      action:      'booking_failed',
+      description: `No drop-off on booking ${bookingRef(failed)} was delivered; the booking ended Failed` +
+        (reason ? `. ${reason}` : ''),
+    })
+    // The office's "Report a problem" sends its own notices and opens the ticket
+    // (it knows which part of its note the client may read); this path covers
+    // the driver's own failed drop-offs closing the booking.
+    if (!actor.office) {
+      void notifyStage('delivery_failed', failed)
+      void notifyStage('delivery_failed_staff', failed)
+      void openFailedDeliveryTicket(failed as any, null, null)
+    }
+    await BookingModel.settleDelivery(bookingId, 'failed')
+    void releaseBookingCrew(bookingId)
+    return failed
   }
 
   // The driver's part is done, but completion is the client's call: the booking

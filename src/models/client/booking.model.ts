@@ -229,12 +229,32 @@ async function countByStatus(clientId?: string | null): Promise<Record<string, n
     clientId ? [clientId] : [],
   )
   out.resubmitted = parseInt(resub.rows[0]?.n ?? '0', 10) || 0
+
+  const partly = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::int AS n
+       FROM bookings
+      WHERE ${PARTLY_FAILED_SQL('bookings')}
+        ${clientId ? 'AND client_id = $1' : ''}`,
+    clientId ? [clientId] : [],
+  )
+  out.partly_failed = parseInt(partly.rows[0]?.n ?? '0', 10) || 0
   return out
 }
 
-/** In transit, flagged late by delay.scheduler, and not paused. */
 /** Corrected and resubmitted by the client at least once (the Resubmitted badge). */
 const RESUBMITTED_SQL = (t: string) => `COALESCE(${t}.resubmission_count, 0) > 0`
+
+/**
+ * "Partly failed" (user 2026-11-14): Delivered or Completed with at least one
+ * drop-off failed. A tag like Resubmitted, not a status; a booking where NO
+ * drop-off was delivered is status 'failed' instead.
+ */
+export const PARTLY_FAILED_SQL = (t: string) =>
+  `${t}.status IN ('delivered', 'completed') AND EXISTS (
+     SELECT 1 FROM booking_destinations pf
+      WHERE pf.booking_id = ${t}.booking_id AND pf.status = 'failed')`
+
+/** In transit, flagged late by delay.scheduler, and not paused. */
 
 const DELAYED_NOW_SQL = (t: string) =>
   `${t}.status = 'in_transit' AND ${t}.delayed_since IS NOT NULL AND ${t}.paused_at IS NULL`
@@ -262,6 +282,8 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
     where.push(DELAYED_NOW_SQL('b'))
   } else if (status === 'resubmitted') {
     where.push(RESUBMITTED_SQL('b'))
+  } else if (status === 'partly_failed') {
+    where.push(PARTLY_FAILED_SQL('b'))
   } else if (status !== 'all') {
     params.push(status)
     where.push(`b.status = $${params.length}`)
@@ -898,6 +920,22 @@ async function markDelivered(bookingId: string): Promise<BookingWithRelations | 
 }
 
 /**
+ * Every drop-off failed (stolen truck, accident, all refused): the delivery is
+ * over and nothing arrived. 'failed' is final like 'cancelled': no client
+ * confirmation, no auto-complete. Guarded on 'in_transit' like markDelivered.
+ */
+async function markFailed(bookingId: string): Promise<BookingWithRelations | null> {
+  const now = new Date().toISOString()
+  const { error } = await supabase
+    .from('bookings')
+    .update({ status: 'failed', updated_at: now })
+    .eq('booking_id', bookingId)
+    .eq('status', 'in_transit')
+  if (error) throw error
+  return findById(bookingId)
+}
+
+/**
  * Close a delivered booking. `by` is the client or staff member who confirmed;
  * null with `auto` is the 3-day auto-complete. Guarded on 'delivered', so two
  * confirmations racing each other complete it once and the loser gets false.
@@ -1468,6 +1506,7 @@ export const BookingModel = {
   markDriverCallReminded,
   recordDecision,
   markDelivered,
+  markFailed,
   resolveClientIssue,
   markCompleted,
   reportClientIssue,

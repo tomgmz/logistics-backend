@@ -259,7 +259,7 @@ export async function driverRecordMilestoneService(
   if (stage === null) return { recorded: false, ignored: true }
   if (!MILESTONE_STAGES.includes(stage)) throw new Error('Cannot record an unknown step')
   const booking = await assertLeadDriverOnBooking(bookingId, actor)
-  if (booking.status !== 'in_transit' && booking.status !== 'delivered' && booking.status !== 'completed') {
+  if (booking.status !== 'in_transit' && booking.status !== 'delivered' && booking.status !== 'completed' && booking.status !== 'failed') {
     throw new Error('Cannot record stop times before the delivery has started')
   }
   const target = await resolveTarget(bookingId, body)
@@ -324,7 +324,7 @@ export async function driverRecordMilestoneService(
 }
 
 /** Booking statuses whose stop times the office may fill in or correct. */
-export const STOP_TIME_EDITABLE = ['in_transit', 'delivered', 'completed']
+export const STOP_TIME_EDITABLE = ['in_transit', 'delivered', 'completed', 'failed']
 
 /**
  * The office fills in or corrects a step (the driver forgot to tap, or tapped

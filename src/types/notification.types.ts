@@ -23,6 +23,8 @@ export type NotificationType =
   | 'booking.delivery_issue_resolved' // staff resolved it, 3 days restart -> client
   | 'booking.delivery_incident'       // office recorded an incident (theft, accident…) -> client
   | 'booking.delivery_incident_staff' // the same -> ops + admins (with the note)
+  | 'booking.delivery_failed'         // no drop-off delivered, booking ended Failed -> client
+  | 'booking.delivery_failed_staff'   // the same -> ops + admins
   | 'booking.trip_paused'          // office paused the delivery -> client (reason only)
   | 'booking.trip_paused_staff'    // office paused the delivery -> ops + admins (with the note)
   | 'booking.trip_paused_by_staff' // office paused the delivery -> assigned driver(s) (with the note)
@@ -87,6 +89,10 @@ export type NotificationType =
   // `reason` in `data`; no booking. Client/driver/unknown -> Company
   // Administrators; staff -> IT Administrator (email-delivery.service.ts).
   | 'email.undelivered'
+  // A retired sign-in (refresh) token was used again after the grace period,
+  // which can mean it was copied: every session of the account was ended.
+  // -> IT Administrator (session-reuse-notify.service.ts).
+  | 'auth.session_reuse'
 
 export interface NotificationRow {
   notification_id: string
@@ -128,6 +134,8 @@ export type NotificationStage =
   | 'delivery_issue_resolved'
   | 'delivery_incident'
   | 'delivery_incident_staff'
+  | 'delivery_failed'
+  | 'delivery_failed_staff'
   | 'trip_paused'
   | 'trip_paused_staff'
   | 'trip_paused_by_staff'

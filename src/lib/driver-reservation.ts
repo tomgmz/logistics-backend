@@ -14,7 +14,7 @@ import { supabase } from './supabase.js'
  */
 
 /** Bookings that are over. A delivery on one of these holds nobody. */
-const FINISHED_BOOKING_STATUSES = ['delivered', 'completed', 'cancelled']
+const FINISHED_BOOKING_STATUSES = ['delivered', 'completed', 'failed', 'cancelled']
 
 /**
  * The booking whose vehicle has not been brought back yet.
@@ -61,7 +61,7 @@ async function unreturnedBy(
     .select('driver_id, truck_id, bookings!inner ( booking_id, reference_number, status, fleet_return_at )')
     .in(column, ids)
     // Done delivering, whether or not the client has confirmed yet.
-    .in('bookings.status', ['delivered', 'completed'])
+    .in('bookings.status', ['delivered', 'completed', 'failed'])
     .is('bookings.fleet_return_at', null)
 
   if (error) throw error
@@ -84,7 +84,7 @@ async function unreturnedBy(
       .from('deliveries')
       .select('second_driver_id, truck_id, bookings!inner ( booking_id, reference_number, status, fleet_return_at )')
       .in('second_driver_id', ids)
-      .in('bookings.status', ['delivered', 'completed'])
+      .in('bookings.status', ['delivered', 'completed', 'failed'])
       .is('bookings.fleet_return_at', null)
     if (secondErr) throw secondErr
 

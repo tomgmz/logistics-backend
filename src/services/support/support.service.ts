@@ -127,6 +127,41 @@ export async function openTicketForClient(staffUserId: string, input: StaffTicke
   })
 }
 
+/**
+ * A booking ended Failed (no drop-off delivered): 8338 opens the follow-up
+ * ticket for the client itself, so redelivery / claim talk has a tracked home
+ * instead of waiting for the client to complain (couriers notify the shipper of
+ * a delivery exception first). Opened by the office member who recorded the
+ * incident, or by nobody (the system) when the driver's own failed drop-offs
+ * closed it. Best effort: a failure here never undoes the Failed status.
+ */
+export async function openFailedDeliveryTicket(
+  booking: { booking_id: string; client_id: string | null; reference_number?: string | null },
+  reason: string | null,
+  officeUserId: string | null,
+): Promise<void> {
+  try {
+    if (!booking.client_id) return
+    const ref = bookingRef(booking as any)
+    const { data: staff } = officeUserId
+      ? await supabase.from('users').select('first_name, last_name').eq('user_id', officeUserId).maybeSingle()
+      : { data: null }
+    await createTicket(booking.client_id, officeUserId as any, {
+      category:   'delivery',
+      subject:    `Delivery failed: ${ref}`,
+      message:
+        `None of the drop-offs on ${ref} could be delivered` +
+        (reason ? ` (${reason})` : '') +
+        '. We opened this ticket to follow up with you on what happens next ' +
+        '(redelivery, return of the goods or a claim). Reply to this email with any questions.',
+      booking_id: booking.booking_id,
+      transcript: [],
+    }, { userId: officeUserId ?? '', name: personName(staff as any) ?? '8338 Logistics' })
+  } catch (err: any) {
+    console.error('[support] could not open the failed-delivery ticket', booking.booking_id, err?.message)
+  }
+}
+
 async function createTicket(
   clientId: string,
   openedBy: string,

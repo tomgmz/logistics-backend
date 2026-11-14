@@ -42,7 +42,7 @@ async function assertBookingAssignable(bookingId: string): Promise<{ scheduleDat
   if (data.status === 'in_transit') {
     throw new Error('Cannot change the driver or vehicle: the driver has already started this delivery.')
   }
-  const nonAssignable = ['delivered', 'completed', 'cancelled']
+  const nonAssignable = ['delivered', 'completed', 'failed', 'cancelled']
   if (nonAssignable.includes(data.status)) {
     throw new Error(`Cannot assign a booking with status '${data.status}'`)
   }

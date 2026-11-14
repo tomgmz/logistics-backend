@@ -222,6 +222,7 @@ export type SessionRevokedReason =
   | 'password_reset'
   | 'deactivated'
   | 'credentials_revoked'
+  | 'refresh_reuse'
 
 export async function revokeAllUserSessions(
   userId: string,
@@ -275,6 +276,8 @@ export async function findSessionRevokedReason(
 }
 
 export async function createSession(params: {
+  /** Chosen by the caller so the refresh token can name its session (`sid`). */
+  id?: string
   user_id: string
   token: string
   refresh_token?: string
@@ -285,6 +288,7 @@ export async function createSession(params: {
   const { data, error } = await supabase
     .from('active_sessions')
     .insert({
+      ...(params.id ? { id: params.id } : {}),
       user_id: params.user_id,
       token: params.token,
       refresh_token: params.refresh_token,
@@ -339,6 +343,56 @@ export async function findActiveSessionByRefreshToken(
 
   if (error && error.code !== 'PGRST116') throw error
   return data ?? null
+}
+
+/** The rotation state of one session, read by id (the refresh token's `sid`). */
+export interface RotationRow {
+  id:                        string
+  user_id:                   string
+  refresh_token:             string | null
+  previous_refresh_token:    string | null
+  refresh_rotated_at:        string | null
+  rotated_refresh_token_enc: string | null
+  refresh_expires_at:        string | null
+  revoked_reason:            SessionRevokedReason | null
+}
+
+export async function findSessionForRotation(sessionId: string): Promise<RotationRow | null> {
+  const { data, error } = await supabase
+    .from('active_sessions')
+    .select('id, user_id, refresh_token, previous_refresh_token, refresh_rotated_at, rotated_refresh_token_enc, refresh_expires_at, revoked_reason')
+    .eq('id', sessionId)
+    .maybeSingle()
+  if (error) throw error
+  return (data as RotationRow | null) ?? null
+}
+
+/**
+ * Swap the session's refresh token for a new one, but only if `oldHash` is
+ * still the current one. Two refreshes of the same token racing each other
+ * (two tabs, a retry) both reach here; exactly one wins, and the loser finds
+ * the winner's token in rotated_refresh_token_enc. True when this call won.
+ */
+export async function rotateRefreshToken(
+  sessionId: string,
+  oldHash: string,
+  newHash: string,
+  newTokenSealed: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('active_sessions')
+    .update({
+      refresh_token:             newHash,
+      previous_refresh_token:    oldHash,
+      refresh_rotated_at:        new Date().toISOString(),
+      rotated_refresh_token_enc: newTokenSealed,
+    })
+    .eq('id', sessionId)
+    .eq('refresh_token', oldHash)
+    .gt('refresh_expires_at', new Date().toISOString())
+    .select('id')
+  if (error) throw error
+  return (data?.length ?? 0) > 0
 }
 
 export async function updateSessionAccessToken(

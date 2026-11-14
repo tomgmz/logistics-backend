@@ -144,7 +144,7 @@ export async function getStaffDashboard() {
   const awaitingClient = bookings.filter((b) =>
     b.status === 'delivered' && !(b.client_issue_reported_at && !b.client_issue_resolved_at))
   const awaitingReturn = bookings.filter((b) =>
-    (b.status === 'delivered' || b.status === 'completed') && !b.fleet_return_at && !!b.delivered_at)
+    (b.status === 'delivered' || b.status === 'completed' || b.status === 'failed') && !b.fleet_return_at && (!!b.delivered_at || b.status === 'failed'))
 
   // Vehicles, with the reason each one needs a look. A vehicle is listed once,
   // under its most pressing reason.

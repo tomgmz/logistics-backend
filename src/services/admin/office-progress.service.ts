@@ -5,6 +5,7 @@ import { bookingRef } from '../../lib/booking-ref.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { invalidateEta } from '../maps/eta.service.js'
 import { supersedeLateConfirmations } from '../driver/late-confirmation.service.js'
+import { openFailedDeliveryTicket } from '../support/support.service.js'
 import {
   driverConfirmTripPickupService,
   driverConfirmTripStopService,
@@ -136,10 +137,21 @@ export async function officeReportIncidentService(
     action:      'office_incident_reported',
     description: `Incident on booking ${bookingRef(booking)} — ${reason}. ${chosen.length} drop-off(s) marked failed`,
   })
-  void notifyStage('delivery_incident', booking, { reason: label })
-  void notifyStage('delivery_incident_staff', booking, { reason })
+  const after = await BookingModel.findById(bookingId)
+  if (after?.status === 'failed') {
+    // Nothing on the booking was delivered: it ended Failed (user 2026-11-14).
+    // One notice each saying so (not an incident notice and a failed one), and
+    // 8338 opens the follow-up ticket for the client. The client reads only the
+    // incident type; the office's note stays with staff.
+    void notifyStage('delivery_failed', after, { reason: label })
+    void notifyStage('delivery_failed_staff', after, { reason })
+    void openFailedDeliveryTicket(after as any, label, userId ?? null)
+  } else {
+    void notifyStage('delivery_incident', booking, { reason: label })
+    void notifyStage('delivery_incident_staff', booking, { reason })
+  }
 
   void invalidateEta(bookingId).catch(() => {})
   announceRouteChanged(bookingId)
-  return BookingModel.findById(bookingId)
+  return after
 }

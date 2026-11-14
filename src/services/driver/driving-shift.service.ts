@@ -132,7 +132,7 @@ export async function driverTakeWheelService(
   const { booking } = await driverSeatOnBooking(bookingId, actor)
   // On the road: in transit, or delivered and still driving back to the lot.
   const onRoad = booking.status === 'in_transit'
-    || ((booking.status === 'delivered' || booking.status === 'completed') && !(booking as any).fleet_return_at)
+    || ((booking.status === 'delivered' || booking.status === 'completed' || booking.status === 'failed') && !(booking as any).fleet_return_at)
   if (!onRoad) {
     throw new Error('Cannot record who is driving: the truck is not on the road for this booking')
   }

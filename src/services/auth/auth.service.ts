@@ -18,6 +18,7 @@ import { getSessionPermissions } from '../admin/permissions.service.js'
 import { completeHandoverOnConfirm } from '../admin/it-admin.service.js'
 import { logEvent } from '../../lib/log-event.js'
 import { logSystem } from '../../lib/log-system.js'
+import { notifySessionReuse } from '../notification/session-reuse-notify.service.js'
 import {
   RequestOtpInput,
   VerifyOtpInput,
@@ -224,6 +225,95 @@ export async function getProfile(userId: string) {
 }
 
 
+// ── Refresh-token rotation (2026-11-14) ─────────────────────────────────────
+//
+// Each refresh retires the refresh token it was given and hands out a new one
+// (RFC 9700 §4.14.2; Auth0 and Okta "rotation with reuse detection"). A retired
+// token that comes back after the grace period means two parties hold it, one of
+// them not the user: every session of the account is ended.
+//
+// Grace period: a reply lost on weak signal, or two tabs refreshing at once,
+// sends the retired token again within seconds. Inside the grace period that
+// repeat gets the SAME new token back (Okta allows 0-60 s, Auth0 a "reuse
+// interval"). 60 s suits drivers on weak provincial signal.
+//
+// Opt-in per request (`rotate: true`), because older app builds ignore a new
+// refresh token in the reply and would keep sending the retired one. Kill
+// switch: ROTATE_REFRESH_TOKENS=false (read on every call) turns rotation off;
+// sessions then work exactly as before, with whatever token each client holds.
+const ROTATION_GRACE_MS = 60 * 1000
+
+function rotationEnabled(): boolean {
+  return (process.env.ROTATE_REFRESH_TOKENS ?? 'true').toLowerCase() !== 'false'
+}
+
+/**
+ * A refresh token. `sid` names the session row; `jti` makes every token unique,
+ * so two minted in the same second can never be byte-identical (a rotation must
+ * always change the hash). The expiry is the session's fixed end, not "now + 7
+ * days": rotating never lengthens a session.
+ */
+function signRefreshToken(
+  user: { user_id: string; role: UserRole | string },
+  sessionId: string,
+  expiresAt: Date,
+): string {
+  return jwt.sign(
+    {
+      sub:  user.user_id,
+      role: user.role,
+      type: 'refresh',
+      sid:  sessionId,
+      jti:  crypto.randomBytes(16).toString('hex'),
+      exp:  Math.floor(expiresAt.getTime() / 1000),
+    },
+    JWT_REFRESH_SECRET,
+  )
+}
+
+// The newest refresh token is kept sealed on the row so a repeat inside the
+// grace period can be answered with it. The key exists only on the server, so a
+// copy of the database still holds no usable token.
+function rotationKey(): Buffer {
+  return crypto.createHash('sha256')
+    .update(`refresh-rotation:${JWT_REFRESH_SECRET}:${TOKEN_PEPPER ?? ''}`)
+    .digest()
+}
+
+function sealRotated(token: string): string {
+  const iv     = crypto.randomBytes(12)
+  const cipher = crypto.createCipheriv('aes-256-gcm', rotationKey(), iv)
+  const ct     = Buffer.concat([cipher.update(token, 'utf8'), cipher.final()])
+  return `v1.${iv.toString('base64url')}.${Buffer.concat([ct, cipher.getAuthTag()]).toString('base64url')}`
+}
+
+function openRotated(sealed: string | null): string | null {
+  if (!sealed) return null
+  const [v, ivPart, ctPart] = sealed.split('.')
+  if (v !== 'v1' || !ivPart || !ctPart) return null
+  try {
+    const raw      = Buffer.from(ctPart, 'base64url')
+    const decipher = crypto.createDecipheriv('aes-256-gcm', rotationKey(), Buffer.from(ivPart, 'base64url'))
+    decipher.setAuthTag(raw.subarray(raw.length - 16))
+    return Buffer.concat([decipher.update(raw.subarray(0, raw.length - 16)), decipher.final()]).toString('utf8')
+  } catch {
+    return null
+  }
+}
+
+/** The repeat of a just-retired token, answered with the token that replaced it. */
+function graceReplay(row: AuthModel.RotationRow, presentedHash: string): string | null {
+  if (row.previous_refresh_token !== presentedHash || !row.refresh_rotated_at) return null
+  if (Date.now() - new Date(row.refresh_rotated_at).getTime() > ROTATION_GRACE_MS) return null
+  return openRotated(row.rotated_refresh_token_enc)
+}
+
+function rowIsLive(row: AuthModel.RotationRow): boolean {
+  return !row.revoked_reason
+    && !!row.refresh_expires_at
+    && new Date(row.refresh_expires_at).getTime() > Date.now()
+}
+
 async function createTokensAndSession(
   user: { user_id: string; role: UserRole; email: string },
   deviceInfo?: string,
@@ -245,17 +335,18 @@ async function createTokensAndSession(
     { expiresIn: JWT_EXPIRES_IN }
   )
 
-  const refreshToken = jwt.sign(
-    { sub: user.user_id, role: user.role, type: 'refresh' },
-    JWT_REFRESH_SECRET,
-    { expiresIn: JWT_REFRESH_EXPIRES }
-  )
+  // The session id is chosen here so the refresh token can carry it (`sid`):
+  // a retired token from a rotated session still names its session, which is
+  // how reuse is recognised (see refreshAccessToken).
+  const sessionId    = crypto.randomUUID()
+  const refreshToken = signRefreshToken(user, sessionId, refreshExpiresAt)
 
   const accessTokenHash  = hashToken(accessToken)
   const refreshTokenHash = hashToken(refreshToken)
 
   await AuthModel.revokeAllUserSessions(user.user_id, 'signed_in_elsewhere')
   await AuthModel.createSession({
+    id:                 sessionId,
     user_id:            user.user_id,
     token:              accessTokenHash,
     refresh_token:      refreshTokenHash,
@@ -804,9 +895,15 @@ export function isSessionInvalidError(err: unknown): boolean {
   return !!(err as { sessionInvalid?: boolean } | null)?.sessionInvalid
 }
 
-export async function refreshAccessToken(refreshToken: string): Promise<{
+export async function refreshAccessToken(
+  refreshToken: string,
+  opts: { rotate?: boolean } = {},
+): Promise<{
   accessToken: string
   accessExpiresAt: string
+  /** Only when rotated: the token that replaces the one sent. */
+  refreshToken?: string
+  refreshExpiresAt?: string
 }> {
   let payload: any
   try {
@@ -818,12 +915,41 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
   if (payload.type !== 'refresh') throw sessionInvalid('Invalid token type')
 
   const refreshTokenHash = hashToken(refreshToken)
-  const session = await AuthModel.findActiveSessionByRefreshToken(refreshTokenHash)
+  // refresh_expires_at is typed Date on UserSession but arrives as an ISO string.
+  let session: { id: string; refresh_expires_at?: string | Date | null } | null =
+    await AuthModel.findActiveSessionByRefreshToken(refreshTokenHash)
+  // Set when the reply must carry the refresh token already handed out for
+  // this same retired token (inside the grace period), not a fresh rotation.
+  let replayed: string | null = null
+  // The session this token names (`sid`, on tokens issued since rotation), so
+  // a retired token, whose hash is no longer on the row, can be traced to it.
+  // Only read when the token isn't the current one (the normal refresh skips it).
+  const sidRow = !session && typeof payload.sid === 'string'
+    ? await AuthModel.findSessionForRotation(payload.sid)
+        .then((r) => (r && r.user_id === payload.sub ? r : null))
+        .catch(() => null)
+    : null
+
+  if (!session && sidRow && rowIsLive(sidRow)) {
+    replayed = graceReplay(sidRow, refreshTokenHash)
+    if (replayed) {
+      session = sidRow
+    } else {
+      // A retired token on a live session, past the grace period: two parties
+      // hold this session's tokens. End every session of the account; the
+      // real user signs in again, whoever copied it cannot.
+      await AuthModel.revokeAllUserSessions(sidRow.user_id, 'refresh_reuse').catch(() => {})
+      void reportRefreshReuse(sidRow.user_id, sidRow.id)
+      throw sessionInvalid(REUSE_MESSAGE, 'SESSION_REUSED')
+    }
+  }
+
   if (!session) {
     // Superseded by a sign-in on another device: an expected outcome of the
     // one-session rule, not a replay, so no alarm — just a code the client can
     // turn into the right page.
-    const reason = await AuthModel.findSessionRevokedReason('refresh_token', refreshTokenHash).catch(() => null)
+    const reason = sidRow?.revoked_reason
+      ?? await AuthModel.findSessionRevokedReason('refresh_token', refreshTokenHash).catch(() => null)
     if (reason === 'signed_in_elsewhere') {
       throw sessionInvalid('Your account was signed in on another device.', 'SESSION_REPLACED')
     }
@@ -831,9 +957,12 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
     if (reason === 'deactivated') {
       throw sessionInvalid('Your account is no longer active. Please contact your Administrator.', 'ACCOUNT_INACTIVE')
     }
+    // Already ended for reuse: the same answer again, without a second alarm.
+    if (reason === 'refresh_reuse') throw sessionInvalid(REUSE_MESSAGE, 'SESSION_REUSED')
+    if (reason) throw sessionInvalid('Session expired or revoked')
 
-    // A structurally valid refresh token with no live session means it was
-    // already rotated or revoked — replay, not a routine expiry.
+    // A structurally valid refresh token with no live session and no recorded
+    // reason: already rotated or revoked — replay, not a routine expiry.
     logSystem({
       log_level:  'critical',
       event_type: 'auth_event',
@@ -854,8 +983,27 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
   if (user.role === 'client') {
     const contract = await contractStatusForUser(user.user_id)
     if (contract.state === 'ended') {
-      await AuthModel.revokeSession(session.token).catch(() => {})
+      await AuthModel.revokeAllUserSessions(user.user_id, 'logout').catch(() => {})
       throw sessionInvalid(contractEndedError(contract).message, 'CONTRACT_ENDED')
+    }
+  }
+
+  // Rotate, or hand back the rotation already made for this same token.
+  let nextRefresh: string | null = replayed
+  const sessionEnd = session.refresh_expires_at ? new Date(session.refresh_expires_at) : null
+  if (!nextRefresh && opts.rotate && rotationEnabled() && sessionEnd && sessionEnd.getTime() > Date.now()) {
+    const candidate = signRefreshToken(user, session.id, sessionEnd)
+    const won = await AuthModel.rotateRefreshToken(
+      session.id, refreshTokenHash, hashToken(candidate), sealRotated(candidate),
+    )
+    if (won) {
+      nextRefresh = candidate
+    } else {
+      // Another refresh of this same token got there first (two tabs, a
+      // retry). Answer with its result, as the grace period would.
+      const row = await AuthModel.findSessionForRotation(session.id)
+      nextRefresh = row && rowIsLive(row) ? graceReplay(row, refreshTokenHash) : null
+      if (!nextRefresh) throw sessionInvalid('Session expired or revoked')
     }
   }
 
@@ -870,7 +1018,38 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
   await AuthModel.updateSessionAccessToken(session.id, accessTokenHash, accessExpiresAt)
   await AuthModel.refreshSessionLastSeen(session.id)
 
-  return { accessToken, accessExpiresAt: accessExpiresAt.toISOString() }
+  return {
+    accessToken,
+    accessExpiresAt: accessExpiresAt.toISOString(),
+    ...(nextRefresh && sessionEnd
+      ? { refreshToken: nextRefresh, refreshExpiresAt: sessionEnd.toISOString() }
+      : {}),
+  }
+}
+
+const REUSE_MESSAGE =
+  'For your security you were signed out: your sign-in was used from somewhere else. Please sign in again.'
+
+/**
+ * A retired refresh token came back after the grace period: System Logs
+ * (critical) and the IT Administrator's bell. Best effort; the caller has
+ * already ended the sessions.
+ */
+async function reportRefreshReuse(userId: string, sessionId: string): Promise<void> {
+  try {
+    const account = await AuthModel.findUserById(userId)
+    logSystem({
+      log_level:  'critical',
+      event_type: 'auth_event',
+      source:     'auth.service',
+      user_id:    null,
+      message:    `Sign-in token reused for ${account?.email ?? userId}: every session of the account was ended`,
+      metadata:   { action: 'refresh_token_reused', subject: userId, session: sessionId },
+    })
+    if (account) await notifySessionReuse(account)
+  } catch (err) {
+    console.error('REFRESH REUSE REPORT FAILED:', err)
+  }
 }
 
 export async function logout(tokenHash: string): Promise<void> {

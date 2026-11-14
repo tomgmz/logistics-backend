@@ -158,12 +158,20 @@ export async function refreshToken(req: Request, res: Response) {
       return
     }
 
-    const data = await AuthService.refreshAccessToken(token)
+    // Rotation is opt-in (2026-11-14): only clients that store the new refresh
+    // token ask for it. Older app builds send no flag and keep their token.
+    const data = await AuthService.refreshAccessToken(token, { rotate: req.body?.rotate === true })
 
     const isMobile = !!req.body.refreshToken && !req.cookies.refresh_token
     if (!isMobile) {
       issueCsrfCookie(res)
       res.cookie('access_token', data.accessToken, ACCESS_COOKIE_OPTIONS)
+      if (data.refreshToken && data.refreshExpiresAt) {
+        res.cookie('refresh_token', data.refreshToken, {
+          ...COOKIE_OPTIONS,
+          maxAge: Math.max(0, new Date(data.refreshExpiresAt).getTime() - Date.now()),
+        })
+      }
     }
 
     res.status(200).json({
@@ -171,6 +179,10 @@ export async function refreshToken(req: Request, res: Response) {
       data: {
         expiresAt:   data.accessExpiresAt,
         accessToken: data.accessToken,
+        ...(data.refreshToken && {
+          refreshToken:     data.refreshToken,
+          refreshExpiresAt: data.refreshExpiresAt,
+        }),
       },
     })
   } catch (err: unknown) {
@@ -184,7 +196,8 @@ export async function refreshToken(req: Request, res: Response) {
     }
     const message = err instanceof Error ? err.message : 'Session expired. Please log in again.'
     const errCode = (err as { code?: string })?.code
-    const code    = errCode === 'SESSION_REPLACED' || errCode === 'ACCOUNT_INACTIVE' ? errCode : undefined
+    const code    = errCode === 'SESSION_REPLACED' || errCode === 'ACCOUNT_INACTIVE'
+      || errCode === 'SESSION_REUSED' || errCode === 'CONTRACT_ENDED' ? errCode : undefined
     if (!code) console.error('TOKEN REFRESH ERROR:', err)
     clearAuthCookies(res)
     res.status(401).json({ status: 'error', ...(code && { code }), message })

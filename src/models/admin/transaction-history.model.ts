@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import { pool } from '../../lib/database.js'
-import { BOOKING_WITH_RELATIONS_SELECT } from '../client/booking.model.js'
+import { BOOKING_WITH_RELATIONS_SELECT, PARTLY_FAILED_SQL } from '../client/booking.model.js'
 import type { BookingWithRelations } from '../../types/client/booking.types.js'
 
 /**
@@ -126,6 +126,9 @@ function buildWhere(f: TransactionFilters): { whereSql: string; params: unknown[
   } else if (status === 'resubmitted') {
     // Corrected and resubmitted by the client at least once (the badge).
     where.push('COALESCE(b.resubmission_count, 0) > 0')
+  } else if (status === 'partly_failed') {
+    // Delivered/Completed with at least one failed drop-off (the badge).
+    where.push(PARTLY_FAILED_SQL('b'))
   } else if (status && status !== 'all') {
     params.push(status)
     where.push(`b.status = $${params.length}`)
@@ -296,6 +299,14 @@ async function countByStatus(f: TransactionFilters): Promise<Record<string, numb
     params,
   )
   out.resubmitted = parseInt(resub.rows[0]?.n ?? '0', 10) || 0
+
+  const partly = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::int AS n
+     ${FROM_SQL}
+     ${whereSql ? `${whereSql} AND` : 'WHERE'} ${PARTLY_FAILED_SQL('b')}`,
+    params,
+  )
+  out.partly_failed = parseInt(partly.rows[0]?.n ?? '0', 10) || 0
   return out
 }
 

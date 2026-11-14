@@ -242,7 +242,8 @@ const S = [
   { label: 'Delivered, reminder sent',                status: 'delivered', day: -2, phase: 'done', reminder: true },
   { label: 'Delivered, client reported a problem',    status: 'delivered', day: -1, phase: 'done', issue: 'open' },
   { label: 'Delivered, problem resolved by 8338',     status: 'delivered', day: -2, phase: 'done', issue: 'resolved' },
-  { label: 'Delivered, goods stolen (incident)',      status: 'delivered', day: -1, phase: 'done', failed: 'all', stops: 2 },
+  // No drop-off delivered: the booking ends Failed, not Delivered (2026-11-14).
+  { label: 'Failed, goods stolen (incident)',         status: 'failed',    day: -1, phase: 'done', failed: 'all', stops: 2 },
   { label: 'Delivered, client refused one drop-off',  status: 'delivered', day: -1, phase: 'done', failed: 'one', stops: 2 },
   { label: 'Delivered, office confirmed every step',  status: 'delivered', day: 0, phase: 'done', officeConfirm: true },
   { label: 'Delivered, vehicle not back yet',         status: 'delivered', day: 0, phase: 'done', returned: false, stops: 2 },
@@ -629,7 +630,8 @@ try {
       if (sc.wheel === 'staff') [mainD, secondD] = [secondD, mainD]
     }
 
-    const delivered = ['delivered', 'completed'].includes(sc.status)
+    // 'failed' ran the road like a delivered booking; only the outcome differs.
+    const delivered = ['delivered', 'completed', 'failed'].includes(sc.status)
     // Timeline of a finished booking; a same-day one ran this morning (all in the past).
     const doneBase = sc.day === 0 ? ago(360) : at(sched, '08:00')
     const deliveredAt = delivered ? plus(doneBase, 60 * (2 + nStops)) : null
@@ -654,7 +656,7 @@ try {
       cancelled_at: sc.status === 'cancelled' ? plus(createdAt, 180) : null,
       client_closed_at: sc.clientClosed ? plus(createdAt, 60 * 26) : null,
       resubmission_count: sc.resubmitted === true ? 1 : sc.resubmitted || 0,
-      delivered_at: deliveredAt,
+      delivered_at: sc.status === 'failed' ? null : deliveredAt,
       completion_confirmed_by: sc.status === 'completed' && !sc.auto ? client.id : null,
       completion_confirmed_role: sc.status === 'completed' && !sc.auto ? 'client' : null,
       completion_confirmed_at: sc.status === 'completed' ? plus(deliveredAt, sc.auto ? 60 * 72 : 60 * 5) : null,
@@ -711,7 +713,7 @@ try {
     if (!crewed) continue
 
     // delivery + crew rows
-    const deliveryStatus = sc.status === 'assigned' ? 'pending' : sc.status === 'in_transit' ? 'in_transit' : 'delivered'
+    const deliveryStatus = sc.status === 'assigned' ? 'pending' : sc.status === 'in_transit' ? 'in_transit' : sc.status === 'failed' ? 'failed' : 'delivered'
     const deliveryId = await ins('deliveries', 'delivery_id', vendor ? {
       booking_id: bookingId, driver_id: null, truck_id: null, status: deliveryStatus, is_vendor_supplied: true,
       vendor_name: 'JRS Trucking Services', vendor_contact: '0918 555 0101', vendor_driver_name: nameOf(vendor),
@@ -1141,6 +1143,7 @@ try {
       ['delivery_started', 'Delivery started', 'Your delivery {ref} is on the way.'], ['delivery_delayed', 'Running late', '{ref} is running about 40 min late.'],
       ['delivery_confirm', 'Please confirm your delivery', '{ref} was delivered. Please confirm or report a problem.'], ['rejected_gm', 'Booking not approved', '{ref} was not approved.'],
       ['trip_paused', 'Delivery paused', '{ref} is paused: typhoon. New day: tomorrow 7:00 AM.'], ['delivery_incident', 'Problem on your delivery', 'A problem was reported on {ref}.'],
+      ['delivery_failed', 'Your delivery could not be completed', 'None of the drop-offs on {ref} could be delivered (Goods stolen). We opened a support ticket for you.'],
     ],
     driver: [
       ['assigned', 'New delivery', 'You are assigned to {ref}.'], ['driver_call_reminder', 'Call time in 1 hour', 'Be at the warehouse for {ref} by 6:00 AM.'],
@@ -1151,12 +1154,12 @@ try {
   const clientNoticesFor = (r) => {
     const t = []
     if (r.sc.gm === 'rejected') t.push('rejected_gm')
-    if (['approved', 'assigned', 'in_transit', 'delivered', 'completed'].includes(r.status) || (r.status === 'cancelled' && r.sc.gm === 'approved')) t.push('approved_gm')
+    if (['approved', 'assigned', 'in_transit', 'delivered', 'completed', 'failed'].includes(r.status) || (r.status === 'cancelled' && r.sc.gm === 'approved')) t.push('approved_gm')
     if (r.sc.phase) t.push('assigned')
-    if (['in_transit', 'delivered', 'completed'].includes(r.status)) t.push('delivery_started')
+    if (['in_transit', 'delivered', 'completed', 'failed'].includes(r.status)) t.push('delivery_started')
     if (r.sc.delayed || r.sc.wasDelayed) t.push('delivery_delayed')
     if (r.sc.pause) t.push('trip_paused')
-    if (r.sc.failed) t.push('delivery_incident')
+    if (r.sc.failed) t.push(r.status === 'failed' ? 'delivery_failed' : 'delivery_incident')
     if (['delivered', 'completed'].includes(r.status)) t.push('delivery_confirm')
     return t.map((type) => NOTE.client.find((x) => x[0] === type))
   }
