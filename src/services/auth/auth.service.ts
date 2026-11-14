@@ -330,7 +330,9 @@ async function createTokensAndSession(
   const refreshExpiresAt = new Date(Date.now() + parseDuration(JWT_REFRESH_EXPIRES as string))
 
   const accessToken = jwt.sign(
-    { sub: user.user_id, role: user.role, email: user.email, type: 'access' },
+    // jti: every token unique, so two minted in the same second (a double-tapped
+    // sign-in) can't collide on the unique token-hash index.
+    { sub: user.user_id, role: user.role, email: user.email, type: 'access', jti: crypto.randomBytes(16).toString('hex') },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   )
@@ -1009,7 +1011,9 @@ export async function refreshAccessToken(
 
   const accessExpiresAt = new Date(Date.now() + parseDuration(JWT_EXPIRES_IN as string))
   const accessToken = jwt.sign(
-    { sub: user.user_id, role: user.role, email: user.email, type: 'access' },
+    // jti: every token unique, so two minted in the same second (a double-tapped
+    // sign-in) can't collide on the unique token-hash index.
+    { sub: user.user_id, role: user.role, email: user.email, type: 'access', jti: crypto.randomBytes(16).toString('hex') },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   )
