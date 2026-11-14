@@ -483,7 +483,10 @@ export async function recordTripLoaded(
   // Only the first run can be "early": that is the one that starts the job.
   const isFirstRun = !trips.some((t) => t.status === 'completed' || t.status === 'in_transit')
   const early      = isFirstRun && isBeforeScheduledDay(booking.schedule_date)
-  if (early && !earlyStart) {
+  // In transit = Start Navigation already went through, and an early start was
+  // decided (and audit-logged) there. The phone can lose that choice (sign-out,
+  // app data cleared, Resume Navigation), so it is not asked for a second time.
+  if (early && !earlyStart && booking.status === 'assigned') {
     throw new Error(
       `Cannot confirm pickup before the scheduled day — this booking is scheduled for ${booking.schedule_date}.`,
     )

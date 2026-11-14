@@ -970,7 +970,9 @@ export async function driverConfirmPickupService(
   // check that actually holds. Starting early stays possible when the driver
   // deliberately overrides it, and that decision is recorded below.
   const early = isBeforeScheduledDay(booking.schedule_date)
-  if (early && !earlyStart) {
+  // In transit = the early start was already decided at Start Navigation (see
+  // recordTripLoaded); only a booking still Assigned is refused.
+  if (early && !earlyStart && booking.status === 'assigned') {
     throw new Error(
       `Cannot confirm pickup before the scheduled day — this booking is scheduled for ${booking.schedule_date}.`,
     )
