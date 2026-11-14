@@ -3,11 +3,17 @@ import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as CargoCatalogService from '../../services/admin/cargo-catalog.service.js'
 import { pagedList } from '../../lib/paginate.js'
 
+// Usage counts span every client's bookings; a client (booking form) gets the lists without them.
+function forViewer(req: Request, rows: any[]) {
+  if (req.user?.role !== 'client') return rows
+  return rows.map(({ booking_count: _b, product_count: _p, ...r }) => r)
+}
+
 export async function getAllHandlingCodes(req: Request, res: Response) {
   try {
     const type = req.query.type as 'standard' | 'additional' | undefined
     const data = await CargoCatalogService.getAllHandlingCodes(type)
-    res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (h) => [h.code, h.name, h.description]) })
+    res.status(200).json({ status: 'success', ...pagedList(req, forViewer(req, data as any[]), (h) => [h.code, h.name, h.description]) })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
   }
@@ -50,7 +56,7 @@ export async function deleteHandlingCode(req: Request, res: Response) {
     await CargoCatalogService.deleteHandlingCode(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Handling code deleted successfully' })
   } catch (error: any) {
-    const status = error.message === 'Handling code not found' ? 404 : 500
+    const status = error.status ?? (error.message === 'Handling code not found' ? 404 : 500)
     res.status(status).json({ status: 'error', message: error.message })
   }
 }
@@ -58,7 +64,7 @@ export async function deleteHandlingCode(req: Request, res: Response) {
 export async function getAllCommodities(req: Request, res: Response) {
   try {
     const data = await CargoCatalogService.getAllCommodities()
-    res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (c) => [c.name]) })
+    res.status(200).json({ status: 'success', ...pagedList(req, forViewer(req, data as any[]), (c) => [c.name]) })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
   }
@@ -101,7 +107,7 @@ export async function deleteCommodity(req: Request, res: Response) {
     await CargoCatalogService.deleteCommodity(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Commodity deleted successfully' })
   } catch (error: any) {
-    const status = error.message === 'Commodity not found' ? 404 : 500
+    const status = error.status ?? (error.message === 'Commodity not found' ? 404 : 500)
     res.status(status).json({ status: 'error', message: error.message })
   }
 }
@@ -110,7 +116,7 @@ export async function getAllProducts(req: Request, res: Response) {
   try {
     const commodityId = req.query.commodity_id as string | undefined
     const data = await CargoCatalogService.getAllProducts(commodityId)
-    res.status(200).json({ status: 'success', ...pagedList(req, data as any[], (p) => [p.name, p.unit, p.description, p.commodities?.name]) })
+    res.status(200).json({ status: 'success', ...pagedList(req, forViewer(req, data as any[]), (p) => [p.name, p.unit, p.description, p.commodities?.name]) })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message })
   }
@@ -153,7 +159,7 @@ export async function deleteProduct(req: Request, res: Response) {
     await CargoCatalogService.deleteProduct(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'Product deleted successfully' })
   } catch (error: any) {
-    const status = error.message === 'Product not found' ? 404 : 500
+    const status = error.status ?? (error.message === 'Product not found' ? 404 : 500)
     res.status(status).json({ status: 'error', message: error.message })
   }
 }

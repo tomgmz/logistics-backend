@@ -419,23 +419,23 @@ router.post('/upload/fleet-photo', authenticate, isFleetMaintenance, uploadSingl
 // Handling Codes
 router.get('/handling-codes',        authenticate, isOperations, CargoCatalogController.getAllHandlingCodes)
 router.get('/handling-codes/:id',    authenticate, isOperations, CargoCatalogController.getHandlingCodeById)
-router.post('/handling-codes',       authenticate, isOperations, validate(createHandlingCodeSchema), CargoCatalogController.createHandlingCode)
-router.patch('/handling-codes/:id',  authenticate, isOperations, lockGuard('handling_code', fromParam('id')), validate(updateHandlingCodeSchema), CargoCatalogController.updateHandlingCode)
-router.delete('/handling-codes/:id', authenticate, isOperations, lockGuard('handling_code', fromParam('id')), CargoCatalogController.deleteHandlingCode)
+router.post('/handling-codes',       authenticate, isAdmin, validate(createHandlingCodeSchema), CargoCatalogController.createHandlingCode)
+router.patch('/handling-codes/:id',  authenticate, isAdmin, lockGuard('handling_code', fromParam('id')), validate(updateHandlingCodeSchema), CargoCatalogController.updateHandlingCode)
+router.delete('/handling-codes/:id', authenticate, isAdmin, lockGuard('handling_code', fromParam('id')), CargoCatalogController.deleteHandlingCode)
 
 // Commodities
 router.get('/commodities',        authenticate, isOperations, CargoCatalogController.getAllCommodities)
 router.get('/commodities/:id',    authenticate, isOperations, CargoCatalogController.getCommodityById)
-router.post('/commodities',       authenticate, isOperations, validate(createCommoditySchema), CargoCatalogController.createCommodity)
-router.patch('/commodities/:id',  authenticate, isOperations, lockGuard('commodity', fromParam('id')), validate(updateCommoditySchema), CargoCatalogController.updateCommodity)
-router.delete('/commodities/:id', authenticate, isOperations, lockGuard('commodity', fromParam('id')), CargoCatalogController.deleteCommodity)
+router.post('/commodities',       authenticate, isAdmin, validate(createCommoditySchema), CargoCatalogController.createCommodity)
+router.patch('/commodities/:id',  authenticate, isAdmin, lockGuard('commodity', fromParam('id')), validate(updateCommoditySchema), CargoCatalogController.updateCommodity)
+router.delete('/commodities/:id', authenticate, isAdmin, lockGuard('commodity', fromParam('id')), CargoCatalogController.deleteCommodity)
 
 // Products — supports ?commodity_id= filter on GET /products
 router.get('/products',        authenticate, isOperations, CargoCatalogController.getAllProducts)
 router.get('/products/:id',    authenticate, isOperations, CargoCatalogController.getProductById)
-router.post('/products',       authenticate, isOperations, validate(createProductSchema), CargoCatalogController.createProduct)
-router.patch('/products/:id',  authenticate, isOperations, lockGuard('product', fromParam('id')), validate(updateProductSchema), CargoCatalogController.updateProduct)
-router.delete('/products/:id', authenticate, isOperations, lockGuard('product', fromParam('id')), CargoCatalogController.deleteProduct)
+router.post('/products',       authenticate, isAdmin, validate(createProductSchema), CargoCatalogController.createProduct)
+router.patch('/products/:id',  authenticate, isAdmin, lockGuard('product', fromParam('id')), validate(updateProductSchema), CargoCatalogController.updateProduct)
+router.delete('/products/:id', authenticate, isAdmin, lockGuard('product', fromParam('id')), CargoCatalogController.deleteProduct)
 
 //landline prefixes
 router.get('/landline-prefixes',        authenticate, isOperations, LandlinePrefixController.getAllLandlinePrefixes)

@@ -8,7 +8,7 @@ export const createHandlingCodeSchema = z.object({
 })
 
 export const updateHandlingCodeSchema = z.object({
-  code:        z.string().min(1).max(100).trim().toUpperCase().optional(),
+  code:        z.string().min(1).max(20).trim().toUpperCase().optional(),
   name:        z.string().min(1).max(100).trim().optional(),
   description: z.string().max(500).optional().nullable(),
   is_active:   z.boolean().optional(),

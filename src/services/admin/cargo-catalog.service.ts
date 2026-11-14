@@ -65,22 +65,32 @@ export async function updateHandlingCode(id: string, input: UpdateHandlingCodeIn
     user_id:     actorId,
     log_type:    'admin_activity',
     action:      'handling_code_updated',
-    description: `Handling code ${id} updated`,
+    description: `Handling code ${result?.code ?? id} updated`,
 
   })
 
   return result
 }
 
+const bookingsText = (n: number) => `${n} booking${n === 1 ? '' : 's'}`
+
+/**
+ * Delete an entry no booking uses. Past bookings read the name through the
+ * link, so one that is in use is refused and made inactive instead (hidden
+ * from the booking form, past bookings untouched), as vehicle types are.
+ */
 export async function deleteHandlingCode(id: string, actorId?: string | null) {
-  await getHandlingCodeById(id)
-  await CargoCatalogModel.removeHandlingCode(id)
+  const hc: any = await getHandlingCodeById(id)
+  if (!(await CargoCatalogModel.removeHandlingCode(id))) {
+    const n = (await getHandlingCodeById(id) as any).booking_count ?? 0
+    throw conflict(`${hc.code} is used on ${bookingsText(n)}, so it can't be deleted. Make it inactive to hide it from the booking form.`)
+  }
 
   logEvent({
     user_id:     actorId,
     log_type:    'admin_activity',
     action:      'handling_code_deleted',
-    description: `Handling code ${id} deleted`,
+    description: `Handling code ${hc.code} deleted`,
 
   })
 
@@ -121,7 +131,7 @@ export async function updateCommodity(id: string, input: UpdateCommodityInput, a
     user_id:     actorId,
     log_type:    'admin_activity',
     action:      'commodity_updated',
-    description: `Commodity ${id} updated`,
+    description: `Commodity ${result?.name ?? id} updated`,
 
   })
 
@@ -129,14 +139,21 @@ export async function updateCommodity(id: string, input: UpdateCommodityInput, a
 }
 
 export async function deleteCommodity(id: string, actorId?: string | null) {
-  await getCommodityById(id)
-  await CargoCatalogModel.removeCommodity(id)
+  const c: any = await getCommodityById(id)
+  if (!(await CargoCatalogModel.removeCommodity(id))) {
+    const now: any = await getCommodityById(id)
+    const uses = [
+      now.booking_count ? bookingsText(now.booking_count) : '',
+      now.product_count ? `${now.product_count} product${now.product_count === 1 ? '' : 's'}` : '',
+    ].filter(Boolean).join(' and ')
+    throw conflict(`${c.name} is used on ${uses || 'a booking'}, so it can't be deleted. Make it inactive to hide it from the booking form.`)
+  }
 
   logEvent({
     user_id:     actorId,
     log_type:    'admin_activity',
     action:      'commodity_deleted',
-    description: `Commodity ${id} deleted`,
+    description: `Commodity ${c.name} deleted`,
 
   })
 
@@ -175,7 +192,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, actor
     user_id:     actorId,
     log_type:    'admin_activity',
     action:      'product_updated',
-    description: `Product ${id} updated`,
+    description: `Product ${result?.name ?? id} updated`,
 
   })
 
@@ -183,14 +200,17 @@ export async function updateProduct(id: string, input: UpdateProductInput, actor
 }
 
 export async function deleteProduct(id: string, actorId?: string | null) {
-  await getProductById(id)
-  await CargoCatalogModel.removeProduct(id)
+  const pr: any = await getProductById(id)
+  if (!(await CargoCatalogModel.removeProduct(id))) {
+    const n = (await getProductById(id) as any).booking_count ?? 0
+    throw conflict(`${pr.name} is used on ${bookingsText(n)}, so it can't be deleted. Make it inactive to hide it from the booking form.`)
+  }
 
   logEvent({
     user_id:     actorId,
     log_type:    'admin_activity',
     action:      'product_deleted',
-    description: `Product ${id} deleted`,
+    description: `Product ${pr.name} deleted`,
 
   })
 
