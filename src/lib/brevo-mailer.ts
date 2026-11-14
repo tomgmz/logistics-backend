@@ -74,6 +74,20 @@ const ROLE_LABELS: Record<string, string> = {
 }
 
 /**
+ * The hidden preview line (the grey text after the subject in the inbox and on
+ * a lock-screen notification). It is padded with invisible characters so mail
+ * apps don't fill the rest of the preview with the email's opening lines: an
+ * email holding a code or a password must show it only when opened
+ * (user 2026-11-14).
+ */
+function preheaderHtml(text: string): string {
+  return `
+      <div style="display:none;font-size:1px;color:#f6f6f6;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+        ${text}${'&#847;&zwnj;&nbsp;'.repeat(120)}
+      </div>`
+}
+
+/**
  * The one footer every email uses: grey band, three centred lines. Each email
  * passes only its own "why you got this" sentence, so the design cannot drift.
  */
@@ -158,7 +172,9 @@ export async function sendOtpEmail(
   try {
     const brevo = getBrevoClient()
     await brevo.transactionalEmails.sendTransacEmail({
-      subject:     `${code} is your ${APP_NAME} verification code`,
+      // The code is never in the subject: it would show in the inbox list and
+      // on a lock-screen notification without the email being opened.
+      subject:     `Your ${APP_NAME} sign-in code`,
       htmlContent: generateOtpEmailHtml(name, code),
       textContent: generateOtpEmailText(name, code),
       sender:      { name: FROM_NAME, email: FROM_EMAIL },
@@ -382,7 +398,7 @@ export async function sendPasswordResetOtpEmail(
   try {
     const brevo = getBrevoClient()
     await brevo.transactionalEmails.sendTransacEmail({
-      subject:     `${code} is your ${APP_NAME} password reset code`,
+      subject:     `Your ${APP_NAME} password reset code`,
       htmlContent: generateOtpEmailHtml(name, code, copy),
       textContent: generateOtpEmailText(name, code, copy),
       sender:      { name: FROM_NAME, email: FROM_EMAIL },
@@ -418,9 +434,7 @@ function generateOtpEmailHtml(name: string, code: string, copy: OtpCopy = LOGIN_
     </head>
     <body style="margin:0;padding:0;background-color:#f6f6f6;">
 
-      <div style="display:none;font-size:1px;color:#f6f6f6;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
-        Your one-time ${copy.noun} for ${APP_NAME} — expires in ${copy.minutes} minutes.
-      </div>
+      ${preheaderHtml(`Your one-time ${copy.noun} for ${APP_NAME} is inside. It expires in ${copy.minutes} minutes.`)}
 
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
         <tr>
@@ -512,19 +526,21 @@ function generateOtpEmailHtml(name: string, code: string, copy: OtpCopy = LOGIN_
 function generateOtpEmailText(name: string, code: string, copy: OtpCopy = LOGIN_OTP_COPY): string {
   const year = new Date().getFullYear()
 
+  // The code comes after the notes: some mail apps build the preview from this
+  // plain-text copy, and the first ~200 characters must not hold it.
   return `
 Hi ${name},
 
-Your ${APP_NAME} ${copy.noun} is:
-
-${code}
-
-This code expires in ${copy.minutes} minutes.
+${copy.intro} for ${APP_NAME}. It expires in ${copy.minutes} minutes.
 
 NEVER share this code with anyone. ${APP_NAME} will never ask for your code by phone or email.
 
 If you did not request this code, you can safely ignore this email.
 For concerns, contact us at ${APP_SUPPORT_EMAIL}.
+
+Your ${copy.noun}:
+
+${code}
 
 ---
 ${emailFooterText(`This is a transactional email sent because ${copy.because}.`)}
@@ -553,9 +569,7 @@ function generateWelcomeEmailHtml(
     </head>
     <body style="margin:0;padding:0;background-color:#f6f6f6;">
 
-      <div style="display:none;font-size:1px;color:#f6f6f6;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
-        Your ${APP_NAME} account has been created — sign in with the credentials inside.
-      </div>
+      ${preheaderHtml(`Your ${APP_NAME} account has been created. Open this email for your sign-in details.`)}
 
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
         <tr>
@@ -686,10 +700,19 @@ function generateWelcomeEmailText(
   const base     = appBaseUrl()
   const loginUrl = base ? `${base}/` : ''
 
+  // The password comes after the notes: some mail apps build the preview from
+  // this plain-text copy, and the first ~200 characters must not hold it.
   return `
 Hi ${name},
 
 An account has been created for you on ${APP_NAME} as a ${roleLabel}.
+
+IMPORTANT: The password below is temporary and expires in ${TEMP_PASSWORD_TTL_DAYS} days.
+Please change it after your first login.
+Never share your password with anyone — ${APP_NAME} staff will never ask for it.
+
+You can also sign in using a one-time email code instead of a password — both options
+are available on the login screen.
 
 ── YOUR LOGIN CREDENTIALS ──────────────────
 Email:    ${email}
@@ -697,13 +720,6 @@ Password: ${password}
 ────────────────────────────────────────────
 
 Sign in at: ${loginUrl}
-
-IMPORTANT: This is a temporary password and it expires in ${TEMP_PASSWORD_TTL_DAYS} days.
-Please change it after your first login.
-Never share your password with anyone — ${APP_NAME} staff will never ask for it.
-
-You can also sign in using a one-time email code instead of a password — both options
-are available on the login screen.
 
 Need help? Contact us at ${APP_SUPPORT_EMAIL}.
 
