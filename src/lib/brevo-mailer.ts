@@ -2211,3 +2211,34 @@ export async function sendContractExpiryStaffEmail(p: {
     what: 'contract expiry staff email',
   })
 }
+
+// ---------------------------------------------------------------------------
+// A vendor driver was put on a booking (assignment or driver replacement).
+// Vendor drivers can only sign in while on an open booking (lib/vendor-access,
+// 2026-11-14), so a signed-out one has no push to receive: this email is how
+// they learn they can sign in again.
+// ---------------------------------------------------------------------------
+export async function sendVendorDriverAssignedEmail(p: {
+  to:           string
+  firstName:    string | null
+  reference:    string
+  scheduleDate: string | null
+}): Promise<void> {
+  const subject = `New delivery for you: ${p.reference}`
+  const intro =
+    `Hi ${p.firstName?.trim() || 'there'}, ${APP_NAME} has assigned you to delivery ${p.reference}. ` +
+    'Open the 8338 driver app and sign in with this email address (your password or an emailed sign-in code) to see the details. ' +
+    'You can use the app while you are on a delivery; it signs you out once the delivery is finished.'
+  const rows: Array<[string, string]> = [
+    ['Booking',   p.reference],
+    ['Scheduled', p.scheduleDate ?? 'See the app'],
+  ]
+  const footer = `This email was sent because you are a vendor driver on ${APP_NAME}.`
+  const html = supportEmailHtml('New Delivery Assigned', escapeHtml(intro), supportRowsHtml(rows), footer)
+  const text = [intro, '', ...rows.map(([l, v]) => `${l}: ${v}`), '', '---', emailFooterText(footer)].join('\n')
+  await sendSupportEmail({
+    subject, html, text,
+    to:   { email: p.to, ...(p.firstName ? { name: p.firstName } : {}) },
+    what: 'vendor driver assigned email',
+  })
+}

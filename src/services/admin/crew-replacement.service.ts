@@ -9,6 +9,7 @@ import { busyDriversFor, driverBusyMessage } from '../../lib/driver-reservation.
 import { assertStopProximity, stopCoordinates, type StopProofPosition } from '../../lib/stop-geofence.js'
 import { BookingModel } from '../../models/client/booking.model.js'
 import { notifyStage } from '../notification/notification.service.js'
+import { emailVendorDriversAssigned } from '../../lib/vendor-access.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { invalidateEta } from '../maps/eta.service.js'
 import { getRouteDistance } from '../maps/route-distance.service.js'
@@ -340,6 +341,11 @@ export async function replaceCrewService(
   const offUserIds = await userIdsOfDrivers(offIds)
   if (offUserIds.length) void notifyStage('crew_replaced_off', after, { onlyUserIds: offUserIds, reason: note, swapped })
   void notifyStage('crew_replaced_on', after, { transfer: replacement.transfer_required, vehicleLabel: oldVehicle })
+  // Only vendor drivers new to the booking: they may be signed out (lib/vendor-access).
+  if (vendor) {
+    const was = new Set([previous.driver_id, previous.second_driver_id].filter(Boolean))
+    emailVendorDriversAssigned([external, externalSecond].filter((d) => d && !was.has(d.driverId)), after as any)
+  }
   void notifyStage('crew_replaced_client', after, { swapped })
   if (truckChanged && replacement.old_truck_id) {
     void notifyStage('crew_replaced_fleet', after, { vehicleLabel: oldVehicle, reason: note })

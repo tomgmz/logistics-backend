@@ -6,6 +6,7 @@ import { logEvent } from '../lib/log-event.js'
 import { logSystem } from '../lib/log-system.js'
 import { hashToken } from '../services/auth/auth.service.js'
 import { isActiveStandin } from '../lib/it-standin.js'
+import { vendorMayUseAppCached, NO_ACTIVE_ASSIGNMENT, NO_ACTIVE_ASSIGNMENT_MESSAGE } from '../lib/vendor-access.js'
 
 const JWT_SECRET = process.env.JWT_SECRET!
 
@@ -95,6 +96,11 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
         })
         return
       }
+      // Ended because the vendor driver's last booking closed (lib/vendor-access).
+      if (reason === 'credentials_revoked') {
+        res.status(401).json({ status: 'error', code: NO_ACTIVE_ASSIGNMENT, message: NO_ACTIVE_ASSIGNMENT_MESSAGE })
+        return
+      }
       res.status(401).json({ status: 'error', message: 'Session expired or revoked' })
       return
     }
@@ -119,6 +125,14 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
         code:    'ACCOUNT_INACTIVE',
         message: 'Your account is no longer active. Please contact your Administrator.',
       })
+      return
+    }
+
+    // A vendor driver with no open booking left (completed, failed, cancelled,
+    // or taken off it): signed out on the next request, whatever closed it.
+    if (session.users?.role === 'driver' && !(await vendorMayUseAppCached(payload.sub, 'driver'))) {
+      await AuthModel.revokeAllUserSessions(payload.sub, 'credentials_revoked').catch(() => {})
+      res.status(401).json({ status: 'error', code: NO_ACTIVE_ASSIGNMENT, message: NO_ACTIVE_ASSIGNMENT_MESSAGE })
       return
     }
 

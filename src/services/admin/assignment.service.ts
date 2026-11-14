@@ -4,6 +4,7 @@ import { BookingModel } from '../../models/client/booking.model.js'
 import { supabase } from '../../lib/supabase.js'
 import { logEvent } from '../../lib/log-event.js'
 import { notifyStage } from '../notification/notification.service.js'
+import { emailVendorDriversAssigned } from '../../lib/vendor-access.js'
 import { bookingRefById } from '../../lib/booking-ref.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { getRouteDistance, type RouteDistance } from '../maps/route-distance.service.js'
@@ -257,6 +258,8 @@ export async function assignBookingService(
   const booking  = advanced ?? (await BookingModel.findById(bookingId))
   if (booking) {
     void notifyStage('assigned', booking)
+    // A vendor driver may be signed out (no open booking until now): email them.
+    if (input.is_vendor_supplied) emailVendorDriversAssigned([external, externalSecond], booking as any)
     const label = nextTruckId
       ? await truckLabel(nextTruckId)
       : input.vendor_vehicle_plate ?? 'A vendor-supplied vehicle'

@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { contractStatus, contractStatusForUser, contractEndedError } from '../../lib/contract-status.js'
+import { vendorMayUseApp, forgetVendorAccess, noActiveAssignmentError, NO_ACTIVE_ASSIGNMENT, NO_ACTIVE_ASSIGNMENT_MESSAGE } from '../../lib/vendor-access.js'
 import { phDay } from '../../lib/ph-date.js'
 import { daysBetween } from '../../lib/registration-expiry.js'
 import bcrypt from 'bcrypt'
@@ -324,6 +325,11 @@ async function createTokensAndSession(
   if (user.role === 'client') {
     const contract = await contractStatusForUser(user.user_id)
     if (contract.state === 'ended') throw contractEndedError(contract)
+  }
+  // A vendor driver signs in only while on an open booking (lib/vendor-access).
+  if (user.role === 'driver') {
+    if (!(await vendorMayUseApp(user.user_id, user.role))) throw noActiveAssignmentError()
+    forgetVendorAccess(user.user_id)
   }
 
   const accessExpiresAt  = new Date(Date.now() + parseDuration(JWT_EXPIRES_IN as string))
@@ -959,6 +965,8 @@ export async function refreshAccessToken(
     if (reason === 'deactivated') {
       throw sessionInvalid('Your account is no longer active. Please contact your Administrator.', 'ACCOUNT_INACTIVE')
     }
+    // Ended because the vendor driver's last booking closed (lib/vendor-access).
+    if (reason === 'credentials_revoked') throw sessionInvalid(NO_ACTIVE_ASSIGNMENT_MESSAGE, NO_ACTIVE_ASSIGNMENT)
     // Already ended for reuse: the same answer again, without a second alarm.
     if (reason === 'refresh_reuse') throw sessionInvalid(REUSE_MESSAGE, 'SESSION_REUSED')
     if (reason) throw sessionInvalid('Session expired or revoked')
@@ -988,6 +996,11 @@ export async function refreshAccessToken(
       await AuthModel.revokeAllUserSessions(user.user_id, 'logout').catch(() => {})
       throw sessionInvalid(contractEndedError(contract).message, 'CONTRACT_ENDED')
     }
+  }
+  // A vendor driver whose last open booking closed is signed out here too.
+  if (!(await vendorMayUseApp(user.user_id, user.role))) {
+    await AuthModel.revokeAllUserSessions(user.user_id, 'credentials_revoked').catch(() => {})
+    throw sessionInvalid(NO_ACTIVE_ASSIGNMENT_MESSAGE, NO_ACTIVE_ASSIGNMENT)
   }
 
   // Rotate, or hand back the rotation already made for this same token.
