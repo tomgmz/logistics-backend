@@ -17,7 +17,7 @@ export const contactInquirySchema = z.object({
     .string()
     .trim()
     .min(10, 'Message must be at least 10 characters')
-    .max(2000, 'Message is too long (2000 characters at most)'),
+    .max(500, 'Message is too long (500 characters at most)'),
   // Honeypot: a field no person can see. Anything in it means a bot filled the
   // form, and the route drops the message while still answering success.
   website:    z.string().optional(),
