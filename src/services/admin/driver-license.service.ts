@@ -25,8 +25,59 @@ import type { LicenseOCRResult } from './driver-ocr.service.js'
 
 export class LicenseCheckError extends Error {
   status = 422
-  constructor(message: string, public code: 'LICENSE_NOT_VERIFIED' | 'LICENSE_NEEDS_NOTE' | 'LICENSE_INVALID', public issues: string[] = []) {
+  constructor(message: string, public code: 'LICENSE_NOT_VERIFIED' | 'LICENSE_NEEDS_NOTE' | 'LICENSE_INVALID' | 'NOT_A_LICENSE', public issues: string[] = []) {
     super(message)
+  }
+}
+
+/** Refuse a photo that isn't a Philippine driver's license (no note makes it one). */
+export function assertIsLicense(scanned: LicenseOCRResult | null): void {
+  if (scanned && !scanned.is_license) {
+    throw new LicenseCheckError(scanned.not_license_reason ?? "This photo doesn't look like a Philippine driver's license.", 'NOT_A_LICENSE')
+  }
+}
+
+/** ID Analyzer's fake / edited card flags, as note-requiring issues. */
+function fraudIssues(scanned: LicenseOCRResult | null): string[] {
+  return (scanned?.fraud_warnings ?? []).map((w) =>
+    `The card was flagged as possibly fake or edited: ${w.description || w.code}. Check the physical card and LTO (LTMS).`)
+}
+
+/**
+ * The license number and expiry come from the card only: a photo whose number
+ * or expiry can't be read is refused (a clearer photo, not typing). Skipped
+ * when the scanners themselves failed (scanFailed): then typing, with a note.
+ */
+function assertCardRead(scanned: LicenseOCRResult | null): void {
+  if (!scanned) return
+  const missing = [!scanned.license_number && 'license number', !scanned.license_expiry && 'expiry'].filter(Boolean)
+  if (missing.length) {
+    throw new LicenseCheckError(
+      `The ${missing.join(' and ')} could not be read from the card. Upload a clearer photo of the front of the license.`,
+      'LICENSE_INVALID',
+    )
+  }
+}
+
+/** The license number is locked to what the card reads: no note changes it. */
+function assertNumberMatchesCard(scanned: LicenseOCRResult | null, number: string | null | undefined): void {
+  const card = scanned?.license_number
+  if (card && normNumber(card) !== normNumber(number)) {
+    throw new LicenseCheckError(
+      `The card reads license number ${card}, but ${number || 'none'} is being saved. The license number must match the card; if the scan read it wrong, upload a clearer photo.`,
+      'LICENSE_INVALID',
+    )
+  }
+}
+
+/** The expiry is locked to what the card reads: no note changes it. */
+function assertExpiryMatchesCard(scanned: LicenseOCRResult | null, expiry: string | null): void {
+  const card = day(scanned?.license_expiry)
+  if (card && expiry && card !== expiry) {
+    throw new LicenseCheckError(
+      `The card reads expiry ${card}, but ${expiry} is being saved. The expiry must match the card; if the scan read it wrong, upload a clearer photo.`,
+      'LICENSE_INVALID',
+    )
   }
 }
 
@@ -153,6 +204,19 @@ export async function planLicenseChange(
   const today     = phDay()
 
   // Hard limits: no note makes these right.
+  assertIsLicense(scanned)
+  // No new photo: the number and expiry can't change (they come from the card).
+  if (!newImage && (numberChanged || expiryChanged)) {
+    throw new LicenseCheckError(
+      "The license number and expiry come from the driver's license. Upload the new license to change them.",
+      'LICENSE_INVALID',
+    )
+  }
+  if (newImage) {
+    assertCardRead(scanned)
+    assertNumberMatchesCard(scanned, number)
+    assertExpiryMatchesCard(scanned, expiry)
+  }
   if (expiryChanged && expiry) {
     if (expiry <= today) throw new LicenseCheckError(`The new expiry (${expiry}) has already passed. Enter the renewed license's expiry.`, 'LICENSE_INVALID')
     if (expiry > addDays(today, MAX_VALIDITY_DAYS)) {
@@ -174,16 +238,11 @@ export async function planLicenseChange(
     issues.push('The new license image could not be read automatically, so its details were not checked.')
   }
   if (scanned) {
-    if (scanned.license_number && normNumber(scanned.license_number) !== normNumber(number)) {
-      issues.push(`The uploaded card reads license number ${scanned.license_number}, not ${number}. It may be another person's license.`)
-    }
     const scannedFirst = scanned.first_name, scannedLast = scanned.last_name
     if ((scannedLast && !sameName(scannedLast, lastName)) || (scannedFirst && !sameName(scannedFirst, firstName))) {
       issues.push(`The uploaded card reads the name ${[scannedFirst, scannedLast].filter(Boolean).join(' ')}, not ${[firstName, lastName].filter(Boolean).join(' ')}.`)
     }
-    if (scanned.license_expiry && expiry && day(scanned.license_expiry) !== expiry) {
-      issues.push(`The uploaded card reads expiry ${day(scanned.license_expiry)}, but ${expiry} is being saved.`)
-    }
+    issues.push(...fraudIssues(scanned))
     const lost = (cur.dl_codes ?? []).filter((c) => !(scanned.dl_codes ?? []).includes(c))
     if (lost.length && (scanned.dl_codes ?? []).length) {
       issues.push(`The new card no longer shows code${lost.length > 1 ? 's' : ''} ${lost.join(', ')}. Check which vehicles this driver may still drive.`)
@@ -207,7 +266,8 @@ export async function planLicenseChange(
     license_verified_at: now,
     license_verified_by: actorId,
   }
-  if (scanned && newImage) {
+  // Only when the card's codes were read: an unread section must not wipe them.
+  if (scanned && newImage && (scanned.dl_codes?.length || scanned.restriction_codes?.length)) {
     driverFields.dl_codes          = scanned.dl_codes ?? []
     driverFields.restriction_codes = scanned.restriction_codes ?? []
   }
@@ -286,6 +346,10 @@ export function planLicenseCreate(
     )
   }
   const expiry = day(req.licenseExpiry)
+  assertIsLicense(scanned)
+  assertCardRead(scanned)
+  assertNumberMatchesCard(scanned, req.licenseNumber)
+  assertExpiryMatchesCard(scanned, expiry)
   if (expiry && expiry > addDays(phDay(), MAX_VALIDITY_DAYS)) {
     throw new LicenseCheckError(`The expiry (${expiry}) is more than 10 years away, longer than LTO issues. Check the date on the card.`, 'LICENSE_INVALID')
   }
@@ -293,15 +357,10 @@ export function planLicenseCreate(
   const issues: string[] = []
   if (scanFailed) issues.push('The license image could not be read automatically, so its details were not checked.')
   if (scanned) {
-    if (scanned.license_number && normNumber(scanned.license_number) !== normNumber(req.licenseNumber)) {
-      issues.push(`The card reads license number ${scanned.license_number}, but ${req.licenseNumber} is being saved.`)
-    }
     if ((scanned.last_name && !sameName(scanned.last_name, req.lastName)) || (scanned.first_name && !sameName(scanned.first_name, req.firstName))) {
       issues.push(`The card reads the name ${[scanned.first_name, scanned.last_name].filter(Boolean).join(' ')}, but ${req.firstName} ${req.lastName} is being saved.`)
     }
-    if (scanned.license_expiry && expiry && day(scanned.license_expiry) !== expiry) {
-      issues.push(`The card reads expiry ${day(scanned.license_expiry)}, but ${expiry} is being saved.`)
-    }
+    issues.push(...fraudIssues(scanned))
   }
   const note = req.note?.trim() ?? ''
   if (issues.length && note.length < MIN_NOTE) {
@@ -311,7 +370,9 @@ export function planLicenseCreate(
   return {
     license_verified_at: new Date().toISOString(),
     license_verified_by: actorId,
-    ...(scanned ? { dl_codes: scanned.dl_codes ?? [], restriction_codes: scanned.restriction_codes ?? [] } : {}),
+    ...(scanned && (scanned.dl_codes?.length || scanned.restriction_codes?.length)
+      ? { dl_codes: scanned.dl_codes ?? [], restriction_codes: scanned.restriction_codes ?? [] }
+      : {}),
   }
 }
 

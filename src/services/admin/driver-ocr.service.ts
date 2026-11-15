@@ -1,11 +1,30 @@
 import axios from 'axios'
 import sharp from 'sharp'
+import { createHash } from 'node:crypto'
 import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from '../../lib/log-system.js'
 
-const VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY;
-if (!VISION_API_KEY) throw new Error('GOOGLE_VISION_API_KEY is not set');
+/**
+ * Reading a driver's license photo.
+ *
+ * ID Analyzer (api2.idanalyzer.com/scan) is the scanner: it is asked for a
+ * Philippine driver's license only (restrictCountry PH, restrictType D), so it
+ * says when the photo is something else, and it flags fake or edited cards.
+ * Google Vision is the fallback when ID Analyzer is down, out of credits or not
+ * configured: it only reads text, so our own check (LTO number format plus the
+ * license's printed words) decides whether the text looks like a license, and
+ * the result says the fake-card check did not run (full_check false).
+ */
 
+const VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY
 const VISION_URL = `https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`
+
+const IDANALYZER_API_KEY = process.env.IDANALYZER_API_KEY
+// A KYC profile id from the ID Analyzer portal (set one with image storage off),
+// else a preset. https://api2-eu.idanalyzer.com for the EU region.
+const IDANALYZER_PROFILE  = process.env.IDANALYZER_PROFILE || 'security_medium'
+const IDANALYZER_ENDPOINT = (process.env.IDANALYZER_ENDPOINT || 'https://api2.idanalyzer.com').replace(/\/+$/, '')
+
+export interface LicenseWarning { code: string; description: string }
 
 export interface VehicleEligibility {
   can_drive_light_commercial: boolean
@@ -25,6 +44,15 @@ export interface LicenseOCRResult {
   dl_codes:        string[]
   restriction_codes: string[]
   vehicle_eligibility: VehicleEligibility
+  /** False when the photo is not a Philippine driver's license; the save is refused. */
+  is_license:      boolean
+  /** Why it isn't one, in words for the form. */
+  not_license_reason: string | null
+  /** Fake / edited card flags from ID Analyzer; saving then needs a note. */
+  fraud_warnings:  LicenseWarning[]
+  provider:        'idanalyzer' | 'vision'
+  /** False when the fallback read it: text only, no fake-card check. */
+  full_check:      boolean
 }
 
 // A name word whose "N" Vision read with low confidence. A worn or smudged
@@ -76,9 +104,11 @@ function toTitleCase(str: string | null): string | null {
 
 function extractSuffix(name: string): { cleaned: string; suffix: string | null } {
   for (const s of VALID_SUFFIXES) {
-    const re = new RegExp(`\\b${s.replace('.', '\\.')}\\b`, 'i')
+    // A whole word, dot optional ("JR" / "JR."); \b can't follow a dot, so the
+    // end is a space, comma or the end of the line.
+    const re = new RegExp(`(^|[\\s,])${s.replace('.', '\\.?')}(?=[\\s,]|$)`, 'i')
     if (re.test(name)) {
-      return { cleaned: name.replace(re, '').replace(/\s{2,}/g, ' ').trim(), suffix: s }
+      return { cleaned: name.replace(re, '$1').replace(/\s{2,}/g, ' ').replace(/\s+,/g, ',').trim(), suffix: s }
     }
   }
   return { cleaned: name, suffix: null }
@@ -137,14 +167,9 @@ function findExpiryDate(lines: string[]): string | null {
       }
     }
   }
-  const allDates: string[] = []
-  for (const line of lines) {
-    for (const m of line.matchAll(DATE_RE)) {
-      const iso = toISODate(m[1])
-      if (iso) allDates.push(iso)
-    }
-  }
-  return allDates.length ? allDates.sort()[allDates.length - 1] : null
+  // No date beside an expiry label: none. The expiry is locked once scanned,
+  // so a guess (e.g. the latest date anywhere) would lock a wrong date in.
+  return null
 }
 
 function findNameLine(lines: string[]): string | null {
@@ -261,12 +286,182 @@ function nameNChecks(
   return checks
 }
 
+const NOT_LICENSE_MESSAGE =
+  "This photo doesn't look like a Philippine driver's license. Take a clear photo of the front of the card, flat and without glare."
+
+// ── Google Vision fallback: is this text a license? ─────────────────────────
+
+// Printed on every LTO card design (2000 plastic, 2016/2021 plastic, the old paper one).
+const LICENSE_WORDS_RE = /land\s*transportation|driver'?s?\s*licen[cs]e|non[-\s]?professional|student[-\s]*permit/i
+
+function textLooksLikeLicense(fullText: string): string | null {
+  if (!LTO_LICENSE_RE.test(fullText)) return `${NOT_LICENSE_MESSAGE} No LTO license number (like A01-23-456789) could be read.`
+  if (!LICENSE_WORDS_RE.test(fullText) && !EXPIRY_LABEL_RE.test(fullText)) return NOT_LICENSE_MESSAGE
+  return null
+}
+
+// ── ID Analyzer ─────────────────────────────────────────────────────────────
+
+// Warnings that mean the photo is not a Philippine driver's license. The real
+// API answered a logo with UNRECOGNIZED_DOCUMENT + COUNTRY_NOT_ACCEPTED +
+// TYPE_NOT_ACCEPTED (2026-11-16); the MISMATCH names are from the docs.
+const NOT_LICENSE_CODES = new Set([
+  'UNRECOGNIZED_DOCUMENT', 'COUNTRY_NOT_ACCEPTED', 'TYPE_NOT_ACCEPTED',
+  'DOCUMENT_COUNTRY_MISMATCH', 'DOCUMENT_TYPE_MISMATCH',
+])
+// Warnings that mean the card may be fake or edited: a person decides (note).
+const FRAUD_CODE_RE = /FAKE|FORGERY|EDITED|ARTIFICIAL|SCREEN|PHOTOCOPY|PRINTED|TAMPER/
+
+/** First value of a field: ID Analyzer sends each as [{ value, confidence, … }]. */
+function idaField(data: any, key: string): string | null {
+  const raw   = data?.[key]
+  const first = Array.isArray(raw) ? raw[0] : raw
+  const value = first && typeof first === 'object' ? first.value : first
+  return value == null || String(value).trim() === '' ? null : String(value).trim()
+}
+
+/** "A01-23-456789" from any spacing or dashes; anything else as read. */
+function formatLtoNumber(raw: string | null): string | null {
+  if (!raw) return null
+  const bare = raw.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return /^[A-Z]\d{10}$/.test(bare) ? `${bare.slice(0, 3)}-${bare.slice(3, 5)}-${bare.slice(5)}` : raw.toUpperCase()
+}
+
+class ProviderError extends Error {}
+
+async function idAnalyzerScan(compressed: Buffer): Promise<LicenseOCRResult> {
+  let body: any
+  try {
+    const res = await axios.post(
+      `${IDANALYZER_ENDPOINT}/scan`,
+      {
+        document:        compressed.toString('base64'),
+        profile:         IDANALYZER_PROFILE,
+        restrictCountry: 'PH',
+        restrictType:    'D',
+      },
+      {
+        headers: { 'X-API-KEY': IDANALYZER_API_KEY!, Accept: 'application/json', 'Content-Type': 'application/json' },
+        timeout: 30_000,
+        maxBodyLength: 20 * 1024 * 1024,
+      },
+    )
+    body = res.data
+  } catch (err: any) {
+    const msg = err.response?.data?.error?.message ?? err.response?.data?.message ?? err.message ?? String(err)
+    throw new ProviderError(`ID Analyzer error: ${msg}`)
+  }
+  if (!body || body.error || body.success === false) {
+    throw new ProviderError(`ID Analyzer error: ${body?.error?.message ?? body?.error ?? 'no result'}`)
+  }
+
+  const data     = body.data ?? {}
+  const warnings: LicenseWarning[] = (Array.isArray(body.warning) ? body.warning : [])
+    .map((w: any) => ({ code: String(w?.code ?? ''), description: String(w?.description ?? w?.code ?? '') }))
+    .filter((w: LicenseWarning) => w.code)
+
+  const docType  = idaField(data, 'documentType')
+  const country  = idaField(data, 'countryIso2')
+  const number   = idaField(data, 'documentNumber')
+
+  let notLicense: string | null = null
+  if (warnings.some((w) => NOT_LICENSE_CODES.has(w.code))) notLicense = NOT_LICENSE_MESSAGE
+  else if (docType && docType.toUpperCase() !== 'D') notLicense = `${NOT_LICENSE_MESSAGE} It reads as a ${docType.toUpperCase() === 'P' ? 'passport' : 'different ID'}.`
+  else if (country && country.toUpperCase() !== 'PH') notLicense = `${NOT_LICENSE_MESSAGE} It reads as a card from another country (${country.toUpperCase()}).`
+  else if (!docType && !number) notLicense = NOT_LICENSE_MESSAGE
+
+  // The PH card prints "LAST, FIRST MIDDLE"; our parser knows its compound
+  // surnames (DELA CRUZ), so it is used whenever the full line came back.
+  const fullName = idaField(data, 'fullName')
+  let name: Pick<LicenseOCRResult, 'first_name' | 'last_name' | 'middle_name' | 'suffix'>
+  if (fullName && fullName.includes(',')) {
+    name = parseName(fullName)
+  } else {
+    const first = idaField(data, 'firstName')
+    const { cleaned, suffix } = extractSuffix(first ?? '')
+    name = {
+      first_name:  toTitleCase(cleaned || null),
+      middle_name: toTitleCase(idaField(data, 'middleName')),
+      last_name:   toTitleCase(idaField(data, 'lastName')),
+      suffix,
+    }
+    if (!name.first_name && !name.last_name && fullName) name = parseName(fullName)
+  }
+
+  // DL codes, when ID Analyzer returns them (vehicle class / restrictions).
+  const classText = [idaField(data, 'vehicleClass'), idaField(data, 'restrictions')].filter(Boolean).join(' ')
+  const { dl_codes, restriction_codes } = classText
+    ? extractDLCodes(['DL Codes', classText])
+    : { dl_codes: [] as string[], restriction_codes: [] as string[] }
+
+  return {
+    license_number:  formatLtoNumber(number),
+    license_expiry:  toISODate(idaField(data, 'expiry')),
+    ...name,
+    name_n_checks:   [],
+    dl_codes,
+    restriction_codes,
+    vehicle_eligibility: deriveEligibility(dl_codes, restriction_codes),
+    is_license:         notLicense === null,
+    not_license_reason: notLicense,
+    fraud_warnings:     warnings.filter((w) => FRAUD_CODE_RE.test(w.code)),
+    provider:           'idanalyzer',
+    full_check:         true,
+  }
+}
+
+// ── Entry point ─────────────────────────────────────────────────────────────
+
+// The form scans the photo, then the save sends the same photo and the server
+// reads it again. Remembering the answer by the photo's hash keeps that to one
+// ID Analyzer credit. Per server instance; a miss just scans again.
+const SCAN_CACHE_MS  = 30 * 60_000
+const SCAN_CACHE_MAX = 100
+const scanCache = new Map<string, { at: number; result: LicenseOCRResult }>()
+
 export async function extractLicenseData(buffer: Buffer): Promise<LicenseOCRResult> {
+  const key = createHash('sha256').update(buffer).digest('hex')
+  const hit = scanCache.get(key)
+  if (hit && Date.now() - hit.at < SCAN_CACHE_MS) return hit.result
+
   const compressed = await sharp(buffer)
+    .rotate()
     .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: 85 })
     .toBuffer()
 
+  let result: LicenseOCRResult | null = null
+  if (IDANALYZER_API_KEY) {
+    try {
+      result = await idAnalyzerScan(compressed)
+    } catch (err: any) {
+      // Message only: never the key or the image.
+      logSystemThrottled('idanalyzer.scan', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+        log_level:  'error',
+        event_type: 'external_api',
+        source:     'idanalyzer.scan',
+        message:    `${err?.message ?? String(err)}. The license was read by Google Vision instead (no fake-card check).`,
+        metadata:   { status: err?.response?.status ?? null },
+      })
+    }
+  } else {
+    logSystemThrottled('idanalyzer.not-configured', 60 * 60_000, {
+      log_level:  'warn',
+      event_type: 'external_api',
+      source:     'idanalyzer.config',
+      message:    'IDANALYZER_API_KEY is not set, so licenses are read by Google Vision only (no fake-card check).',
+      metadata:   {},
+    })
+  }
+  if (!result) result = await visionScan(compressed)
+
+  if (scanCache.size >= SCAN_CACHE_MAX) scanCache.delete(scanCache.keys().next().value!)
+  scanCache.set(key, { at: Date.now(), result })
+  return result
+}
+
+async function visionScan(compressed: Buffer): Promise<LicenseOCRResult> {
+  if (!VISION_API_KEY) throw new Error('GOOGLE_VISION_API_KEY is not set')
   const base64 = compressed.toString('base64')
 
   const { data } = await axios.post(
@@ -301,6 +496,7 @@ export async function extractLicenseData(buffer: Buffer): Promise<LicenseOCRResu
   const name = nameLine
     ? parseName(nameLine)
     : { first_name: null, last_name: null, middle_name: null, suffix: null }
+  const notLicense = textLooksLikeLicense(fullText)
 
   return {
     license_number:  licenseMatch ? licenseMatch[1].toUpperCase() : null,
@@ -310,5 +506,10 @@ export async function extractLicenseData(buffer: Buffer): Promise<LicenseOCRResu
     dl_codes,
     restriction_codes,
     vehicle_eligibility: deriveEligibility(dl_codes, restriction_codes),
+    is_license:         notLicense === null,
+    not_license_reason: notLicense,
+    fraud_warnings:     [],
+    provider:           'vision',
+    full_check:         false,
   }
 }

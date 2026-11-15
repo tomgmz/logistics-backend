@@ -139,9 +139,15 @@ const SERVICES: { key: string; label: string; description: string; filter: (q: a
     filter:      (q) => q.like('source', 'push.%'),
   },
   {
+    key:         'idanalyzer',
+    label:       'License scanning (ID Analyzer)',
+    description: "Reads a driver's license photo, refuses other photos, flags fake or edited cards.",
+    filter:      (q) => q.like('source', 'idanalyzer.%'),
+  },
+  {
     key:         'google-vision',
-    label:       'Licence scanning (Google Vision)',
-    description: "Reads driver's licence details from a photo.",
+    label:       'License scanning fallback (Google Vision)',
+    description: "Reads the license text when ID Analyzer is unavailable (no fake-card check).",
     filter:      (q) => q.like('source', 'google-vision.%'),
   },
   {

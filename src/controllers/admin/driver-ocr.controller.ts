@@ -8,6 +8,9 @@ export async function scanDriverLicense(req: Request, res: Response) {
 
   try {
     const data = await extractLicenseData(req.file.buffer)
+    if (!data.is_license) {
+      return res.status(422).json({ status: 'error', code: 'NOT_A_LICENSE', message: data.not_license_reason })
+    }
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
     res.status(500).json({ status: 'error', message: error.message ?? 'OCR extraction failed' })

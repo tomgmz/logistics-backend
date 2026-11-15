@@ -1,9 +1,23 @@
 import { Request, Response }  from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as DriverService        from '../../services/admin/driver.service.js'
-import { LicenseCheckError, licenseHistory } from '../../services/admin/driver-license.service.js'
+import { LicenseCheckError, licenseHistory, assertIsLicense } from '../../services/admin/driver-license.service.js'
 import { extractLicenseData, type LicenseOCRResult } from '../../services/admin/driver-ocr.service.js'
 import { putFile, extForMime }   from '../../lib/storage.js'
+
+/**
+ * The license number and expiry come from the card: when the server read
+ * them off the uploaded photo, those are saved, whatever the form sent (it may
+ * still hold the old values if Save was pressed while the browser's scan ran).
+ */
+function cardValues<T>(fields: T, scanned: LicenseOCRResult | null): T {
+  if (!scanned?.is_license) return fields
+  return {
+    ...fields,
+    ...(scanned.license_number && { license_number: scanned.license_number }),
+    ...(scanned.license_expiry && { license_expiry: scanned.license_expiry }),
+  }
+}
 
 async function uploadLicense(file: Express.Multer.File): Promise<string> {
   const { ref } = await putFile(file.buffer, { folder: 'driver_licenses', ext: extForMime(file.mimetype) })
@@ -64,9 +78,11 @@ export async function createDriver(req: Request, res: Response) {
     let scanned: LicenseOCRResult | null = null
     let scanFailed = false
     try { scanned = await extractLicenseData(req.file.buffer) } catch { scanFailed = true }
+    // Refused before the photo is stored.
+    assertIsLicense(scanned)
     const license_image_url = await uploadLicense(req.file)
     const data = await DriverService.createDriver(
-      { ...fields, license_image_url },
+      { ...cardValues(fields, scanned), license_image_url },
       userId,
       { scanned, scanFailed, verified: license_verified === true, note: license_change_note ?? null },
     )
@@ -90,9 +106,10 @@ export async function updateDriver(req: Request, res: Response) {
     let scanFailed = false
     if (req.file) {
       try { scanned = await extractLicenseData(req.file.buffer) } catch { scanFailed = true }
+      assertIsLicense(scanned)
     }
     const body = req.file
-      ? { ...fields, license_image_url: await uploadLicense(req.file) }
+      ? { ...cardValues(fields, scanned), license_image_url: await uploadLicense(req.file) }
       : fields
     const data = await DriverService.updateDriver(param(req.params.id), body, userId, {
       scanned, scanFailed, verified: license_verified === true, note: license_change_note ?? null,
