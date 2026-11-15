@@ -151,6 +151,12 @@ const SERVICES: { key: string; label: string; description: string; filter: (q: a
     filter:      (q) => q.like('source', 'google-vision.%'),
   },
   {
+    key:         'turnstile',
+    label:       'Captcha (Cloudflare Turnstile)',
+    description: 'Bot check on the contact form, sign-in and password reset. Refused visitors are not failures.',
+    filter:      (q) => q.eq('event_type', 'external_api').like('source', 'turnstile.%'),
+  },
+  {
     key:         'livekit',
     label:       'Emergency voice calls (LiveKit)',
     description: "The driver's in-app call to Operations after a quick alert.",

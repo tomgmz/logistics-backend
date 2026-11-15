@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { globalLimiter, contactFormLimiter } from '../middlewares/rateLimit.middleware.js'
 import { validate } from '../middlewares/validate.middleware.js'
+import { requireCaptcha } from '../middlewares/captcha.middleware.js'
 import { getPublicMetrics } from '../services/public/metrics.service.js'
 import { logSystem } from '../lib/log-system.js'
 import { sendContactInquiryEmail } from '../lib/brevo-mailer.js'
@@ -34,7 +35,7 @@ router.get('/metrics', globalLimiter, async (_req: Request, res: Response) => {
   }
 })
 
-router.post('/contact', contactFormLimiter, validate(contactInquirySchema), async (req: Request, res: Response) => {
+router.post('/contact', contactFormLimiter, requireCaptcha('contact'), validate(contactInquirySchema), async (req: Request, res: Response) => {
   const body = req.body as ContactInquiryInput
 
   // A filled honeypot is a bot. Answer exactly as for a real message so it
