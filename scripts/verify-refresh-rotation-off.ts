@@ -31,7 +31,6 @@ const ageRotation = (sid: string) => supabase.from('active_sessions')
 
 const email = `rotation-test-${crypto.randomBytes(4).toString('hex')}@example.invalid`
 let userId = ''
-const startedAt = new Date().toISOString()
 
 async function signIn() {
   const user = await AuthModel.findUserById(userId)
@@ -94,12 +93,15 @@ async function cleanup() {
   await AuthModel.revokeAllUserSessions(userId, 'logout').catch(() => {})
   const n = await supabase.from('notifications').delete()
     .eq('type', 'auth.session_reuse').eq('data->>account', email).select('notification_id')
+  // By subject only: system_logs.timestamp is stored 8 h behind, so a time filter misses it.
   const l = await supabase.from('system_logs').delete()
-    .eq('metadata->>subject', userId).gte('timestamp', startedAt).select('id')
+    .eq('metadata->>subject', userId).select('log_id')
   const s = await supabase.from('active_sessions').delete().eq('user_id', userId).select('id')
   await supabase.from('users').delete().eq('user_id', userId)
+  // Deleting the users row already removes the auth user; "not found" = gone.
   const { error } = await supabase.auth.admin.deleteUser(userId)
-  console.log(`Cleanup: ${n.data?.length ?? 0} notice(s), ${l.data?.length ?? 0} log row(s), ${s.data?.length ?? 0} session(s), test account ${error ? `NOT deleted: ${error.message}` : 'deleted'}`)
+  const gone = !error || /not found/i.test(error.message)
+  console.log(`Cleanup: ${n.data?.length ?? 0} notice(s), ${l.data?.length ?? 0} log row(s), ${s.data?.length ?? 0} session(s), test account ${gone ? 'deleted' : `NOT deleted: ${error!.message}`}`)
 }
 
 main()
