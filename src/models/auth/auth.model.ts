@@ -395,6 +395,25 @@ export async function rotateRefreshToken(
   return (data?.length ?? 0) > 0
 }
 
+/**
+ * Make `tokenHash` the session's refresh token again and forget the rotation
+ * state. Used only while rotation is off, for an older token of a live session
+ * (see refreshAccessToken).
+ */
+export async function reanchorRefreshToken(sessionId: string, tokenHash: string): Promise<void> {
+  const { error } = await supabase
+    .from('active_sessions')
+    .update({
+      refresh_token:             tokenHash,
+      previous_refresh_token:    null,
+      refresh_rotated_at:        null,
+      rotated_refresh_token_enc: null,
+    })
+    .eq('id', sessionId)
+    .gt('refresh_expires_at', new Date().toISOString())
+  if (error) throw error
+}
+
 export async function updateSessionAccessToken(
   sessionId: string,
   newTokenHash: string,

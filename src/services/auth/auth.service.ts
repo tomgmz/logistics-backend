@@ -244,8 +244,12 @@ export async function getProfile(userId: string) {
 // sessions then work exactly as before, with whatever token each client holds.
 const ROTATION_GRACE_MS = 60 * 1000
 
+// OFF by default since 2026-11-16 (user: "turn rotation off"): drivers were
+// signed out when a refresh reply was lost on weak signal, and the driver app
+// restored its sign-in token over the rotated one on every start. Set
+// ROTATE_REFRESH_TOKENS=true to turn it back on.
 function rotationEnabled(): boolean {
-  return (process.env.ROTATE_REFRESH_TOKENS ?? 'true').toLowerCase() !== 'false'
+  return (process.env.ROTATE_REFRESH_TOKENS ?? 'false').toLowerCase() === 'true'
 }
 
 /**
@@ -941,6 +945,14 @@ export async function refreshAccessToken(
   if (!session && sidRow && rowIsLive(sidRow)) {
     replayed = graceReplay(sidRow, refreshTokenHash)
     if (replayed) {
+      session = sidRow
+    } else if (!rotationEnabled()) {
+      // Rotation is off: an older token of this same live session is not
+      // treated as stolen. Phones already holding a rotated token, or an app
+      // build that restores its sign-in token on start, would otherwise be
+      // signed out. The token sent becomes the session's one token again, as
+      // before rotation existed.
+      await AuthModel.reanchorRefreshToken(sidRow.id, refreshTokenHash)
       session = sidRow
     } else {
       // A retired token on a live session, past the grace period: two parties
