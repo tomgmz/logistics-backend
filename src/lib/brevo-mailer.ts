@@ -1749,7 +1749,8 @@ export interface DeliveryConfirmEmailParams {
   bookingLabel:   string
   /** When it completes on its own, already formatted for reading. */
   autoCompleteOn: string
-  bookingId:      string
+  /** The booking in the link: its number without "BK-" (lib/booking-ref bookingUrlKey), never the internal id. */
+  bookingKey:     string
 }
 
 export async function sendDeliveryConfirmEmail(params: DeliveryConfirmEmailParams): Promise<void> {
@@ -1760,14 +1761,14 @@ export async function sendDeliveryConfirmEmail(params: DeliveryConfirmEmailParam
     throw new Error('Brevo sender is not configured. Please set BREVO_SENDER_EMAIL.')
   }
 
-  const { to, firstName, bookingLabel, autoCompleteOn, bookingId } = params
+  const { to, firstName, bookingLabel, autoCompleteOn, bookingKey } = params
   const name   = escapeHtml(firstName?.trim() || 'there')
   const label  = escapeHtml(bookingLabel)
   // The client's booking page opens this booking with the Confirm / Report a
   // problem panel. Without an app URL the email still says what to do, just
   // without a button.
   const base   = appBaseUrl()
-  const url    = base ? `${base}/client/history?booking=${encodeURIComponent(bookingId)}` : null
+  const url    = base ? `${base}/client/history?booking=${encodeURIComponent(bookingKey)}` : null
   const reason = `This email was sent because a delivery on your ${APP_NAME} booking was finished and needs your confirmation.`
 
   const buttonHtml = url

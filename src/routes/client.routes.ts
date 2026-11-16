@@ -71,8 +71,11 @@ router.get('/driver/:driverId', authenticate, authenticatedLimiter, canViewBooki
 const canViewFleet = authorize('admin', 'general_manager', 'operations_manager', 'fleet_manager')
 router.get('/fleet/live-positions', authenticate, trackingLimiter, canViewFleet, requireModule('transit-tracking'), TrackingController.getFleetPositions)
 
+// The key in a web address (202611-00193) → booking_id. Declared before '/:id'.
+router.get('/resolve/:ref',     authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.resolveBookingReference)
+
 // attachDriverScope: a driver may open only bookings they are crewed on.
-router.get('/:id',              authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getBookingById)
+router.get('/:id',             authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getBookingById)
 router.get('/:id/destinations', authenticate, authenticatedLimiter, canViewBookings, attachClientScope, attachDriverScope, BookingController.getDestinationsByBooking)
 // The client's transaction history: their attachments, every proof photo, and
 // approved staff paperwork. Same scoping as the booking read above.

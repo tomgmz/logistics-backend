@@ -8,7 +8,7 @@ import {
   NotificationType,
 } from '../../types/notification.types.js'
 import { BookingWithRelations } from '../../types/client/booking.types.js'
-import { bookingRef } from '../../lib/booking-ref.js'
+import { bookingRef, bookingUrlKey } from '../../lib/booking-ref.js'
 import { formatManilaTimestamp, sendDeliveryConfirmEmail } from '../../lib/brevo-mailer.js'
 import { logSystemError } from '../../lib/log-system.js'
 
@@ -162,19 +162,21 @@ const VEHICLE_PATHS: Record<string, string> = {
 }
 
 // Deep-link a recipient to their own module page focused on the booking. The
-// `?booking=` param is read by the web booking view (openDetail); mobile clients
-// route off `data.booking_id` directly. Roles fall back to the admin page.
+// `?booking=` param carries the booking number without "BK-" (202611-00193),
+// never the internal id; the web resolves it. Mobile clients route off
+// `data.booking_id` directly. Roles fall back to the admin page.
 function actionUrlForRole(
   role: string,
-  bookingId: string,
+  booking: { booking_id: string; reference_number?: string | null },
   target: 'booking' | 'vehicle' = 'booking',
 ): string {
+  const key = encodeURIComponent(bookingUrlKey(booking.reference_number, booking.booking_id))
   if (target === 'vehicle') {
     const base = VEHICLE_PATHS[role] ?? VEHICLE_PATHS.admin
-    return `${base}?booking=${encodeURIComponent(bookingId)}`
+    return `${base}?booking=${key}`
   }
   const base = ROLE_PATHS[role] ?? ROLE_PATHS.admin
-  return `${base}?booking=${encodeURIComponent(bookingId)}`
+  return `${base}?booking=${key}`
 }
 
 function bookingLabel(booking: BookingWithRelations): string {
@@ -558,7 +560,7 @@ export async function notifyStage(
       title,
       body,
       booking_id: booking.booking_id,
-      data:       { ...baseData, action_url: actionUrlForRole(role, booking.booking_id, cfg.target) },
+      data:       { ...baseData, action_url: actionUrlForRole(role, booking, cfg.target) },
     }))
 
     const inserted = await model.insertMany(rows)
@@ -574,7 +576,7 @@ export async function notifyStage(
     // carries the deep-link into their own module page.
     const byUrl = new Map<string, string[]>()
     for (const { user_id, role } of recipients) {
-      const url = actionUrlForRole(role, booking.booking_id, cfg.target)
+      const url = actionUrlForRole(role, booking, cfg.target)
       const list = byUrl.get(url)
       if (list) list.push(user_id)
       else byUrl.set(url, [user_id])
@@ -614,7 +616,7 @@ export async function emailDeliveryConfirm(
       firstName:      contact.first_name,
       bookingLabel:   bookingLabel(booking),
       autoCompleteOn: formatManilaTimestamp(completesAt.toISOString()),
-      bookingId:      booking.booking_id,
+      bookingKey:     bookingUrlKey(booking.reference_number, booking.booking_id),
     })
   } catch (err) {
     console.error('[notifications] delivery confirmation email failed', booking.booking_id, err)

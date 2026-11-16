@@ -38,6 +38,7 @@ import {
   type StopProofPosition,
 } from '../../lib/stop-geofence.js'
 import { bookingTimeline } from '../../services/client/milestone.service.js'
+import { bookingIdByReference } from '../../lib/booking-ref.js'
 
 /**
  * Who is asking, for the ownership checks in the service.
@@ -90,6 +91,26 @@ export const getBookingById = async (req: Request, res: Response) => {
   } catch (error: any) {
     const status = error.message.includes('not found') ? 404 : 500
     res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+/**
+ * A booking's internal id from the key in a web address (`202611-00193`).
+ * Same readers and checks as opening the booking, so a reference the viewer
+ * may not see answers 404, the same as one that doesn't exist.
+ */
+export const resolveBookingReference = async (req: Request, res: Response) => {
+  try {
+    const id = await bookingIdByReference(param(req.params.ref))
+    if (!id) return res.status(404).json({ status: 'error', message: 'Booking not found' })
+    const booking = await getBookingByIdService(id, viewerFrom(req))
+    res.status(200).json({
+      status: 'success',
+      data: { booking_id: booking.booking_id, reference_number: booking.reference_number },
+    })
+  } catch (error: any) {
+    const status = String(error?.message ?? '').includes('not found') ? 404 : 500
+    res.status(status).json({ status: 'error', message: status === 404 ? 'Booking not found' : error.message })
   }
 }
 
