@@ -153,7 +153,7 @@ const SERVICES: { key: string; label: string; description: string; filter: (q: a
   {
     key:         'turnstile',
     label:       'Captcha (Cloudflare Turnstile)',
-    description: 'Bot check on the contact form, sign-in and password reset. Refused visitors are not failures.',
+    description: 'Bot check on the landing page contact form. Refused visitors are not failures.',
     filter:      (q) => q.eq('event_type', 'external_api').like('source', 'turnstile.%'),
   },
   {

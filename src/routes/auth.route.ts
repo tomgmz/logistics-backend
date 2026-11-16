@@ -27,20 +27,18 @@ import {
   authVerifySchema,
   registerVerifySchema,
 } from '../schema/auth/webauthn.schema.js'
-import { requireCaptcha, driverByEmail, driverByResetToken } from '../middlewares/captcha.middleware.js'
 import * as AuthController from '../controllers/auth/auth.controller.js'
 import * as PasswordResetController from '../controllers/auth/password-reset.controller.js'
 import * as WebauthnController from '../controllers/auth/webauthn.controller.js'
 
 const router = Router()
 
-// Public
-// requireCaptcha: Cloudflare Turnstile on every public form (web). The driver
-// app can't run the widget, so a request without a token passes only for a
-// driver account (see captcha.middleware.ts).
-router.post('/request-otp', authLimiter, requireCaptcha('request_otp', driverByEmail), validate(requestOtpSchema), AuthController.requestOtp)
-router.post('/verify-otp',  authLimiter, requireCaptcha('verify_otp', driverByEmail),  validate(verifyOtpSchema),  AuthController.verifyOtp)
-router.post('/login',       authLimiter, requireCaptcha('login', driverByEmail),       validate(loginSchema),       AuthController.loginWithPassword)
+// Public. No captcha on sign-in or password reset (user 2026-11-16: the
+// landing page's contact form only); the rate limiters guard these. An older
+// web build's captcha_token is dropped by validate().
+router.post('/request-otp', authLimiter, validate(requestOtpSchema), AuthController.requestOtp)
+router.post('/verify-otp',  authLimiter, validate(verifyOtpSchema),  AuthController.verifyOtp)
+router.post('/login',       authLimiter, validate(loginSchema),       AuthController.loginWithPassword)
 router.post('/status',      validate(authStatusSchema),               AuthController.getAuthStatus)
 router.post('/refresh',     AuthController.refreshToken)
 router.get('/csrf',         AuthController.getCsrfToken)
@@ -49,12 +47,12 @@ router.post('/change-password', authenticate, authenticatedLimiter, validate(cha
 // Password reset — public by necessity: whoever needs these cannot sign in.
 // Raising a request is throttled twice: per email by authLimiter, and per IP by
 // resetRequestIpLimiter so one address cannot work through a list of accounts.
-router.post('/forgot-password',       resetRequestIpLimiter, authLimiter, requireCaptcha('forgot_password', driverByEmail), validate(requestPasswordResetSchema), PasswordResetController.requestReset)
+router.post('/forgot-password',       resetRequestIpLimiter, authLimiter, validate(requestPasswordResetSchema), PasswordResetController.requestReset)
 // The link endpoints are throttled per TOKEN, not per IP — see passwordResetLimiter.
 // authLimiter must not be used here: these bodies carry no email, so it would key
 // them by IP and pool every reset behind a shared address into one small budget.
 router.post('/reset-password/verify', passwordResetLimiter, validate(verifyResetTokenSchema),     PasswordResetController.verifyToken)
-router.post('/reset-password',        passwordResetLimiter, requireCaptcha('reset_password', driverByResetToken), validate(completeResetSchema), PasswordResetController.completeReset)
+router.post('/reset-password',        passwordResetLimiter, validate(completeResetSchema), PasswordResetController.completeReset)
 
 // The IT Admin's self-service reset, by emailed code.
 //
@@ -63,11 +61,11 @@ router.post('/reset-password',        passwordResetLimiter, requireCaptcha('rese
 // hand anyone a fresh budget on the other for the same address. The service
 // enforces its own one-code-per-minute cooldown on top, because a limiter that
 // counts requests cannot tell a resend from a first ask.
-router.post('/it-admin/forgot-password', resetRequestIpLimiter, authLimiter, requireCaptcha('it_admin_forgot'), validate(requestResetOtpSchema), PasswordResetController.requestOtp)
+router.post('/it-admin/forgot-password', resetRequestIpLimiter, authLimiter, validate(requestResetOtpSchema), PasswordResetController.requestOtp)
 // Guessing IS the threat here - a six-digit code is small enough to brute-force
 // at any useful request rate - so this is keyed per email and backed by the
 // five-attempt budget on the request row itself, which is what actually stops it.
-router.post('/it-admin/verify-otp',      authLimiter,                          requireCaptcha('it_admin_verify'), validate(verifyResetOtpSchema),  PasswordResetController.verifyOtp)
+router.post('/it-admin/verify-otp',      authLimiter,                          validate(verifyResetOtpSchema),  PasswordResetController.verifyOtp)
 
 // Passkeys, for outside-vendor drivers.
 //

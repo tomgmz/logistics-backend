@@ -18,15 +18,8 @@ import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from './log-system
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 const TIMEOUT_MS     = 5_000
 
-export type CaptchaAction =
-  | 'contact'
-  | 'login'
-  | 'request_otp'
-  | 'verify_otp'
-  | 'forgot_password'
-  | 'it_admin_forgot'
-  | 'it_admin_verify'
-  | 'reset_password'
+// Only the landing page's contact form (user 2026-11-16).
+export type CaptchaAction = 'contact'
 
 export type TurnstileResult =
   /** Token checked and accepted. */
@@ -50,7 +43,7 @@ export async function verifyTurnstile(
       log_level:  'warn',
       event_type: 'external_api',
       source:     'turnstile.config',
-      message:    'TURNSTILE_SECRET_KEY is not set, so the public forms (contact, sign-in, password reset) are not checked for bots.',
+      message:    'TURNSTILE_SECRET_KEY is not set, so the landing page contact form is not checked for bots.',
       metadata:   {},
     })
     return { outcome: 'skipped', reason: 'not_configured' }
