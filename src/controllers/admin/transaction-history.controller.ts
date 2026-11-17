@@ -31,6 +31,8 @@ const querySchema = z.object({
   date_basis: z.enum(['scheduled', 'booked', 'completed']).optional(),
   date_from:  z.string().regex(DAY, 'date_from must be YYYY-MM-DD').optional(),
   date_to:    z.string().regex(DAY, 'date_to must be YYYY-MM-DD').optional(),
+  // amount_* is still accepted from older web builds and read as newest first:
+  // the system handles no amounts (user 2026-11-17).
   sort:       z.enum(['date_desc', 'date_asc', 'amount_desc', 'amount_asc']).optional(),
 })
 
@@ -80,7 +82,7 @@ export const list = async (req: Request, res: Response) => {
       ...filtersFrom(q),
       page:  q.page  ?? 1,
       limit: q.limit ?? 20,
-      sort:  (q.sort ?? 'date_desc') as SortKey,
+      sort:  (q.sort === 'date_asc' ? 'date_asc' : 'date_desc') as SortKey,
     })
     res.status(200).json({ status: 'success', data: result.data, meta: result.meta })
   } catch (error: any) {

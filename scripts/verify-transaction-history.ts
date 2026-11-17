@@ -39,10 +39,6 @@ function heading(s: string) {
   console.log(`\n${s}\n${'-'.repeat(s.length)}`)
 }
 
-/** Floating money compares need a cent of slack, not exact equality. */
-function near(a: number, b: number, eps = 0.01) {
-  return Math.abs(a - b) < eps
-}
 
 async function main() {
   heading('0. Connectivity')
@@ -78,17 +74,13 @@ async function main() {
     `sum=${summedStatuses} all=${base.meta.statusCounts.all}`,
   )
   check('page respects limit', base.data.length <= 20, `returned ${base.data.length}`)
-  console.log(`  gross=${baseSummary.grossValue.toFixed(2)} avg=${baseSummary.averageValue.toFixed(2)} ` +
-              `completed=${baseSummary.completed} cancelled=${baseSummary.cancelled} unpriced=${baseSummary.unpriced}`)
+  console.log(`  completed=${baseSummary.completed} cancelled=${baseSummary.cancelled}`)
 
   // ---------------------------------------------------------------------
   heading('2. Per-company breakdown reconciles with the totals')
   const bdCount = baseSummary.breakdown.reduce((s, r) => s + r.count, 0)
-  const bdValue = baseSummary.breakdown.reduce((s, r) => s + r.grossValue, 0)
   check('breakdown counts sum to summary.total', bdCount === baseSummary.total,
     `breakdown=${bdCount} summary=${baseSummary.total}`)
-  check('breakdown values sum to summary.grossValue', near(bdValue, baseSummary.grossValue),
-    `breakdown=${bdValue.toFixed(2)} summary=${baseSummary.grossValue.toFixed(2)}`)
 
   // ---------------------------------------------------------------------
   heading('3. Company filter')
@@ -216,19 +208,11 @@ async function main() {
     wildcard.meta.total < base.meta.total || base.meta.total === 0,
     `"%"=${wildcard.meta.total} unfiltered=${base.meta.total}`)
 
-  for (const sort of ['date_desc', 'date_asc', 'amount_desc', 'amount_asc'] as const) {
+  for (const sort of ['date_desc', 'date_asc'] as const) {
     const r = await listTransactionsService({ status: 'all', dateBasis: 'scheduled', sort, page: 1, limit: 5 })
     check(`sort ${sort} executes and keeps the total`, r.meta.total === base.meta.total,
       `total=${r.meta.total}`)
   }
-
-  const amountSorted = await listTransactionsService({
-    status: 'all', dateBasis: 'scheduled', sort: 'amount_desc', page: 1, limit: 10,
-  })
-  const costs = amountSorted.data.map((r) => Number((r as any).total_cost ?? 0))
-  check('amount_desc really is descending',
-    costs.every((v, i) => i === 0 || costs[i - 1] >= v),
-    `[${costs.slice(0, 5).join(', ')}]`)
 
   // ---------------------------------------------------------------------
   heading('7. Export matches the filtered set')

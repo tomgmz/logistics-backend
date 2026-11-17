@@ -60,7 +60,6 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   client_closed_at,
   resubmission_count,
   reference_number,
-  total_cost,
   estimated_delivery,
   required_volume_cbm,
   required_weight_kg,

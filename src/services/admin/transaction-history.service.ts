@@ -38,11 +38,8 @@ export interface TransactionListMeta {
 
 export interface TransactionSummary {
   total:            number
-  grossValue:       number
-  averageValue:     number
   completed:        number
   cancelled:        number
-  unpriced:         number
   cancellationRate: number
   breakdown:        CompanyBreakdownRow[]
 }
@@ -79,9 +76,8 @@ export async function getTransactionSummaryService(
   ])
 
   // The breakdown shows the top companies only, so without this the rows would
-  // visibly fail to add up to the gross figure sitting right above them.
+  // visibly fail to add up to the total sitting right above them.
   const shownCount = top.reduce((sum, r) => sum + r.count, 0)
-  const shownValue = top.reduce((sum, r) => sum + r.grossValue, 0)
   const breakdown  = [...top]
 
   if (totals.total > shownCount) {
@@ -89,19 +85,13 @@ export async function getTransactionSummaryService(
       clientId:    null,
       companyName: 'Other companies',
       count:       totals.total - shownCount,
-      grossValue:  Math.max(0, totals.grossValue - shownValue),
     })
   }
 
   return {
     total:            totals.total,
-    grossValue:       totals.grossValue,
-    // Averaged over every transaction in range, priced or not, so it reconciles
-    // with gross / total rather than quietly using a different denominator.
-    averageValue:     totals.total > 0 ? totals.grossValue / totals.total : 0,
     completed:        totals.completed,
     cancelled:        totals.cancelled,
-    unpriced:         totals.unpriced,
     cancellationRate: totals.total > 0 ? totals.cancelled / totals.total : 0,
     breakdown,
   }

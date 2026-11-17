@@ -8,9 +8,10 @@ import type { BookingWithRelations } from '../../types/client/booking.types.js'
  * transactions.
  *
  * The client portal's "Transaction History" is a booking history, so this is the
- * same data widened past a single client rather than a separate ledger. There
- * are no money documents behind it: `bookings.total_cost` is the only figure,
- * and since reverse billing was removed nothing writes that column.
+ * same data widened past a single client rather than a separate ledger. The
+ * system handles no amounts, cash or payments (user 2026-11-17), so no money
+ * figure is read, sorted, totalled or exported here. `bookings.total_cost` is
+ * a dead column (no writer, no reader).
  *
  * Everything below filters through one `buildWhere`. That is deliberate: the
  * page shows a totals strip and a per-company rollup above the rows, and if the
@@ -19,7 +20,7 @@ import type { BookingWithRelations } from '../../types/client/booking.types.js'
  */
 
 export type DateBasis = 'scheduled' | 'booked' | 'completed'
-export type SortKey   = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'
+export type SortKey   = 'date_desc' | 'date_asc'
 
 export interface TransactionFilters {
   status?:    string | null
@@ -38,17 +39,14 @@ export interface TransactionListQuery extends TransactionFilters {
 
 export interface TransactionSummaryRow {
   total:       number
-  grossValue:  number
   completed:   number
   cancelled:   number
-  unpriced:    number
 }
 
 export interface CompanyBreakdownRow {
   clientId:    string | null
   companyName: string
   count:       number
-  grossValue:  number
 }
 
 export interface CompanyOptionRow {
@@ -100,8 +98,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SORT_SQL: Record<SortKey, string> = {
   date_desc:   'b.created_at DESC',
   date_asc:    'b.created_at ASC',
-  amount_desc: 'b.total_cost DESC NULLS LAST',
-  amount_asc:  'b.total_cost ASC NULLS LAST',
 }
 
 /**
@@ -225,25 +221,16 @@ async function findTransactions(
   return { rows, total }
 }
 
-/**
- * The totals strip. Money is cast to float8 rather than numeric on purpose:
- * node-postgres hands `numeric` back as a string to protect precision, so a
- * numeric SUM arrives as "412300.00" and concatenates instead of adding. At
- * peso magnitudes a double is exact enough for a display aggregate, and the
- * per-row values it is derived from are never touched.
- */
+/** The totals strip: counts only (no money is handled). */
 async function summarize(f: TransactionFilters): Promise<TransactionSummaryRow> {
   const { whereSql, params } = buildWhere(f)
 
   const result = await pool.query<{
-    total: string; gross_value: string; completed: string; cancelled: string; unpriced: string
+    total: string; completed: string; cancelled: string
   }>(
     `SELECT COUNT(*)::int                                             AS total,
-            COALESCE(SUM(b.total_cost), 0)::float8                    AS gross_value,
             COUNT(*) FILTER (WHERE b.status = 'completed')::int       AS completed,
-            COUNT(*) FILTER (WHERE b.status = 'cancelled')::int       AS cancelled,
-            COUNT(*) FILTER (WHERE b.total_cost IS NULL
-                                OR b.total_cost = 0)::int             AS unpriced
+            COUNT(*) FILTER (WHERE b.status = 'cancelled')::int       AS cancelled
      ${FROM_SQL}
      ${whereSql}`,
     params,
@@ -252,10 +239,8 @@ async function summarize(f: TransactionFilters): Promise<TransactionSummaryRow> 
   const row = result.rows[0]
   return {
     total:      Number(row?.total       ?? 0),
-    grossValue: Number(row?.gross_value ?? 0),
     completed:  Number(row?.completed   ?? 0),
     cancelled:  Number(row?.cancelled   ?? 0),
-    unpriced:   Number(row?.unpriced    ?? 0),
   }
 }
 
@@ -318,16 +303,15 @@ async function breakdownByCompany(
   const { whereSql, params } = buildWhere(f)
 
   const result = await pool.query<{
-    client_id: string | null; company_name: string; n: string; gross_value: string
+    client_id: string | null; company_name: string; n: string
   }>(
     `SELECT b.client_id                              AS client_id,
             ${COMPANY_NAME_SQL}                      AS company_name,
-            COUNT(*)::int                            AS n,
-            COALESCE(SUM(b.total_cost), 0)::float8   AS gross_value
+            COUNT(*)::int                            AS n
      ${FROM_SQL}
      ${whereSql}
      GROUP BY b.client_id, c.registered_name, c.company_name
-     ORDER BY COALESCE(SUM(b.total_cost), 0) DESC, COUNT(*) DESC
+     ORDER BY COUNT(*) DESC
      LIMIT $${params.length + 1}`,
     [...params, limit],
   )
@@ -336,7 +320,6 @@ async function breakdownByCompany(
     clientId:    r.client_id,
     companyName: r.company_name,
     count:       Number(r.n),
-    grossValue:  Number(r.gross_value),
   }))
 }
 
@@ -380,13 +363,12 @@ export interface ExportRow {
   vehicle_plate:    string | null
   vehicle_type:     string | null
   vendor_name:      string | null
-  total_cost:       number | null
 }
 
 async function findForExport(f: TransactionFilters, cap: number): Promise<ExportRow[]> {
   const { whereSql, params } = buildWhere(f)
 
-  const result = await pool.query<ExportRow & { total_cost: string | null }>(
+  const result = await pool.query<ExportRow>(
     `SELECT b.reference_number,
             ${COMPANY_NAME_SQL}                                          AS company_name,
             b.status::text                                               AS status,
@@ -403,8 +385,7 @@ async function findForExport(f: TransactionFilters, cap: number): Promise<Export
             crew.driver_name,
             crew.vehicle_plate,
             crew.vehicle_type,
-            crew.vendor_name,
-            b.total_cost
+            crew.vendor_name
      ${FROM_SQL}
      -- Company crew comes off the fleet rows, vendor crew off the snapshot the
      -- assignment wrote onto the delivery.
@@ -429,10 +410,7 @@ async function findForExport(f: TransactionFilters, cap: number): Promise<Export
     [...params, cap],
   )
 
-  return result.rows.map((r) => ({
-    ...r,
-    total_cost: r.total_cost === null ? null : Number(r.total_cost),
-  }))
+  return result.rows
 }
 
 /**
