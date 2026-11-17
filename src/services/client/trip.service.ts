@@ -11,6 +11,7 @@ import { invalidateEta } from '../maps/eta.service.js'
 import { broadcast } from '../../lib/realtime.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { requestDriverCallCheck } from '../notification/driver-call.scheduler.js'
+import { badRequest } from '../../lib/http-error.js'
 import {
   assertStopProximity,
   distanceInMetres,
@@ -224,26 +225,76 @@ export async function setDriverCallTimeService(
   bookingId: string,
   driverCallTime: string | null,
   actor: DriverActor,
-): Promise<{ driver_call_time: string | null }> {
+  driverCallDate: string | null = null,
+): Promise<{ driver_call_time: string | null; driver_call_date: string | null }> {
   const booking = await BookingModel.findById(bookingId)
   if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
   if (booking.status !== 'assigned') {
     throw new Error(`Cannot set the driver's call time while the booking is '${booking.status}'`)
   }
 
-  await BookingModel.setDriverCallTime(bookingId, driverCallTime)
+  const scheduleDay = String(booking.schedule_date ?? '').slice(0, 10)
+  // No date (older web build) = the booking day, as before.
+  const callDay = driverCallTime ? (driverCallDate ?? scheduleDay) : null
+
+  if (driverCallTime && callDay) {
+    // The call may fall on the booking day or the day before (e.g. 10:00 PM
+    // the night before a 12:00 AM start), never earlier and never after the
+    // start the client booked (user 2026-11-17).
+    const dayBefore = shiftDay(scheduleDay, -1)
+    if (callDay !== scheduleDay && callDay !== dayBefore) {
+      throw badRequest('The driver call time must be on the booking day or the day before.')
+    }
+    const callAt  = phInstant(callDay, driverCallTime)
+    const startAt = phInstant(scheduleDay, String(booking.call_time ?? ''))
+    if (!callAt) throw badRequest('The driver call time is not a valid date and time.')
+    if (startAt && callAt.getTime() > startAt.getTime()) {
+      throw badRequest(
+        `The driver call time can't be after the booking starts (${formatPhDateTime(startAt)}).`,
+      )
+    }
+    if (callAt.getTime() <= Date.now()) {
+      throw badRequest('That driver call time has already passed. Pick a later time.')
+    }
+  }
+
+  await BookingModel.setDriverCallTime(bookingId, driverCallTime, callDay)
   requestDriverCallCheck()
 
+  const at = driverCallTime && callDay ? phInstant(callDay, driverCallTime) : null
   logEvent({
     user_id:     actor.userId,
     log_type:    'booking',
     action:      'booking_driver_call_time_set',
-    description: driverCallTime
-      ? `Driver call time for booking ${bookingRef(booking)} set to ${driverCallTime}`
+    description: at
+      ? `Driver call time for booking ${bookingRef(booking)} set to ${formatPhDateTime(at)}`
       : `Driver call time for booking ${bookingRef(booking)} cleared — the client's call time applies`,
   })
 
-  return { driver_call_time: driverCallTime }
+  return { driver_call_time: driverCallTime, driver_call_date: callDay }
+}
+
+/** `YYYY-MM-DD` + `HH:MM[:SS]` in PH time, as an instant. */
+function phInstant(day: string, time: string): Date | null {
+  const hm = time.slice(0, 5)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !/^\d{2}:\d{2}$/.test(hm)) return null
+  const at = new Date(`${day}T${hm}:00+08:00`)
+  return Number.isNaN(at.getTime()) ? null : at
+}
+
+/** A calendar day moved by `n` days. */
+function shiftDay(day: string, n: number): string {
+  const d = new Date(`${day}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+/** "Nov 12, 2026, 12:00 AM", PH time. */
+function formatPhDateTime(at: Date): string {
+  return new Intl.DateTimeFormat('en-PH', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+    hour12: true, timeZone: 'Asia/Manila',
+  }).format(at)
 }
 
 /** A planner save whose quantities don't add up — always a 400. */

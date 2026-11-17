@@ -155,4 +155,10 @@ export const driverCallTimeSchema = z.object({
   driver_call_time: z.string()
     .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, 'driver_call_time must be in HH:MM format')
     .nullable(),
+  // The call's own day (PH): the booking day or the day before. Left out by an
+  // older web build = the booking day.
+  driver_call_date: z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'driver_call_date must be YYYY-MM-DD')
+    .nullable()
+    .optional(),
 })

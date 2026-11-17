@@ -49,6 +49,7 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   schedule_date,
   call_time,
   driver_call_time,
+  driver_call_date,
   status,
   gm_status,
   ops_status,
@@ -1104,10 +1105,14 @@ async function markFleetRecheckSent(
  * follow the client's call time. Clears no reminder stamp: the stamp holds the
  * call instant it was sent for, so a new time simply stops matching it.
  */
-async function setDriverCallTime(bookingId: string, driverCallTime: string | null): Promise<void> {
+async function setDriverCallTime(
+  bookingId: string,
+  driverCallTime: string | null,
+  driverCallDate: string | null = null,
+): Promise<void> {
   const { error } = await supabase
     .from('bookings')
-    .update({ driver_call_time: driverCallTime })
+    .update({ driver_call_time: driverCallTime, driver_call_date: driverCallTime ? driverCallDate : null })
     .eq('booking_id', bookingId)
 
   if (error) throw error

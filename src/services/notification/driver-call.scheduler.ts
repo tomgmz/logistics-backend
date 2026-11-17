@@ -33,6 +33,7 @@ interface CandidateRow {
   schedule_date:            string
   call_time:                string | null
   driver_call_time:         string | null
+  driver_call_date:         string | null
   driver_call_reminder_for: string | null
 }
 
@@ -57,10 +58,11 @@ async function findCandidates(now: Date): Promise<CandidateRow[]> {
   const dateOnly = (d: Date) => d.toISOString().slice(0, 10)
   const { data, error } = await supabase
     .from('bookings')
-    .select('booking_id, schedule_date, call_time, driver_call_time, driver_call_reminder_for')
+    .select('booking_id, schedule_date, call_time, driver_call_time, driver_call_date, driver_call_reminder_for')
     .eq('status', 'assigned')
     .gte('schedule_date', dateOnly(new Date(now.getTime() - DAY_MS)))
-    .lte('schedule_date', dateOnly(new Date(now.getTime() + DAY_MS)))
+    // +2 days: a driver call may fall on the day before the booking.
+    .lte('schedule_date', dateOnly(new Date(now.getTime() + 2 * DAY_MS)))
 
   if (error) throw error
   return (data ?? []) as CandidateRow[]
@@ -72,7 +74,11 @@ export async function runDriverCallTick(now = new Date()): Promise<number> {
   let sent = 0
 
   for (const row of rows) {
-    const at = callAt(row.schedule_date, row.driver_call_time ?? row.call_time)
+    // The driver's call has its own day (booking day or the day before);
+    // the client's call time is always on the booking day.
+    const at = row.driver_call_time
+      ? callAt(row.driver_call_date ?? row.schedule_date, row.driver_call_time)
+      : callAt(row.schedule_date, row.call_time)
     if (!at) continue
 
     const left = at.getTime() - now.getTime()

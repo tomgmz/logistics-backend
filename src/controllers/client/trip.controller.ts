@@ -117,10 +117,12 @@ export const setDriverCallTime = async (req: Request, res: Response) => {
       param(req.params.bookingId),
       req.body.driver_call_time ?? null,
       driverActor(req),
+      req.body.driver_call_date ?? null,
     )
     res.status(200).json({ status: 'success', data })
   } catch (error: any) {
     const status =
+      error.status === 400                ? 400 :
       error.message.includes('not found') ? 404 :
       error.message.includes('Cannot ')   ? 409 : 500
     res.status(status).json({ status: 'error', message: error.message })

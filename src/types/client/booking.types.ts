@@ -128,6 +128,8 @@ export interface Booking {
   call_time:              string
   /** When operations wants the driver at the pickup point (PH time); null = follow call_time. */
   driver_call_time?:      string | null
+  /** Day of the driver's call time (PH); null = the booking day. */
+  driver_call_date?:      string | null
   status:                 BookingStatus
 
   gm_status?:             GmStatus | null

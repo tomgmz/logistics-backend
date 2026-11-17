@@ -19,6 +19,7 @@ import { MAX_DESTINATIONS_PER_BOOKING } from '../../lib/booking-limits.js'
 import { logEvent } from '../../lib/log-event.js'
 import { logSystem } from '../../lib/log-system.js'
 import { badRequest, conflict, notFound } from '../../lib/http-error.js'
+import { requestDriverCallCheck } from '../notification/driver-call.scheduler.js'
 import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay, phDay, phDayPlusMonth, phTimeHHMM, SAME_DAY_LATEST_CALL_TIME, sameDayBookingOpen } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers, emailDeliveryConfirm } from '../notification/notification.service.js'
@@ -453,6 +454,23 @@ export async function updateBookingService(
   const moved = ['schedule_date', 'call_time', 'origin_latitude', 'origin_longitude']
     .some((k) => k in (input as Record<string, unknown>))
   if (moved) void refreshPlannedEta(bookingId)
+
+  // The driver's call time was set against the old start; a new day or start
+  // time could leave it after the start (or two days early). Clear it so the
+  // driver follows the client's new time until operations set a new one.
+  const startMoved =
+    (input.schedule_date !== undefined && String(input.schedule_date).slice(0, 10) !== String(existing.schedule_date ?? '').slice(0, 10)) ||
+    (input.call_time !== undefined && String(input.call_time).slice(0, 5) !== String(existing.call_time ?? '').slice(0, 5))
+  if (startMoved && existing.driver_call_time) {
+    await BookingModel.setDriverCallTime(bookingId, null)
+    requestDriverCallCheck()
+    logEvent({
+      user_id:     userId,
+      log_type:    'booking',
+      action:      'booking_driver_call_time_set',
+      description: `Driver call time for booking ${bookingRef(booking)} cleared because the booking's date or call time changed — the client's call time applies`,
+    })
+  }
 
   logEvent({
     user_id:     userId,
