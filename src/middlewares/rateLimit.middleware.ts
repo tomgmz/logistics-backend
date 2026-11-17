@@ -284,3 +284,20 @@ export const contactFormLimiter = rateLimit({
   keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
   message: limitMessage('You have sent several messages already. Please wait a while, or email or call us directly.'),
 })
+
+/**
+ * The client help assistant's AI answers (POST /support/assistant). Each one is
+ * a paid Gemini call, so it gets its own ceiling per account: far more than a
+ * person typing questions asks (the keyword FAQ answers most without a call),
+ * low enough that a script can't run up the bill. Over it, the web falls back
+ * to the keyword answers and a ticket.
+ */
+export const assistantLimiter = rateLimit({
+  handler: limitTripped('assistantLimiter', 'warn'),
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(clientIp(req)),
+  message: limitMessage('The assistant has answered a lot of questions from this account. Please try again later, or open a ticket.'),
+})

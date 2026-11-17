@@ -157,6 +157,12 @@ const SERVICES: { key: string; label: string; description: string; filter: (q: a
     filter:      (q) => q.eq('event_type', 'external_api').like('source', 'turnstile.%'),
   },
   {
+    key:         'gemini',
+    label:       'Help assistant AI (Google Gemini)',
+    description: "Answers clients' help questions from the FAQ. When it fails, the assistant uses its keyword answers.",
+    filter:      (q) => q.eq('event_type', 'external_api').like('source', 'gemini.%'),
+  },
+  {
     key:         'livekit',
     label:       'Emergency voice calls (LiveKit)',
     description: "The driver's in-app call to Operations after a quick alert.",

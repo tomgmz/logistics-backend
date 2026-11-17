@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { authenticate, authorize } from '../middlewares/auth.middleware.js'
-import { authenticatedLimiter } from '../middlewares/rateLimit.middleware.js'
+import { authenticatedLimiter, assistantLimiter } from '../middlewares/rateLimit.middleware.js'
 import { attachClientScope } from '../middlewares/clientScope.middleware.js'
 import { validate } from '../middlewares/validate.middleware.js'
 import { requireModule } from '../middlewares/moduleAccess.middleware.js'
 import * as Support from '../services/support/support.service.js'
+import { askAssistant } from '../services/support/assistant.service.js'
 import { supportInboxEmail } from '../lib/brevo-mailer.js'
 import { pageQuery, paginate, searchQuery, matchesWords } from '../lib/paginate.js'
 
@@ -21,6 +22,9 @@ import { pageQuery, paginate, searchQuery, matchesWords } from '../lib/paginate.
  *   GET   /support/tickets?status=open   staff queue (dashboard + the Company
  *                                        Administrator's Tickets page)
  *   PATCH /support/tickets/:id/resolve   staff mark it resolved (emails the client)
+ *   POST  /support/assistant             client: an AI answer grounded in the FAQ
+ *                                        (Gemini), asked when the web's keyword
+ *                                        matcher has no confident answer
  *
  * Staff = the Company Administrator and the Operations Manager, the desk that
  * talks to clients. The conversation itself happens by email.
@@ -50,6 +54,12 @@ const staffTicketSchema = z.object({
   booking_id: z.string().uuid().nullable().optional(),
 }).strict()
 
+const assistantSchema = z.object({
+  question: z.string().trim().min(1).max(300),
+  /** Up to three earlier questions from the same chat, for follow-ups. */
+  earlier:  z.array(z.string().max(300)).max(3).optional(),
+}).strict()
+
 const resolveSchema = z.object({
   note: z.string().trim().max(2000).nullable().optional(),
 })
@@ -68,6 +78,18 @@ router.post('/tickets', authenticate, authenticatedLimiter, isClient, attachClie
       const ticket = await Support.openTicket(req.clientId!, req.user!.sub, req.body)
       res.status(201).json({ status: 'success', data: ticket })
     } catch (err) { fail(res, err) }
+  })
+
+// Never an error status for a model problem: 'unavailable' tells the web to
+// fall back to its keyword answers.
+router.post('/assistant', authenticate, assistantLimiter, isClient, validate(assistantSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await askAssistant(req.body.question, req.body.earlier ?? [])
+      res.status(200).json({ status: 'success', data })
+    } catch {
+      res.status(200).json({ status: 'success', data: { status: 'unavailable' } })
+    }
   })
 
 // Opening one is an edit: a Read Only Tickets tier cannot.
