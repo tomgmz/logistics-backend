@@ -114,7 +114,7 @@ const SERVICES: { key: string; label: string; description: string; filter: (q: a
   {
     key:         'email',
     label:       'Email (Resend)',
-    description: 'One-time codes, password resets, welcome and enrolment emails.',
+    description: 'One-time codes, password resets, welcome and enrolment emails, and recording replies to support tickets.',
     // A recipient's server refusing one email (email.delivery; brevo.delivery
     // before Resend) is about that address, not the provider being down; those
     // rows stay in System Logs only.
@@ -154,7 +154,7 @@ const SERVICES: { key: string; label: string; description: string; filter: (q: a
   {
     key:         'gemini',
     label:       'Help assistant AI (Google Gemini)',
-    description: "Answers clients' help questions from the FAQ. When it fails, the assistant uses its keyword answers.",
+    description: "Answers every typed help question from the FAQ. When it fails, the assistant offers the closest common questions.",
     filter:      (q) => q.eq('event_type', 'external_api').like('source', 'gemini.%'),
   },
   {

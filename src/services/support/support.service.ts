@@ -43,6 +43,8 @@ const MAX_OPEN_PER_CLIENT = 5
 const TICKET_SELECT = `
   ticket_id, ticket_number, client_id, opened_by, booking_id, category, subject, message,
   chat_transcript, status, resolved_at, resolved_by, resolution_note, created_at, updated_at,
+  client_last_reply_at, staff_last_reply_at, reopened_at, reopen_count,
+  support_ticket_replies ( reply_id, direction, from_email, from_name, body_text, received_at ),
   clients ( company_name, user_id, users ( first_name, last_name, email ) ),
   opener:users!support_tickets_opened_by_fkey ( first_name, last_name, email ),
   resolver:users!support_tickets_resolved_by_fkey ( first_name, last_name ),
@@ -244,7 +246,8 @@ export async function listClientTickets(clientId: string) {
     .order('created_at', { ascending: false })
     .limit(50)
   if (error) throw error
-  return (data ?? []).map((r: any) => withRef(r))
+  // The recorded email replies are the office's working copy; the client has the thread.
+  return (data ?? []).map(({ support_ticket_replies: _replies, ...r }: any) => withRef(r))
 }
 
 export async function listTickets(status: 'open' | 'resolved' | 'all') {

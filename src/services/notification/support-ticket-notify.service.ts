@@ -31,7 +31,7 @@ interface TicketSummary {
 
 async function fanOut(
   recipients: { user_id: string }[],
-  type:       'support.ticket_opened' | 'support.ticket_resolved' | 'support.ticket_logged',
+  type:       'support.ticket_opened' | 'support.ticket_resolved' | 'support.ticket_logged' | 'support.ticket_replied' | 'support.ticket_reopened',
   title:      string,
   body:       string,
   ticket:     TicketSummary,
@@ -129,5 +129,27 @@ export async function notifyTicketResolved(ticket: TicketSummary, clientUserId: 
     )
   } catch (err) {
     console.error('[support] notifyTicketResolved failed', ticket.reference, err)
+  }
+}
+
+/**
+ * The client answered a ticket by email (recorded from the reply address):
+ * every active Company Administrator and Operations Manager hears about it, as
+ * for a new ticket. `reopened`: it was resolved and the reply opened it again.
+ */
+export async function notifyTicketReplied(ticket: TicketSummary, clientName: string, reopened: boolean): Promise<void> {
+  try {
+    const recipients = await notificationModel.resolveRecipientsByRoles(['admin', 'operations_manager'])
+    const type  = reopened ? 'support.ticket_reopened' : 'support.ticket_replied'
+    const title = reopened ? 'Support ticket reopened' : 'Client replied to a ticket'
+    const body  = reopened
+      ? `${clientName} replied to ${ticket.reference} after it was resolved, so it is open again: ${ticket.subject}`
+      : `${clientName} replied to ${ticket.reference}: ${ticket.subject}`
+    await Promise.all([
+      fanOut(recipients.filter((r) => r.role === 'admin'), type, title, body, ticket, ADMIN_TICKETS_PATH),
+      fanOut(recipients.filter((r) => r.role === 'operations_manager'), type, title, body, ticket, OPS_TICKETS_PATH),
+    ])
+  } catch (err) {
+    console.error('[support] notifyTicketReplied failed', ticket.reference, err)
   }
 }

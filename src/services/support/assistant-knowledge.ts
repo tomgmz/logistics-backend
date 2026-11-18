@@ -349,7 +349,8 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
   P('ops-tickets', 'How do support tickets work?',
     'Open a ticket in the help assistant with a topic, an optional booking, a subject and what happened. You can ' +
     'have up to 5 open tickets. You get an email about it; reply to that email to add details. Our team answers ' +
-    'by email and you can follow it under My tickets.', 'client'),
+    'by email and you can follow it under My tickets. If a ticket was marked resolved but the problem is not ' +
+    'fixed, reply to its email from the address on your account: the ticket opens again and our team is told.', 'client'),
   P('ops-messages', 'Can I message the driver or the office?',
     'The Messages tab in the help assistant shows messages from our Company Administrator and Operations Manager. ' +
     'Clients can read them but cannot reply there, and cannot message drivers. To reach us, open a ticket.', 'client'),

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { logSystemThrottled } from '../lib/log-system.js'
 import { handleDeliveryEvent, fromResendEvent, ResendWebhookEvent } from '../services/notification/email-delivery.service.js'
+import { handleInboundTicketEmail } from '../services/support/ticket-replies.service.js'
 
 /**
  * Callbacks from outside services. No session and no CSRF (mounted ahead of
@@ -14,6 +15,13 @@ import { handleDeliveryEvent, fromResendEvent, ResendWebhookEvent } from '../ser
  *   email.delivery_delayed. Its signing secret (whsec_…) goes in
  *   RESEND_WEBHOOK_SECRET. Requests are signed the Svix way: HMAC-SHA256 of
  *   "<svix-id>.<svix-timestamp>.<raw body>" with the base64 secret.
+ *
+ * POST /api/webhooks/resend-inbound — replies to support ticket emails
+ *   (2026-11-18). In Resend: Receiving on (a <id>.resend.app address or a
+ *   subdomain with Resend's MX record), then Webhooks → Add endpoint, URL
+ *   https://api.8338logistics.delivery/api/webhooks/resend-inbound, event
+ *   email.received. Its signing secret goes in RESEND_INBOUND_WEBHOOK_SECRET;
+ *   the receiving address goes in TICKET_REPLY_EMAIL.
  *
  * (POST /api/webhooks/brevo was removed with Brevo on 2026-11-18.)
  */
@@ -76,6 +84,34 @@ router.post('/resend', (req: Request, res: Response) => {
   void (async () => {
     for (const one of fromResendEvent(ev, svixId)) await handleDeliveryEvent(one)
   })()
+})
+
+router.post('/resend-inbound', (req: Request, res: Response) => {
+  const secret = process.env.RESEND_INBOUND_WEBHOOK_SECRET ?? ''
+  if (!secret) {
+    logSystemThrottled('resend-inbound:unset', 60 * 60 * 1000, {
+      log_level:  'warn',
+      event_type: 'email_event',
+      source:     'tickets.inbound',
+      message:    'Resend sent a received email but RESEND_INBOUND_WEBHOOK_SECRET is not set on the server, so it was ignored (the reply is still in Resend).',
+    })
+    res.status(503).json({ status: 'error', message: 'Webhook not configured' })
+    return
+  }
+  if (!resendSignatureOk(req, secret)) {
+    logSystemThrottled('resend-inbound:auth', 10 * 60 * 1000, {
+      log_level:  'warn',
+      event_type: 'auth_event',
+      source:     'tickets.inbound',
+      message:    'A call to the ticket reply webhook had a missing, old or wrong signature and was refused.',
+    })
+    res.status(401).json({ status: 'error', message: 'Unauthorized' })
+    return
+  }
+
+  const ev = req.body as { type?: string; data?: { email_id?: string } } | undefined
+  res.status(200).json({ status: 'ok' })
+  if (ev?.type === 'email.received' && ev.data?.email_id) void handleInboundTicketEmail(ev.data.email_id)
 })
 
 export default router

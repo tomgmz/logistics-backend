@@ -7,7 +7,7 @@ import { validate } from '../middlewares/validate.middleware.js'
 import { requireModule } from '../middlewares/moduleAccess.middleware.js'
 import * as Support from '../services/support/support.service.js'
 import { askAssistant } from '../services/support/assistant.service.js'
-import { supportInboxEmail } from '../lib/mailer.js'
+import { supportInboxEmail, ticketRepliesTracked } from '../lib/mailer.js'
 import { pageQuery, paginate, searchQuery, matchesWords } from '../lib/paginate.js'
 
 /**
@@ -150,11 +150,11 @@ router.get('/tickets', authenticate, authenticatedLimiter, isSupportDesk, requir
             ? String(a.created_at).localeCompare(String(b.created_at))
             : String(b.created_at).localeCompare(String(a.created_at))))
         const { data, meta } = paginate(rows, paging)
-        return res.status(200).json({ status: 'success', data, meta: { ...meta, counts }, inbox: supportInboxEmail() })
+        return res.status(200).json({ status: 'success', data, meta: { ...meta, counts }, inbox: supportInboxEmail(), reply_tracking: ticketRepliesTracked() })
       }
 
       // The inbox the tickets were emailed to; the Tickets page opens it in Gmail.
-      res.status(200).json({ status: 'success', data: await Support.listTickets(status), inbox: supportInboxEmail() })
+      res.status(200).json({ status: 'success', data: await Support.listTickets(status), inbox: supportInboxEmail(), reply_tracking: ticketRepliesTracked() })
     } catch (err) { fail(res, err) }
   })
 

@@ -82,6 +82,8 @@ export type NotificationType =
   // Client support tickets. Carry `ticket_id` + `reference_number` in `data`;
   // `booking_id` stays null even when the ticket names a booking.
   | 'support.ticket_opened'           // client opened a ticket -> Company Administrators + Operations Managers
+  | 'support.ticket_replied'          // client replied by email -> Company Administrators + Operations Managers
+  | 'support.ticket_reopened'         // client replied to a resolved ticket -> same
   | 'support.ticket_resolved'         // staff resolved it -> the client
   | 'support.ticket_logged'           // staff opened a ticket for a client -> that client
   // The email provider's webhook says an email we sent was not delivered (bounce, block,

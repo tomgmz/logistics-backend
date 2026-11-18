@@ -325,7 +325,7 @@ interface OutgoingEmail {
   text:     string
   to:       Address
   cc?:      Address
-  replyTo?: Address
+  replyTo?: Address | Address[]
   /** For the error message and log: "welcome email". */
   what:     string
 }
@@ -343,7 +343,7 @@ async function viaResend(m: OutgoingEmail): Promise<void> {
         html:    m.html,
         text:    m.text,
         ...(m.cc ? { cc: [fmt(m.cc)] } : {}),
-        ...(m.replyTo ? { reply_to: [fmt(m.replyTo)] } : {}),
+        ...(m.replyTo ? { reply_to: (Array.isArray(m.replyTo) ? m.replyTo : [m.replyTo]).map(fmt) } : {}),
       },
       {
         headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
@@ -705,6 +705,22 @@ export function supportInboxEmail(): string {
   return CONTACT_INBOX_EMAIL
 }
 
+/**
+ * Where replies to a ticket email go. TICKET_REPLY_EMAIL is an address Resend
+ * receives for us (Receiving: a <id>.resend.app address, or one on a subdomain
+ * with Resend's MX record); every reply there reaches POST
+ * /api/webhooks/resend-inbound, is recorded on the ticket and passed on to the
+ * inbox. Unset: replies go straight to the inbox as before (not tracked).
+ */
+export function ticketReplyEmail(): string {
+  return process.env.TICKET_REPLY_EMAIL?.trim() || CONTACT_INBOX_EMAIL
+}
+
+/** Whether ticket replies are recorded (TICKET_REPLY_EMAIL is set). */
+export function ticketRepliesTracked(): boolean {
+  return Boolean(process.env.TICKET_REPLY_EMAIL?.trim())
+}
+
 export interface ContactInquiryEmailParams {
   firstName: string
   lastName:  string
@@ -972,7 +988,7 @@ export async function sendSupportTicketEmail(p: SupportTicketEmailParams): Promi
     html, text,
     to:      { email: p.email, name: p.clientName },
     cc:      { email: CONTACT_INBOX_EMAIL },
-    replyTo: { email: CONTACT_INBOX_EMAIL },
+    replyTo: { email: ticketReplyEmail() },
     what:    'support ticket email',
   })
 }
@@ -991,8 +1007,30 @@ export async function sendSupportTicketResolvedEmail(p: {
     text:    layoutText([plain, ...(p.note ? ['', 'Note from our team:', p.note] : [])].join('\n'), footer),
     to:      { email: p.email, name: p.clientName },
     cc:      { email: CONTACT_INBOX_EMAIL },
-    replyTo: { email: CONTACT_INBOX_EMAIL },
+    replyTo: { email: ticketReplyEmail() },
     what:    'support ticket resolved email',
+  })
+}
+
+/**
+ * A reply to a ticket reached the reply address but not the inbox (the client
+ * pressed Reply, not Reply all): pass it on so staff see it in the same Gmail
+ * thread. Reply all from Gmail answers the sender and keeps the reply address
+ * in the loop, so the answer is recorded too.
+ */
+export async function sendTicketReplyForward(p: {
+  subject: string; reference: string; fromEmail: string; fromName: string | null; body: string; note?: string | null
+}): Promise<void> {
+  const who    = p.fromName ? `${p.fromName} <${p.fromEmail}>` : p.fromEmail
+  const intro  = `${who} replied to support ticket ${p.reference}.` + (p.note ? ` ${p.note}` : '')
+  const footer = 'Use Reply all so your answer reaches them and is recorded on the ticket.'
+  await deliver({
+    subject: p.subject,
+    html:    layoutHtml({ label: 'Ticket Reply', blocks: [para(esc(intro)), quoted('Their message', p.body || '(no text)')], footer }),
+    text:    layoutText([intro, '', p.body || '(no text)'].join('\n'), footer),
+    to:      { email: CONTACT_INBOX_EMAIL },
+    replyTo: [{ email: p.fromEmail, name: p.fromName }, { email: ticketReplyEmail() }],
+    what:    'ticket reply forward',
   })
 }
 
