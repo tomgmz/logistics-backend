@@ -2,7 +2,7 @@ import axios from 'axios'
 import { supabase } from '../../lib/supabase.js'
 import { logEvent } from '../../lib/log-event.js'
 import { logSystem } from '../../lib/log-system.js'
-import { sendTicketReplyForward, supportInboxEmail } from '../../lib/mailer.js'
+import { sendTicketReplyForward, sendTicketStaffReplyToClient, supportInboxEmail } from '../../lib/mailer.js'
 import { notifyTicketReplied } from '../notification/support-ticket-notify.service.js'
 import { ticketRef } from './support.service.js'
 
@@ -17,8 +17,11 @@ import { ticketRef } from './support.service.js'
  *   - From the client's account email (and not failing DMARC): a client reply.
  *     The ticket shows "Client replied"; on a resolved ticket it reopens it, as
  *     Zendesk reopens a solved ticket when the requester writes back.
- *   - From the support inbox (staff use Reply all in Gmail): a staff reply, so
- *     the ticket reads "Waiting for client".
+ *   - From the support inbox, or from the email of an active staff account
+ *     (STAFF_ROLES): a staff reply, so the ticket reads "Waiting for client".
+ *     A staff reply the client was not on (plain Reply on the ticket email, or
+ *     an email to the reply address only) is sent on to the client, CC the
+ *     inbox, so an answer can't silently stay with us.
  *   - Anyone else: recorded with their address, never reopens.
  *   - A reply that didn't also reach the inbox (the client pressed Reply, not
  *     Reply all) is passed on to the inbox, so staff keep working in Gmail.
@@ -26,6 +29,8 @@ import { ticketRef } from './support.service.js'
  */
 
 const RESEND_API = 'https://api.resend.com'
+/** Accounts whose replies count as "Our team" (not the client, not a driver). */
+const STAFF_ROLES = ['admin', 'it_admin', 'general_manager', 'operations_manager', 'fleet_manager']
 const BODY_MAX   = 4000
 
 interface ReceivedEmail {
@@ -99,6 +104,19 @@ async function readReceived(emailId: string): Promise<ReceivedEmail> {
   return data
 }
 
+/** An active staff account with this email, if any. */
+async function staffAccountFor(email: string): Promise<{ first_name: string | null; last_name: string | null } | null> {
+  if (!email) return null
+  const { data } = await supabase
+    .from('users')
+    .select('first_name, last_name, role, status')
+    .ilike('email', email.replace(/[\\%_]/g, (c) => `\\${c}`))
+    .in('role', STAFF_ROLES)
+    .neq('status', 'archived')
+    .limit(1)
+  return (data?.[0] as any) ?? null
+}
+
 function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : (v ?? null)
 }
@@ -116,7 +134,8 @@ export async function handleInboundTicketEmail(emailId: string): Promise<void> {
     const subject = mail.subject ?? ''
     const body    = newPartOf(mail.text ?? (mail.html ? htmlToText(mail.html) : ''))
     const inbox   = supportInboxEmail().toLowerCase()
-    const reachedInbox = [...(mail.to ?? []), ...(mail.cc ?? [])].some((a) => parseAddress(a).email === inbox)
+    const recipients   = [...(mail.to ?? []), ...(mail.cc ?? [])].map((a) => parseAddress(a).email)
+    const reachedInbox = recipients.includes(inbox)
 
     const number = ticketNumberFrom(subject)
     const { data: ticket } = number
@@ -145,17 +164,20 @@ export async function handleInboundTicketEmail(emailId: string): Promise<void> {
     const clientEmail = contact?.email?.trim().toLowerCase() ?? null
     // A forged From fails DMARC; such a "client" reply is kept as other, never reopens.
     const dmarcFailed = String(mail.authentication?.dmarc ?? '').toLowerCase() === 'fail'
+    const staffAccount = sender.email === inbox || sender.email === clientEmail ? null : await staffAccountFor(sender.email)
     const direction: 'client' | 'staff' | 'other' =
       sender.email === inbox ? 'staff'
       : sender.email === clientEmail && !dmarcFailed ? 'client'
+      : staffAccount && !dmarcFailed ? 'staff'
       : 'other'
+    const staffName = staffAccount ? [staffAccount.first_name, staffAccount.last_name].filter(Boolean).join(' ') || null : null
     const reference = ticketRef(t.ticket_number)
 
     const { error: insErr } = await supabase.from('support_ticket_replies').insert({
       ticket_id:  t.ticket_id,
       direction,
       from_email: sender.email,
-      from_name:  sender.name,
+      from_name:  sender.name ?? staffName,
       body_text:  body,
       email_id:   emailId,
     })
@@ -188,8 +210,27 @@ export async function handleInboundTicketEmail(emailId: string): Promise<void> {
       void notifyTicketReplied({ ticket_id: t.ticket_id, reference, subject: t.subject, booking_id: null }, clientName, reopened)
     }
 
-    // Staff already have what came from the inbox or was copied to it.
-    if (direction !== 'staff' && !reachedInbox) {
+    // Safety net: a staff answer that didn't go to the client (plain Reply on
+    // the ticket email goes to the reply address only) is sent on to them, CC
+    // the inbox so the Gmail thread has it too.
+    if (direction === 'staff' && clientEmail && !recipients.includes(clientEmail)) {
+      await sendTicketStaffReplyToClient({
+        subject:    subject || `Re: [${reference}] ${t.subject}`,
+        reference,
+        clientName,
+        clientEmail,
+        body,
+      })
+      logSystem({
+        log_level: 'info', event_type: 'email_event', source: 'tickets.inbound',
+        message: `A staff reply on ${reference} from ${sender.email} did not include the client, so it was sent on to them.`,
+      })
+      return
+    }
+
+    // Anything that missed the inbox (the client pressed Reply, or staff wrote
+    // from their own address) is passed on, so the Gmail thread stays whole.
+    if (!reachedInbox && sender.email !== inbox) {
       await sendTicketReplyForward({
         subject:   subject || `Re: [${reference}] ${t.subject}`,
         reference,
@@ -198,7 +239,8 @@ export async function handleInboundTicketEmail(emailId: string): Promise<void> {
         body,
         note: reopened
           ? 'The ticket was resolved, so this reply reopened it.'
-          : direction === 'other' ? 'This address is not the client\'s account email, so the ticket was not changed.' : null,
+          : direction === 'other' ? 'This address is not the client\'s account email, so the ticket was not changed.'
+          : direction === 'staff' ? 'A staff reply sent from their own address; the client was on it.' : null,
       })
     }
   } catch (err: any) {

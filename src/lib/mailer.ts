@@ -1075,6 +1075,27 @@ export async function sendTicketReplyForward(p: {
   })
 }
 
+/**
+ * Staff answered a ticket without the client on the email (plain Reply on the
+ * ticket email, which only reaches the reply address): send it on to the
+ * client, CC the inbox, replies to the reply address.
+ */
+export async function sendTicketStaffReplyToClient(p: {
+  subject: string; reference: string; clientName: string; clientEmail: string; body: string
+}): Promise<void> {
+  const intro  = `Hi ${p.clientName}, our team replied to your support ticket ${p.reference}:`
+  const footer = 'To answer, simply reply to this email.'
+  await deliver({
+    subject: p.subject,
+    html:    layoutHtml({ label: 'Support Ticket', blocks: [para(esc(intro)), quoted('Our reply', p.body || '(no text)')], footer }),
+    text:    layoutText([intro, '', p.body || '(no text)'].join('\n'), footer),
+    to:      { email: p.clientEmail, name: p.clientName },
+    cc:      { email: CONTACT_INBOX_EMAIL },
+    replyTo: { email: ticketReplyEmail() },
+    what:    'ticket staff reply to client',
+  })
+}
+
 // ── Reminders to the office and clients ────────────────────────────────────
 
 /** A driver's license is about to expire: the office's copy (license-expiry.scheduler). */
