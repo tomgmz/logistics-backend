@@ -200,7 +200,7 @@ async function main() {
     .select('user_id, email').eq('user_id', itAdmin.user_id).single()
 
   // Seeded directly with a known hash, so the whole path is exercised without
-  // asking Brevo to send a real IT Admin a real code.
+  // asking the email provider to send a real IT Admin a real code.
   const CODE = '135790'
   const otpReq = await ResetModel.createOtpRequest({
     user_id:        itAdminUser!.user_id,

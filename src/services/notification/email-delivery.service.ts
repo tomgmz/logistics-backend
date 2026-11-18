@@ -32,8 +32,8 @@ import { CreateNotificationInput, NotificationRow } from '../../types/notificati
 
 export const DELIVERY_LOG_SOURCE = 'email.delivery'
 
-/** The fields we read from one delivery event (Brevo's shape; Resend's is mapped onto it). */
-export interface BrevoDeliveryEvent {
+/** One delivery event in our own shape (fromResendEvent builds it from Resend's). */
+export interface DeliveryEvent {
   event?:        string
   email?:        string
   subject?:      string
@@ -107,7 +107,7 @@ export interface ResendWebhookEvent {
  * is a hard bounce; a transient one or a delay is only logged. The email id
  * (with the event) is what makes a retried webhook a no-op.
  */
-export function fromResendEvent(ev: ResendWebhookEvent | undefined, deliveryId: string): BrevoDeliveryEvent[] {
+export function fromResendEvent(ev: ResendWebhookEvent | undefined, deliveryId: string): DeliveryEvent[] {
   if (!ev || typeof ev !== 'object' || !ev.data) return []
   const d = ev.data
   let event: string
@@ -218,7 +218,7 @@ async function notify(
   return recipients.length
 }
 
-export async function handleDeliveryEvent(ev: BrevoDeliveryEvent): Promise<void> {
+export async function handleDeliveryEvent(ev: DeliveryEvent): Promise<void> {
   try {
     const event = String(ev.event ?? '').toLowerCase()
     const failed = FAILED_EVENTS[event]

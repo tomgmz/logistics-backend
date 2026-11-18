@@ -1,6 +1,5 @@
 import axios from 'axios'
 import crypto from 'crypto'
-import { BrevoClient, BrevoEnvironment } from '@getbrevo/brevo'
 import { logSystem } from './log-system.js'
 
 /**
@@ -18,16 +17,14 @@ import { logSystem } from './log-system.js'
  * quoted text) are the only pieces an email is built from. A new email uses
  * them; it never writes its own <html>.
  *
- * Env: RESEND_API_KEY, MAIL_FROM_EMAIL (falls back to BREVO_SENDER_EMAIL, the
- * same no-reply@8338logistics.delivery). Until RESEND_API_KEY is set the old
- * Brevo account still sends (BREVO_API_KEY), so deploying this before the
- * Resend domain is verified doesn't stop sign-in codes. Remove the Brevo
- * fallback and @getbrevo/brevo once Resend is live.
+ * Env: RESEND_API_KEY, MAIL_FROM_EMAIL (no-reply@8338logistics.delivery).
+ * Brevo was removed entirely on 2026-11-18: without RESEND_API_KEY nothing is
+ * emailed, and every attempt is logged as a mailer error.
  */
 
 const APP_NAME          = process.env.APP_NAME             || 'Logistics'
 const PHYSICAL_ADDRESS  = process.env.APP_PHYSICAL_ADDRESS || 'Blk. 6 Lot 8 Lynville Enclave, Mamatid, City of Cabuyao, Laguna'
-const FROM_EMAIL        = process.env.MAIL_FROM_EMAIL || process.env.BREVO_SENDER_EMAIL || ''
+const FROM_EMAIL        = process.env.MAIL_FROM_EMAIL || ''
 const FROM_NAME         = process.env.APP_NAME             || 'Logistics'
 const APP_SUPPORT_EMAIL = process.env.APP_SUPPORT_EMAIL    || FROM_EMAIL
 
@@ -54,8 +51,8 @@ function appBaseUrl(): string | null {
 /** Say at boot where emailed links point and which provider sends. */
 export function reportEmailLinkBaseUrl(): void {
   if (process.env.RESEND_API_KEY) console.log('Email provider: Resend')
-  else if (process.env.BREVO_API_KEY) console.warn('[email] RESEND_API_KEY is not set: emails still go through Brevo (click-tracked links).')
-  else console.warn('[email] No email provider configured (RESEND_API_KEY). Nothing can be emailed.')
+  else console.warn('[email] RESEND_API_KEY is not set. Nothing can be emailed (sign-in codes, resets, reminders).')
+  if (!FROM_EMAIL) console.warn('[email] MAIL_FROM_EMAIL is not set. Nothing can be emailed.')
 
   const base = appBaseUrl()
   if (!base) {
@@ -360,28 +357,12 @@ async function viaResend(m: OutgoingEmail): Promise<void> {
   }
 }
 
-/** Until RESEND_API_KEY is set (see the top of this file). */
-async function viaBrevo(m: OutgoingEmail): Promise<void> {
-  const brevo = new BrevoClient({ apiKey: process.env.BREVO_API_KEY!, environment: BrevoEnvironment.Default })
-  const addr = (a: Address) => ({ email: a.email, ...(a.name ? { name: a.name } : {}) })
-  await brevo.transactionalEmails.sendTransacEmail({
-    subject:     m.subject,
-    htmlContent: m.html,
-    textContent: m.text,
-    sender:      { name: FROM_NAME, email: FROM_EMAIL },
-    to:          [addr(m.to)],
-    ...(m.cc ? { cc: [addr(m.cc)] } : {}),
-    ...(m.replyTo ? { replyTo: addr(m.replyTo) } : {}),
-  })
-}
-
 /** The only way an email leaves the system. Throws (and logs) when it can't be handed over. */
 async function deliver(m: OutgoingEmail): Promise<void> {
   try {
     if (!FROM_EMAIL) throw new Error('No sender address. Set MAIL_FROM_EMAIL.')
-    if (process.env.RESEND_API_KEY)     await viaResend(m)
-    else if (process.env.BREVO_API_KEY) await viaBrevo(m)
-    else throw new Error('No email provider configured. Set RESEND_API_KEY.')
+    if (!process.env.RESEND_API_KEY) throw new Error('No email provider configured. Set RESEND_API_KEY.')
+    await viaResend(m)
   } catch (err: unknown) {
     const error = err instanceof Error ? err.message : String(err)
     console.error('EMAIL SEND ERROR:', { what: m.what, error, timestamp: new Date().toISOString() })

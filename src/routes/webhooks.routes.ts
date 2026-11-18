@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { logSystemThrottled } from '../lib/log-system.js'
-import { handleDeliveryEvent, fromResendEvent, BrevoDeliveryEvent, ResendWebhookEvent } from '../services/notification/email-delivery.service.js'
+import { handleDeliveryEvent, fromResendEvent, ResendWebhookEvent } from '../services/notification/email-delivery.service.js'
 
 /**
  * Callbacks from outside services. No session and no CSRF (mounted ahead of
@@ -15,9 +15,7 @@ import { handleDeliveryEvent, fromResendEvent, BrevoDeliveryEvent, ResendWebhook
  *   RESEND_WEBHOOK_SECRET. Requests are signed the Svix way: HMAC-SHA256 of
  *   "<svix-id>.<svix-timestamp>.<raw body>" with the base64 secret.
  *
- * POST /api/webhooks/brevo  — kept only while emails may still go through
- *   Brevo (no RESEND_API_KEY yet). Remove it with the Brevo fallback in
- *   lib/mailer.ts.
+ * (POST /api/webhooks/brevo was removed with Brevo on 2026-11-18.)
  */
 const router = Router()
 
@@ -77,58 +75,6 @@ router.post('/resend', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok' })
   void (async () => {
     for (const one of fromResendEvent(ev, svixId)) await handleDeliveryEvent(one)
-  })()
-})
-
-// ── Brevo (until Resend is live) ───────────────────────────────────────────
-
-function sha(s: string): Buffer {
-  return createHash('sha256').update(s).digest()
-}
-
-function givenSecret(req: Request): string {
-  const q = req.query.token
-  if (typeof q === 'string' && q) return q
-  const auth = req.get('authorization') ?? ''
-  if (/^bearer /i.test(auth)) return auth.slice(7).trim()
-  if (/^basic /i.test(auth)) {
-    const decoded = Buffer.from(auth.slice(6).trim(), 'base64').toString('utf8')
-    const i = decoded.indexOf(':')
-    return i >= 0 ? decoded.slice(i + 1) : decoded
-  }
-  return ''
-}
-
-router.post('/brevo', (req: Request, res: Response) => {
-  const secret = process.env.BREVO_WEBHOOK_SECRET ?? ''
-  if (!secret) {
-    logSystemThrottled('brevo-webhook:unset', 60 * 60 * 1000, {
-      log_level:  'warn',
-      event_type: 'email_event',
-      source:     'brevo.webhook',
-      message:    'Brevo sent a delivery event but BREVO_WEBHOOK_SECRET is not set on the server, so it was ignored.',
-    })
-    res.status(503).json({ status: 'error', message: 'Webhook not configured' })
-    return
-  }
-  if (!timingSafeEqual(sha(givenSecret(req)), sha(secret))) {
-    logSystemThrottled('brevo-webhook:auth', 10 * 60 * 1000, {
-      log_level:  'warn',
-      event_type: 'auth_event',
-      source:     'brevo.webhook',
-      message:    'A call to the Brevo webhook had a missing or wrong secret and was refused.',
-    })
-    res.status(401).json({ status: 'error', message: 'Unauthorized' })
-    return
-  }
-
-  const body = req.body as BrevoDeliveryEvent | BrevoDeliveryEvent[] | undefined
-  const events = (Array.isArray(body) ? body : body ? [body] : []).slice(0, 200)
-  res.status(200).json({ status: 'ok' })
-  void (async () => {
-    for (const ev of events) {
-      if (ev && typeof ev === 'object') await handleDeliveryEvent(ev)
-    }
   })()
 })
 
