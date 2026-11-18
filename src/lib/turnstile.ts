@@ -18,8 +18,9 @@ import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from './log-system
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 const TIMEOUT_MS     = 5_000
 
-// Only the landing page's contact form (user 2026-11-16).
-export type CaptchaAction = 'contact'
+// The landing page's contact form (user 2026-11-16) and its help assistant's
+// AI answers (2026-11-18).
+export type CaptchaAction = 'contact' | 'assistant'
 
 export type TurnstileResult =
   /** Token checked and accepted. */

@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express'
-import { globalLimiter, contactFormLimiter } from '../middlewares/rateLimit.middleware.js'
+import { globalLimiter, contactFormLimiter, publicAssistantLimiter } from '../middlewares/rateLimit.middleware.js'
+import { z } from 'zod'
+import { askAssistant } from '../services/support/assistant.service.js'
 import { validate } from '../middlewares/validate.middleware.js'
 import { requireCaptcha } from '../middlewares/captcha.middleware.js'
 import { getPublicMetrics } from '../services/public/metrics.service.js'
@@ -62,5 +64,27 @@ router.post('/contact', contactFormLimiter, requireCaptcha('contact'), validate(
     })
   }
 })
+
+/**
+ * The landing page help assistant's AI answer (Gemini, grounded in the public
+ * knowledge: no account-only passages). Asked only when the page's keyword
+ * matcher has no confident answer. Per-address limit + Turnstile + a daily cap
+ * for all visitors (assistant.service). A model problem is never an error
+ * status: 'unavailable' tells the page to use its keyword answers.
+ */
+const publicAssistantSchema = z.object({
+  question: z.string().trim().min(1).max(300),
+  earlier:  z.array(z.string().max(300)).max(3).optional(),
+}).strict()
+
+router.post('/assistant', publicAssistantLimiter, requireCaptcha('assistant'), validate(publicAssistantSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const data = await askAssistant(req.body.question, req.body.earlier ?? [], 'public')
+      res.status(200).json({ status: 'success', data })
+    } catch {
+      res.status(200).json({ status: 'success', data: { status: 'unavailable' } })
+    }
+  })
 
 export default router

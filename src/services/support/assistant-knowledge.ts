@@ -3,9 +3,9 @@
  * is given. Nothing outside these passages may be stated as fact.
  *
  * Two parts:
- *   1. ASSISTANT_KNOWLEDGE's first block is a COPY of the client FAQ in the
- *      web app (logistics-frontend/src/lib/support/faq.ts, entries without
- *      audience 'public'), same ids and answers. When an answer there changes,
+ *   1. ASSISTANT_KNOWLEDGE is a COPY of the help assistant's FAQ in the web
+ *      app (logistics-frontend/src/lib/support/faq.ts), same ids, answers and
+ *      'public' audience. When an answer there changes,
  *      change it here too: the ids are how a cited answer gets its "Open …"
  *      button on the web.
  *   2. BUSINESS_KNOWLEDGE: the company (landing page: lib/data.ts) and how 8338
@@ -23,9 +23,33 @@ export interface KnowledgePassage {
   id:       string
   question: string
   answer:   string
+  /**
+   * Who may be answered from it. Unset = everyone. 'client' = signed-in
+   * clients only (their account, tickets, contract); 'public' = visitors on
+   * the landing page only (becoming a client).
+   */
+  audience?: 'client' | 'public'
 }
 
 export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
+  {
+    id: 'become-client',
+    question: 'How do I become a client?',
+    answer:
+      'Accounts are set up by our team, so there is no sign-up form. Send us a message through the contact form ' +
+      'on this page with your company name and what you need delivered, and we will reply by email. Once your ' +
+      'account is ready you sign in with the email address you gave us.',
+    audience: 'public',
+  },
+  {
+    id: 'what-we-deliver',
+    question: 'What do you deliver?',
+    answer:
+      'We move goods business to business, mainly fast-moving consumer goods (FMCG): from your warehouse or ' +
+      'supplier to stores and distribution points, with a company truck and driver, live tracking and photo ' +
+      'proof at every drop-off.',
+    audience: 'public',
+  },
   {
     id: 'book',
     question: 'How do I book a delivery?',
@@ -161,6 +185,8 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
     answer:
       'Company details are kept by our team so your bookings stay consistent. Open a ticket with what needs to ' +
       'change (company name, address, contact person, phone) and we will update it and confirm by email.',
+ 
+    audience: 'client',
   },
   {
     id: 'pricing',
@@ -179,7 +205,8 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
   },
 ]
 
-const P = (id: string, question: string, answer: string): KnowledgePassage => ({ id, question, answer })
+const P = (id: string, question: string, answer: string, audience?: 'client' | 'public'): KnowledgePassage =>
+  ({ id, question, answer, ...(audience ? { audience } : {}) })
 
 /** The company and how it operates, for clients. See the header for sources. */
 export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
@@ -315,12 +342,12 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
     'Your contract end date is shown on your Profile (Contract validity) and in a banner in the portal, and you ' +
     'get reminders in the month before it ends. For 7 days after it ends you can still sign in to view your ' +
     'bookings, confirm deliveries and report problems, but not make new bookings. After those 7 days sign-in ' +
-    'closes until the contract is renewed. Bookings made before the end still go ahead.'),
+    'closes until the contract is renewed. Bookings made before the end still go ahead.', 'client'),
   P('ops-tickets', 'How do support tickets work?',
     'Open a ticket in the help assistant with a topic, an optional booking, a subject and what happened. You can ' +
     'have up to 5 open tickets. You get an email about it; reply to that email to add details. Our team answers ' +
-    'by email and you can follow it under My tickets.'),
+    'by email and you can follow it under My tickets.', 'client'),
   P('ops-messages', 'Can I message the driver or the office?',
     'The Messages tab in the help assistant shows messages from our Company Administrator and Operations Manager. ' +
-    'Clients can read them but cannot reply there, and cannot message drivers. To reach us, open a ticket.'),
+    'Clients can read them but cannot reply there, and cannot message drivers. To reach us, open a ticket.', 'client'),
 ]

@@ -301,3 +301,19 @@ export const assistantLimiter = rateLimit({
   keyGenerator: (req) => req.user?.sub ?? ipKeyGenerator(clientIp(req)),
   message: limitMessage('The assistant has answered a lot of questions from this account. Please try again later, or open a ticket.'),
 })
+
+/**
+ * The landing page help assistant's AI answers (POST /public/assistant), for
+ * visitors who are not signed in: per network address, since there is no
+ * account. A daily cap for all visitors together sits in assistant.service.
+ * Over either, the chat falls back to its keyword answers.
+ */
+export const publicAssistantLimiter = rateLimit({
+  handler: limitTripped('publicAssistantLimiter', 'warn'),
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
+  message: limitMessage('The assistant has answered a lot of questions from this network. Please try again later, or send us a message.'),
+})
