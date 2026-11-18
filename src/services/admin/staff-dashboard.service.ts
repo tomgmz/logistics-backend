@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase.js'
 import { phDay } from '../../lib/ph-date.js'
 import { getAllTrucks } from './truck.service.js'
 import { listTickets } from '../support/support.service.js'
-import { supportInboxEmail } from '../../lib/brevo-mailer.js'
+import { supportInboxEmail } from '../../lib/mailer.js'
 
 /**
  * The staff dashboards: what is waiting on each desk, plus the Company

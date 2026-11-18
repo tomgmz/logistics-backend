@@ -4,7 +4,7 @@ import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import { unbanAuthUser } from '../admin/user-auth-status.service.js'
 import { logEvent } from '../../lib/log-event.js'
 import { busyDriversFor } from '../../lib/driver-reservation.js'
-import { buildDriverSetupUrl, generateSecurePassword, sendDriverEnrollmentEmail, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
+import { buildDriverSetupUrl, generateSecurePassword, sendDriverEnrollmentEmail, sendWelcomeEmail } from '../../lib/mailer.js'
 import { INVITE_TTL_MS } from '../../lib/webauthn-config.js'
 import { hashToken } from './auth.service.js'
 import { generateInviteToken } from './webauthn.service.js'
@@ -180,7 +180,7 @@ export async function createExternalDriver(
   })
 
   // Fire-and-forget, like the company driver's: the account is made and correct,
-  // and a Brevo outage must not undo it. A lost email is covered by "Forgot
+  // and an email outage must not undo it. A lost email is covered by "Forgot
   // password" or the emailed sign-in code.
   sendWelcomeEmail({ to: email, firstName: input.first_name ?? null, role: 'driver', password })
     .catch((err: unknown) => console.error('[vendor-driver] WELCOME_EMAIL_FAILED', userId, err))

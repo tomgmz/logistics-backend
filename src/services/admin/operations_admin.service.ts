@@ -3,7 +3,7 @@ import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } fro
 import * as OperationsAdminModel from '../../models/admin/operations_admin.model.js'
 import { BaseCreateDTO } from '../../types/user.types.js'
 import { logEvent } from '../../lib/log-event.js'
-import { generateSecurePassword, sendWelcomeEmail } from '../../lib/brevo-mailer.js'
+import { generateSecurePassword, sendWelcomeEmail } from '../../lib/mailer.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import { assertPhoneAvailable } from '../../lib/phone-unique.js'
 import { errorMessage } from '../../lib/error-message.js'

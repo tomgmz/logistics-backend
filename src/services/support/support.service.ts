@@ -5,7 +5,7 @@ import { bookingRef } from '../../lib/booking-ref.js'
 import {
   sendSupportTicketEmail,
   sendSupportTicketResolvedEmail,
-} from '../../lib/brevo-mailer.js'
+} from '../../lib/mailer.js'
 import { notifyTicketLogged, notifyTicketOpened, notifyTicketResolved } from '../notification/support-ticket-notify.service.js'
 
 /**

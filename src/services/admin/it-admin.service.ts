@@ -4,7 +4,7 @@ import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } fro
 import * as WebauthnModel from '../../models/auth/webauthn.model.js'
 import { ITAdminHandover, ITAdminSuccessorInput, StartHandoverInput, UpdateITAdminInput } from '../../types/it-admin.types.js'
 import { logEvent } from '../../lib/log-event.js'
-import { generateSecurePassword, sendWelcomeEmail, TEMP_PASSWORD_TTL_DAYS } from '../../lib/brevo-mailer.js'
+import { generateSecurePassword, sendWelcomeEmail, TEMP_PASSWORD_TTL_DAYS } from '../../lib/mailer.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import { invalidateUserPermissions } from '../../middlewares/moduleAccess.middleware.js'
 import * as ResetModel from '../../models/auth/password-reset.model.js'

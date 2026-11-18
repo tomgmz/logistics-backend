@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js'
-import { sendVendorDriverAssignedEmail } from './brevo-mailer.js'
+import { sendVendorDriverAssignedEmail } from './mailer.js'
 
 /**
  * Vendor drivers get app access per booking (user 2026-11-14, the Onfleet /

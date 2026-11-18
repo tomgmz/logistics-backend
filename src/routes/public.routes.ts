@@ -6,7 +6,7 @@ import { validate } from '../middlewares/validate.middleware.js'
 import { requireCaptcha } from '../middlewares/captcha.middleware.js'
 import { getPublicMetrics } from '../services/public/metrics.service.js'
 import { logSystem } from '../lib/log-system.js'
-import { sendContactInquiryEmail } from '../lib/brevo-mailer.js'
+import { sendContactInquiryEmail } from '../lib/mailer.js'
 import { contactInquirySchema, type ContactInquiryInput } from '../schema/public/contact.schema.js'
 
 /**
@@ -57,7 +57,7 @@ router.post('/contact', contactFormLimiter, requireCaptcha('contact'), validate(
     })
     res.status(200).json({ status: 'success', message: 'Message sent.' })
   } catch {
-    // The mailer already wrote the system log with Brevo's reason.
+    // The mailer already wrote the system log with the provider's reason.
     res.status(502).json({
       status:  'error',
       message: 'We could not send your message right now. Please try again, or email or call us directly.',

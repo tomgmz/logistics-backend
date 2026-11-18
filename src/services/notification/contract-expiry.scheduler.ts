@@ -5,7 +5,7 @@ import { broadcast } from '../../lib/realtime.js'
 import { phDay } from '../../lib/ph-date.js'
 import { addOneMonth, daysBetween } from '../../lib/registration-expiry.js'
 import { reminderStageFor, inDaysPhrase, formatDay, reminderKey, type ReminderStage } from '../../lib/expiry-reminder-stages.js'
-import { sendContractExpiryClientEmail, sendContractExpiryStaffEmail } from '../../lib/brevo-mailer.js'
+import { sendContractExpiryClientEmail, sendContractExpiryStaffEmail } from '../../lib/mailer.js'
 import { logSystem, logSystemError } from '../../lib/log-system.js'
 import { NotificationRow } from '../../types/notification.types.js'
 

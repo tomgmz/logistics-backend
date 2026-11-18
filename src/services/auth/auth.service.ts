@@ -12,7 +12,7 @@ import {
   sendOtpEmail,
   sendPasswordChangedEmail,
   sendPasswordResetAlertEmail,
-} from '../../lib/brevo-mailer.js'
+} from '../../lib/mailer.js'
 import { supabase, supabaseAnon } from '../../lib/supabase.js'
 import { isManagedRole } from '../../constants/modules.js'
 import { getSessionPermissions } from '../admin/permissions.service.js'

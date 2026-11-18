@@ -1,15 +1,17 @@
 import { supabase } from '../../lib/supabase.js'
 import { logSystem } from '../../lib/log-system.js'
 import { broadcast } from '../../lib/realtime.js'
-import { supportInboxEmail } from '../../lib/brevo-mailer.js'
+import { supportInboxEmail } from '../../lib/mailer.js'
 import * as notificationModel from '../../models/notification/notification.model.js'
 import * as push from '../messaging/push.service.js'
 import { CreateNotificationInput, NotificationRow } from '../../types/notification.types.js'
 
 /**
- * What happens after Brevo has taken an email: its delivery webhook
- * (routes/webhooks.routes.ts) reports the receiving server's answer, and this
- * turns a failure into something a person sees.
+ * What happens after the email provider (Resend since 2026-11-18, Brevo
+ * before) has taken an email: its delivery webhook (routes/webhooks.routes.ts)
+ * reports the receiving server's answer, and this turns a failure into
+ * something a person sees. Resend's events are mapped onto the same event
+ * names by fromResendEvent, so the rest is provider-neutral.
  *
  * Until 2026-11-09 the system only knew whether Brevo accepted a send. A
  * welcome email the school's Microsoft 365 refused showed "Sent" here and
@@ -24,13 +26,13 @@ import { CreateNotificationInput, NotificationRow } from '../../types/notificati
  *   the IT Administrator's own address -> Company Administrators (the IT
  *                                         Administrator can't be reached by email)
  *
- * Best effort throughout: Brevo has already been answered 200 by the time this
+ * Best effort throughout: the provider has already been answered 200 by the time this
  * runs, and nothing here may throw.
  */
 
-export const DELIVERY_LOG_SOURCE = 'brevo.delivery'
+export const DELIVERY_LOG_SOURCE = 'email.delivery'
 
-/** The fields we read from one Brevo transactional webhook event. */
+/** The fields we read from one delivery event (Brevo's shape; Resend's is mapped onto it). */
 export interface BrevoDeliveryEvent {
   event?:        string
   email?:        string
@@ -48,30 +50,32 @@ export interface BrevoDeliveryEvent {
 const FAILED_EVENTS: Record<string, string> = {
   hard_bounce:   'bounced (the address does not exist or refuses mail)',
   hard_bounced:  'bounced (the address does not exist or refuses mail)',
-  blocked:       'blocked by Brevo (this address bounced or complained before)',
+  blocked:       'blocked by the email provider (this address bounced or complained before)',
+  send_failed:   'not sent by the email provider',
   invalid_email: 'rejected as an invalid address',
   invalid:       'rejected as an invalid address', // the dashboard's "Invalid"
   error:         'refused by the receiving mail server',
 }
 
 /**
- * Worth a log line, not a notice: Brevo keeps retrying a soft bounce, and a
- * spam complaint means the email did arrive.
+ * Worth a log line, not a notice: the provider keeps retrying a soft bounce
+ * or a delay, and a spam complaint means the email did arrive.
  */
 const LOGGED_EVENTS: Record<string, string> = {
-  soft_bounce: 'soft-bounced (temporary; Brevo retries it)',
+  soft_bounce: 'soft-bounced (temporary; the provider retries it)',
+  delayed:     'delayed (temporary; the provider keeps trying)',
   spam:        'marked as spam by the recipient',
   complaint:   'marked as spam by the recipient', // the dashboard's "Complaint"
-  soft_bounced: 'soft-bounced (temporary; Brevo retries it)',
+  soft_bounced: 'soft-bounced (temporary; the provider retries it)',
 }
 
-/** Which of our emails it was, from its subject (every subject is built in lib/brevo-mailer.ts). */
+/** Which of our emails it was, from its subject (every subject is built in lib/mailer.ts). */
 export function emailKind(subject: string): { label: string; advice: string } {
   const s = subject.trim()
   const resend = 'Check the address on the account. Once it is right, send a password reset link from the reset queue.'
   if (/^Welcome to /i.test(s))                     return { label: 'Welcome email (temporary password)', advice: resend }
   if (/password reset code/i.test(s))              return { label: 'Password reset code', advice: 'Check the address on the account, then ask them to request a new code.' }
-  if (/verification code/i.test(s))                return { label: 'Sign-in code', advice: 'They can sign in with their password instead, or fix the address on the account and try again.' }
+  if (/sign-in code|verification code/i.test(s))                return { label: 'Sign-in code', advice: 'They can sign in with their password instead, or fix the address on the account and try again.' }
   if (/^Reset your /i.test(s))                     return { label: 'Password reset link', advice: resend }
   if (/driver sign-in/i.test(s))                   return { label: 'Driver sign-in setup link', advice: 'Check the address on the driver, then use "Resend setup link".' }
   if (/password was changed/i.test(s))             return { label: 'Password changed notice', advice: 'Check the address on the account.' }
@@ -83,6 +87,52 @@ export function emailKind(subject: string): { label: string; advice: string } {
   if (/^Website enquiry/i.test(s))                 return { label: 'Website enquiry', advice: 'Check CONTACT_INBOX_EMAIL on the server.' }
   if (/^(Re: )?\[[A-Z]+-[\w-]+\] /.test(s))        return { label: 'Support ticket email', advice: 'Reply to the client by phone, and check the address on their account.' }
   return { label: s ? `"${s}" email` : 'An email', advice: 'Check the address it was sent to.' }
+}
+
+/** The fields we read from one Resend webhook event (resend.com/docs/webhooks). */
+export interface ResendWebhookEvent {
+  type?:       string
+  created_at?: string
+  data?: {
+    email_id?: string
+    to?:       string[] | string
+    subject?:  string
+    bounce?:   { message?: string; type?: string; subType?: string }
+    failed?:   { reason?: string }
+  }
+}
+
+/**
+ * Resend's event as our delivery events, one per recipient. A permanent bounce
+ * is a hard bounce; a transient one or a delay is only logged. The email id
+ * (with the event) is what makes a retried webhook a no-op.
+ */
+export function fromResendEvent(ev: ResendWebhookEvent | undefined, deliveryId: string): BrevoDeliveryEvent[] {
+  if (!ev || typeof ev !== 'object' || !ev.data) return []
+  const d = ev.data
+  let event: string
+  let reason = ''
+  switch (ev.type) {
+    case 'email.bounced':
+      event  = /^permanent$/i.test(d.bounce?.type ?? '') ? 'hard_bounce' : 'soft_bounce'
+      reason = [d.bounce?.subType, d.bounce?.message].filter(Boolean).join(': ')
+      break
+    case 'email.failed':           event = 'send_failed'; reason = d.failed?.reason ?? ''; break
+    case 'email.suppressed':       event = 'blocked'; break
+    case 'email.complained':       event = 'spam'; break
+    case 'email.delivery_delayed': event = 'delayed'; break
+    default: return [] // sent, delivered, opened, clicked...
+  }
+  const to = Array.isArray(d.to) ? d.to : d.to ? [d.to] : []
+  const at = ev.created_at ? Date.parse(ev.created_at) : NaN
+  return to.slice(0, 50).map((addr) => ({
+    event,
+    email:        addr.replace(/^.*<([^>]+)>.*$/, '$1'),
+    subject:      d.subject ?? '',
+    reason,
+    'message-id': d.email_id || deliveryId,
+    ...(Number.isFinite(at) ? { ts_epoch: at } : {}),
+  }))
 }
 
 const STAFF_ROLES = new Set(['admin', 'general_manager', 'operations_manager', 'fleet_manager'])
@@ -110,7 +160,7 @@ async function findAccount(email: string): Promise<Account | null> {
   return { user_id: d.user_id, role: d.role, name: [d.first_name, d.last_name].filter(Boolean).join(' ') || email }
 }
 
-/** Earlier rows for this message: Brevo retries webhooks and can send two failure events for one email. */
+/** Earlier rows for this message: providers retry webhooks and can send two failure events for one email. */
 async function priorRows(messageId: string): Promise<{ event: string; notified: boolean }[]> {
   if (!messageId) return []
   const { data, error } = await supabase
@@ -126,7 +176,7 @@ async function priorRows(messageId: string): Promise<{ event: string; notified: 
   }))
 }
 
-// A Brevo-wide block (their IP listed somewhere) could fail hundreds of emails
+// A provider-wide block (their IP listed somewhere) could fail hundreds of emails
 // at once. Past this many notices an hour, failures are still logged but not
 // sent to anyone's bell; the log line says so.
 const NOTICE_CAP_PER_HOUR = 20
@@ -247,6 +297,6 @@ export async function handleDeliveryEvent(ev: BrevoDeliveryEvent): Promise<void>
       },
     })
   } catch (err) {
-    console.error('[email-delivery] handling a Brevo event failed:', err)
+    console.error('[email-delivery] handling a delivery event failed:', err)
   }
 }

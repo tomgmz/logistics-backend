@@ -36,7 +36,7 @@ import { startBreakdownScheduler } from './services/notification/breakdown.sched
 import { startLateConfirmationScheduler } from './services/notification/late-confirmation.scheduler.js'
 import { startItAdminRenderScheduler } from './services/admin/it-admin-render.scheduler.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
-import { reportEmailLinkBaseUrl } from './lib/brevo-mailer.js'
+import { reportEmailLinkBaseUrl } from './lib/mailer.js'
 import { reportWebauthnConfig } from './lib/webauthn-config.js'
 import { requestContext } from './lib/request-context.js'
 import { logSystem } from './lib/log-system.js'
@@ -93,7 +93,14 @@ app.use(cookieParser(process.env.COOKIE_SECRET));
 // method, and the user id once authenticate() resolves it). Carries no IP or
 // other network identifier — see lib/request-context.ts.
 app.use(requestContext);
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({
+  limit: '10mb',
+  // Webhook signatures (Resend/Svix) are over the exact bytes sent, so those
+  // routes keep the raw body next to the parsed one.
+  verify: (req, _res, buf) => {
+    if ((req as { url?: string }).url?.startsWith('/api/webhooks/')) (req as unknown as { rawBody?: Buffer }).rawBody = buf
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Private file storage: signed links in, r2:// references stored, signed links out.
 app.use(fileUrls);
@@ -154,7 +161,7 @@ app.use('/api/auth', authRoutes);
 // Sealed file links (lib/file-links.ts): read-only, the token is the permission.
 app.use('/api/files', filesRoutes);
 
-// Callbacks from outside services (Brevo delivery events). No cookie session:
+// Callbacks from outside services (email delivery events). No cookie session:
 // each route checks its own shared secret, so CSRF does not apply.
 app.use('/api/webhooks', webhooksRoutes);
 

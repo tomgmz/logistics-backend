@@ -12,7 +12,7 @@ import {
   sendPasswordResetAlertEmail,
   sendPasswordResetEmail,
   sendPasswordResetOtpEmail,
-} from '../../lib/brevo-mailer.js'
+} from '../../lib/mailer.js'
 import { logEvent } from '../../lib/log-event.js'
 import {
   notifyResetCompleted,

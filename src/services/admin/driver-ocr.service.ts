@@ -6,17 +6,16 @@ import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from '../../lib/lo
 /**
  * Reading a driver's license photo.
  *
- * ID Analyzer (api2.idanalyzer.com/scan) is the scanner: it is asked for a
+ * ID Analyzer (api2.idanalyzer.com/scan) is the only scanner: it is asked for a
  * Philippine driver's license only (restrictCountry PH, restrictType D), so it
  * says when the photo is something else, and it flags fake or edited cards.
- * Google Vision is the fallback when ID Analyzer is down, out of credits or not
- * configured: it only reads text, so our own check (LTO number format plus the
- * license's printed words) decides whether the text looks like a license, and
- * the result says the fake-card check did not run (full_check false).
+ *
+ * Google Vision was the text-only fallback until 2026-11-18 (removed at the
+ * user's request). When ID Analyzer is down, out of credits or not configured,
+ * extractLicenseData throws: the form says the scan failed, the number and
+ * expiry may then be typed, and the save needs a note (scanFailed in the
+ * driver controller).
  */
-
-const VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY
-const VISION_URL = `https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`
 
 const IDANALYZER_API_KEY = process.env.IDANALYZER_API_KEY
 // A KYC profile id from the ID Analyzer portal (set one with image storage off),
@@ -40,7 +39,6 @@ export interface LicenseOCRResult {
   last_name:       string | null
   middle_name:     string | null
   suffix:          string | null
-  name_n_checks:   NameNCheck[]
   dl_codes:        string[]
   restriction_codes: string[]
   vehicle_eligibility: VehicleEligibility
@@ -50,51 +48,56 @@ export interface LicenseOCRResult {
   not_license_reason: string | null
   /** Fake / edited card flags from ID Analyzer; saving then needs a note. */
   fraud_warnings:  LicenseWarning[]
-  provider:        'idanalyzer' | 'vision'
-  /** False when the fallback read it: text only, no fake-card check. */
-  full_check:      boolean
+  provider:        'idanalyzer'
 }
-
-// A name word whose "N" Vision read with low confidence. A worn or smudged
-// tilde makes Vision read Ñ as a plain N (and no language hint changes that),
-// so the form asks the admin whether `word` should be `suggested`.
-export interface NameNCheck {
-  field:     'first_name' | 'last_name' | 'middle_name'
-  word:      string
-  suggested: string
-}
-
-// Below this, an "N" may really be an Ñ. A clear N reads at 0.9+; the
-// smudged Ñ on a real license came back at 0.34.
-const N_CONFIDENCE_MIN = 0.6
 
 const VALID_SUFFIXES   = ['Jr.', 'Sr.', 'II', 'III', 'IV', 'V']
-const LTO_LICENSE_RE    = /\b([A-Z]\d{2}-\d{2}-\d{6})\b/i
-const DATE_RE           = /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}|\d{4}[\/\-]\d{2}[\/\-]\d{2})\b/g
-const EXPIRY_LABEL_RE   = /expir(?:y|ation|es?)[:\s]*/i
-const NAME_LABEL_RE     = /^(name|holder)[:\s]+/i
-const DL_CODE_RE        = /\b(CE|BE|A1|B1|B2|[ABCD])\b/g
-const OLD_RESTRICT_RE   = /\b([1-8])\b/g
+const NAME_LABEL_RE    = /^(name|holder)[:\s]+/i
+const DL_CODE_RE       = /\b(CE|BE|A1|B1|B2|[ABCD])\b/g
+const OLD_RESTRICT_RE  = /\b([1-8])\b/g
+const DL_SECTION_RE    = /dl\s*code|vehicle\s*categor|condition\s*code|restriction/i
 
-const DL_SECTION_RE     = /dl\s*code|vehicle\s*categor|condition\s*code|restriction/i
-
-const SKIP_LINE_RE = /driver'?s?\s*licen[cs]e|republic\s+of|land\s+transportation|lto\s+|license\s*(no\.?|number|#)|expir|blood\s*type|address|birth|sex\s*[:/]|height|weight|nationality|emergency|contact|signature|thumbmark|pursuant|republic\s+act|motor\s*vehicle|^last\s*name|^first\s*name|^middle\s*name/i
-
+// Words that start a compound surname (DELA CRUZ, DE LA CRUZ, DE LOS SANTOS,
+// STA. MARIA). Compared without dots, so "STA." and "VDA." count.
 const COMPOUND_PREFIXES = new Set([
-  'DE', 'DEL', 'DELA', 'DI',
+  'DE', 'DEL', 'DELA', 'DELOS', 'DELAS', 'DI', 'LA', 'LOS', 'LAS',
   'SAN', 'SANTA', 'SANTO', 'STO', 'STA',
-  'VDA', 'LOS', 'LAS', 'MAC', 'MC',
+  'VDA', 'MAC', 'MC',
 ])
+const isPrefix = (w: string) => COMPOUND_PREFIXES.has(w.replace(/\./g, '').toUpperCase())
 
+/**
+ * "2030/05/12", "2030-5-12", "05/12/2030" (or with dots or spaces) → "2030-05-12".
+ * A day that doesn't exist (2030-02-30, 2030-13-01) is null rather than a date
+ * JavaScript quietly rolls into the next month: the expiry is locked once read,
+ * so a wrong one must never get in.
+ */
 function toISODate(raw: string | null): string | null {
   if (!raw) return null
-  const normalized = raw.replace(/\//g, '-')
-  const parts = normalized.split('-')
-  const iso = parts[0].length === 4
-    ? normalized
-    : `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`
-  const d = new Date(iso)
-  return isNaN(d.getTime()) ? null : iso
+  const s = raw.replace(/\s+/g, '')
+  let y: number, m: number, d: number
+  let match = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})(?!\d)/)
+  if (match) { y = +match[1]; m = +match[2]; d = +match[3] }
+  else {
+    match = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})(?!\d)/)
+    if (!match) return null
+    y = +match[3]; m = +match[1]; d = +match[2]
+  }
+  const t = new Date(Date.UTC(y, m - 1, d))
+  if (t.getUTCFullYear() !== y || t.getUTCMonth() !== m - 1 || t.getUTCDate() !== d) return null
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+/**
+ * An expiry a real license could have: not before 2000 and at most LTO's
+ * 10-year validity (plus the birthday slack) from today. Anything else is a
+ * misread and comes back null, so the form asks for a clearer photo instead of
+ * locking a wrong date in.
+ */
+function plausibleExpiry(iso: string | null): string | null {
+  if (!iso) return null
+  const max = new Date(Date.now() + (10 * 366 + 31) * 86_400_000).toISOString().slice(0, 10)
+  return iso >= '2000-01-01' && iso <= max ? iso : null
 }
 
 function toTitleCase(str: string | null): string | null {
@@ -114,92 +117,56 @@ function extractSuffix(name: string): { cleaned: string; suffix: string | null }
   return { cleaned: name, suffix: null }
 }
 
+/**
+ * Split given names into first and middle. A Filipino middle name is the
+ * mother's maiden surname: one word, or a compound one (DELA CRUZ, DE LOS
+ * SANTOS). Everything before it is the first name, so "TOM ERVIN REYES" is
+ * first "Tom Ervin", middle "Reyes", not first "Tom", middle "Ervin Reyes".
+ */
+function splitGivenNames(words: string[]): { first: string[]; middle: string[] } {
+  if (words.length <= 1) return { first: words, middle: [] }
+  let middleStart = words.length - 1
+  while (middleStart > 1 && isPrefix(words[middleStart - 1])) middleStart--
+  return { first: words.slice(0, middleStart), middle: words.slice(middleStart) }
+}
+
+/** Where a (possibly compound) surname starts at the end of `words`. */
+function surnameStart(words: string[]): number {
+  let i = words.length - 1
+  while (i > 1 && isPrefix(words[i - 1])) i--
+  return i
+}
+
 function parseName(
   line: string,
 ): Pick<LicenseOCRResult, 'first_name' | 'last_name' | 'middle_name' | 'suffix'> {
   const cleaned = line.replace(NAME_LABEL_RE, '').trim()
   const { cleaned: withoutSuffix, suffix } = extractSuffix(cleaned)
 
+  // The PH card prints "LAST, FIRST [MORE FIRST] MIDDLE".
   if (withoutSuffix.includes(',')) {
     const [lastRaw, restRaw] = withoutSuffix.split(',', 2)
-    const rest = restRaw.trim().split(/\s+/).filter(Boolean)
-
-    if (rest.length <= 1) {
-      return {
-        last_name:   toTitleCase(lastRaw.trim()),
-        first_name:  toTitleCase(rest[0] ?? null),
-        middle_name: null,
-        suffix,
-      }
-    }
-
-    let middleStart = rest.length - 1
-    while (middleStart > 1 && COMPOUND_PREFIXES.has(rest[middleStart - 1].toUpperCase())) {
-      middleStart--
-    }
-
+    const { first, middle } = splitGivenNames(restRaw.trim().split(/\s+/).filter(Boolean))
     return {
       last_name:   toTitleCase(lastRaw.trim()),
-      first_name:  toTitleCase(rest.slice(0, middleStart).join(' ')),
-      middle_name: toTitleCase(rest.slice(middleStart).join(' ')),
+      first_name:  toTitleCase(first.join(' ') || null),
+      middle_name: toTitleCase(middle.join(' ') || null),
       suffix,
     }
   }
 
-  // No comma fallback
-  const parts = withoutSuffix.split(/\s+/)
+  // No comma: "FIRST [MORE FIRST] MIDDLE LAST". The surname and the middle name
+  // are one (possibly compound) surname each; every other word is the first name.
+  const parts = withoutSuffix.split(/\s+/).filter(Boolean)
   if (parts.length === 1) return { first_name: toTitleCase(parts[0]), last_name: null, middle_name: null, suffix }
-  if (parts.length === 2) return { first_name: toTitleCase(parts[0]), last_name: toTitleCase(parts[1]), middle_name: null, suffix }
+  const lastAt = surnameStart(parts)
+  const { first, middle } = splitGivenNames(parts.slice(0, lastAt))
   return {
-    first_name:  toTitleCase(parts[0]),
-    middle_name: toTitleCase(parts.slice(1, -1).join(' ')),
-    last_name:   toTitleCase(parts[parts.length - 1]),
+    first_name:  toTitleCase(first.join(' ')),
+    middle_name: toTitleCase(middle.join(' ') || null),
+    last_name:   toTitleCase(parts.slice(lastAt).join(' ')),
     suffix,
   }
-}
-
-function findExpiryDate(lines: string[]): string | null {
-  for (let i = 0; i < lines.length; i++) {
-    if (EXPIRY_LABEL_RE.test(lines[i])) {
-      for (const c of [lines[i], lines[i + 1] ?? '']) {
-        const matches = [...c.matchAll(DATE_RE)]
-        if (matches.length > 0) return toISODate(matches[matches.length - 1][1])
-      }
-    }
-  }
-  // No date beside an expiry label: none. The expiry is locked once scanned,
-  // so a guess (e.g. the latest date anywhere) would lock a wrong date in.
-  return null
-}
-
-function findNameLine(lines: string[]): string | null {
-  for (const line of lines) {
-    const s = line.trim()
-    if (SKIP_LINE_RE.test(s)) continue
-    if (
-      s.includes(',') &&
-      /^[A-ZÁÉÍÓÚÑ\s,'.`\-]+$/i.test(s) &&
-      s.length > 4 &&
-      !LTO_LICENSE_RE.test(s) &&
-      !/\d/.test(s)
-    ) return s
-  }
-  for (const line of lines) {
-    const s = line.trim()
-    if (NAME_LABEL_RE.test(s)) return s.replace(NAME_LABEL_RE, '').trim()
-  }
-  for (const line of lines) {
-    const s = line.trim()
-    if (SKIP_LINE_RE.test(s)) continue
-    if (
-      /^[A-ZÁÉÍÓÚÑ\s'.`\-]+$/.test(s) &&
-      s.split(/\s+/).length >= 2 &&
-      s.length > 5 &&
-      !LTO_LICENSE_RE.test(s) &&
-      !/\d/.test(s)
-    ) return s
-  }
-  return null
 }
 
 function extractDLCodes(lines: string[]): { dl_codes: string[]; restriction_codes: string[] } {
@@ -250,55 +217,8 @@ function deriveEligibility(dl_codes: string[], restriction_codes: string[]): Veh
   }
 }
 
-interface VisionSymbol { text: string; confidence?: number }
-
-// Uppercased word → indexes of the N letters in it Vision was unsure of.
-function findUncertainNs(annotation: any): Map<string, number[]> {
-  const out = new Map<string, number[]>()
-  for (const page of annotation?.pages ?? [])
-    for (const block of page.blocks ?? [])
-      for (const para of block.paragraphs ?? [])
-        for (const word of para.words ?? []) {
-          const symbols: VisionSymbol[] = word.symbols ?? []
-          const idx = symbols.flatMap((s, i) =>
-            s.text.toUpperCase() === 'N' && (s.confidence ?? 1) < N_CONFIDENCE_MIN ? [i] : [])
-          // Vision keeps the comma in "OLIVEROS,"; trailing marks don't shift the indexes.
-          if (idx.length) out.set(symbols.map(s => s.text).join('').replace(/[,.]+$/, '').toUpperCase(), idx)
-        }
-  return out
-}
-
-function nameNChecks(
-  name: Pick<LicenseOCRResult, 'first_name' | 'last_name' | 'middle_name'>,
-  uncertain: Map<string, number[]>,
-): NameNCheck[] {
-  if (uncertain.size === 0) return []
-  const checks: NameNCheck[] = []
-  for (const field of ['first_name', 'last_name', 'middle_name'] as const) {
-    for (const word of name[field]?.split(' ') ?? []) {
-      const idx = uncertain.get(word.toUpperCase())
-      if (!idx) continue
-      const chars = [...word]
-      for (const i of idx) chars[i] = chars[i] === 'n' ? 'ñ' : 'Ñ'
-      checks.push({ field, word, suggested: chars.join('') })
-    }
-  }
-  return checks
-}
-
 const NOT_LICENSE_MESSAGE =
   "This photo doesn't look like a Philippine driver's license. Take a clear photo of the front of the card, flat and without glare."
-
-// ── Google Vision fallback: is this text a license? ─────────────────────────
-
-// Printed on every LTO card design (2000 plastic, 2016/2021 plastic, the old paper one).
-const LICENSE_WORDS_RE = /land\s*transportation|driver'?s?\s*licen[cs]e|non[-\s]?professional|student[-\s]*permit/i
-
-function textLooksLikeLicense(fullText: string): string | null {
-  if (!LTO_LICENSE_RE.test(fullText)) return `${NOT_LICENSE_MESSAGE} No LTO license number (like A01-23-456789) could be read.`
-  if (!LICENSE_WORDS_RE.test(fullText) && !EXPIRY_LABEL_RE.test(fullText)) return NOT_LICENSE_MESSAGE
-  return null
-}
 
 // ── ID Analyzer ─────────────────────────────────────────────────────────────
 
@@ -325,6 +245,20 @@ function formatLtoNumber(raw: string | null): string | null {
   if (!raw) return null
   const bare = raw.toUpperCase().replace(/[^A-Z0-9]/g, '')
   return /^[A-Z]\d{10}$/.test(bare) ? `${bare.slice(0, 3)}-${bare.slice(3, 5)}-${bare.slice(5)}` : raw.toUpperCase()
+}
+
+/**
+ * The expiry ID Analyzer read, only when it can be a real one: a valid date, in
+ * the plausible range, and after the birth date and issue date (a read that
+ * came back with one of those is not an expiry).
+ */
+function idaExpiry(data: any): string | null {
+  const expiry = plausibleExpiry(toISODate(idaField(data, 'expiry')))
+  if (!expiry) return null
+  const born   = toISODate(idaField(data, 'dob'))
+  const issued = toISODate(idaField(data, 'issued'))
+  if ((born && expiry <= born) || (issued && expiry <= issued)) return null
+  return expiry
 }
 
 class ProviderError extends Error {}
@@ -377,11 +311,19 @@ async function idAnalyzerScan(compressed: Buffer): Promise<LicenseOCRResult> {
   if (fullName && fullName.includes(',')) {
     name = parseName(fullName)
   } else {
-    const first = idaField(data, 'firstName')
+    const first      = idaField(data, 'firstName')
+    const middleRead = idaField(data, 'middleName')
     const { cleaned, suffix } = extractSuffix(first ?? '')
+    // ID Analyzer splits the given names on its own guess and has sent
+    // first "TOM", middle "ERVIN REYES" for TOM ERVIN REYES: re-split them the
+    // Filipino way (the middle name is the mother's one surname).
+    const given = [...cleaned.split(/\s+/), ...(middleRead ?? '').split(/\s+/)].filter(Boolean)
+    const { first: firstWords, middle } = middleRead
+      ? splitGivenNames(given)
+      : { first: given, middle: [] as string[] }
     name = {
-      first_name:  toTitleCase(cleaned || null),
-      middle_name: toTitleCase(idaField(data, 'middleName')),
+      first_name:  toTitleCase(firstWords.join(' ') || null),
+      middle_name: toTitleCase(middle.join(' ') || null),
       last_name:   toTitleCase(idaField(data, 'lastName')),
       suffix,
     }
@@ -396,9 +338,8 @@ async function idAnalyzerScan(compressed: Buffer): Promise<LicenseOCRResult> {
 
   return {
     license_number:  formatLtoNumber(number),
-    license_expiry:  toISODate(idaField(data, 'expiry')),
+    license_expiry:  idaExpiry(data),
     ...name,
-    name_n_checks:   [],
     dl_codes,
     restriction_codes,
     vehicle_eligibility: deriveEligibility(dl_codes, restriction_codes),
@@ -406,7 +347,6 @@ async function idAnalyzerScan(compressed: Buffer): Promise<LicenseOCRResult> {
     not_license_reason: notLicense,
     fraud_warnings:     warnings.filter((w) => FRAUD_CODE_RE.test(w.code)),
     provider:           'idanalyzer',
-    full_check:         true,
   }
 }
 
@@ -415,14 +355,34 @@ async function idAnalyzerScan(compressed: Buffer): Promise<LicenseOCRResult> {
 // The form scans the photo, then the save sends the same photo and the server
 // reads it again. Remembering the answer by the photo's hash keeps that to one
 // ID Analyzer credit. Per server instance; a miss just scans again.
+//
+// The Scan / Re-scan button passes fresh: it always reads the card again and
+// replaces the remembered answer, so a re-scan can fix a bad read (before, the
+// same photo returned the same wrong answer for 30 minutes), and the save then
+// checks against what the form last showed.
 const SCAN_CACHE_MS  = 30 * 60_000
 const SCAN_CACHE_MAX = 100
 const scanCache = new Map<string, { at: number; result: LicenseOCRResult }>()
 
-export async function extractLicenseData(buffer: Buffer): Promise<LicenseOCRResult> {
+export async function extractLicenseData(
+  buffer: Buffer,
+  opts: { fresh?: boolean } = {},
+): Promise<LicenseOCRResult> {
   const key = createHash('sha256').update(buffer).digest('hex')
-  const hit = scanCache.get(key)
+  const hit = opts.fresh ? undefined : scanCache.get(key)
   if (hit && Date.now() - hit.at < SCAN_CACHE_MS) return hit.result
+  scanCache.delete(key)
+
+  if (!IDANALYZER_API_KEY) {
+    logSystemThrottled('idanalyzer.not-configured', 60 * 60_000, {
+      log_level:  'warn',
+      event_type: 'external_api',
+      source:     'idanalyzer.config',
+      message:    'IDANALYZER_API_KEY is not set, so licenses cannot be scanned; their details are typed by hand with a note.',
+      metadata:   {},
+    })
+    throw new Error('License scanning is not configured')
+  }
 
   const compressed = await sharp(buffer)
     .rotate()
@@ -430,86 +390,22 @@ export async function extractLicenseData(buffer: Buffer): Promise<LicenseOCRResu
     .jpeg({ quality: 85 })
     .toBuffer()
 
-  let result: LicenseOCRResult | null = null
-  if (IDANALYZER_API_KEY) {
-    try {
-      result = await idAnalyzerScan(compressed)
-    } catch (err: any) {
-      // Message only: never the key or the image.
-      logSystemThrottled('idanalyzer.scan', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
-        log_level:  'error',
-        event_type: 'external_api',
-        source:     'idanalyzer.scan',
-        message:    `${err?.message ?? String(err)}. The license was read by Google Vision instead (no fake-card check).`,
-        metadata:   { status: err?.response?.status ?? null },
-      })
-    }
-  } else {
-    logSystemThrottled('idanalyzer.not-configured', 60 * 60_000, {
-      log_level:  'warn',
+  let result: LicenseOCRResult
+  try {
+    result = await idAnalyzerScan(compressed)
+  } catch (err: any) {
+    // Message only: never the key or the image.
+    logSystemThrottled('idanalyzer.scan', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
+      log_level:  'error',
       event_type: 'external_api',
-      source:     'idanalyzer.config',
-      message:    'IDANALYZER_API_KEY is not set, so licenses are read by Google Vision only (no fake-card check).',
-      metadata:   {},
+      source:     'idanalyzer.scan',
+      message:    `${err?.message ?? String(err)}. The license could not be scanned; its details can be typed by hand with a note.`,
+      metadata:   { status: err?.response?.status ?? null },
     })
+    throw err
   }
-  if (!result) result = await visionScan(compressed)
 
   if (scanCache.size >= SCAN_CACHE_MAX) scanCache.delete(scanCache.keys().next().value!)
   scanCache.set(key, { at: Date.now(), result })
   return result
-}
-
-async function visionScan(compressed: Buffer): Promise<LicenseOCRResult> {
-  if (!VISION_API_KEY) throw new Error('GOOGLE_VISION_API_KEY is not set')
-  const base64 = compressed.toString('base64')
-
-  const { data } = await axios.post(
-    VISION_URL,
-    {
-      requests: [{
-        image:    { content: base64 },
-        features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
-      }],
-    },
-    { headers: { 'Content-Type': 'application/json' }, timeout: 15_000 },
-  ).catch((err) => {
-    console.error('Vision API error:', JSON.stringify(err.response?.data, null, 2))
-    // Message and status only: VISION_URL carries the API key.
-    logSystemThrottled('google-vision.ocr', EXTERNAL_FAILURE_LOG_WINDOW_MS, {
-      log_level:  'error',
-      event_type: 'external_api',
-      source:     'google-vision.ocr',
-      message:    `Vision API error: ${err.response?.data?.error?.message ?? err.message ?? String(err)}`,
-      metadata:   { status: err.response?.status ?? null },
-    })
-    throw err
-  })
-
-  const annotation = data.responses?.[0]?.fullTextAnnotation
-  const fullText   = annotation?.text ?? ''
-  const lines    = fullText.split('\n').map((l: string) => l.trim()).filter(Boolean)
-
-  const licenseMatch              = fullText.match(LTO_LICENSE_RE)
-  const nameLine                  = findNameLine(lines)
-  const { dl_codes, restriction_codes } = extractDLCodes(lines)
-  const name = nameLine
-    ? parseName(nameLine)
-    : { first_name: null, last_name: null, middle_name: null, suffix: null }
-  const notLicense = textLooksLikeLicense(fullText)
-
-  return {
-    license_number:  licenseMatch ? licenseMatch[1].toUpperCase() : null,
-    license_expiry:  findExpiryDate(lines),
-    ...name,
-    name_n_checks:   nameNChecks(name, findUncertainNs(annotation)),
-    dl_codes,
-    restriction_codes,
-    vehicle_eligibility: deriveEligibility(dl_codes, restriction_codes),
-    is_license:         notLicense === null,
-    not_license_reason: notLicense,
-    fraud_warnings:     [],
-    provider:           'vision',
-    full_check:         false,
-  }
 }

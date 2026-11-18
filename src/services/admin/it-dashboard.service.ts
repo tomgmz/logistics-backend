@@ -113,11 +113,12 @@ const SCHEDULERS = [
 const SERVICES: { key: string; label: string; description: string; filter: (q: any) => any }[] = [
   {
     key:         'email',
-    label:       'Email (Brevo)',
+    label:       'Email (Resend)',
     description: 'One-time codes, password resets, welcome and enrolment emails.',
-    // A recipient's server refusing one email (brevo.delivery) is about that
-    // address, not Brevo being down; those rows stay in System Logs only.
-    filter:      (q) => q.eq('event_type', 'email_event').neq('source', 'brevo.delivery'),
+    // A recipient's server refusing one email (email.delivery; brevo.delivery
+    // before Resend) is about that address, not the provider being down; those
+    // rows stay in System Logs only.
+    filter:      (q) => q.eq('event_type', 'email_event').not('source', 'in', '(email.delivery,brevo.delivery)'),
   },
   {
     key:         'storage',
@@ -143,12 +144,6 @@ const SERVICES: { key: string; label: string; description: string; filter: (q: a
     label:       'License scanning (ID Analyzer)',
     description: "Reads a driver's license photo, refuses other photos, flags fake or edited cards.",
     filter:      (q) => q.like('source', 'idanalyzer.%'),
-  },
-  {
-    key:         'google-vision',
-    label:       'License scanning fallback (Google Vision)',
-    description: "Reads the license text when ID Analyzer is unavailable (no fake-card check).",
-    filter:      (q) => q.like('source', 'google-vision.%'),
   },
   {
     key:         'turnstile',

@@ -9,7 +9,7 @@ import {
 } from '../../types/notification.types.js'
 import { BookingWithRelations } from '../../types/client/booking.types.js'
 import { bookingRef, bookingUrlKey } from '../../lib/booking-ref.js'
-import { formatManilaTimestamp, sendDeliveryConfirmEmail } from '../../lib/brevo-mailer.js'
+import { formatManilaTimestamp, sendDeliveryConfirmEmail } from '../../lib/mailer.js'
 import { logSystemError } from '../../lib/log-system.js'
 
 // --- read-side pass-throughs ------------------------------------------------

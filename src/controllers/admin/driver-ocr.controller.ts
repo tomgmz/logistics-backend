@@ -7,7 +7,8 @@ export async function scanDriverLicense(req: Request, res: Response) {
   }
 
   try {
-    const data = await extractLicenseData(req.file.buffer)
+    // Always a new read: a re-scan must be able to correct the last one.
+    const data = await extractLicenseData(req.file.buffer, { fresh: true })
     if (!data.is_license) {
       return res.status(422).json({ status: 'error', code: 'NOT_A_LICENSE', message: data.not_license_reason })
     }

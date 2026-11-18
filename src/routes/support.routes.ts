@@ -7,7 +7,7 @@ import { validate } from '../middlewares/validate.middleware.js'
 import { requireModule } from '../middlewares/moduleAccess.middleware.js'
 import * as Support from '../services/support/support.service.js'
 import { askAssistant } from '../services/support/assistant.service.js'
-import { supportInboxEmail } from '../lib/brevo-mailer.js'
+import { supportInboxEmail } from '../lib/mailer.js'
 import { pageQuery, paginate, searchQuery, matchesWords } from '../lib/paginate.js'
 
 /**
