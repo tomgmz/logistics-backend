@@ -143,15 +143,11 @@ export async function listFolders(req: Request, res: Response) {
       search,
       archived,
     })
-    // Inside a client's folder, its Contract folder always comes first, even
-    // while empty, so there is always somewhere to upload one.
+    // Inside a client's folder: its bookings. The client's contracts are listed
+    // there too, as files (the page reads them with group=client), not as a
+    // separate Contract folder (removed 2026-11-18).
     if (level === 'bookings' && client && UUID_RE.test(client) && !booking) {
-      const stats = await DocumentsService.contractFolderStats(client, archived)
-      data = [
-        { kind: 'contract', id: client, name: 'Contract', client_id: client, company_name: null,
-          booking_status: null, schedule_date: null, booking_count: 0, ...stats },
-        ...data.map((d) => ({ ...d, kind: 'booking' })),
-      ]
+      data = data.map((d) => ({ ...d, kind: 'booking' }))
     }
     if (paging) {
       const { data: page, meta } = paginate(data, paging)

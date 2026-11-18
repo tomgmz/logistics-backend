@@ -627,20 +627,6 @@ export async function findClientContracts(clientId: string): Promise<{ name: str
   return rows
 }
 
-/** A client's Contract folder: always shown first inside the client's folder, even when empty. */
-export async function findContractFolderStats(clientId: string, archived: 'hide' | 'only'): Promise<{ file_count: number; pending_review: number; last_upload: string | null }> {
-  const { rows } = await pool.query<{ file_count: number; pending_review: number; last_upload: string | null }>(
-    `SELECT COUNT(*)::int AS file_count,
-            COUNT(*) FILTER (WHERE status = 'pending')::int AS pending_review,
-            MAX(uploaded_at) AS last_upload
-       FROM documents
-      WHERE client_id = $1 AND document_type = 'contract'
-        AND ${archived === 'only' ? 'archived_at IS NOT NULL' : 'archived_at IS NULL'}`,
-    [clientId],
-  )
-  return rows[0]
-}
-
 /**
  * Types typed in for Other before, most used first, so the next uploader
  * picks "Invoice" instead of typing "invoice" or "INV". Spellings that differ

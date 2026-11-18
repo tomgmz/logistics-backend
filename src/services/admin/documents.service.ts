@@ -71,10 +71,6 @@ export function searchVehiclesForUpload(search: string) {
   return DocumentsModel.searchVehicles(search)
 }
 
-export function contractFolderStats(clientId: string, archived: 'hide' | 'only') {
-  return DocumentsModel.findContractFolderStats(clientId, archived)
-}
-
 /**
  * Same shape as the client booking-document upload: a random folder per file
  * (so the link cannot be guessed) holding the file under its original name (so
