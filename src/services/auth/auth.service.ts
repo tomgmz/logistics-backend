@@ -142,7 +142,20 @@ export async function changePassword(
   // first-login change - clearMustChangePassword wipes that flag below.
   const user = await AuthModel.findUserById(userId)
 
-  if (user && await passwordMatches(user.email, newPassword)) throw samePasswordError()
+  // Only the forced first-login change (must_change_password) may set a
+  // password without the old one: the person just proved who they are with the
+  // temporary password. Anyone else changes it through a reset link or code.
+  // Without this, anyone at an unlocked, signed-in device could post a new
+  // password and lock the owner out (OWASP: a password change needs the
+  // current password or a proven reset flow). 2026-11-18.
+  if (!user?.must_change_password) {
+    throw Object.assign(
+      new Error('Your password has already been set. To change it, sign out and use "Forgot password".'),
+      { code: 'PASSWORD_CHANGE_NOT_ALLOWED' },
+    )
+  }
+
+  if (await passwordMatches(user.email, newPassword)) throw samePasswordError()
 
   const { error } = await supabase.auth.admin.updateUserById(userId, {
     password: newPassword,

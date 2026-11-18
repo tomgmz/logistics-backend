@@ -1,4 +1,5 @@
 import * as model from '../../models/notification/notification.model.js'
+import { formatDuration } from '../../lib/duration.js'
 import * as push from '../messaging/push.service.js'
 import { broadcast } from '../../lib/realtime.js'
 import {
@@ -344,7 +345,7 @@ function copyFor(
       return {
         title: 'Paused delivery continues soon',
         body:  `Booking ${label} continues today. Your call time is ${extra?.callTimeLabel ?? 'soon'}` +
-               (extra?.minutesLeft ? ` (in ${extra.minutesLeft} min)` : '') +
+               (extra?.minutesLeft ? ` (in ${formatDuration(extra.minutesLeft)})` : '') +
                '. Wait for the office to resume it before moving.',
       }
     case 'stop_order_changed':
@@ -364,7 +365,7 @@ function copyFor(
     case 'breakdown_unhandled':
       return {
         title: 'Breakdown waiting for a decision',
-        body:  `The driver on booking ${label} reported a breakdown ${extra?.minutesLeft ?? 15} min ago and the trip can't continue. ` +
+        body:  `The driver on booking ${label} reported a breakdown ${formatDuration(extra?.minutesLeft ?? 15)} ago and the trip can't continue. ` +
                'Pause the delivery for the breakdown (then replace the vehicle or set a continuation date), or confirm the truck is moving again.',
       }
     case 'late_confirmation':
@@ -376,7 +377,7 @@ function copyFor(
     case 'late_confirmation_unhandled':
       return {
         title: 'Late confirmation still waiting',
-        body:  `A late confirmation on booking ${label} has waited ${extra?.minutesLeft ?? 15} min for a decision. ` +
+        body:  `A late confirmation on booking ${label} has waited ${formatDuration(extra?.minutesLeft ?? 15)} for a decision. ` +
                'The delivery cannot finish until it is accepted, dismissed, or confirmed another way.',
       }
     case 'crew_roles_swapped':
@@ -388,13 +389,13 @@ function copyFor(
     case 'delivery_delayed':
       return {
         title: 'Your delivery is running late',
-        body:  `Delivery ${label} is running about ${extra?.minutesLeft ?? 'some'} min behind schedule.` +
+        body:  `Delivery ${label} is running about ${extra?.minutesLeft ? formatDuration(extra.minutesLeft) : 'a few minutes'} behind schedule.` +
                (extra?.newArrival ? ` Now expected: ${extra.newArrival}.` : ' We will update you as soon as we have a new time.'),
       }
     case 'delivery_delayed_staff':
       return {
         title: 'Delivery delayed',
-        body:  `Booking ${label} is running about ${extra?.minutesLeft ?? 'some'} min past its planned arrival` +
+        body:  `Booking ${label} is running about ${extra?.minutesLeft ? formatDuration(extra.minutesLeft) : 'a few minutes'} past its planned arrival` +
                (extra?.newArrival ? ` (now expected ${extra.newArrival}).` : ' and the truck has no recent position.'),
       }
     case 'pause_continuation_overdue':

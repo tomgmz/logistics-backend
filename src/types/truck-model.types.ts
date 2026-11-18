@@ -15,6 +15,8 @@ export interface TruckModel {
   max_length_cm?:     number | null
   image_url:          string
   created_at?:        string
+  /** Set when archived (null = in the catalog). */
+  archived_at?:       string | null
 }
 
 export interface CreateTruckModelInput {

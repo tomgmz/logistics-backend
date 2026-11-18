@@ -1,6 +1,7 @@
 import { TruckModelModel } from '../../models/admin/truck-models.model.js'
 import { CreateTruckModelInput, UpdateTruckModelInput } from '../../types/truck-model.types.js'
 import { logEvent } from '../../lib/log-event.js'
+import { conflict, notFound } from '../../lib/http-error.js'
 import { resolveModelVehicleType } from './vehicle-type.service.js'
 
 export async function getAllTruckModels(archivedOnly = false) {
@@ -76,4 +77,27 @@ export async function archiveTruckModel(modelId: string, actorId?: string | null
   })
 
   return result
+}
+
+/**
+ * Undo an archive (user 2026-11-18): the model is back in the catalog and can
+ * be picked for new vehicles again. Refused when a current model already has
+ * the same name.
+ */
+export async function restoreTruckModel(modelId: string, actorId?: string | null) {
+  const existing = await TruckModelModel.findById(modelId)
+  if (!existing) throw notFound('Truck model not found')
+  if (!existing.archived_at) throw conflict(`${existing.name} is not archived (it may have been restored already).`)
+
+  if (await TruckModelModel.activeWithName(existing.name, modelId)) {
+    throw conflict(`A model named ${existing.name} is already in the catalog, so this one can't be restored.`)
+  }
+  if (!(await TruckModelModel.restore(modelId))) throw conflict(`${existing.name} was restored a moment ago.`)
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'vehicle_activity',
+    action:      'vehicle_model_restored',
+    description: `Vehicle model ${existing.name} restored from the archive`,
+  })
 }

@@ -1,3 +1,4 @@
+import { statusOf } from '../../lib/http-error.js'
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
 import * as TruckService from '../../services/admin/truck.service.js'
@@ -133,6 +134,17 @@ export async function archiveTruck(req: Request, res: Response) {
       : err.message.includes('out on a booking') ? 409
       : 500
     res.status(status).json({ status: 'error', message: err.message })
+  }
+}
+
+// Undo an archive: back as Available (its checks still gate assignment).
+export async function restoreTruck(req: Request, res: Response) {
+  try {
+    const { userId } = getRequestMeta(req)
+    await TruckService.restoreTruck(param(req.params.id), userId)
+    res.status(200).json({ status: 'success', message: 'Vehicle restored' })
+  } catch (err: any) {
+    res.status(statusOf(err)).json({ status: 'error', message: err.message })
   }
 }
 

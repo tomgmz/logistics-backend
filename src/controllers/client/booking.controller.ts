@@ -168,11 +168,11 @@ export const updateBooking = async (req: Request, res: Response) => {
     const booking = await updateBookingService(param(req.params.id), req.body, viewerFrom(req), userId)
     res.status(200).json({ status: 'success', data: booking })
   } catch (error: any) {
-    const status = error.message.includes('not found')
+    const status = statusOf(error, 0) || (error.message.includes('not found')
       ? 404
       : error.message.includes('scheduled at least') || error.message.includes('more than 1 month')
         ? 400
-        : 500
+        : 500)
     res.status(status).json({ status: 'error', message: error.message })
   }
 }

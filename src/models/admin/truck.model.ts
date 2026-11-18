@@ -192,4 +192,40 @@ async function archive(truckId: string) {
   return result.rows[0] ?? null
 }
 
-export { findAll, findAllPaginated, findById, findByAssignedDriver, create, update, archive }
+/**
+ * Bring an archived vehicle back as Available. Its service, registration and
+ * inspection checks still decide whether it can be assigned. Null when it isn't
+ * archived (already restored, or never was).
+ */
+async function restore(truckId: string) {
+  const result = await pool.query(
+    `UPDATE trucks SET status = 'available'
+      WHERE truck_id = $1 AND status = 'archived'
+      RETURNING truck_id, plate_number`,
+    [truckId]
+  )
+  return result.rows[0] ?? null
+}
+
+/** An archived vehicle (findById skips them). */
+async function findArchivedById(truckId: string) {
+  const result = await pool.query(
+    `SELECT truck_id, plate_number, model_id FROM trucks WHERE truck_id = $1 AND status = 'archived'`,
+    [truckId]
+  )
+  return result.rows[0] ?? null
+}
+
+/** A current (not archived) vehicle with this plate, other than this one. */
+async function activeWithPlate(plate: string, exceptTruckId: string) {
+  const result = await pool.query(
+    `SELECT truck_id FROM trucks
+      WHERE status != 'archived' AND truck_id != $2
+        AND UPPER(REPLACE(plate_number, ' ', '')) = UPPER(REPLACE($1, ' ', ''))
+      LIMIT 1`,
+    [plate, exceptTruckId]
+  )
+  return result.rows[0] ?? null
+}
+
+export { findAll, findAllPaginated, findById, findByAssignedDriver, create, update, archive, restore, findArchivedById, activeWithPlate }

@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { formatDuration } from '../../lib/duration.js'
 import { computeLegEtas, type EtaStop } from '../maps/eta.service.js'
 import { UNLOAD_MINUTES_PER_STOP } from '../maps/planned-eta.service.js'
 import { notifyStage } from './notification.service.js'
@@ -105,7 +106,7 @@ export async function noticeClientOfLaterDropoffs(
   void notifyStage('dropoff_order_later', booking, {
     reason: reason ?? undefined,
     dropoffsLater: later
-      .map((l) => `${l.label} is now about ${l.minutes} min later, around ${manilaClock(l.at)}`)
+      .map((l) => `${l.label} is now about ${formatDuration(l.minutes)} later, around ${manilaClock(l.at)}`)
       .join('; '),
   })
 }

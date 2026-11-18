@@ -86,4 +86,31 @@ async function archive(modelId: string): Promise<boolean> {
   return true
 }
 
-export const TruckModelModel = { findAll, findById, create, update, activeTruckPlates, archive }
+/** Bring an archived model back into the catalog. False when it wasn't archived. */
+async function restore(modelId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('truck_models')
+    .update({ archived_at: null })
+    .eq('model_id', modelId)
+    .not('archived_at', 'is', null)
+    .select('model_id')
+
+  if (error) throw error
+  return (data ?? []).length > 0
+}
+
+/** A current (not archived) model with this name, other than this one. */
+async function activeWithName(name: string, exceptModelId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('truck_models')
+    .select('model_id')
+    .is('archived_at', null)
+    .ilike('name', name.trim().replace(/[\\%_]/g, (c) => `\\${c}`))
+    .neq('model_id', exceptModelId)
+    .limit(1)
+
+  if (error) throw error
+  return (data ?? []).length > 0
+}
+
+export const TruckModelModel = { findAll, findById, create, update, activeTruckPlates, archive, restore, activeWithName }

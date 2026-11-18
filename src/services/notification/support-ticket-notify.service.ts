@@ -5,8 +5,9 @@ import { CreateNotificationInput, NotificationRow } from '../../types/notificati
 
 /**
  * In-app notices for client support tickets, on top of the ticket emails:
- * a new ticket tells every active Company Administrator (except the one who
- * opened it), a ticket the office opened for a client tells that client, and
+ * a new ticket tells every active Company Administrator and Operations Manager
+ * (except the one who opened it; user 2026-11-18: tickets go through
+ * operations too), a ticket the office opened for a client tells that client, and
  * resolving one tells the client.
  *
  * Same shape as password-reset-notify: share the model and the three delivery
@@ -15,8 +16,9 @@ import { CreateNotificationInput, NotificationRow } from '../../types/notificati
  * not fail the client's request or the admin's resolve.
  */
 
-// Where the Company Administrator works the queue.
+// Where each role works the queue.
 const ADMIN_TICKETS_PATH = '/admin/support-tickets'
+const OPS_TICKETS_PATH   = '/operations_admin/support-tickets'
 // The client's tickets live in the help assistant; ?chat=tickets opens it there.
 const CLIENT_TICKETS_PATH = '/client/dashboard?chat=tickets'
 
@@ -67,7 +69,8 @@ async function fanOut(
 }
 
 /**
- * A ticket was opened: every active Company Administrator hears about it.
+ * A ticket was opened: every active Company Administrator and Operations
+ * Manager hears about it, each with a link to their own Tickets page.
  * `openedByStaff` is the staff member who logged it for the client — named in
  * the notice and not told about their own ticket.
  */
@@ -77,24 +80,21 @@ export async function notifyTicketOpened(
   openedByStaff?: { userId: string; name: string },
 ): Promise<void> {
   try {
-    const recipients = (await notificationModel.resolveRecipientsByRoles(['admin']))
+    const recipients = (await notificationModel.resolveRecipientsByRoles(['admin', 'operations_manager']))
       .filter((r) => r.user_id !== openedByStaff?.userId)
     if (recipients.length === 0) {
       if (openedByStaff) return
       // The ticket still shows on the Tickets page and reached the support inbox.
-      console.error(`[support] no active Company Administrator to notify for ${ticket.reference}`)
+      console.error(`[support] no active Company Administrator or Operations Manager to notify for ${ticket.reference}`)
       return
     }
-    await fanOut(
-      recipients,
-      'support.ticket_opened',
-      'New support ticket',
-      openedByStaff
-        ? `${openedByStaff.name} opened ${ticket.reference} for ${clientName}: ${ticket.subject}`
-        : `${clientName} opened ${ticket.reference}: ${ticket.subject}`,
-      ticket,
-      ADMIN_TICKETS_PATH,
-    )
+    const body = openedByStaff
+      ? `${openedByStaff.name} opened ${ticket.reference} for ${clientName}: ${ticket.subject}`
+      : `${clientName} opened ${ticket.reference}: ${ticket.subject}`
+    await Promise.all([
+      fanOut(recipients.filter((r) => r.role === 'admin'), 'support.ticket_opened', 'New support ticket', body, ticket, ADMIN_TICKETS_PATH),
+      fanOut(recipients.filter((r) => r.role === 'operations_manager'), 'support.ticket_opened', 'New support ticket', body, ticket, OPS_TICKETS_PATH),
+    ])
   } catch (err) {
     console.error('[support] notifyTicketOpened failed', ticket.reference, err)
   }

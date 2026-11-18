@@ -280,6 +280,7 @@ router.get('/trucks/:id/maintenance', authenticate, isCrewRelease, TruckControll
 router.post('/trucks',       authenticate, isFleet, validate(createTruckSchema), TruckController.createTruck)
 router.patch('/trucks/:id',  authenticate, isFleet, lockGuard('truck', fromParam('id')), validate(updateTruckSchema), TruckController.updateTruck)
 router.post('/trucks/:id/archive', authenticate, isFleet, canArchiveFleet, lockGuard('truck', fromParam('id')), TruckController.archiveTruck)
+router.post('/trucks/:id/restore', authenticate, isFleet, canArchiveFleet, lockGuard('truck', fromParam('id')), TruckController.restoreTruck)
 
 //Truck Models
 router.get('/truck-models',        authenticate, isFleet, TruckModelController.getAllTruckModels)
@@ -287,6 +288,7 @@ router.get('/truck-models/:id',    authenticate, isFleet, TruckModelController.g
 router.post('/truck-models',       authenticate, isFleet, validate(createTruckModelSchema), TruckModelController.createTruckModel)
 router.patch('/truck-models/:id',  authenticate, isFleet, lockGuard('truck_model', fromParam('id')), validate(updateTruckModelSchema), TruckModelController.updateTruckModel)
 router.post('/truck-models/:id/archive', authenticate, isFleet, canArchiveFleet, lockGuard('truck_model', fromParam('id')), TruckModelController.archiveTruckModel)
+router.post('/truck-models/:id/restore', authenticate, isFleet, canArchiveFleet, lockGuard('truck_model', fromParam('id')), TruckModelController.restoreTruckModel)
 
 
 //General Managers

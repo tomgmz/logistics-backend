@@ -2,6 +2,8 @@ import * as TruckModel from '../../models/admin/truck.model.js'
 import * as InspectionModel from '../../models/admin/truck-inspection.model.js'
 import { CreateTruckInput, UpdateTruckInput } from '../../types/truck.types.js'
 import { logEvent } from '../../lib/log-event.js'
+import { conflict, notFound } from '../../lib/http-error.js'
+import { TruckModelModel } from '../../models/admin/truck-models.model.js'
 import { lastFleetReturnsFor, liveBookingForTruck, liveBookingsForTrucks, type TruckBooking } from '../../lib/driver-reservation.js'
 import { isOutOfService } from './fleet-availability.service.js'
 import { BookingModel } from '../../models/client/booking.model.js'
@@ -441,5 +443,39 @@ export async function archiveTruck(truckId: string, actorId?: string | null) {
       : `Vehicle ${truck.plate_number} archived`,
   })
 
+  return result
+}
+
+/**
+ * Undo an archive (user 2026-11-18): the vehicle comes back as Available.
+ * Fleet systems (Samsara, Motive) unarchive the same way: the record and its
+ * history were never deleted. Its service, registration and inspection checks
+ * still decide whether it can be assigned; its regular driver is not re-paired.
+ * Refused when another current vehicle has the same plate, or its model is
+ * still archived (restore the model first).
+ */
+export async function restoreTruck(truckId: string, actorId?: string | null) {
+  const truck = await TruckModel.findArchivedById(truckId)
+  if (!truck) throw notFound('This vehicle is not archived (it may have been restored already).')
+
+  if (await TruckModel.activeWithPlate(truck.plate_number, truckId)) {
+    throw conflict(`Another vehicle with plate ${truck.plate_number} is already in the fleet, so this one can't be restored.`)
+  }
+  if (truck.model_id) {
+    const model = await TruckModelModel.findById(truck.model_id)
+    if (model?.archived_at) {
+      throw conflict(`Its model ${model.name} is archived. Restore the model first, then this vehicle.`)
+    }
+  }
+
+  const result = await TruckModel.restore(truckId)
+  if (!result) throw conflict('This vehicle was restored a moment ago.')
+
+  logEvent({
+    user_id:     actorId,
+    log_type:    'vehicle_activity',
+    action:      'vehicle_restored',
+    description: `Vehicle ${truck.plate_number} restored from the archive`,
+  })
   return result
 }

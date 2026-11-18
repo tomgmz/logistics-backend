@@ -58,3 +58,12 @@ export async function archiveTruckModel(req: Request, res: Response) {
     res.status(status).json({ status: 'error', message: err.message })
   }
 }
+export async function restoreTruckModel(req: Request, res: Response) {
+  try {
+    const { userId } = getRequestMeta(req)
+    await TruckModelService.restoreTruckModel(param(req.params.id), userId)
+    res.status(200).json({ status: 'success', message: 'Truck model restored' })
+  } catch (err: any) {
+    res.status(statusOf(err)).json({ status: 'error', message: err.message })
+  }
+}

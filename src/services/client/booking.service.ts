@@ -442,6 +442,19 @@ export async function updateBookingService(
   if (!existing) throw new Error(`Booking with ID ${bookingId} not found`)
   assertBookingOwnership(existing, viewer)
 
+  // A client may change a booking only while it still waits for the General
+  // Manager: no decision yet and nobody assigned. After that, operations have
+  // planned the day, vehicle and driver around it (Lalamove / Grab Express: no
+  // edits once accepted; ask support). Changes then go through a ticket. A
+  // rejected booking has its own Edit & Resubmit (POST /:id/resubmit).
+  if (existing.status !== 'pending' || existing.gm_status !== 'pending') {
+    throw conflict('This booking has already been reviewed, so it can no longer be changed here. Open a support ticket to ask for a change.')
+  }
+  const crew = await crewOnBooking(bookingId)
+  if (crew.driver_id || crew.truck_id) {
+    throw conflict('A vehicle and driver are already assigned to this booking, so it can no longer be changed here. Open a support ticket to ask for a change.')
+  }
+
   if (input.schedule_date) {
     validateScheduleDate(input.schedule_date, input.call_time ?? existing.call_time ?? undefined)
   }

@@ -94,7 +94,7 @@ router.post('/logout',     authenticate, authenticatedLimiter, AuthController.lo
 router.post('/logout-all', authenticate, authenticatedLimiter, AuthController.logoutAll)
 router.get('/me',          authenticate, authenticatedLimiter, AuthController.me)
 // Profile page (2026-11-07): the account's own details. No password change
-// here: passwords are reset through the Company Administrator.
+// here: passwords are reset through the IT Administrator.
 router.get('/profile',    authenticate, authenticatedLimiter, AuthController.profile)
 
 export default router
