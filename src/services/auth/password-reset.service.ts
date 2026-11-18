@@ -15,6 +15,11 @@ import {
 } from '../../lib/mailer.js'
 import { logEvent } from '../../lib/log-event.js'
 import {
+  closeReplacedRequests,
+  closeResetRequestsFor,
+  closeStaleResetRequests,
+} from './reset-request-cleanup.js'
+import {
   notifyResetCompleted,
   notifyResetRequested,
 } from '../notification/password-reset-notify.service.js'
@@ -191,6 +196,10 @@ export async function requestPasswordReset(input: {
       return
     }
 
+    // Asking again after a link expired: the new request replaces the old one,
+    // so the queue never shows the same person twice.
+    await closeReplacedRequests(user.user_id)
+
     const request = await ResetModel.create({
       user_id:        user.user_id,
       email,
@@ -236,6 +245,8 @@ export async function listRequestsForActor(
   await ResetModel.expireStale().catch((err) =>
     console.error('[password-reset] expireStale failed', err),
   )
+  // Expired requests nobody acted on for 7 days leave the queue.
+  await closeStaleResetRequests()
 
   return ResetModel.listForGroup(group, statuses)
 }
@@ -395,6 +406,9 @@ export async function completeReset(
   // An IT Admin's own reset (the emailed-code path) also confirms a pending
   // handover: a replacement whose temporary password ran out lands here.
   if (request.requested_role === 'it_admin') await completeHandoverOnConfirm(request.user_id)
+
+  // Any other unfinished request of theirs (an older expired one) is done with.
+  void closeResetRequestsFor(request.user_id, 'password_changed')
 
   logEvent({
     user_id:     request.user_id,
@@ -689,9 +703,9 @@ export async function verifyItAdminOtp(input: {
 }
 
 /**
- * Reject a request without sending anything. Only an untouched ('pending')
- * request can be rejected: once a link has gone out the decision is final, so
- * a sent (or since expired) link can't be withdrawn from the queue.
+ * Reject (pending) or dismiss (expired) a request. A request whose link is live
+ * ('sent') can't be withdrawn: the person may be opening it right now. An
+ * expired one can, so a stale row never has to sit in the queue (2026-11-18).
  */
 export async function cancelRequest(
   requestId: string,
@@ -702,16 +716,16 @@ export async function cancelRequest(
 
   assertOwnsRequest(request, actor)
 
-  if (request.status === 'sent' || request.status === 'expired') {
-    throw new Error('A reset link has already been sent for this request, so it can no longer be rejected.')
+  if (request.status === 'sent') {
+    throw new Error('A reset link was just sent for this request and is still valid, so it can no longer be rejected.')
   }
 
-  const cancelled = await ResetModel.cancel(requestId, ['pending'])
+  const cancelled = await ResetModel.cancel(requestId, ['pending', 'expired'])
   if (!cancelled) {
     const now = await ResetModel.findById(requestId)
     throw new Error(
       now?.status === 'sent'
-        ? 'A reset link has already been sent for this request, so it can no longer be rejected.'
+        ? 'A reset link was just sent for this request and is still valid, so it can no longer be rejected.'
         : `This request is already ${now?.status ?? request.status}.`,
     )
   }

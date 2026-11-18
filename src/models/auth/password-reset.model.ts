@@ -196,6 +196,43 @@ export async function cancel(
 }
 
 /**
+ * Close every unfinished request of one user (pending, sent or expired, link or
+ * code): they got back in some other way, or a newer request replaces these.
+ * The token goes with it, so a link still in an inbox stops working.
+ */
+export async function closeAllForUser(
+  userId:   string,
+  statuses: ResetRequestStatus[] = CANCELLABLE_STATUSES,
+): Promise<PasswordResetRequestRow[]> {
+  const nowIso = new Date().toISOString()
+  const { data, error } = await supabase
+    .from('password_reset_requests')
+    .update({ status: 'cancelled', token_hash: null, otp_hash: null, updated_at: nowIso })
+    .eq('user_id', userId)
+    .in('status', statuses)
+    .select()
+
+  if (error) throw error
+  return (data ?? []) as PasswordResetRequestRow[]
+}
+
+/**
+ * Close expired requests nobody acted on since `before` (the queue's 7-day
+ * limit), so a person who never came back doesn't sit in it for ever.
+ */
+export async function closeExpiredBefore(before: Date): Promise<PasswordResetRequestRow[]> {
+  const { data, error } = await supabase
+    .from('password_reset_requests')
+    .update({ status: 'cancelled', token_hash: null, otp_hash: null, updated_at: new Date().toISOString() })
+    .eq('status', 'expired')
+    .lt('updated_at', before.toISOString())
+    .select()
+
+  if (error) throw error
+  return (data ?? []) as PasswordResetRequestRow[]
+}
+
+/**
  * Retire sent-but-unused links whose token has run out, so they stop occupying
  * the one-open-request-per-user slot and the queue reads honestly.
  */

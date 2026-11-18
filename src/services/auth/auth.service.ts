@@ -16,6 +16,7 @@ import {
 import { supabase, supabaseAnon } from '../../lib/supabase.js'
 import { isManagedRole } from '../../constants/modules.js'
 import { getSessionPermissions } from '../admin/permissions.service.js'
+import { closeResetRequestsFor } from './reset-request-cleanup.js'
 import { completeHandoverOnConfirm } from '../admin/it-admin.service.js'
 import { logEvent } from '../../lib/log-event.js'
 import { logSystem } from '../../lib/log-system.js'
@@ -148,6 +149,8 @@ export async function changePassword(
   })
   if (error) throw new Error(`Failed to update password: ${error.message}`)
   await AuthModel.clearMustChangePassword(userId)
+  // Their password is new: an open reset request would only reset it again.
+  void closeResetRequestsFor(userId, 'password_changed')
 
   // A replacement IT Admin setting their own password confirms the handover:
   // the previous IT Admin's render ends now (a no-op for anyone else).
@@ -396,6 +399,8 @@ export async function issueVerifiedSession(
   deviceInfo?: string,
 ): Promise<AuthResponse> {
   const tokens = await createTokensAndSession(user, deviceInfo)
+  // A passkey sign-in: any reset request left in the queue is done with.
+  void closeResetRequestsFor(user.user_id, 'signed_in')
   return buildAuthResponse(
     user,
     tokens.accessToken,
@@ -671,6 +676,8 @@ export async function verifyOtp(
       attempt_status: 'success',
     }),
   ])
+  // Back in: any reset request they left in the queue is done with.
+  void closeResetRequestsFor(user.user_id, 'signed_in')
 
   // login_history above is the detailed record, but nothing surfaces it in
   // either log UI — and passkey sign-ins were already writing to the audit
@@ -889,6 +896,8 @@ export async function loginWithPassword(
       attempt_status: 'success',
     }),
   ])
+  // Back in: any reset request they left in the queue is done with.
+  void closeResetRequestsFor(user.user_id, 'signed_in')
 
   return buildAuthResponse(user, accessToken, refreshToken, accessExpiresAt, refreshExpiresAt)
 }

@@ -176,8 +176,11 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
     question: 'I forgot my password or can\'t sign in.',
     answer:
       'On the sign-in page choose "Forgot password". Your request goes to our Company Administrator, who sends ' +
-      'you a reset link or code by email. Any email address works for an account (Gmail, Yahoo, Outlook or a ' +
-      'company domain), as long as you can receive mail there.',
+      'you a reset link or code by email. The link works once and expires 5 minutes after it is sent, so open it ' +
+      'soon. Asking again does not create a second request: it reminds the administrator, and replaces a link that ' +
+      'expired. If you get back in another way (signing in or changing your password), the request closes on its ' +
+      'own. Any email address works for an account (Gmail, Yahoo, Outlook or a company domain), as long as you ' +
+      'can receive mail there.',
   },
   {
     id: 'account-details',
