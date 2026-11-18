@@ -146,7 +146,7 @@ export async function runLicenseExpiryTick(now = new Date()): Promise<Record<Cha
     if (office.length > 0) await attempt(c, stage, 'staff_app', () => notifyOffice(c, office, expiresOn, daysLeft))
     if (INBOX_STAGES.has(stage)) {
       await attempt(c, stage, 'inbox_email', () => sendLicenseExpiryStaffEmail({
-        to: inbox, driverName: driverName(c), licenseNumber: c.license_number, expiresOn, daysLeft,
+        to: inbox, driverName: driverName(c), driverEmail: c.email, licenseNumber: c.license_number, expiresOn, daysLeft,
       }))
     }
   }

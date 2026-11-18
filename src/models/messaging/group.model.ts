@@ -85,7 +85,7 @@ export async function getGroupsByUserId(userId: string): Promise<GroupWithDetail
       .order('last_message_at', { ascending: false, nullsFirst: false }),
 
     supabase.from('group_members')
-      .select('*, user:users!group_members_user_id_fkey(user_id, first_name, last_name, role, email)')
+      .select('*, user:users!group_members_user_id_fkey(user_id, first_name, last_name, role, email, account_status:status)')
       .in('group_id', groupIds),
 
     supabase.from('group_messages')

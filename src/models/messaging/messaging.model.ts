@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import type {
+  AccountStatus,
   ConversationRow,
   ConversationWithDetails,
   MessageRow,
@@ -59,7 +60,8 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
 
   const [{ data: usersRaw, error: userErr }, { data: msgsRaw, error: msgErr }, { data: bookingsRaw, error: bookingErr }] =
     await Promise.all([
-      supabase.from('users').select('user_id, first_name, last_name, role, email').in('user_id', other),
+      // account_status: the chat shows Inactive / Archived and closes the reply box (2026-11-18).
+      supabase.from('users').select('user_id, first_name, last_name, role, email, account_status:status').in('user_id', other),
       supabase.from('messages')
         .select('conversation_id, message_id, content, sent_at, sender_id, deleted_by_sender, deleted_by_receiver')
         .in('conversation_id', ids)
@@ -73,7 +75,7 @@ export async function getConversationsByUserId(userId: string): Promise<Conversa
   if (bookingErr) throw bookingErr
   const bookingMap = new Map(((bookingsRaw ?? []) as BookingRefRow[]).map(b => [b.booking_id, b]))
 
-  type UserRow = { user_id: string; first_name: string | null; last_name: string | null; role: UserRole; email: string }
+  type UserRow = { user_id: string; first_name: string | null; last_name: string | null; role: UserRole; email: string; account_status: AccountStatus }
   const userMap = Object.fromEntries((usersRaw ?? []).map((u: UserRow) => [u.user_id, u]))
   const convMap = Object.fromEntries(convs.map(c => [c.conversation_id, c]))
 

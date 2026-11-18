@@ -61,12 +61,16 @@ export type GroupSystemEvent =
   /** An invited person accepted; the line is sent in their name (2026-11-06). */
   | { event: 'joined'; user_id: string; name: string }
 
+/** users.status of the other person: anything but 'active' closes the reply box. */
+export type AccountStatus = 'active' | 'inactive' | 'archived'
+
 export interface ConversationParticipant {
   user_id: string
   first_name: string | null
   last_name: string | null
   role: UserRole
   email: string
+  account_status?: AccountStatus
 }
 
 /** A booking a conversation is about, for the reference shown beside a name. */
@@ -122,6 +126,7 @@ export interface GroupMemberWithUser extends GroupMemberRow {
     last_name: string | null
     role: UserRole
     email: string
+    account_status?: AccountStatus
   }
 }
 

@@ -328,7 +328,31 @@ interface OutgoingEmail {
   replyTo?: Address | Address[]
   /** For the error message and log: "welcome email". */
   what:     string
+  /**
+   * The account this email is about when it goes to someone else (a client's
+   * contract to the office, a driver's licence to the inbox). A seed account
+   * here suppresses it like a seed recipient does.
+   */
+  about?:   string | null
+  /**
+   * A person just asked for it (sign-in code, password reset): sent even to a
+   * seed account, so seed accounts stay testable. One per click, so no burst.
+   */
+  personAsked?: boolean
 }
+
+/**
+ * Seed test accounts (scripts/seed-scenarios.mjs) use plus-addresses of the
+ * testing inbox: 8338logisticsservice+seed.<kind><nnn>@gmail.com.
+ */
+export function isSeedEmail(email?: string | null): boolean {
+  if (!email) return false
+  return /\+seed\./i.test(email.split('@')[0] ?? '')
+}
+
+// Suppressed seed emails since boot, summarised on the console now and then
+// (never System Logs: the schedulers would flood it).
+let seedSuppressed = 0
 
 const fmt = (a: Address) => (a.name ? `${a.name.replace(/[<>"]/g, '')} <${a.email}>` : a.email)
 
@@ -359,6 +383,17 @@ async function viaResend(m: OutgoingEmail): Promise<void> {
 
 /** The only way an email leaves the system. Throws (and logs) when it can't be handed over. */
 async function deliver(m: OutgoingEmail): Promise<void> {
+  // Seed data never spends the email quota (user 2026-11-18: the seeded
+  // schedulers' reminders went past Resend's daily limit). The email counts as
+  // handed over, so callers stamp it and don't retry it every day; the in-app
+  // notice and push still go out as usual.
+  if (!m.personAsked && (isSeedEmail(m.to.email) || isSeedEmail(m.about))) {
+    seedSuppressed++
+    if (seedSuppressed === 1 || seedSuppressed % 50 === 0) {
+      console.info(`[email] seed data: ${seedSuppressed} email(s) not sent since start (latest: ${m.what})`)
+    }
+    return
+  }
   try {
     if (!FROM_EMAIL) throw new Error('No sender address. Set MAIL_FROM_EMAIL.')
     if (!process.env.RESEND_API_KEY) throw new Error('No email provider configured. Set RESEND_API_KEY.')
@@ -430,6 +465,7 @@ export async function sendOtpEmail(to: string, code: string, firstName?: string 
   // The code is never in the subject: it would show in the inbox list and on a
   // lock-screen notification without the email being opened.
   await deliver({
+    personAsked: true,
     subject: `Your ${APP_NAME} sign-in code`,
     ...otpEmail(firstName ?? 'there', code, LOGIN_OTP_COPY),
     to:      { email: to, name: firstName },
@@ -448,6 +484,7 @@ export interface PasswordResetOtpEmailParams {
 export async function sendPasswordResetOtpEmail(params: PasswordResetOtpEmailParams): Promise<void> {
   const { to, firstName, code, expiresInMinutes } = params
   await deliver({
+    personAsked: true,
     subject: `Your ${APP_NAME} password reset code`,
     ...otpEmail(firstName ?? 'there', code, {
       label:   'Password Reset Code',
@@ -571,6 +608,7 @@ used or expires. If you did not ask for a reset, contact your Administrator imme
 Link expired? Request another reset from the sign-in screen, or reach us at ${APP_SUPPORT_EMAIL}.`, footer)
 
   await deliver({
+    personAsked: true,
     subject: `Reset your ${APP_NAME} password`,
     html, text,
     to:   { email: to, name: firstName },
@@ -683,6 +721,7 @@ export async function sendPasswordResetAlertEmail(params: PasswordResetAlertEmai
   const intro = `A user ${copy.sentence} ${APP_NAME} password.`
 
   await deliver({
+    about:   userEmail,
     subject: `${APP_NAME}: ${copy.subject} ${name}`,
     html:    layoutHtml({ label: copy.heading, blocks: [para(esc(intro)), detailRows(rows)], footer }),
     text:    layoutText(`${intro}\n\n${rowsText(rows)}`, footer),
@@ -984,6 +1023,7 @@ export async function sendSupportTicketEmail(p: SupportTicketEmailParams): Promi
   ].join('\n'), footer)
 
   await deliver({
+    about:   p.email,
     subject: supportTicketSubject(p.reference, p.subject),
     html, text,
     to:      { email: p.email, name: p.clientName },
@@ -1025,6 +1065,7 @@ export async function sendTicketReplyForward(p: {
   const intro  = `${who} replied to support ticket ${p.reference}.` + (p.note ? ` ${p.note}` : '')
   const footer = 'Use Reply all so your answer reaches them and is recorded on the ticket.'
   await deliver({
+    about:   p.fromEmail,
     subject: p.subject,
     html:    layoutHtml({ label: 'Ticket Reply', blocks: [para(esc(intro)), quoted('Their message', p.body || '(no text)')], footer }),
     text:    layoutText([intro, '', p.body || '(no text)'].join('\n'), footer),
@@ -1041,6 +1082,8 @@ export async function sendLicenseExpiryStaffEmail(p: {
   to:            string
   toName?:       string | null
   driverName:    string
+  /** The driver's own address, so a seed driver's reminder is not emailed. */
+  driverEmail?:  string | null
   licenseNumber: string | null
   expiresOn:     string
   daysLeft:      number
@@ -1057,6 +1100,7 @@ export async function sendLicenseExpiryStaffEmail(p: {
   const footer = `This reminder was sent because a driver's license on ${APP_NAME} is about to expire.`
 
   await deliver({
+    about:   p.driverEmail ?? null,
     subject: p.daysLeft === 0
       ? `Driver's license expires today: ${p.driverName}`
       : `Driver's license expires ${when}: ${p.driverName}`,
@@ -1128,6 +1172,7 @@ export async function sendContractExpiryStaffEmail(p: {
   const footer = `This reminder was sent because a client contract on ${APP_NAME} is about to end.`
 
   await deliver({
+    about:   p.clientEmail,
     subject: p.daysLeft <= 0 ? `Client contract ends today: ${company}` : `Client contract ends ${when}: ${company}`,
     html:    layoutHtml({ label: 'Contract Expiry Reminder', blocks: [para(esc(intro)), detailRows(rows)], footer }),
     text:    layoutText(`${intro}\n\n${rowsText(rows)}`, footer),
