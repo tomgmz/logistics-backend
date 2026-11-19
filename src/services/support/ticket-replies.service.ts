@@ -96,9 +96,16 @@ export function newPartOf(text: string): string {
   return (fresh || text.trim()).slice(0, BODY_MAX)
 }
 
+/**
+ * Reading a received email needs a Resend key with Full access; a "Sending
+ * access" key is refused ("This API key is restricted to only send emails",
+ * 2026-11-19). RESEND_READ_API_KEY holds that key so the sending key can stay
+ * restricted (least privilege); without it the sending key is tried.
+ */
 async function readReceived(emailId: string): Promise<ReceivedEmail> {
+  const key = process.env.RESEND_READ_API_KEY?.trim() || process.env.RESEND_API_KEY
   const { data } = await axios.get<ReceivedEmail>(`${RESEND_API}/emails/receiving/${encodeURIComponent(emailId)}`, {
-    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+    headers: { Authorization: `Bearer ${key}` },
     timeout: 15_000,
   })
   return data
