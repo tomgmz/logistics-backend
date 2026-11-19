@@ -25,7 +25,24 @@ import pg from 'pg'
 import { createClient } from '@supabase/supabase-js'
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3'
 
-const MANIFEST = path.join(path.dirname(fileURLToPath(import.meta.url)), 'seed-scenarios.manifest.json')
+/**
+ * --e2e: tear down the TEST database's seed (seed-scenarios.mjs --e2e) instead.
+ * Loads .env.e2e over .env, reads seed-scenarios.manifest.e2e.json, and
+ * refuses to run if .env.e2e still points at production.
+ */
+const E2E = process.argv.includes('--e2e')
+if (E2E) {
+  const { default: dotenv } = await import('dotenv')
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+  dotenv.config({ path: path.join(root, '.env.e2e'), override: true, quiet: true })
+  const prod = fs.existsSync(path.join(root, '.env')) ? dotenv.parse(fs.readFileSync(path.join(root, '.env'))) : {}
+  const same = (k) => !process.env[k] || process.env[k] === prod[k]
+  if (same('DATABASE_URL') || same('SUPABASE_URL') || same('R2_FILES_BUCKET')) {
+    console.error('--e2e: .env.e2e is missing or points at the production database, project or bucket. Refusing.')
+    process.exit(1)
+  }
+}
+const MANIFEST = path.join(path.dirname(fileURLToPath(import.meta.url)), E2E ? 'seed-scenarios.manifest.e2e.json' : 'seed-scenarios.manifest.json')
 const execute  = process.argv.includes('--yes')
 if (!fs.existsSync(MANIFEST)) { console.error(`No manifest at ${MANIFEST}: nothing to tear down.`); process.exit(1) }
 const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'))

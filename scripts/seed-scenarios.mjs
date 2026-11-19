@@ -45,7 +45,26 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 import { defaultPermissionsForRole, levelToFlags, MODULES_BY_ROLE } from '../src/constants/modules.ts'
 
 const DRY = process.argv.includes('--dry-run')
-const MANIFEST = path.join(path.dirname(fileURLToPath(import.meta.url)), 'seed-scenarios.manifest.json')
+/**
+ * --e2e: seed the TEST database for the Playwright browser tests instead.
+ * Loads .env.e2e over .env and refuses to run if it still points at
+ * production. Differences in this mode: one General Manager is active and one
+ * IT Administrator is created (production has the real ones), and the
+ * manifest is seed-scenarios.manifest.e2e.json.
+ */
+const E2E = process.argv.includes('--e2e')
+if (E2E) {
+  const { default: dotenv } = await import('dotenv')
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+  dotenv.config({ path: path.join(root, '.env.e2e'), override: true, quiet: true })
+  const prod = fs.existsSync(path.join(root, '.env')) ? dotenv.parse(fs.readFileSync(path.join(root, '.env'))) : {}
+  const same = (k) => !process.env[k] || process.env[k] === prod[k]
+  if (same('DATABASE_URL') || same('SUPABASE_URL') || same('R2_FILES_BUCKET')) {
+    console.error('--e2e: .env.e2e is missing or points at the production database, project or bucket. Refusing.')
+    process.exit(1)
+  }
+}
+const MANIFEST = path.join(path.dirname(fileURLToPath(import.meta.url)), E2E ? 'seed-scenarios.manifest.e2e.json' : 'seed-scenarios.manifest.json')
 if (!DRY && fs.existsSync(MANIFEST)) {
   console.error(`${MANIFEST} already exists. Run the teardown first (or delete the file if it is stale).`)
   process.exit(1)
@@ -315,6 +334,8 @@ try {
     gm:     await createGroup('General Managers (archived)', 'general_manager', 'gm', 10),
     ops:    await createGroup('Operations Managers', 'operations_manager', 'ops', 12),
     fleet:  await createGroup('Fleet Managers', 'fleet_manager', 'fleet', 10),
+    // Test database only: production has its real IT Administrator.
+    it:     E2E ? await createGroup('IT Administrators', 'it_admin', 'it', 1) : [],
   }
 } catch (err) {
   console.error('Creating accounts failed:', err.message)
@@ -379,7 +400,8 @@ try {
     for (const p of list) {
       const k = nameSeq++
       // Only one General Manager may be un-archived, and that is the real one.
-      const state = kind === 'gm' ? 'archived' : kind === 'vendor' ? null : stateFor(p, sizes[kind], kind)
+      // In the test database (--e2e) gm001 is the one active General Manager.
+      const state = kind === 'gm' ? (E2E && p.i === 0 ? null : 'archived') : kind === 'vendor' ? null : stateFor(p, sizes[kind], kind)
       const extra = state ? ACCOUNT_STATES[state] : { status: 'active' }
       p.state = state ?? 'active'
       p.first = pick(FIRST, k)
