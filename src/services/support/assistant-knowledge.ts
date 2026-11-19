@@ -180,7 +180,8 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
       'soon. Asking again does not create a second request: it reminds the administrator, and replaces a link that ' +
       'expired. If you get back in another way (signing in or changing your password), the request closes on its ' +
       'own. Any email address works for an account (Gmail, Yahoo, Outlook or a company domain), as long as you ' +
-      'can receive mail there.',
+      'can receive mail there. After 3 wrong passwords or codes in a row, the account locks for 3 minutes; wait, ' +
+      'then try again. It never locks for good, and a reset is not needed for that.',
   },
   {
     id: 'account-details',

@@ -77,11 +77,19 @@ const canRestoreUsers   = requireModuleFlag('user-management', 'can_delete')
 const isAdmin = authorize('admin', 'it_admin')
 // System logs are IT Admin's alone — deliberately narrower than isAdmin.
 const isItAdmin = authorize('it_admin')
-const isFleet      = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager', 'client')
-const isOperations = authorize('admin', 'it_admin', 'operations_manager', 'general_manager', 'client')
+// Staff only. Until 2026-11-19 isFleet, isOperations and isFleetRead also
+// admitted 'client', and moduleGuard waves clients through (not a managed role),
+// so a signed-in client could create drivers and vehicles, assign any booking,
+// change delivery status and read every client, driver and staff list. The
+// client portal reads only the cargo catalog and vehicle models: isCatalogRead.
+const isFleet      = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager')
+const isOperations = authorize('admin', 'it_admin', 'operations_manager', 'general_manager')
 // Read-only view of drivers/trucks for operations (needed to populate the
 // assignment dropdowns). CRUD stays restricted to isFleet.
-const isFleetRead  = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager', 'client', 'operations_manager')
+const isFleetRead  = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager', 'operations_manager')
+// Lists the client's booking form and route map read: handling codes,
+// commodities, products, landline prefixes, vehicle models. Reads only.
+const isCatalogRead = authorize('admin', 'it_admin', 'fleet_manager', 'general_manager', 'operations_manager', 'client')
 // Releasing a driver's reservation: whoever owns the fleet plus operations, who
 // are the ones the stuck driver disappears on. Not clients — they have no
 // business moving a driver between pools.
@@ -99,7 +107,7 @@ const isPauseControl  = authorize('admin', 'operations_manager')
 // The driver's call time in the Trip Planner: the same two desks.
 const isCallTimeDesk  = authorize('admin', 'operations_manager')
 // Vehicle maintenance records (odometer readings, services): the Company
-// Administrator and the Fleet Manager. Staff only — isFleet admits 'client'.
+// Administrator and the Fleet Manager.
 const isFleetMaintenance = authorize('admin', 'it_admin', 'fleet_manager')
 // Document Management: the portals that carry the module. What each may do
 // (view / upload / review / archive / export) is the document-management tier.
@@ -171,7 +179,7 @@ router.patch('/assignments/:bookingId/status', authenticate, isOperations, lockG
 // GET creates the default plan (one run over every drop-off) if none was set, so
 // a booking assigned before this existed still opens in the driver app.
 //
-// Staff-only, NOT isOperations: that list admits 'client', and these routes have
+// Staff-only, NOT isOperations: that list admitted 'client' until 2026-11-19, and these routes have
 // no per-client scoping — a client on it could read and re-plan any booking in
 // the system, not merely their own. isCrewRelease is the crewing audience
 // (admin, IT, fleet, GM, operations) and nobody else.
@@ -183,7 +191,7 @@ router.put('/assignments/:bookingId/driver-call-time', authenticate, isCallTimeD
   lockGuard('booking', fromParam('bookingId')), validate(driverCallTimeSchema), TripController.setDriverCallTime)
 
 // Pauses on a delivery in transit (weather, breakdown, closed stop…). Reading:
-// staff-only for the same reason as the trips above — isOperations admits
+// staff-only for the same reason as the trips above — isOperations admitted
 // 'client', and the notes here are never shown to the client. Pausing and
 // ending a pause: the Operations Manager and the Company Administrator, with
 // booking edit rights. The driver can do neither.
@@ -242,7 +250,7 @@ router.put('/assignments/:bookingId/timeline', authenticate, isPauseDesk, requir
   lockGuard('booking', fromParam('bookingId')), validate(staffSetMilestoneSchema), TripController.staffSetMilestone)
 
 // Incidents raised by drivers from the road — the Reports module. It used to be
-// readable by isFleetRead, which admits 'client': a client could read every
+// readable by isFleetRead, which admitted 'client': a client could read every
 // driver's incident photos and positions. Staff on the Reports desk only now;
 // the module tier (reports) is enforced by moduleGuard on top.
 router.get('/driver-reports',                 authenticate, isReportsDesk, ReportController.listAllReports)
@@ -283,8 +291,8 @@ router.post('/trucks/:id/archive', authenticate, isFleet, canArchiveFleet, lockG
 router.post('/trucks/:id/restore', authenticate, isFleet, canArchiveFleet, lockGuard('truck', fromParam('id')), TruckController.restoreTruck)
 
 //Truck Models
-router.get('/truck-models',        authenticate, isFleet, TruckModelController.getAllTruckModels)
-router.get('/truck-models/:id',    authenticate, isFleet, TruckModelController.getTruckModelById)
+router.get('/truck-models',        authenticate, isCatalogRead, TruckModelController.getAllTruckModels)
+router.get('/truck-models/:id',    authenticate, isCatalogRead, TruckModelController.getTruckModelById)
 router.post('/truck-models',       authenticate, isFleet, validate(createTruckModelSchema), TruckModelController.createTruckModel)
 router.patch('/truck-models/:id',  authenticate, isFleet, lockGuard('truck_model', fromParam('id')), validate(updateTruckModelSchema), TruckModelController.updateTruckModel)
 router.post('/truck-models/:id/archive', authenticate, isFleet, canArchiveFleet, lockGuard('truck_model', fromParam('id')), TruckModelController.archiveTruckModel)
@@ -419,29 +427,29 @@ router.post('/upload/image', authenticate, isFleet, uploadSingle, UploadControll
 router.post('/upload/fleet-photo', authenticate, isFleetMaintenance, uploadSingle, UploadController.uploadFleetRecordPhoto)
 
 // Handling Codes
-router.get('/handling-codes',        authenticate, isOperations, CargoCatalogController.getAllHandlingCodes)
-router.get('/handling-codes/:id',    authenticate, isOperations, CargoCatalogController.getHandlingCodeById)
+router.get('/handling-codes',        authenticate, isCatalogRead, CargoCatalogController.getAllHandlingCodes)
+router.get('/handling-codes/:id',    authenticate, isCatalogRead, CargoCatalogController.getHandlingCodeById)
 router.post('/handling-codes',       authenticate, isAdmin, validate(createHandlingCodeSchema), CargoCatalogController.createHandlingCode)
 router.patch('/handling-codes/:id',  authenticate, isAdmin, lockGuard('handling_code', fromParam('id')), validate(updateHandlingCodeSchema), CargoCatalogController.updateHandlingCode)
 router.delete('/handling-codes/:id', authenticate, isAdmin, lockGuard('handling_code', fromParam('id')), CargoCatalogController.deleteHandlingCode)
 
 // Commodities
-router.get('/commodities',        authenticate, isOperations, CargoCatalogController.getAllCommodities)
-router.get('/commodities/:id',    authenticate, isOperations, CargoCatalogController.getCommodityById)
+router.get('/commodities',        authenticate, isCatalogRead, CargoCatalogController.getAllCommodities)
+router.get('/commodities/:id',    authenticate, isCatalogRead, CargoCatalogController.getCommodityById)
 router.post('/commodities',       authenticate, isAdmin, validate(createCommoditySchema), CargoCatalogController.createCommodity)
 router.patch('/commodities/:id',  authenticate, isAdmin, lockGuard('commodity', fromParam('id')), validate(updateCommoditySchema), CargoCatalogController.updateCommodity)
 router.delete('/commodities/:id', authenticate, isAdmin, lockGuard('commodity', fromParam('id')), CargoCatalogController.deleteCommodity)
 
 // Products — supports ?commodity_id= filter on GET /products
-router.get('/products',        authenticate, isOperations, CargoCatalogController.getAllProducts)
-router.get('/products/:id',    authenticate, isOperations, CargoCatalogController.getProductById)
+router.get('/products',        authenticate, isCatalogRead, CargoCatalogController.getAllProducts)
+router.get('/products/:id',    authenticate, isCatalogRead, CargoCatalogController.getProductById)
 router.post('/products',       authenticate, isAdmin, validate(createProductSchema), CargoCatalogController.createProduct)
 router.patch('/products/:id',  authenticate, isAdmin, lockGuard('product', fromParam('id')), validate(updateProductSchema), CargoCatalogController.updateProduct)
 router.delete('/products/:id', authenticate, isAdmin, lockGuard('product', fromParam('id')), CargoCatalogController.deleteProduct)
 
 //landline prefixes
-router.get('/landline-prefixes',        authenticate, isOperations, LandlinePrefixController.getAllLandlinePrefixes)
-router.get('/landline-prefixes/:id',    authenticate, isOperations, LandlinePrefixController.getLandlinePrefixById)
+router.get('/landline-prefixes',        authenticate, isCatalogRead, LandlinePrefixController.getAllLandlinePrefixes)
+router.get('/landline-prefixes/:id',    authenticate, isCatalogRead, LandlinePrefixController.getLandlinePrefixById)
 router.post('/landline-prefixes',       authenticate, isAdmin, validate(createLandlinePrefixSchema), LandlinePrefixController.createLandlinePrefix)
 router.patch('/landline-prefixes/:id',  authenticate, isAdmin, lockGuard('landline_prefix', fromParam('id')), validate(updateLandlinePrefixSchema), LandlinePrefixController.updateLandlinePrefix)
 router.delete('/landline-prefixes/:id', authenticate, isAdmin, lockGuard('landline_prefix', fromParam('id')), LandlinePrefixController.deleteLandlinePrefix)

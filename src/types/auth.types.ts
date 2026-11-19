@@ -13,7 +13,8 @@ export interface AuthStatusResponse {
   locked: boolean
   permanent?: boolean
   locked_until?: string
-  role?:         UserRole
+  // No role: asked before sign-in, it told strangers which address was the IT
+  // Administrator's (security review 2026-11-19). See getAuthStatus.
 }
 
 export interface OtpCode {

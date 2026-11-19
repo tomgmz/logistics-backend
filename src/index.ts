@@ -193,12 +193,15 @@ app.use('/api/locks', lockRoutes);
 app.use('/api/transaction-history', transactionHistoryRoutes);
 
 // HEALTH CHECK
+// serverTime stays: the web and driver app set their clocks from it
+// (utils/serverTime.ts, lib/serverTime.ts), and every response's Date header
+// carries the time anyway. The environment name is gone (security review
+// 2026-11-19, F-12): nothing reads it and it only helps someone probing.
 app.get('/api/health', (req: Request, res: Response) => {
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     serverTime: Date.now(),
-    environment: process.env.NODE_ENV,
   });
 });
 

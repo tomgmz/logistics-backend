@@ -801,7 +801,7 @@ export interface DriverEnrollmentEmailParams {
   bookingRef?:    string | null
 }
 
-/** The enrolment invite. No password, ever: the link sets up a passkey on the driver's phone. */
+/** The optional passkey invite: the link sets up a passkey on the driver's phone. Password and emailed code still work (since 2026-11-09). */
 export async function sendDriverEnrollmentEmail(params: DriverEnrollmentEmailParams): Promise<void> {
   const { to, firstName, setupUrl, expiresInHours: hours, bookingRef } = params
   const name   = firstName ?? 'there'
@@ -819,7 +819,7 @@ export async function sendDriverEnrollmentEmail(params: DriverEnrollmentEmailPar
     blocks: [
       greeting(name),
       para(`${forBookingHtml} Set up sign-in on your phone to see your stops, get directions, and record proof of delivery.`),
-      para('<strong>There is no password.</strong> You will unlock the app with your fingerprint, face, or phone PIN. That unlock stays on your phone and is never sent to us.'),
+      para('This link sets up quick sign-in: you unlock the app with your fingerprint, face, or phone PIN. That unlock stays on your phone and is never sent to us. Your password and emailed sign-in code keep working too.'),
       button(setupUrl, 'Set Up Sign-in'),
       linkFallback(setupUrl),
       notice(`This link works once and expires in ${hours} hours. Open it on the phone you will use for deliveries. <strong>Do not forward this email.</strong> If you were not expecting it, ignore it and tell your dispatcher.`),
@@ -834,8 +834,9 @@ Hi ${name},
 ${forBookingText} Set up sign-in on your phone to see your stops, get directions, and
 record proof of delivery.
 
-THERE IS NO PASSWORD. You will unlock the app with your fingerprint, face, or phone
-PIN. That unlock stays on your phone and is never sent to us.
+This link sets up quick sign-in: you unlock the app with your fingerprint, face, or
+phone PIN. That unlock stays on your phone and is never sent to us. Your password and
+emailed sign-in code keep working too.
 
 Open this link on the phone you will use for deliveries:
 

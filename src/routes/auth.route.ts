@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { validate }     from '../middlewares/validate.middleware.js'
 import { authenticate } from '../middlewares/auth.middleware.js'
 import {
-  authenticatedLimiter, authLimiter,
+  authenticatedLimiter, authLimiter, failedSignInIpLimiter, authStatusLimiter,
   passwordResetLimiter, resetRequestIpLimiter,
   passkeyEnrollLimiter, passkeyAuthLimiter, passkeyOptionsLimiter,
 } from '../middlewares/rateLimit.middleware.js'
@@ -35,11 +35,13 @@ const router = Router()
 
 // Public. No captcha on sign-in or password reset (user 2026-11-16: the
 // landing page's contact form only); the rate limiters guard these. An older
-// web build's captcha_token is dropped by validate().
+// web build's captcha_token is dropped by validate(). authLimiter counts per
+// email; failedSignInIpLimiter counts wrong guesses per network address across
+// all accounts (security review 2026-11-19).
 router.post('/request-otp', authLimiter, validate(requestOtpSchema), AuthController.requestOtp)
-router.post('/verify-otp',  authLimiter, validate(verifyOtpSchema),  AuthController.verifyOtp)
-router.post('/login',       authLimiter, validate(loginSchema),       AuthController.loginWithPassword)
-router.post('/status',      validate(authStatusSchema),               AuthController.getAuthStatus)
+router.post('/verify-otp',  failedSignInIpLimiter, authLimiter, validate(verifyOtpSchema),  AuthController.verifyOtp)
+router.post('/login',       failedSignInIpLimiter, authLimiter, validate(loginSchema),       AuthController.loginWithPassword)
+router.post('/status',      authStatusLimiter, validate(authStatusSchema),                    AuthController.getAuthStatus)
 router.post('/refresh',     AuthController.refreshToken)
 router.get('/csrf',         AuthController.getCsrfToken)
 router.post('/change-password', authenticate, authenticatedLimiter, validate(changePasswordSchema), AuthController.changePassword)

@@ -41,10 +41,61 @@ const OTP_RATE_LIMIT    = 10
 const OTP_WINDOW_MINS   = 15
 const OTP_COOLDOWN_SECS = 60
 const MAX_OTP_ATTEMPTS  = 3
-const MAX_LOCKUPS       = 3
 const OTP_EXPIRY_MINS   = 5
 const BCRYPT_ROUNDS     = 12
 const ACCOUNT_LOCK_MINS = 3
+
+// One answer for every wrong guess, whether or not the email has an account
+// (OWASP Authentication Cheat Sheet): a different message for a real account,
+// or an "attempts remaining" count only a real account can have, tells a
+// stranger which addresses are worth attacking. Security review 2026-11-19.
+const WRONG_PASSWORD_MESSAGE = 'Incorrect email or password.'
+const WRONG_CODE_MESSAGE     = 'Incorrect or expired code.'
+
+/**
+ * Lock the account for ACCOUNT_LOCK_MINS after MAX_OTP_ATTEMPTS wrong guesses.
+ *
+ * Never permanent. Until 2026-11-19 three of these locks in a row locked the
+ * account for good, and because sign-in attempts are counted per email (from any
+ * network address), anyone who knew an address could lock its owner out in about
+ * ten minutes, IT Administrator included. Microsoft Entra smart lockout, Okta and
+ * NIST SP 800-63B 5.2.2 all limit guessing with short locks and per-address
+ * limits instead, so the real person always gets back in by waiting. The
+ * per-address ceiling is failedSignInIpLimiter on the routes.
+ */
+async function lockAfterFailures(
+  user: { user_id: string },
+  email: string,
+  ctx: { device_info?: string; user_agent?: string },
+  kind: 'password' | 'code',
+): Promise<never> {
+  const lockupCount = await AuthModel.incrementLockupCount(user.user_id)
+  const lockUntil   = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
+  await AuthModel.lockUserAccount(user.user_id, lockUntil)
+  await AuthModel.createLoginHistory({
+    user_id: user.user_id, email,
+    device_info: ctx.device_info, user_agent: ctx.user_agent,
+    attempt_status: 'failed_locked',
+    failure_reason: `Account locked for ${ACCOUNT_LOCK_MINS} minutes after ${MAX_OTP_ATTEMPTS} wrong ${kind === 'code' ? 'codes' : 'passwords'} (lockout ${lockupCount})`,
+  })
+  // A lockout is one of the cases that legitimately belongs in BOTH feeds:
+  // that the account was locked is a business fact; how it got there is
+  // diagnostics.
+  logEvent({
+    user_id:     user.user_id,
+    log_type:    'auth',
+    action:      'account_locked',
+    description: `${email} locked until ${lockUntil.toISOString()} (lockout ${lockupCount})`,
+  })
+  logSystem({
+    log_level:  'warn',
+    event_type: 'auth_event',
+    source:     'auth.service',
+    message:    `Account temporarily locked: ${email}`,
+    metadata:   { lockup_count: lockupCount, lock_until: lockUntil.toISOString(), kind },
+  })
+  throw new Error(`Too many failed attempts. Account temporarily locked for ${ACCOUNT_LOCK_MINS} minutes.`)
+}
 
 const PLATFORM_RESTRICTIONS: Record<UserRole, Platform[]> = {
   admin:            ['web'],
@@ -423,6 +474,16 @@ export async function issueVerifiedSession(
   )
 }
 
+/**
+ * Asked before sign-in, so it must not say whether the email has an account or
+ * what kind. It used to return the role, which turned it into "is this the IT
+ * Administrator's address?" for anyone (security review 2026-11-19, F-03), the
+ * very question requestItAdminOtp takes care never to answer. The sign-in
+ * screens now offer every path to everyone instead.
+ *
+ * The lock state stays: the screen needs it for the countdown, and a stranger
+ * can only see it on an account that is locked right now (for 3 minutes).
+ */
 export async function getAuthStatus(email: string): Promise<AuthStatusResponse> {
   const normalizedEmail = email.trim().toLowerCase()
   const user = await AuthModel.findUserByEmail(normalizedEmail)
@@ -431,19 +492,20 @@ export async function getAuthStatus(email: string): Promise<AuthStatusResponse> 
     return { locked: false }
   }
 
+  // No longer set by failed sign-ins (see lockAfterFailures); an account
+  // locked before 2026-11-19 stays locked until its password is reset.
   if (user.status === 'permanently_locked') {
-    return { locked: true, permanent: true, role: user.role }
+    return { locked: true, permanent: true }
   }
 
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
     return {
       locked:       true,
       locked_until: new Date(user.locked_until).toISOString(),
-      role:         user.role,
     }
   }
 
-  return { locked: false, role: user.role }
+  return { locked: false }
 }
 
 export async function requestOtp(
@@ -525,7 +587,7 @@ export async function verifyOtp(
       attempt_status: 'failed_inactive',
       failure_reason: 'User not found',
     })
-    throw new Error('Invalid credentials')
+    throw new Error(WRONG_CODE_MESSAGE)
   }
 
   if (user.status === 'permanently_locked') {
@@ -548,7 +610,7 @@ export async function verifyOtp(
       attempt_status: 'failed_inactive',
       failure_reason: `Account status: ${user.status}`,
     })
-    throw new Error('Invalid credentials')
+    throw new Error(WRONG_CODE_MESSAGE)
   }
 
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
@@ -567,28 +629,7 @@ export async function verifyOtp(
   const currentFailedAttempts = user.failed_login_attempts ?? 0
   if (currentFailedAttempts >= MAX_OTP_ATTEMPTS) {
     await AuthModel.markOtpUsed((await AuthModel.findLatestOtp(user.user_id))?.id ?? '')
-    const newLockupCount = await AuthModel.incrementLockupCount(user.user_id)
-
-    if (newLockupCount >= MAX_LOCKUPS) {
-      await AuthModel.permanentlyLockUser(user.user_id)
-      await AuthModel.createLoginHistory({
-        user_id: user.user_id, email,
-        device_info: input.device_info, user_agent: userAgent,
-        attempt_status: 'failed_permanently_locked',
-        failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
-      })
-      throw new Error('Account permanently locked. Request a password reset to regain access.')
-    }
-
-    const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
-    await AuthModel.lockUserAccount(user.user_id, lockUntil)
-    await AuthModel.createLoginHistory({
-      user_id: user.user_id, email,
-      device_info: input.device_info, user_agent: userAgent,
-      attempt_status: 'failed_locked',
-      failure_reason: `Account locked (${newLockupCount}/${MAX_LOCKUPS}) after ${MAX_OTP_ATTEMPTS} failed attempts`,
-    })
-    throw new Error('Account temporarily locked. Too many failed attempts.')
+    await lockAfterFailures(user, email, { device_info: input.device_info, user_agent: userAgent }, 'code')
   }
 
   const latestOtp = await AuthModel.findLatestOtp(user.user_id)
@@ -599,7 +640,7 @@ export async function verifyOtp(
       attempt_status: 'failed_otp',
       failure_reason: 'No valid OTP found',
     })
-    throw new Error('Invalid or expired code')
+    throw new Error(WRONG_CODE_MESSAGE)
   }
 
   const isValidOtp = await verifyOtpHash(cleanCode, latestOtp.code_hash!)
@@ -617,32 +658,11 @@ export async function verifyOtp(
     })
 
     if (remainingAttempts > 0) {
-      throw new Error(`Invalid code. ${remainingAttempts} attempt${remainingAttempts > 1 ? 's' : ''} remaining.`)
+      throw new Error(WRONG_CODE_MESSAGE)
     }
 
-    const newLockupCount = await AuthModel.incrementLockupCount(user.user_id)
     await AuthModel.markOtpUsed(latestOtp.id)
-
-    if (newLockupCount >= MAX_LOCKUPS) {
-      await AuthModel.permanentlyLockUser(user.user_id)
-      await AuthModel.createLoginHistory({
-        user_id: user.user_id, email,
-        device_info: input.device_info, user_agent: userAgent,
-        attempt_status: 'failed_permanently_locked',
-        failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
-      })
-      throw new Error('Account permanently locked. Request a password reset to regain access.')
-    }
-
-    const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
-    await AuthModel.lockUserAccount(user.user_id, lockUntil)
-    await AuthModel.createLoginHistory({
-      user_id: user.user_id, email,
-      device_info: input.device_info, user_agent: userAgent,
-      attempt_status: 'failed_locked',
-      failure_reason: `Account locked (${newLockupCount}/${MAX_LOCKUPS})`,
-    })
-    throw new Error(`Account locked due to too many failed attempts. (${newLockupCount}/${MAX_LOCKUPS} lockouts used)`)
+    await lockAfterFailures(user, email, { device_info: input.device_info, user_agent: userAgent }, 'code')
   }
 
   await Promise.all([
@@ -736,7 +756,7 @@ export async function loginWithPassword(
   const user = await AuthModel.findUserByEmail(email)
 
   if (!user) {
-    throw new Error('Invalid credentials')
+    throw new Error(WRONG_PASSWORD_MESSAGE)
   }
 
   if (user.status === 'permanently_locked') {
@@ -759,7 +779,7 @@ export async function loginWithPassword(
     // Say why only to someone who knows the password; anyone else gets the
     // same answer as a wrong password, so this can't be used to probe accounts.
     if (await passwordMatches(email, input.password)) throw new Error(inactiveAccountMessage(user.status))
-    throw new Error('Invalid credentials')
+    throw new Error(WRONG_PASSWORD_MESSAGE)
   }
 
   if (user.locked_until && new Date(user.locked_until) > new Date()) {
@@ -810,54 +830,10 @@ export async function loginWithPassword(
     })
 
     if (remainingAttempts > 0) {
-      throw new Error(`Incorrect password. ${remainingAttempts} attempt${remainingAttempts > 1 ? 's' : ''} remaining.`)
+      throw new Error(WRONG_PASSWORD_MESSAGE)
     }
 
-    const newLockupCount = await AuthModel.incrementLockupCount(user.user_id)
-
-    if (newLockupCount >= MAX_LOCKUPS) {
-      await AuthModel.permanentlyLockUser(user.user_id)
-      await AuthModel.createLoginHistory({
-        user_id: user.user_id, email,
-        device_info: input.device_info, user_agent: userAgent,
-        attempt_status: 'failed_permanently_locked',
-        failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
-      })
-      // A lockout is one of the cases that legitimately belongs in BOTH feeds:
-      // that the account is now locked is a business fact someone will have to
-      // undo; how it got there is diagnostics.
-      logEvent({
-        user_id:     user.user_id,
-        log_type:    'auth',
-        action:      'account_permanently_locked',
-        description: `${email} permanently locked after ${MAX_LOCKUPS} lockout cycles`,
-      })
-      logSystem({
-        log_level:  'critical',
-        event_type: 'auth_event',
-        source:     'auth.service',
-        message:    `Account permanently locked: ${email}`,
-        metadata:   { lockup_count: newLockupCount, max_lockups: MAX_LOCKUPS },
-      })
-      throw new Error('Account permanently locked. Request a password reset to regain access.')
-    }
-
-    const lockUntil = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
-    await AuthModel.lockUserAccount(user.user_id, lockUntil)
-    logEvent({
-      user_id:     user.user_id,
-      log_type:    'auth',
-      action:      'account_locked',
-      description: `${email} locked until ${lockUntil.toISOString()} (lockout ${newLockupCount}/${MAX_LOCKUPS})`,
-    })
-    logSystem({
-      log_level:  'warn',
-      event_type: 'auth_event',
-      source:     'auth.service',
-      message:    `Account temporarily locked: ${email}`,
-      metadata:   { lockup_count: newLockupCount, lock_until: lockUntil.toISOString() },
-    })
-    throw new Error(`Account locked due to too many failed attempts. (${newLockupCount}/${MAX_LOCKUPS} lockouts used)`)
+    await lockAfterFailures(user, email, { device_info: input.device_info, user_agent: userAgent }, 'password')
   }
 
   // The right password resets the counter whatever happens next; every path

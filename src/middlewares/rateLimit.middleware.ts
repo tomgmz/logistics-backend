@@ -139,6 +139,44 @@ export const authLimiter = rateLimit({
   },
   message: { status: 'error', message: 'Too many requests, please try again later.' },
 })
+
+/**
+ * Wrong passwords and wrong codes from one network address, across every account.
+ *
+ * authLimiter counts per email, which stops guessing at one account but not one
+ * address working through a list of them, or locking everyone it knows out in
+ * turn (security review 2026-11-19, F-02). Only failures count
+ * (skipSuccessfulRequests), so a busy office signing in correctly never touches
+ * it; the ceiling stays high because an office or a mobile carrier shares one
+ * address (the per-identifier rule in docs/loophole-register.md). One instance
+ * shared by /login and /verify-otp, so both kinds of guess draw on one budget.
+ */
+export const failedSignInIpLimiter = rateLimit({
+  handler: limitTripped('failedSignInIpLimiter', 'error'),
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
+  message: limitMessage('Too many failed sign-in attempts from this network. Please try again in a few minutes.'),
+})
+
+/**
+ * The sign-in screens' lock check (POST /auth/status), which had no limit at all.
+ * It no longer says whether an email has an account, so this is a flood
+ * backstop: high, per address, because a sign-in calls it several times.
+ */
+export const authStatusLimiter = rateLimit({
+  handler: limitTripped('authStatusLimiter', 'warn'),
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
+  message: limitMessage('Too many requests from this network. Please try again in a few minutes.'),
+})
+
 /**
  * Password reset link endpoints (verify + complete).
  *

@@ -24,6 +24,13 @@ const router = Router()
 
 const isAdmin  = authorize('admin', 'client')
 const isClient = authorize('client')
+// Setting a booking's status by hand and editing its drop-offs: the Company
+// Administrator's desk only. These used isAdmin above, which admits clients, so a
+// client could approve their own booking past the General Manager, jump it to
+// Assigned / In Transit, or mark a drop-off delivered with no proof (security
+// fix 2026-11-19). The client portal never called them: it confirms, reports,
+// resubmits and closes through its own routes below.
+const isCompanyAdmin = authorize('admin')
 
 // All staff roles that share the booking-management view (read access). The view
 // itself filters what each role sees (e.g. ops sees approved, fleet sees assigned).
@@ -96,7 +103,7 @@ router.patch('/:id',            authenticate, authenticatedLimiter, isClient, at
 // it (it re-enters the General Manager's queue), or cancel it for good.
 router.post('/:id/resubmit',    authenticate, authenticatedLimiter, isClient, attachClientScope, requireOpenContract, lockGuard('booking', fromParam('id')), validate(resubmitBookingSchema), BookingController.resubmitBooking)
 router.post('/:id/close',       authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), BookingController.closeRejectedBooking)
-router.patch('/:id/status',     authenticate, authenticatedLimiter, isAdmin,  attachClientScope, canManageBooking, lockGuard('booking', fromParam('id')), validate(updateBookingStatusSchema), BookingController.updateBookingStatus)
+router.patch('/:id/status',     authenticate, authenticatedLimiter, isCompanyAdmin, attachClientScope, canManageBooking, lockGuard('booking', fromParam('id')), validate(updateBookingStatusSchema), BookingController.updateBookingStatus)
 router.delete('/:id',           authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), BookingController.deleteBooking)
 
 // Approval workflow: the GM is the only gate. Once approved, operations picks a
@@ -116,10 +123,10 @@ router.post('/:id/confirm-completion', authenticate, authenticatedLimiter, autho
 router.post('/:id/resolve-issue',      authenticate, authenticatedLimiter, authorize('admin', 'operations_manager'), requireModuleFlag('booking-management', 'can_edit'), BookingController.resolveDeliveryIssue)
 router.post('/:id/report-issue',       authenticate, authenticatedLimiter, authorize('client'), attachClientScope, validate(reportDeliveryIssueSchema), BookingController.reportDeliveryIssue)
 
-// Same story one level down: `isAdmin` admits clients, so these need the stop's
-// parent booking checked against the caller's own company too.
-router.patch('/destinations/:destinationId',        authenticate, authenticatedLimiter, isAdmin, attachClientScope, canManageBooking, lockGuard('booking', bookingOfDestination('destinationId')), validate(updateDestinationSchema),       BookingController.updateDestination)
-router.patch('/destinations/:destinationId/status', authenticate, authenticatedLimiter, isAdmin, attachClientScope, canManageBooking, lockGuard('booking', bookingOfDestination('destinationId')), validate(updateDestinationStatusSchema), BookingController.updateDestinationStatus)
-router.delete('/destinations/:destinationId',       authenticate, authenticatedLimiter, isAdmin, attachClientScope, canManageBooking, lockGuard('booking', bookingOfDestination('destinationId')), BookingController.deleteDestination)
+// Drop-off edits: Company Administrator only (see isCompanyAdmin). attachClientScope
+// stays as a second lock should a client role ever be let back in.
+router.patch('/destinations/:destinationId',        authenticate, authenticatedLimiter, isCompanyAdmin, attachClientScope, canManageBooking, lockGuard('booking', bookingOfDestination('destinationId')), validate(updateDestinationSchema),       BookingController.updateDestination)
+router.patch('/destinations/:destinationId/status', authenticate, authenticatedLimiter, isCompanyAdmin, attachClientScope, canManageBooking, lockGuard('booking', bookingOfDestination('destinationId')), validate(updateDestinationStatusSchema), BookingController.updateDestinationStatus)
+router.delete('/destinations/:destinationId',       authenticate, authenticatedLimiter, isCompanyAdmin, attachClientScope, canManageBooking, lockGuard('booking', bookingOfDestination('destinationId')), BookingController.deleteDestination)
 
 export default router
