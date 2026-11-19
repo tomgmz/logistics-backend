@@ -26,6 +26,18 @@ const APP_NAME          = process.env.APP_NAME             || 'Logistics'
 const PHYSICAL_ADDRESS  = process.env.APP_PHYSICAL_ADDRESS || 'Blk. 6 Lot 8 Lynville Enclave, Mamatid, City of Cabuyao, Laguna'
 const FROM_EMAIL        = process.env.MAIL_FROM_EMAIL || ''
 const FROM_NAME         = process.env.APP_NAME             || 'Logistics'
+
+/**
+ * Ticket emails come from a support address people can answer (Zendesk,
+ * Freshdesk and Help Scout practice, user 2026-11-19), not no-reply: they say
+ * "reply to this email". Replies still go to Reply-To (TICKET_REPLY_EMAIL), so
+ * recording is unchanged. TICKET_FROM_EMAIL overrides; the default is
+ * support@ on the sending domain, which Resend has already verified.
+ */
+const TICKET_FROM_EMAIL = process.env.TICKET_FROM_EMAIL?.trim()
+  || (FROM_EMAIL.includes('@') ? `support@${FROM_EMAIL.split('@')[1]}` : FROM_EMAIL)
+const TICKET_FROM_NAME  = process.env.TICKET_FROM_NAME?.trim() || '8338 Logistics Support'
+const TICKET_FROM: Address = { email: TICKET_FROM_EMAIL, name: TICKET_FROM_NAME }
 const APP_SUPPORT_EMAIL = process.env.APP_SUPPORT_EMAIL    || FROM_EMAIL
 
 /** System Logs source for a send that failed (the IT dashboard's Email card). */
@@ -326,6 +338,8 @@ interface OutgoingEmail {
   to:       Address
   cc?:      Address
   replyTo?: Address | Address[]
+  /** The sender; default MAIL_FROM_EMAIL (no-reply). Ticket emails use TICKET_FROM. */
+  from?:    Address
   /** For the error message and log: "welcome email". */
   what:     string
   /**
@@ -361,7 +375,7 @@ async function viaResend(m: OutgoingEmail): Promise<void> {
     await axios.post(
       'https://api.resend.com/emails',
       {
-        from:    fmt({ email: FROM_EMAIL, name: FROM_NAME }),
+        from:    fmt(m.from ?? { email: FROM_EMAIL, name: FROM_NAME }),
         to:      [fmt(m.to)],
         subject: m.subject,
         html:    m.html,
@@ -1080,6 +1094,7 @@ export async function sendSupportTicketEmail(p: SupportTicketEmailParams): Promi
   ].join('\n'), footer)
 
   await deliver({
+    from:    TICKET_FROM,
     about:   p.email,
     subject: supportTicketSubject(p.reference, p.subject),
     html, text,
@@ -1098,6 +1113,7 @@ export async function sendSupportTicketResolvedEmail(p: {
   const footer = `You opened a support ticket on the ${APP_NAME} website.`
 
   await deliver({
+    from:    TICKET_FROM,
     // Same subject (Re:) and people as the ticket, so it stays in the thread.
     subject: `Re: ${supportTicketSubject(p.reference, p.subject)}`,
     html:    layoutHtml({ label: 'Support Ticket Resolved', blocks: [para(esc(plain)), p.note ? quoted('Note from our team', p.note) : ''], footer }),
@@ -1122,6 +1138,7 @@ export async function sendTicketReplyForward(p: {
   const intro  = `${who} replied to support ticket ${p.reference}.` + (p.note ? ` ${p.note}` : '')
   const footer = 'Use Reply all so your answer reaches them and is recorded on the ticket.'
   await deliver({
+    from:    TICKET_FROM,
     about:   p.fromEmail,
     subject: p.subject,
     html:    layoutHtml({ label: 'Ticket Reply', blocks: [para(esc(intro)), quoted('Their message', p.body || '(no text)')], footer }),
@@ -1143,6 +1160,7 @@ export async function sendTicketStaffReplyToClient(p: {
   const intro  = `Hi ${p.clientName}, our team replied to your support ticket ${p.reference}:`
   const footer = 'To answer, simply reply to this email.'
   await deliver({
+    from:    TICKET_FROM,
     subject: p.subject,
     html:    layoutHtml({ label: 'Support Ticket', blocks: [para(esc(intro)), quoted('Our reply', p.body || '(no text)')], footer }),
     text:    layoutText([intro, '', p.body || '(no text)'].join('\n'), footer),

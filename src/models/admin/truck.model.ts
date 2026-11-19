@@ -30,6 +30,8 @@ export interface TruckListQuery {
   limit:     number
   status?:   string | null
   search?:   string | null
+  /** The Order toggle: plate Z to A. */
+  reverse?:  boolean
 }
 
 async function findAllPaginated(q: TruckListQuery) {
@@ -86,7 +88,7 @@ async function findAllPaginated(q: TruckListQuery) {
   const limitIdx  = params.length + 1
   const offsetIdx = params.length + 2
   const listResult = await pool.query(
-    `${SELECT_TRUCK} ${whereSql} ORDER BY t.plate_number ASC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+    `${SELECT_TRUCK} ${whereSql} ORDER BY t.plate_number ${q.reverse ? 'DESC' : 'ASC'} LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
     [...params, limit, offset],
   )
 

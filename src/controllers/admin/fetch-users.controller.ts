@@ -55,6 +55,10 @@ export async function getUserDirectory(req: Request, res: Response) {
       search:    typeof req.query.search === 'string' ? req.query.search.trim() : '',
       excludeId: userId ?? undefined,
     })
+    // Name A to Z (last name, then first): the order the Order toggle flips
+    // (2026-11-19). Each role's own query used to decide, so it varied by tab.
+    const byName = (u: any) => [u.last_name, u.first_name].map((x) => String(x ?? '').trim().toLowerCase()).join(' ')
+    rows.sort((a: any, b: any) => byName(a).localeCompare(byName(b)))
     const { data, meta } = paginate(rows, pageQuery(req) ?? { page: 1, limit: MAX_PAGE_LIMIT })
     res.status(200).json({ status: 'success', data, meta: { ...meta, licenseFlagCount } })
   } catch (err: any) {

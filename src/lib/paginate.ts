@@ -18,6 +18,18 @@ export const MAX_PAGE_LIMIT = 100
 export interface PageQuery {
   page:  number
   limit: number
+  /**
+   * The table's Order toggle (user 2026-11-19: a sort toggle on every table):
+   * `?reverse=1` flips the list's own order (Newest first → Oldest first,
+   * A to Z → Z to A) before the page is cut.
+   */
+  reverse?: boolean
+}
+
+/** `?reverse=1` / `?reverse=true`: the table's Order toggle is flipped. */
+export function reverseQuery(req: Request): boolean {
+  const v = req.query.reverse
+  return v === '1' || v === 'true'
 }
 
 export interface PageMeta {
@@ -32,7 +44,7 @@ export function pageQuery(req: Request): PageQuery | null {
   const page  = Number(req.query.page)
   const limit = Number(req.query.limit)
   if (!Number.isFinite(page) || !Number.isFinite(limit) || page < 1 || limit < 1) return null
-  return { page: Math.floor(page), limit: Math.min(Math.floor(limit), MAX_PAGE_LIMIT) }
+  return { page: Math.floor(page), limit: Math.min(Math.floor(limit), MAX_PAGE_LIMIT), reverse: reverseQuery(req) }
 }
 
 /**
@@ -41,6 +53,7 @@ export function pageQuery(req: Request): PageQuery | null {
  * which page that was so the table can follow.
  */
 export function paginate<T>(rows: T[], q: PageQuery): { data: T[]; meta: PageMeta } {
+  if (q.reverse) rows = [...rows].reverse()
   const total      = rows.length
   const totalPages = Math.max(1, Math.ceil(total / q.limit))
   const page       = Math.min(q.page, totalPages)

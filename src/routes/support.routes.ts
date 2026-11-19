@@ -132,6 +132,10 @@ router.get('/tickets', authenticate, authenticatedLimiter, isSupportDesk, requir
       const status = raw === 'resolved' || raw === 'all' ? raw : 'open'
 
       const paging = pageQuery(req)
+      // Newest first on every tab (user 2026-11-19: new tickets were at the end
+      // of Open); the Order toggle (?reverse=1) gives queue order, the
+      // longest-waiting first.
+      const oldestFirst = req.query.sort === 'asc' || req.query.reverse === '1'
       if (paging) {
         // The Tickets table: status tab, search and the tab counts are worked
         // out here, and only the page on screen goes back.
@@ -145,8 +149,7 @@ router.get('/tickets', authenticate, authenticatedLimiter, isSupportDesk, requir
           .filter((t: any) => (status === 'all' || t.status === status) && matchesWords(q, [
             t.reference, t.clients?.company_name, name(t.clients?.users), name(t.opener), t.subject, t.bookings?.reference_number,
           ]))
-          // Open tickets oldest first (who has waited longest); otherwise newest first.
-          .sort((a: any, b: any) => (status === 'open'
+          .sort((a: any, b: any) => (oldestFirst
             ? String(a.created_at).localeCompare(String(b.created_at))
             : String(b.created_at).localeCompare(String(a.created_at))))
         const { data, meta } = paginate(rows, paging)

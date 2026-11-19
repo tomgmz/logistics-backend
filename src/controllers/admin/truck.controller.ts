@@ -1,3 +1,4 @@
+import { reverseQuery } from '../../lib/paginate.js'
 import { statusOf } from '../../lib/http-error.js'
 import { Request, Response } from 'express'
 import { getRequestMeta, param } from '../../lib/controller-utils.js'
@@ -27,7 +28,7 @@ export async function getAllTrucks(req: Request, res: Response) {
     if (Number.isFinite(page) && Number.isFinite(limit) && limit > 0 && page > 0) {
       const status   = typeof req.query.status   === 'string' ? req.query.status   : 'all'
       const search   = typeof req.query.search   === 'string' ? req.query.search   : ''
-      const result   = await TruckService.getAllTrucksPaginated({ page, limit, status, search })
+      const result   = await TruckService.getAllTrucksPaginated({ page, limit, status, search, reverse: reverseQuery(req) })
       return res.status(200).json({ status: 'success', data: result.data, meta: result.meta })
     }
 

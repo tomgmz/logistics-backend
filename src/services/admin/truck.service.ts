@@ -83,6 +83,7 @@ export async function getAllTrucksPaginated(params: {
   limit:    number
   status?:  string | null
   search?:  string | null
+  reverse?: boolean
 }): Promise<{ data: Awaited<ReturnType<typeof TruckModel.findAllPaginated>>['rows']; meta: PaginatedTrucksMeta }> {
   const page  = Math.max(1, params.page)
   const limit = Math.min(Math.max(1, params.limit), 100)
@@ -92,6 +93,7 @@ export async function getAllTrucksPaginated(params: {
     limit,
     status:   params.status,
     search:   params.search,
+    reverse:  params.reverse,
   })
 
   const totalPages = Math.max(1, Math.ceil(total / limit))

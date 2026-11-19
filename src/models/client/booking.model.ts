@@ -26,6 +26,8 @@ export interface BookingListQuery {
   clientId?: string | null
   /** 'schedule': newest schedule date first (the client's Booking History). Default: newest created first. */
   order?: 'created' | 'schedule'
+  /** The Order toggle: the list's own order, flipped. */
+  reverse?: boolean
 }
 
 // Exported so the transaction-history model hydrates rows with exactly the same
@@ -341,11 +343,15 @@ async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWit
   // first out: the oldest waiting booking on top. That is also the General
   // Manager's whole view, which is forced to Pending. booking_id breaks
   // created_at ties so a row can't jump between pages.
-  const orderSql  = q.order === 'schedule'
+  const baseOrder = q.order === 'schedule'
     ? 'b.schedule_date DESC NULLS LAST, b.booking_id DESC'
     : !q.clientId && status === 'pending'
     ? 'b.created_at ASC, b.booking_id ASC'
     : 'b.created_at DESC, b.booking_id DESC'
+  // The Order toggle flips every key (NULLS LAST becomes NULLS FIRST).
+  const orderSql  = !q.reverse ? baseOrder : baseOrder
+    .replace(/\bDESC\b/g, '__A').replace(/\bASC\b/g, 'DESC').replace(/__A/g, 'ASC')
+    .replace('NULLS LAST', 'NULLS FIRST')
   const limitIdx  = params.length + 1
   const offsetIdx = params.length + 2
   const idsResult = await pool.query<{ booking_id: string }>(
