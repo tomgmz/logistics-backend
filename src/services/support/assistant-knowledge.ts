@@ -237,6 +237,10 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
   P('biz-no-payments', 'Does the portal handle quotes, invoices or payments?',
     'No. The portal handles bookings and deliveries only; no prices, amounts or payments are shown or taken in it. ' +
     'Rates and payment are arranged with our team directly.'),
+  P('biz-one-session', 'Why was I signed out? Can I stay signed in on two devices?',
+    'An account can be signed in on only one browser or device at a time. Signing in somewhere else signs you out ' +
+    'everywhere else, and the portal tells you so. If you did not sign in elsewhere yourself, sign in again and ' +
+    'change your password, and contact us if it happens again. Each person at your company should use their own account.'),
 
   // ── Booking details ───────────────────────────────────────────────────────
   P('ops-booking-cargo', 'What cargo details does a booking need?',
