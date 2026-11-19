@@ -95,6 +95,9 @@ export type NotificationType =
   // which can mean it was copied: every session of the account was ended.
   // -> IT Administrator (session-reuse-notify.service.ts).
   | 'auth.session_reuse'
+  // 9 wrong passwords / codes in a row locked an account for good.
+  // -> IT Administrator; the owner gets an email (account-locked-notify.service.ts).
+  | 'auth.account_locked'
 
 export interface NotificationRow {
   notification_id: string

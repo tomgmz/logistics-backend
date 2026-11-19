@@ -21,6 +21,7 @@ import { completeHandoverOnConfirm } from '../admin/it-admin.service.js'
 import { logEvent } from '../../lib/log-event.js'
 import { logSystem } from '../../lib/log-system.js'
 import { notifySessionReuse } from '../notification/session-reuse-notify.service.js'
+import { notifyAccountLocked } from '../notification/account-locked-notify.service.js'
 import {
   RequestOtpInput,
   VerifyOtpInput,
@@ -52,24 +53,64 @@ const ACCOUNT_LOCK_MINS = 3
 const WRONG_PASSWORD_MESSAGE = 'Incorrect email or password.'
 const WRONG_CODE_MESSAGE     = 'Incorrect or expired code.'
 
+const MAX_LOCKUPS       = 3
+
 /**
- * Lock the account for ACCOUNT_LOCK_MINS after MAX_OTP_ATTEMPTS wrong guesses.
+ * Lock the account for ACCOUNT_LOCK_MINS after MAX_OTP_ATTEMPTS wrong guesses,
+ * and for good on the MAX_LOCKUPS-th lock (9 wrong guesses with no successful
+ * sign-in in between; a success resets the count). A permanent lock is undone
+ * by a password reset.
  *
- * Never permanent. Until 2026-11-19 three of these locks in a row locked the
- * account for good, and because sign-in attempts are counted per email (from any
- * network address), anyone who knew an address could lock its owner out in about
- * ten minutes, IT Administrator included. Microsoft Entra smart lockout, Okta and
- * NIST SP 800-63B 5.2.2 all limit guessing with short locks and per-address
- * limits instead, so the real person always gets back in by waiting. The
- * per-address ceiling is failedSignInIpLimiter on the routes.
+ * Kept on purpose (user 2026-11-19), knowing the trade-off: attempts count per
+ * account from any network address, so someone who knows an email can lock its
+ * owner out until a reset (Microsoft Entra, Okta and NIST SP 800-63B 5.2.2 use
+ * only short, growing locks for that reason). Layers on top:
+ * failedSignInIpLimiter caps wrong guesses per address across all accounts, and
+ * every permanent lock is a critical System Logs row plus an audit row, and the
+ * IT Administrator and the owner are told (notifyAccountLocked).
  */
 async function lockAfterFailures(
-  user: { user_id: string },
+  user: { user_id: string; email: string; first_name: string | null; last_name: string | null; role: string },
   email: string,
   ctx: { device_info?: string; user_agent?: string },
   kind: 'password' | 'code',
 ): Promise<never> {
   const lockupCount = await AuthModel.incrementLockupCount(user.user_id)
+
+  if (lockupCount >= MAX_LOCKUPS) {
+    await AuthModel.permanentlyLockUser(user.user_id)
+    await AuthModel.createLoginHistory({
+      user_id: user.user_id, email,
+      device_info: ctx.device_info, user_agent: ctx.user_agent,
+      attempt_status: 'failed_permanently_locked',
+      failure_reason: `Account permanently locked after ${MAX_LOCKUPS} lockout cycles`,
+    })
+    // Both feeds: that the account is locked is a business fact someone will
+    // have to undo; how it got there is diagnostics.
+    logEvent({
+      user_id:     user.user_id,
+      log_type:    'auth',
+      action:      'account_permanently_locked',
+      description: `${email} permanently locked after ${MAX_LOCKUPS} lockout cycles`,
+    })
+    logSystem({
+      log_level:  'critical',
+      event_type: 'auth_event',
+      source:     'auth.service',
+      message:    `Account permanently locked: ${email}`,
+      metadata:   { lockup_count: lockupCount, max_lockups: MAX_LOCKUPS, kind },
+    })
+    // Tell the IT Administrator (in-app + push) and the owner (email). Never
+    // holds up the answer; a failed send is logged, the lock stands.
+    void notifyAccountLocked(user).catch((err) => logSystem({
+      log_level:  'error',
+      event_type: 'auth_event',
+      source:     'auth.service',
+      message:    `Account-locked notice failed for ${email}: ${(err as Error)?.message ?? err}`,
+    }))
+    throw new Error('Account permanently locked. Request a password reset to regain access.')
+  }
+
   const lockUntil   = new Date(Date.now() + ACCOUNT_LOCK_MINS * 60 * 1000)
   await AuthModel.lockUserAccount(user.user_id, lockUntil)
   await AuthModel.createLoginHistory({
@@ -481,8 +522,9 @@ export async function issueVerifiedSession(
  * very question requestItAdminOtp takes care never to answer. The sign-in
  * screens now offer every path to everyone instead.
  *
- * The lock state stays: the screen needs it for the countdown, and a stranger
- * can only see it on an account that is locked right now (for 3 minutes).
+ * The lock state stays: the screen needs it for the countdown and the
+ * permanent-lock panel; a stranger can only see it on an account that is
+ * locked right now.
  */
 export async function getAuthStatus(email: string): Promise<AuthStatusResponse> {
   const normalizedEmail = email.trim().toLowerCase()
@@ -492,8 +534,7 @@ export async function getAuthStatus(email: string): Promise<AuthStatusResponse> 
     return { locked: false }
   }
 
-  // No longer set by failed sign-ins (see lockAfterFailures); an account
-  // locked before 2026-11-19 stays locked until its password is reset.
+  // Set by lockAfterFailures on the 3rd lock; undone by a password reset.
   if (user.status === 'permanently_locked') {
     return { locked: true, permanent: true }
   }

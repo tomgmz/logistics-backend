@@ -676,6 +676,62 @@ Your account may be at risk. Contact us straight away at ${APP_SUPPORT_EMAIL} so
   })
 }
 
+// ── Account locked for good ────────────────────────────────────────────────
+
+export interface AccountLockedEmailParams {
+  to:        string
+  firstName: string | null
+  /** When it locked, already formatted for reading (formatManilaTimestamp). */
+  lockedAt:  string
+  /** The IT Administrator resets by emailed code; everyone else asks for a reset link. */
+  selfReset: boolean
+}
+
+/**
+ * Sent when 9 wrong passwords or codes in a row lock an account for good
+ * (lockAfterFailures). The person may not have caused it: someone who knows
+ * their email can, so it says how to get back in AND what to do if it wasn't
+ * them. No link, no IP address.
+ */
+export async function sendAccountLockedEmail(params: AccountLockedEmailParams): Promise<void> {
+  const { to, firstName, lockedAt, selfReset } = params
+  const name   = firstName ?? 'there'
+  const howTo  = selfReset
+    ? 'On the sign-in page, enter your email, choose Forgot password, then "IT Administrator? Reset with an emailed code", and set a new password. That also unlocks your account.'
+    : 'On the sign-in page, enter your email and choose Forgot password, then Request Reset Link. The IT Administrator will email you a link to set a new password. That also unlocks your account.'
+  const footer = 'This is a security notification sent because your account was locked. It cannot be turned off.'
+
+  const html = layoutHtml({
+    label:     'Account Locked',
+    preheader: `Your ${APP_NAME} account was locked on ${lockedAt} after too many wrong sign-in attempts.`,
+    blocks: [
+      greeting(name),
+      para(`Your ${esc(APP_NAME)} account was <strong>locked</strong> on <strong>${esc(lockedAt)}</strong> after 9 wrong passwords or sign-in codes in a row. Your IT Administrator has been told.`),
+      notice(`<strong>To get back in.</strong> ${esc(howTo)}`, 'ok'),
+      notice(`<strong>If these attempts were not you,</strong> someone may be trying to get into your account. Choose a new password that you do not use anywhere else, and let us know at <a href="mailto:${esc(APP_SUPPORT_EMAIL)}" style="color:#92400e;text-decoration:underline;">${esc(APP_SUPPORT_EMAIL)}</a>.`),
+    ],
+    footer,
+  })
+
+  const text = layoutText(`
+Hi ${name},
+
+Your ${APP_NAME} account was locked on ${lockedAt} after 9 wrong passwords or sign-in codes in a row. Your IT Administrator has been told.
+
+TO GET BACK IN
+${howTo}
+
+IF THESE ATTEMPTS WERE NOT YOU
+Someone may be trying to get into your account. Choose a new password that you do not use anywhere else, and let us know at ${APP_SUPPORT_EMAIL}.`, footer)
+
+  await deliver({
+    subject: `Your ${APP_NAME} account was locked`,
+    html, text,
+    to:   { email: to, name: firstName },
+    what: 'account locked email',
+  })
+}
+
 // ── Company copy of every password reset / change ──────────────────────────
 //
 // Goes to the company mailbox so someone other than the (possibly compromised)

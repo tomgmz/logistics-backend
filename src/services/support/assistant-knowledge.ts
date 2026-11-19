@@ -181,7 +181,8 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
       'expired. If you get back in another way (signing in or changing your password), the request closes on its ' +
       'own. Any email address works for an account (Gmail, Yahoo, Outlook or a company domain), as long as you ' +
       'can receive mail there. After 3 wrong passwords or codes in a row, the account locks for 3 minutes; wait, ' +
-      'then try again. It never locks for good, and a reset is not needed for that.',
+      'then try again. After 9 wrong tries in a row (three of those locks) it stays locked until you reset your ' +
+      'password with "Forgot password"; we email you when that happens, and the IT Administrator is told.',
   },
   {
     id: 'account-details',
