@@ -1,4 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
+import { pool } from '../../lib/database.js'
+import { navigatorOf, NAV_FRESH_MS } from './navigation.service.js'
 import { broadcast } from '../../lib/realtime.js'
 import {
   driverSeatOnBooking,
@@ -120,9 +122,11 @@ function normaliseSensor(value: number | null | undefined): number | null {
  *   stale_fix — this one fix was too old or dated in the future; the next is fine.
  *   not_driver — an admin hitting the route for support; nothing to hang it on.
  */
-// 'not_lead': the second driver's phone. Final for that phone, like
-// 'booking_ended' — the app stops tracking on it.
-export type IgnoredReason = 'booking_ended' | 'not_started' | 'stale_fix' | 'not_driver' | 'not_lead'
+// 'other_phone': the other crew member's phone is navigating and is the
+// truck's position. Transient — this phone keeps reporting so it can take over
+// if that phone goes silent. ('not_lead' is no longer sent: since 2026-11-21
+// either driver's phone can be the truck. Apps before then stop on it.)
+export type IgnoredReason = 'booking_ended' | 'not_started' | 'stale_fix' | 'not_driver' | 'not_lead' | 'other_phone'
 
 export type RecordResult =
   | { recorded: true;  position: DriverPosition }
@@ -135,18 +139,29 @@ export type RecordResult =
  * answers 202 for that, with the reason: turning it into an error would only
  * make drivers' phones retry something that must not be retried.
  */
+/** Whether this driver's phone should be the truck's position right now. */
+async function isTruckPhone(bookingId: string, driverId: string): Promise<boolean> {
+  const fresh = (at: string | null | undefined) => !!at && Date.now() - Date.parse(at) < NAV_FRESH_MS
+  const nav = await navigatorOf(bookingId)
+  if (nav) {
+    if (nav.driver_id === driverId) return true
+    // Just claimed and not heard yet, or heard recently: that phone is the truck.
+    return !(fresh(nav.last_heard_at) || (!nav.last_heard_at && fresh(nav.claimed_at)))
+  }
+  const { rows: [other] } = await pool.query(
+    `SELECT updated_at FROM driver_locations WHERE booking_id = $1 AND driver_id <> $2
+      ORDER BY updated_at DESC LIMIT 1`,
+    [bookingId, driverId],
+  )
+  return !fresh(other?.updated_at ? new Date(other.updated_at).toISOString() : null)
+}
+
 export async function recordDriverPositionService(
   bookingId: string,
   ping: LocationPing,
   actor: DriverActor,
 ): Promise<RecordResult> {
-  const { booking, seat } = await driverSeatOnBooking(bookingId, actor)
-
-  // Only the main driver's phone is the truck's position. driver_locations is one
-  // row per driver and the client's map reads one per booking, so a second phone
-  // pinging the same booking would give it two positions (and double the Google
-  // ETA calls). Ignored, not refused: the app stops on this reason.
-  if (seat === 'second') return { recorded: false, reason: 'not_lead' }
+  const { booking } = await driverSeatOnBooking(bookingId, actor)
 
   // The device stops pinging when the trip ends, but a ping already in flight
   // can land just after. More importantly this is what actually enforces "never
@@ -169,6 +184,16 @@ export async function recordDriverPositionService(
   // to hang a position on. There is nothing to record for anyone else.
   if (!actor.userId) return { recorded: false, reason: 'not_driver' }
   const driverId = await resolveDriverId(actor.userId)
+
+  // One phone is the truck (2026-11-21): the one navigating. driver_locations is
+  // one row per driver and every reader takes one row per booking, so two
+  // phones in the same truck must never both write it (two trucks on the
+  // client's map, double Google ETA calls). The other crew phone's fixes are
+  // dropped while the navigating phone is heard from; if it goes silent for
+  // 2 minutes (dead battery, app killed) this phone carries the position until
+  // it comes back. No one navigating: whichever crew phone is already the
+  // truck keeps it while fresh.
+  if (!(await isTruckPhone(bookingId, driverId))) return { recorded: false, reason: 'other_phone' }
 
   const position: DriverPosition = {
     booking_id:  bookingId,
@@ -196,6 +221,13 @@ export async function recordDriverPositionService(
   })
 
   if (writeError) throw writeError
+
+  // Keep "one row per booking": this phone is the truck now, so the other crew
+  // phone's last row for this booking is no longer the truck's position.
+  await pool.query(
+    `UPDATE driver_locations SET booking_id = NULL WHERE booking_id = $1 AND driver_id <> $2`,
+    [bookingId, driverId],
+  ).catch((e) => console.warn(`[tracking] clearing other phone failed for ${bookingId}:`, e?.message))
 
   // Fire-and-forget: the position is already recorded, and the next ping is only
   // seconds behind, so a failed push is not worth failing the request over.
@@ -248,6 +280,10 @@ export async function getLivePositionService(
       'eta_stops, eta_computed_at',
     )
     .eq('booking_id', bookingId)
+    // One row per booking is kept by recordDriverPositionService; newest wins
+    // if a race ever leaves two for a moment.
+    .order('recorded_at', { ascending: false })
+    .limit(1)
     .maybeSingle()
 
   if (error) throw error

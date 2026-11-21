@@ -1,4 +1,5 @@
-import { restartWithLead } from '../driver/driving-shift.service.js'
+import { endNavigationFor } from '../driver/navigation.service.js'
+import { setCrewChangeContext } from '../../lib/crew-change-context.js'
 import { supabase } from '../../lib/supabase.js'
 import { withBookingRowLock } from '../../lib/booking-row-lock.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -13,7 +14,7 @@ import { emailVendorDriversAssigned } from '../../lib/vendor-access.js'
 import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { invalidateEta } from '../maps/eta.service.js'
 import { getRouteDistance } from '../maps/route-distance.service.js'
-import { assertLeadDriverOnBooking, type DriverActor } from '../client/booking.service.js'
+import { assertCrewDriverOnBooking, type DriverActor } from '../client/booking.service.js'
 import { driverIdOf, pendingLoadTransfer } from '../driver/crew-actor.js'
 import {
   findExternalDriverForAssignment,
@@ -214,6 +215,8 @@ export async function replaceCrewService(
 
     // Same shape as an assignment (assignment.model): a vendor crew is a
     // snapshot on the delivery with deliveries.driver_id / truck_id left NULL.
+    // The trigger logs each changed seat; this names who and why.
+    await setCrewChangeContext(client, { userId: staff.userId, source: 'replaced', reason: input.reason_note ?? null })
     await client.query(
       `UPDATE deliveries
           SET driver_id = $2, truck_id = $3, second_driver_id = $4, helper_name = $5,
@@ -333,9 +336,9 @@ export async function replaceCrewService(
     }
   }
 
-  // A changed driver ends the shifts at the wheel; the new main driver drives on.
-  if (driverChanged || secondChanged) {
-    void restartWithLead(bookingId, staff.userId ?? null).catch((err) => console.error('[crew] driving shift restart failed', bookingId, err))
+  // A driver taken off can no longer be the navigating phone.
+  if (offIds.length) {
+    void endNavigationFor(bookingId, offIds, 'removed').catch((err) => console.error('[crew] ending navigation failed', bookingId, err))
   }
 
   const offUserIds = await userIdsOfDrivers(offIds)
@@ -381,7 +384,7 @@ export async function listCrewReplacementsService(bookingId: string) {
 
 /** What the new driver's phone needs to show the transfer step, or null. */
 export async function driverPendingLoadTransferService(bookingId: string, actor: DriverActor) {
-  await assertLeadDriverOnBooking(bookingId, actor)
+  await assertCrewDriverOnBooking(bookingId, actor)
   const pending = await pendingLoadTransfer(bookingId)
   if (!pending) return null
   return {
@@ -406,7 +409,7 @@ export async function driverConfirmLoadTransferService(
   actor: DriverActor,
   position?: StopProofPosition | null,
 ) {
-  await assertLeadDriverOnBooking(bookingId, actor)
+  await assertCrewDriverOnBooking(bookingId, actor)
   const pending = await pendingLoadTransfer(bookingId)
   if (!pending) return { confirmed: false }
   if (!proofPhotoUrl) throw new Error('Cannot confirm the transfer without a photo of the load on the new vehicle')

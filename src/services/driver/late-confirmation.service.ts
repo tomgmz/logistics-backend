@@ -4,11 +4,12 @@ import { fromDeviceClock } from '../../lib/device-clock.js'
 import { broadcast } from '../../lib/realtime.js'
 
 /**
- * A drop-off confirmed on a phone that is no longer the main driver's.
+ * A drop-off confirmed on the phone of a driver who is no longer on the crew.
  *
- * The office swapped the main and second driver (or replaced the driver) while
- * the old main driver's phone still held a confirmation in its offline queue.
- * It arrives late, from someone who is no longer the main driver. Refusing it
+ * The office replaced the driver while their phone still held a confirmation
+ * in its offline queue. It arrives late, from someone no longer on the
+ * delivery. (Before 2026-11-21 this also covered a main/second swap; both
+ * drivers now confirm, so a swap changes nothing here.) Refusing it
  * loses a delivery that really happened; accepting anything lets a driver who
  * was taken off confirm stops they never reached.
  *
@@ -17,8 +18,7 @@ import { broadcast } from '../../lib/realtime.js'
  * arrival time). It is applied automatically only when all of these hold:
  *
  *   1. it carries the time it was done (the app sends confirmed_at), and at
- *      that time this driver WAS the main driver (booking_crew_swaps +
- *      crew_replacements);
+ *      that time this driver was still on the crew (crew_replacements);
  *   2. it has its proof photo;
  *   3. its position is within 100 m of the drop-off, with no override;
  *   4. the truck's GPS trail does not contradict it: if the server holds pings
@@ -45,41 +45,40 @@ export const TRAIL_RADIUS_M  = 500
 
 export type LateReason =
   | 'no_time'            // older app: no confirmed_at, so "when" is unknown
-  | 'after_change'       // done after the swap / replacement took effect
-  | 'not_main_then'      // this driver was the second driver at that time
+  | 'after_change'       // done after the replacement took this driver off
+  | 'not_main_then'      // (before 2026-11-21) this driver was the second driver at that time
   | 'no_photo'
   | 'no_position'
   | 'too_far'            // over 100 m, or the driver overrode the gate
   | 'trail_disagrees'    // the truck's pings put it elsewhere at that time
+  | 'away_from_truck'    // the confirming phone was not with the truck (crew-presence)
 
 export const LATE_REASON_TEXT: Record<LateReason, string> = {
   no_time:         'the app did not say when it was done (older app version)',
-  after_change:    'it was done after the office changed the main driver',
+  after_change:    'it was done after the office took this driver off the delivery',
   not_main_then:   'this driver was the second driver at that time',
   no_photo:        'no proof photo',
   no_position:     'no position from the phone',
   too_far:         'more than 100 m from the drop-off',
   trail_disagrees: "the truck's GPS trail puts it elsewhere at that time",
+  away_from_truck: "the phone was more than 500 m from the truck's position at that time",
 }
 
-/** Who held the main-driver seat at `atMs`. Null when nobody did (before assignment). */
-export async function leadDriverAt(bookingId: string, atMs: number): Promise<string | null> {
-  const { rows: events } = await pool.query<{ at: Date; old_lead: string | null }>(
-    `SELECT swapped_at AS at, old_lead_driver_id AS old_lead
-       FROM booking_crew_swaps WHERE booking_id = $1 AND swapped_at > $2
-     UNION ALL
-     SELECT replaced_at AS at, old_driver_id AS old_lead
-       FROM crew_replacements
-      WHERE booking_id = $1 AND replaced_at > $2
-        AND new_driver_id IS NOT NULL AND new_driver_id IS DISTINCT FROM old_driver_id
-     ORDER BY at ASC
-     LIMIT 1`,
-    [bookingId, new Date(atMs).toISOString()],
+/**
+ * When a crew replacement took this driver off the booking, or null if it
+ * never did. Since 2026-11-21 both drivers may confirm, so the question for a
+ * late confirmation is only "was this driver still on the crew then".
+ */
+export async function removedFromCrewAt(bookingId: string, driverId: string): Promise<number | null> {
+  const { rows: [r] } = await pool.query<{ at: Date | null }>(
+    `SELECT min(replaced_at) AS at FROM crew_replacements
+      WHERE booking_id = $1
+        AND (old_driver_id = $2 OR old_second_driver_id = $2)
+        AND $2 IS DISTINCT FROM COALESCE(new_driver_id, old_driver_id)
+        AND $2 IS DISTINCT FROM new_second_driver_id`,
+    [bookingId, driverId],
   )
-  if (events[0]) return events[0].old_lead
-  const { rows: [d] } = await pool.query<{ driver_id: string | null }>(
-    `SELECT driver_id FROM deliveries WHERE booking_id = $1`, [bookingId])
-  return d?.driver_id ?? null
+  return r?.at ? new Date(r.at).getTime() : null
 }
 
 /** Whether this driver was ever on the booking and taken off by a replacement. */
@@ -121,17 +120,8 @@ export async function judgeLateConfirmation(e: LateEvidence): Promise<LateVerdic
   if (e.atMs == null) {
     reasons.push('no_time')
   } else {
-    const lead = await leadDriverAt(e.bookingId, e.atMs)
-    if (lead !== e.driverId) {
-      // Distinguish "after the change" from "never the main driver then".
-      const { rows: [cur] } = await pool.query<{ driver_id: string | null }>(
-        `SELECT driver_id FROM deliveries WHERE booking_id = $1`, [e.bookingId])
-      const everLead = await pool.query(
-        `SELECT 1 FROM booking_crew_swaps WHERE booking_id = $1 AND old_lead_driver_id = $2
-         UNION ALL SELECT 1 FROM crew_replacements WHERE booking_id = $1 AND old_driver_id = $2 LIMIT 1`,
-        [e.bookingId, e.driverId])
-      reasons.push(everLead.rows.length > 0 && cur?.driver_id !== e.driverId ? 'after_change' : 'not_main_then')
-    }
+    const removedAt = await removedFromCrewAt(e.bookingId, e.driverId)
+    if (removedAt != null && e.atMs >= removedAt) reasons.push('after_change')
   }
 
   if (!e.proofPhotoUrl) reasons.push('no_photo')

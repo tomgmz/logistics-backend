@@ -206,7 +206,8 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
     question: 'Why are there two drivers on my booking?',
     answer:
       'Routes longer than 30 km by road always get a second driver for safety. Shorter routes have one driver, ' +
-      'sometimes with a helper.',
+      'sometimes with a helper. Both drivers can confirm the pickup, the drop-offs and the proof photos, so a ' +
+      'confirmation may show either driver’s name.',
   },
 ]
 
@@ -284,6 +285,12 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
   P('ops-helper', 'What is a helper on my booking?',
     'Routes of 30 km or less have one driver and sometimes a helper who assists with loading and unloading. ' +
     'Longer routes always get a second driver.'),
+  P('ops-two-drivers-app', 'With two drivers, who confirms my delivery and whose phone shows the truck?',
+    'Both drivers have the same steps in the driver app, so either one can confirm the pickup, a drop-off and the ' +
+    'proof photo; the record shows who did it. Only one phone navigates at a time, and that phone is the truck you see ' +
+    'on the tracking map. If the drivers switch phones on the road, the map keeps following the same truck. A ' +
+    'confirmation only counts when the phone is at the stop and with the truck; otherwise our team checks it first. ' +
+    'Every change of driver, second driver, helper or vehicle on your booking is recorded by our team.'),
 
   // ── On the road ───────────────────────────────────────────────────────────
   P('ops-start', 'How do I know my delivery has started?',

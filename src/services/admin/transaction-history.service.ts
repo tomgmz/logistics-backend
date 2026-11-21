@@ -1,3 +1,4 @@
+import { crewChangeEvents, crewChangeRowsFor, type CrewChangeEvent, type CrewChangeExportRow } from './crew-change-log.service.js'
 import {
   TransactionHistoryModel,
   type TransactionFilters,
@@ -103,7 +104,7 @@ export async function listTransactionCompaniesService() {
 
 export async function exportTransactionsService(
   filters: TransactionFilters,
-): Promise<{ rows: DispatchRow[]; truncated: boolean }> {
+): Promise<{ rows: DispatchRow[]; crew_changes: CrewChangeExportRow[]; truncated: boolean }> {
   // Ask for one booking past the cap so a full set tells us there was more.
   const { rows, bookings } = await TransactionHistoryModel.findDispatchRows(filters, EXPORT_ROW_CAP + 1)
   const truncated = bookings > EXPORT_ROW_CAP
@@ -115,16 +116,20 @@ export async function exportTransactionsService(
   }
   const exported = truncated ? EXPORT_ROW_CAP : bookings
 
+  // The "Driver Changes" sheet: every driver / second driver / helper /
+  // vehicle change and navigation take-over on the exported bookings.
+  const crew_changes = await crewChangeRowsFor([...new Set(kept.map((r) => r.booking_id))])
+
   // Thousands of rows of delivery history leaving the system in one click is
   // exactly what an audit trail is for. The actor comes from the ambient
   // request context.
   logEvent({
     log_type:    'data_export',
     action:      'transactions_exported',
-    description: `Exported ${exported} booking(s) as ${kept.length} dispatch row(s)${truncated ? ` (capped at ${EXPORT_ROW_CAP} bookings)` : ''}; filters: ${JSON.stringify(filters)}`,
+    description: `Exported ${exported} booking(s) as ${kept.length} dispatch row(s) and ${crew_changes.length} driver change(s)${truncated ? ` (capped at ${EXPORT_ROW_CAP} bookings)` : ''}; filters: ${JSON.stringify(filters)}`,
   })
 
-  return { rows: kept, truncated }
+  return { rows: kept, crew_changes, truncated }
 }
 
 export interface TransactionRecord {
@@ -138,6 +143,8 @@ export interface TransactionRecord {
   inspection:  InspectionModel.TruckInspection | null
   /** Who approved/rejected, who assigned, who cancelled — with role and time. */
   approvals:   TransactionApprovals
+  /** Every change of driver, second driver, helper and vehicle, and navigation take-overs, oldest first. */
+  crew_changes: CrewChangeEvent[]
 }
 
 export interface DecisionActor {
@@ -233,11 +240,12 @@ export async function getTransactionRecordService(bookingId: string): Promise<Tr
   if (error) throw error
   if (!booking) return null
 
-  const [delivery, trips, reports, approvals] = await Promise.all([
+  const [delivery, trips, reports, approvals, crew_changes] = await Promise.all([
     AssignmentModel.findByBookingId(bookingId),
     TripModel.findByBookingId(bookingId),
     ReportModel.findByBookingId(bookingId),
     loadApprovals(bookingId),
+    crewChangeEvents(bookingId),
   ])
 
   // Inspections belong to the vehicle, not the booking. The one that matters is
@@ -261,5 +269,5 @@ export async function getTransactionRecordService(bookingId: string): Promise<Tr
     inspection = all.find((i) => i.passed && new Date(i.inspected_at).getTime() <= assignedAt) ?? null
   }
 
-  return { delivery, trips, reports, inspection, approvals }
+  return { delivery, trips, reports, inspection, approvals, crew_changes }
 }

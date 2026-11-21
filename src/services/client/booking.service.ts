@@ -958,15 +958,16 @@ export async function driverSeatOnBooking(
 
 /**
  * For every write a driver makes on the trip — pickup, stops, proof photos,
- * finishing, the vehicle's return. Only the main driver does those in the app,
- * so the record has one author and one phone. The second driver can see the
- * booking and its stops but is refused here.
+ * finishing, the vehicle's return. Since 2026-11-21 the main and the second
+ * driver have the same buttons (either may be the one holding a free phone);
+ * what keeps that safe is checked per write, not by seat: membership read now
+ * (a replaced driver is refused), the 100 m stop check and proof photo, the
+ * "phone is with the truck" check on loading and drop-offs
+ * (crew-presence.ts), first-confirmation-wins on every stop, and who did it on
+ * every record (confirmed_by + the audit log).
  */
-export async function assertLeadDriverOnBooking(bookingId: string, actor: DriverActor): Promise<BookingWithRelations> {
-  const { booking, seat } = await driverSeatOnBooking(bookingId, actor)
-  if (seat !== 'lead') {
-    throw new Error('Only the main driver can update this delivery in the app. You are the second driver on this booking.')
-  }
+export async function assertCrewDriverOnBooking(bookingId: string, actor: DriverActor): Promise<BookingWithRelations> {
+  const { booking } = await driverSeatOnBooking(bookingId, actor)
   return booking
 }
 
@@ -982,7 +983,7 @@ export async function driverConfirmPickupService(
   earlyStart = false,
   position?: StopProofPosition | null,
 ): Promise<BookingWithRelations> {
-  const booking = await assertLeadDriverOnBooking(bookingId, actor)
+  const booking = await assertCrewDriverOnBooking(bookingId, actor)
 
   // Already loaded (a queue retry), or long past it. 'in_transit' alone no longer
   // means loaded: Start Navigation puts the booking there on the way TO the pickup.
@@ -1059,7 +1060,7 @@ export async function driverConfirmDeliveryService(
   actor: DriverActor,
   position?: StopProofPosition | null,
 ): Promise<BookingDestination> {
-  const booking      = await assertLeadDriverOnBooking(bookingId, actor)
+  const booking      = await assertCrewDriverOnBooking(bookingId, actor)
   const destinations = await BookingModel.findDestinationsByBookingId(bookingId) ?? []
   const destination  = destinations.find((d) => d.destination_id === destinationId)
 
@@ -1147,7 +1148,7 @@ export async function driverCompleteBookingService(
   bookingId: string,
   actor: DriverActor,
 ): Promise<BookingWithRelations> {
-  const booking = await assertLeadDriverOnBooking(bookingId, actor)
+  const booking = await assertCrewDriverOnBooking(bookingId, actor)
 
   if (booking.status === 'delivered' || booking.status === 'completed' || booking.status === 'failed') return booking
   if (booking.status !== 'in_transit') {

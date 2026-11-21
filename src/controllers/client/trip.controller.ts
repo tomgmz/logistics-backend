@@ -38,6 +38,13 @@ import {
  * routes, and a delivery half-finished against them must be able to finish.
  */
 
+/** What the phone shows when a confirmation was kept for the office instead of recorded. */
+function sentToOfficeMessage(reasons: string[] | undefined): string {
+  return reasons?.includes('away_from_truck')
+    ? "Received. Your phone was not with the truck when this was confirmed, so the office will review it."
+    : 'Received. You are no longer on this delivery, so the office will review this confirmation.'
+}
+
 function driverActor(req: Request) {
   const { userId } = getRequestMeta(req)
   return { userId, role: req.user?.role ?? null }
@@ -177,9 +184,7 @@ export const driverConfirmTripPickup = async (req: Request, res: Response) => {
     res.status(trip?.outcome === 'sent_to_office' ? 202 : 200).json({
       status:  'success',
       outcome: trip?.outcome ?? 'confirmed',
-      message: trip?.outcome === 'sent_to_office'
-        ? 'Received. You are no longer the main driver on this delivery, so the office will review this confirmation.'
-        : undefined,
+      message: trip?.outcome === 'sent_to_office' ? sentToOfficeMessage(trip?.late_reasons) : undefined,
       data:    trip,
     })
   } catch (error: any) {
@@ -262,9 +267,7 @@ export const driverConfirmTripStop = async (req: Request, res: Response) => {
     res.status(stop?.outcome === 'sent_to_office' ? 202 : 200).json({
       status:  'success',
       outcome: stop?.outcome ?? 'confirmed',
-      message: stop?.outcome === 'sent_to_office'
-        ? 'Received. You are no longer the main driver on this delivery, so the office will review this confirmation.'
-        : undefined,
+      message: stop?.outcome === 'sent_to_office' ? sentToOfficeMessage(stop?.late_reasons) : undefined,
       data:    stop,
     })
   } catch (error: any) {

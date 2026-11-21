@@ -3,7 +3,7 @@ import { pool } from '../../lib/database.js'
 import { logEvent } from '../../lib/log-event.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import { BookingModel } from '../../models/client/booking.model.js'
-import { assertLeadDriverOnBooking, type DriverActor } from './booking.service.js'
+import { assertCrewDriverOnBooking, type DriverActor } from './booking.service.js'
 import { resolveTripByNumber, resolveTripStopByDestination } from './trip.service.js'
 import { driverIdOf } from '../driver/crew-actor.js'
 import { fromDeviceClock, hasDeviceClock } from '../../lib/device-clock.js'
@@ -258,7 +258,7 @@ export async function driverRecordMilestoneService(
   const stage = raw in LEGACY_ALIAS ? LEGACY_ALIAS[raw] : (raw as MilestoneStage)
   if (stage === null) return { recorded: false, ignored: true }
   if (!MILESTONE_STAGES.includes(stage)) throw new Error('Cannot record an unknown step')
-  const booking = await assertLeadDriverOnBooking(bookingId, actor)
+  const booking = await assertCrewDriverOnBooking(bookingId, actor)
   if (booking.status !== 'in_transit' && booking.status !== 'delivered' && booking.status !== 'completed' && booking.status !== 'failed') {
     throw new Error('Cannot record stop times before the delivery has started')
   }

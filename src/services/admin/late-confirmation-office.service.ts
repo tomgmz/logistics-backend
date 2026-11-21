@@ -1,3 +1,4 @@
+import { crewChangeEvents } from './crew-change-log.service.js'
 import { pool } from '../../lib/database.js'
 import TripModel from '../../models/client/trip.model.js'
 import { BookingModel } from '../../models/client/booking.model.js'
@@ -242,6 +243,7 @@ export interface DeliveryEvent {
   at:     string
   kind:   'pickup' | 'stop_delivered' | 'stop_failed' | 'drivers_swapped' | 'crew_replaced'
         | 'paused' | 'resumed' | 'late_received' | 'late_accepted' | 'late_dismissed' | 'late_superseded'
+        | 'crew_changed' | 'navigation_moved'
   title:  string
   detail: string | null
   by:     string | null
@@ -250,7 +252,7 @@ export interface DeliveryEvent {
 /** Everything that changed on the road, oldest first. */
 export async function deliveryEvents(bookingId: string): Promise<DeliveryEvent[]> {
   const name = (f: string | null, l: string | null) => [f, l].filter(Boolean).join(' ') || null
-  const [pickups, stops, swaps, repl, pauses, late] = await Promise.all([
+  const [pickups, stops, crew, pauses, late] = await Promise.all([
     pool.query(
       `SELECT trip_number, pickup_proof_at FROM booking_trips
         WHERE booking_id = $1 AND pickup_proof_at IS NOT NULL AND status <> 'cancelled'`, [bookingId]),
@@ -263,24 +265,9 @@ export async function deliveryEvents(bookingId: string): Promise<DeliveryEvent[]
          LEFT JOIN drivers dr ON dr.driver_id = s.confirmed_by
          LEFT JOIN users u ON u.user_id = dr.user_id
         WHERE t.booking_id = $1 AND s.status IN ('delivered','failed')`, [bookingId]),
-    pool.query(
-      `SELECT sw.swapped_at, sw.reason,
-              ou.first_name AS of, ou.last_name AS ol, nu.first_name AS nf, nu.last_name AS nl,
-              bu.first_name AS bf, bu.last_name AS bl
-         FROM booking_crew_swaps sw
-         LEFT JOIN drivers od ON od.driver_id = sw.old_lead_driver_id LEFT JOIN users ou ON ou.user_id = od.user_id
-         LEFT JOIN drivers nd ON nd.driver_id = sw.new_lead_driver_id LEFT JOIN users nu ON nu.user_id = nd.user_id
-         LEFT JOIN users bu ON bu.user_id = sw.swapped_by
-        WHERE sw.booking_id = $1`, [bookingId]),
-    pool.query(
-      `SELECT cr.replaced_at, cr.reason_note, cr.old_vehicle_plate, cr.new_vehicle_plate,
-              ou.first_name AS of, ou.last_name AS ol, nu.first_name AS nf, nu.last_name AS nl,
-              bu.first_name AS bf, bu.last_name AS bl
-         FROM crew_replacements cr
-         LEFT JOIN drivers od ON od.driver_id = cr.old_driver_id LEFT JOIN users ou ON ou.user_id = od.user_id
-         LEFT JOIN drivers nd ON nd.driver_id = cr.new_driver_id LEFT JOIN users nu ON nu.user_id = nd.user_id
-         LEFT JOIN users bu ON bu.user_id = cr.replaced_by
-        WHERE cr.booking_id = $1`, [bookingId]),
+    // Every change of driver, second driver, helper and vehicle (swaps and
+    // replacements included), and navigation take-overs: crew-change-log.
+    crewChangeEvents(bookingId),
     pool.query(
       `SELECT p.paused_at, p.resumed_at, p.reason, p.note, p.resume_note,
               pu.first_name AS pf, pu.last_name AS pl, ru.first_name AS rf, ru.last_name AS rl
@@ -309,21 +296,13 @@ export async function deliveryEvents(bookingId: string): Promise<DeliveryEvent[]
       by:     office ? 'The office' : name(r.first_name, r.last_name),
     })
   }
-  for (const r of swaps.rows) {
+  for (const e of crew) {
     out.push({
-      at: iso(r.swapped_at)!, kind: 'drivers_swapped',
-      title:  `Main driver changed: ${name(r.of, r.ol) ?? 'driver'} → ${name(r.nf, r.nl) ?? 'driver'}`,
-      detail: r.reason ?? null, by: name(r.bf, r.bl),
-    })
-  }
-  for (const r of repl.rows) {
-    const parts = []
-    if (r.nf || r.nl) parts.push(`driver ${name(r.of, r.ol) ?? '—'} → ${name(r.nf, r.nl)}`)
-    if (r.new_vehicle_plate && r.new_vehicle_plate !== r.old_vehicle_plate) parts.push(`vehicle ${r.old_vehicle_plate ?? '—'} → ${r.new_vehicle_plate}`)
-    out.push({
-      at: iso(r.replaced_at)!, kind: 'crew_replaced',
-      title:  `Replaced: ${parts.join(', ') || 'driver or vehicle'}`,
-      detail: r.reason_note ?? null, by: name(r.bf, r.bl),
+      at:     e.at,
+      kind:   e.kind,
+      title:  e.title,
+      detail: [e.lines.join('; '), e.reason].filter(Boolean).join(' — ') || null,
+      by:     e.by,
     })
   }
   for (const r of pauses.rows) {

@@ -122,8 +122,9 @@ export const exportRows = async (req: Request, res: Response) => {
   const q = parseQuery(req, res)
   if (!q) return
   try {
-    const { rows, truncated } = await exportTransactionsService(filtersFrom(q))
-    res.status(200).json({ status: 'success', data: rows, meta: { truncated, count: rows.length } })
+    const { rows, crew_changes, truncated } = await exportTransactionsService(filtersFrom(q))
+    // crew_changes rides alongside: older web builds read `data` only and ignore it.
+    res.status(200).json({ status: 'success', data: rows, crew_changes, meta: { truncated, count: rows.length } })
   } catch (error: any) {
     console.error('TRANSACTION HISTORY EXPORT ERROR:', error)
     res.status(500).json({ status: 'error', message: error.message })

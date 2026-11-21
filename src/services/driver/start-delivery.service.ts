@@ -1,4 +1,3 @@
-import { startShiftIfNone } from './driving-shift.service.js'
 import { withBookingRowLock, crewSeatFor } from '../../lib/booking-row-lock.js'
 import { isBeforeScheduledDay } from '../../lib/ph-date.js'
 import { logEvent } from '../../lib/log-event.js'
@@ -28,10 +27,8 @@ export async function claimDeliveryStart(bookingId: string, actor: DriverActor):
   return withBookingRowLock(bookingId, async (client, booking) => {
     if (actor.role !== 'admin' && !actor.office) {
       const seat = actor.userId ? await crewSeatFor(client, bookingId, actor.userId) : null
+      // Either driver may start: both have the same buttons (2026-11-21).
       if (!seat) throw new Error('You are not assigned to this booking')
-      if (seat !== 'lead') {
-        throw new Error('Only the main driver can update this delivery in the app. You are the second driver on this booking.')
-      }
     }
 
     if (booking.status === 'in_transit') return false
@@ -51,8 +48,8 @@ export async function claimDeliveryStart(bookingId: string, actor: DriverActor):
         WHERE booking_id = $1`,
       [bookingId, now],
     )
-    // The main driver is at the wheel from here (driving-shift.service).
-    await startShiftIfNone(client, bookingId, now, actor.userId ?? null)
+    // No driving shift is opened any more (2026-11-21: "I'm taking the wheel"
+    // retired; the navigating phone is recorded instead, navigation.service).
     return true
   })
 }

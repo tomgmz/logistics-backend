@@ -12,6 +12,7 @@ import * as TripController from '../controllers/client/trip.controller.js'
 import * as ReportController from '../controllers/driver/report.controller.js'
 import * as EmergencyCallController from '../controllers/driver/emergency-call.controller.js'
 import * as DrivingShiftController from '../controllers/driver/driving-shift.controller.js'
+import * as NavigationController from '../controllers/driver/navigation.controller.js'
 import { takeWheelSchema } from '../schema/driver/driving-shift.schema.js'
 import { driverAvailabilityDaysSchema, driverLocationPingSchema } from '../schema/client/booking.schema.js'
 import {
@@ -102,8 +103,18 @@ router.post('/bookings/:bookingId/start',
 router.patch('/trips/:tripId/pickup',
   authenticate, authenticatedLimiter, isAny, validate(tripPickupProofSchema), TripController.driverConfirmTripPickup)
 
-// Who is at the wheel: either crew member says "I'm taking the wheel" (through
-// the offline queue), and both read who is driving now.
+// Which crew member's phone navigates (one at a time; the other takes over
+// from their own phone). Drivers only: the office has no phone in the truck.
+const isDriver = authorize('driver')
+router.get('/bookings/:bookingId/navigation',
+  authenticate, authenticatedLimiter, isDriver, NavigationController.getNavigation)
+router.post('/bookings/:bookingId/navigation',
+  authenticate, authenticatedLimiter, isDriver, NavigationController.claimNavigation)
+router.delete('/bookings/:bookingId/navigation',
+  authenticate, authenticatedLimiter, isDriver, NavigationController.releaseNavigation)
+
+// Retired 2026-11-21 ("I'm taking the wheel" is gone from the app). Kept so an
+// app not yet updated does not error; nothing on screen reads it any more.
 router.post('/bookings/:bookingId/driving',
   authenticate, authenticatedLimiter, isAny, validate(takeWheelSchema), DrivingShiftController.driverTakeWheel)
 router.get('/bookings/:bookingId/driving',

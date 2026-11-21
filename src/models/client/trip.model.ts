@@ -378,7 +378,7 @@ async function setTripPickupProof(
   fence?: GeofenceOutcome | null,
   // drivers.driver_id of who loaded it, so it stays theirs after a crew change.
   confirmedBy?: string | null,
-): Promise<BookingTrip> {
+): Promise<BookingTrip | null> {
   const now = new Date().toISOString()
   const { data, error } = await supabase
     .from('booking_trips')
@@ -391,11 +391,14 @@ async function setTripPickupProof(
       ...proofPositionColumns('pickup_proof', position, fence),
     })
     .eq('trip_id', tripId)
+    // First wins: both drivers can load (2026-11-21). A second confirmation
+    // arriving at the same moment matches no row and gets null back.
+    .not('status', 'in', '(in_transit,completed)')
     .select()
-    .single()
+    .maybeSingle()
 
   if (error) throw error
-  return data as BookingTrip
+  return (data as BookingTrip | null)
 }
 
 async function updateTripStatus(tripId: string, status: BookingTrip['status']): Promise<BookingTrip> {
@@ -419,7 +422,7 @@ async function setStopProof(
   fence?: GeofenceOutcome | null,
   // drivers.driver_id of who unloaded it, so it stays theirs after a crew change.
   confirmedBy?: string | null,
-): Promise<BookingTripStop> {
+): Promise<BookingTripStop | null> {
   const now = new Date().toISOString()
   const { data, error } = await supabase
     .from('booking_trip_stops')
@@ -433,11 +436,14 @@ async function setStopProof(
       ...proofPositionColumns('proof', position, fence),
     })
     .eq('trip_stop_id', tripStopId)
+    // First wins: both drivers (and the office) can confirm a stop. A second
+    // confirmation landing at the same moment matches no row and gets null.
+    .not('status', 'in', '(delivered,failed)')
     .select()
-    .single()
+    .maybeSingle()
 
   if (error) throw error
-  return data as BookingTripStop
+  return (data as BookingTripStop | null)
 }
 
 /**

@@ -89,6 +89,9 @@ export async function createReportService(
   if (input.source === 'detailed') {
     if (!input.incident_type) throw new Error('Choose the type of incident')
     if (!input.description?.trim()) throw new Error('Describe what happened')
+    // Marked required on the form; the app never checked it (2026-11-21), so
+    // reports went in with no answer. It decides whether the vehicle is held.
+    if (typeof input.trip_can_continue !== 'boolean') throw new Error('Choose the answer to "Can the trip continue?"')
   }
 
   const truckId = input.truck_id ?? (input.booking_id ? await truckOnBooking(input.booking_id) : null)
@@ -301,6 +304,9 @@ export async function enrichReportService(
   // A quick alert that has been filled in is no longer a bare alert.
   if (report.source === 'quick' && (patch.description || patch.incident_type)) {
     patch.source = 'detailed'
+    // Same rule as a detailed report sent in one go.
+    const answer = patch.trip_can_continue !== undefined ? patch.trip_can_continue : report.trip_can_continue
+    if (typeof answer !== 'boolean') throw new Error('Choose the answer to "Can the trip continue?"')
   }
 
   const updated = await ReportModel.update(reportId, patch as Partial<DriverReport>)

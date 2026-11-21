@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import { withBookingRowLock } from '../../lib/booking-row-lock.js'
+import { setCrewChangeContext } from '../../lib/crew-change-context.js'
 import type {
   AssignmentWithRelations,
   AssignBookingInput,
@@ -199,6 +200,9 @@ async function assign(
           : `Cannot assign a booking with status '${booking.status}'`,
       )
     }
+
+    // The deliveries trigger logs every seat that changes; this names who.
+    await setCrewChangeContext(client, { userId: assignedBy, source: 'assignment' })
 
     const cols = Object.keys(deliveryFields)
     const vals = cols.map((c) => (deliveryFields as Record<string, unknown>)[c])

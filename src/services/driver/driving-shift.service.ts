@@ -8,6 +8,7 @@ import { BookingModel } from '../../models/client/booking.model.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { driverSeatOnBooking, type DriverActor } from '../client/booking.service.js'
 import { driverIdOf } from './crew-actor.js'
+import { setCrewChangeContext } from '../../lib/crew-change-context.js'
 
 /**
  * Who is at the wheel. A long run carries a second driver precisely so the two
@@ -215,6 +216,7 @@ export async function staffSwapCrewRolesService(bookingId: string, reason: strin
       `SELECT delivery_id, driver_id, second_driver_id FROM deliveries WHERE booking_id = $1 FOR UPDATE`, [bookingId])
     if (!del?.driver_id || !del?.second_driver_id) throw new Error('This delivery has no second driver to swap with')
 
+    await setCrewChangeContext(client, { userId: staffUserId, source: 'swapped', reason: note })
     await client.query(
       `UPDATE deliveries SET driver_id = $2, second_driver_id = $3, updated_at = now() WHERE delivery_id = $1`,
       [del.delivery_id, del.second_driver_id, del.driver_id])
@@ -240,7 +242,6 @@ export async function staffSwapCrewRolesService(bookingId: string, reason: strin
       `INSERT INTO booking_crew_swaps (booking_id, old_lead_driver_id, new_lead_driver_id, swapped_by, reason)
        VALUES ($1,$2,$3,$4,$5)`,
       [bookingId, del.driver_id, del.second_driver_id, staffUserId, note])
-    await switchTo(client, bookingId, del.second_driver_id, new Date().toISOString(), 'staff', staffUserId)
 
     const { rows: [u] } = await client.query(`SELECT user_id FROM drivers WHERE driver_id = $1`, [del.second_driver_id])
     leadUser = u?.user_id ?? null
