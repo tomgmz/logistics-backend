@@ -50,6 +50,8 @@ export type NotificationType =
   | 'booking.stop_order_changed'     // driver changed the drop-off order (reason optional) -> ops + admin
   | 'booking.delivery_started'     // driver started navigation, booking in transit -> client
   | 'booking.driver_call_reminder' // one hour before the driver's call time -> assigned driver(s)
+  | 'booking.late_start_driver'    // still Assigned 15 min after the call time -> assigned driver(s), once
+  | 'booking.late_start_staff'     // ... -> ops + admin, then every 30 min until it starts
   | 'booking.crew_replaced_off'    // office replaced the crew on the road -> the driver taken off
   | 'booking.crew_replaced_on'     // ... -> the crew now on it (continue where it stopped)
   | 'booking.crew_replaced_client' // ... -> client
@@ -171,6 +173,8 @@ export type NotificationStage =
   | 'dropoff_order_later'
   | 'delivery_started'
   | 'driver_call_reminder'
+  | 'late_start_driver'
+  | 'late_start_staff'
   | 'crew_replaced_off'
   | 'crew_replaced_on'
   | 'crew_replaced_client'

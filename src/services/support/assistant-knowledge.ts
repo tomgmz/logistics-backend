@@ -311,7 +311,9 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
     'Our system checks every few minutes. When the next stop is 15 minutes or more past its planned window, the ' +
     'booking is marked Delayed and you are notified, then again for every further 30 minutes of delay, with a new ' +
     'expected time. The Delayed mark clears once the truck is back within its window. A truck with no signal is ' +
-    'not called late while its window is still open.'),
+    'not called late while its window is still open. If the delivery has not started 15 minutes after its call ' +
+    'time, our office is alerted and follows it up with the driver; you are notified that it is running late only ' +
+    'when a late start would make your first drop-off 15 minutes or more past its planned window.'),
   P('ops-pause', 'Why was my delivery paused?',
     'Our office can pause a delivery on the road, for example for weather, a vehicle breakdown, a closed pickup or ' +
     'drop-off, or a closed road. You are notified with the reason. If it continues on another day you get the new ' +

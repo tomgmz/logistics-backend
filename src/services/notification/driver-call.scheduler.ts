@@ -38,7 +38,7 @@ interface CandidateRow {
 }
 
 /** schedule_date + an `HH:MM[:SS]` time, PH time, as a UTC instant. */
-function callAt(scheduleDate: string, time: string | null): Date | null {
+export function callAt(scheduleDate: string, time: string | null): Date | null {
   const day = String(scheduleDate ?? '').slice(0, 10)
   const hm  = String(time ?? '').slice(0, 8).replace(/^(\d{2}:\d{2})$/, '$1:00')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !/^\d{2}:\d{2}:\d{2}$/.test(hm)) return null
@@ -47,7 +47,7 @@ function callAt(scheduleDate: string, time: string | null): Date | null {
 }
 
 /** "9:05 AM", PH time. */
-function formatClock(at: Date): string {
+export function formatClock(at: Date): string {
   return new Intl.DateTimeFormat('en-PH', {
     hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Manila',
   }).format(at)

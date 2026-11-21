@@ -95,6 +95,7 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   delay_expected_at,
   delay_destination_id,
   delay_max_minutes,
+  late_start_for,
   breakdown_reported_at,
   breakdown_report_id,
   breakdown_note,
@@ -1122,7 +1123,11 @@ async function setDriverCallTime(
 ): Promise<void> {
   const { error } = await supabase
     .from('bookings')
-    .update({ driver_call_time: driverCallTime, driver_call_date: driverCallTime ? driverCallDate : null })
+    // A new call time is a new cycle for the Late start mark (late-start.scheduler).
+    .update({
+      driver_call_time: driverCallTime, driver_call_date: driverCallTime ? driverCallDate : null,
+      late_start_for: null, late_start_reminded_at: null,
+    })
     .eq('booking_id', bookingId)
 
   if (error) throw error

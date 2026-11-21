@@ -144,6 +144,11 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   delivery_started:      { type: 'booking.delivery_started',      audience: 'client' },
   // One hour before the driver's call time (driver-call.scheduler.ts).
   driver_call_reminder:  { type: 'booking.driver_call_reminder',  audience: 'drivers' },
+  // late-start.scheduler.ts: still Assigned 15 min after the call time. The
+  // drivers get one more push; the office (ops + Company Administrator) is told
+  // and reminded every 30 min until it starts or gets a new call time.
+  late_start_driver:     { type: 'booking.late_start_driver',     audience: 'drivers' },
+  late_start_staff:      { type: 'booking.late_start_staff',      roles: ['operations_manager'] },
   // The office replaced the driver and/or vehicle of a delivery on the road. The
   // driver taken off is no longer on the crew, so they are named explicitly
   // (NotifyExtra.onlyUserIds); 'drivers' resolves to the crew now on it.
@@ -507,6 +512,20 @@ function copyFor(
         body:  `Be at the pickup point for booking ${label} by ${extra?.callTimeLabel ?? 'your call time'}` +
                `${booking.origin ? ` (${booking.origin})` : ''}. You can start earlier if you are ready.`,
       }
+    case 'late_start_driver':
+      return {
+        title: 'Your delivery has not started',
+        body:  `Your call time for booking ${label} was ${extra?.callTimeLabel ?? 'earlier'}` +
+               `${booking.origin ? ` at ${booking.origin}` : ''}. Start the delivery in the app, or tell the office if something is holding you up.`,
+      }
+    case 'late_start_staff':
+      return {
+        title: extra?.repeat ? 'Delivery still not started' : 'Delivery not started',
+        body:  `Booking ${label} was due to start at ${extra?.callTimeLabel ?? 'its call time'} and is still Assigned` +
+               (extra?.minutesLeft ? ` (${formatDuration(extra.minutesLeft)} past)` : '') +
+               '. Call the driver, set a new call time, or replace the driver or vehicle. ' +
+               'You will be reminded every 30 minutes until it starts.',
+      }
   }
 }
 
@@ -583,6 +602,8 @@ export interface NotifyExtra {
   continuationDate?: string
   // pause_unresolved_gm: it is about a driver's unanswered "Ready to continue".
   driverAsked?: boolean
+  // late_start_staff: a repeat of the office notice, not the first one.
+  repeat?: boolean
 }
 
 /**

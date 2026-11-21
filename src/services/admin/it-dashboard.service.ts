@@ -68,6 +68,12 @@ const SCHEDULERS = [
     interval_minutes: 5,
   },
   {
+    source:           'late-start.scheduler',
+    label:            'Late start detection',
+    description:      'Flags a booking still Assigned 15 minutes after its call time: reminds the drivers once, tells the Operations Manager and Company Administrator and repeats every 30 minutes (for up to a day), and tells the client only when the first drop-off can no longer make its planned window.',
+    interval_minutes: 5,
+  },
+  {
     source:           'pause-continuation.scheduler',
     label:            'Paused delivery reminders',
     description:      'Reminds the drivers before a paused delivery continues; reminds operations every 30 minutes once its continuation time passes still paused, and about a pause with no continuation date (after 2 hours, then each morning); reminds operations every 15 minutes while a driver\'s "Ready to continue" is unanswered; tells the General Manager after 2 hours overdue, 1 day with no date, or 1 hour of an unanswered driver request.',

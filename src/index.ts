@@ -32,6 +32,7 @@ import { startContractExpiryScheduler } from './services/notification/contract-e
 import { startDriverCallScheduler } from './services/notification/driver-call.scheduler.js'
 import { startPauseContinuationScheduler } from './services/notification/pause-continuation.scheduler.js'
 import { startDelayScheduler } from './services/notification/delay.scheduler.js'
+import { startLateStartScheduler } from './services/notification/late-start.scheduler.js'
 import { startBreakdownScheduler } from './services/notification/breakdown.scheduler.js'
 import { startLateConfirmationScheduler } from './services/notification/late-confirmation.scheduler.js'
 import { startItAdminRenderScheduler } from './services/admin/it-admin-render.scheduler.js'
@@ -274,6 +275,8 @@ app.listen(PORT, '0.0.0.0', () => {
   startPauseContinuationScheduler();
   // Flags a delivery running 15+ min past its planned window, and tells the client.
   startDelayScheduler();
+  // Flags a booking still Assigned 15 min after its call time; tells the drivers + office.
+  startLateStartScheduler();
   // Reminds the office every 15 min about a driver-reported breakdown with no decision.
   startBreakdownScheduler();
   startLateConfirmationScheduler();

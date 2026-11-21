@@ -69,6 +69,7 @@ const DELIVERY_WITH_RELATIONS_SELECT = `
     delayed_since,
     delay_minutes,
     delay_expected_at,
+    late_start_for,
     breakdown_reported_at,
     clients (
       company_name
