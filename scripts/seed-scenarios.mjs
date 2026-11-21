@@ -1005,7 +1005,11 @@ try {
       photo_urls: [FILES.report.ref], latitude: place.lat, longitude: place.lng, accuracy_m: 9, address: place.a,
       trip_can_continue: false, status: r.sc.breakdown === 'paused' ? 'acknowledged' : 'reported', speed_kmh: 0,
       acknowledged_by: r.sc.breakdown === 'paused' ? opss[0].id : null, acknowledged_at: r.sc.breakdown === 'paused' ? ago(30) : null,
-      blowbagets_check: { engine: false, battery: true }, created_at: ago(40),
+      blowbagets_check: {
+        items: { battery: true, lights: true, oil: true, water: true, brakes: true, air: true, gas: true, engine: false, tires: true, self: true },
+        checked_at: ago(40),
+      },
+      created_at: ago(40),
     })
     reportIds.push(reportId)
     await upd('trucks', 'truck_id', r.mainT.id, {
