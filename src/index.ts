@@ -41,6 +41,7 @@ import { reportWebauthnConfig } from './lib/webauthn-config.js'
 import { requestContext } from './lib/request-context.js'
 import { logSystem } from './lib/log-system.js'
 import { fileUrls } from './middlewares/fileUrls.middleware.js'
+import { clientRedact } from './middlewares/clientRedact.middleware.js'
 import filesRoutes from './routes/files.routes.js'
 import webhooksRoutes from './routes/webhooks.routes.js'
 import { allowedOrigins } from './lib/allowed-origins.js'
@@ -104,6 +105,8 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Private file storage: signed links in, r2:// references stored, signed links out.
 app.use(fileUrls);
+// Fields a client never receives (a driver's license number); see the middleware.
+app.use(clientRedact);
 
 if (!IS_PRODUCTION) {
   app.use(morgan('dev'));
