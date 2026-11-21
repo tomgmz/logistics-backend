@@ -1,3 +1,4 @@
+import { pool } from '../../lib/database.js'
 import { AssignmentModel } from '../../models/admin/assignment.model.js'
 import { checkTruckCapacity, type CapacityWarning } from '../../lib/cargo-capacity.js'
 import { BookingModel } from '../../models/client/booking.model.js'
@@ -192,6 +193,28 @@ export async function assignBookingService(
     if (b) throw new Error(driverBusyMessage(c.name, b))
   }
 
+  // Changing a crew that is already on the booking needs a reason (2026-11-21,
+  // Bringg-style reassign reason). The first assignment, or saving the same
+  // crew again, needs none. Compared with the delivery row as it is now.
+  const changeReason = input.change_reason?.trim() || null
+  const { rows: [cur] } = await pool.query(
+    `SELECT driver_id, vendor_driver_user_id, second_driver_id, helper_name, truck_id, vendor_vehicle_plate
+       FROM deliveries WHERE booking_id = $1`, [bookingId])
+  const norm = (v: unknown) => (typeof v === 'string' ? v.trim().toUpperCase() : v ?? null) || null
+  const hadCrew = !!cur && !!(cur.driver_id || cur.vendor_driver_user_id || cur.truck_id || cur.vendor_vehicle_plate)
+  const vendor  = input.is_vendor_supplied === true
+  const crewChanged = hadCrew && (
+    norm(cur.driver_id)             !== norm(vendor ? null : input.driver_id) ||
+    norm(cur.vendor_driver_user_id) !== norm(vendor ? external?.userId : null) ||
+    norm(cur.second_driver_id)      !== norm(secondDriverId) ||
+    norm(cur.helper_name)           !== norm(input.helper_name) ||
+    norm(cur.truck_id)              !== norm(vendor ? null : input.truck_id) ||
+    norm(cur.vendor_vehicle_plate)  !== norm(vendor ? input.vendor_vehicle_plate : null)
+  )
+  if (crewChanged && (!changeReason || changeReason.length < 3)) {
+    throw new Error('Say why the driver, second driver, helper or vehicle is being changed')
+  }
+
   // Does the chosen vehicle actually fit the load? Advisory, not a gate — see
   // lib/cargo-capacity. Runs before the write so the warning describes the
   // vehicle being assigned, and never blocks it.
@@ -202,7 +225,7 @@ export async function assignBookingService(
         return null
       })
 
-  const assignment = await AssignmentModel.assign(bookingId, input, userId ?? null, external, secondDriverId)
+  const assignment = await AssignmentModel.assign(bookingId, input, userId ?? null, external, secondDriverId, crewChanged ? changeReason : null)
   if (!assignment) throw new Error('Failed to create assignment')
 
   // An overloaded assignment is a real decision someone made; put it on the
@@ -229,7 +252,8 @@ export async function assignBookingService(
     user_id:     userId,
     log_type:    'booking',
     action:      'booking_assigned',
-    description: `Booking ${await bookingRefById(bookingId)} assigned to ${crewDescription}${secondDescription}`,
+    description: `Booking ${await bookingRefById(bookingId)} assigned to ${crewDescription}${secondDescription}` +
+      (crewChanged && changeReason ? ` — changed from the previous crew; reason: ${changeReason}` : ''),
 
   })
 

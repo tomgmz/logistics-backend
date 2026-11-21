@@ -25,6 +25,12 @@ export const assignBookingSchema = z.object({
   // Optional helper on a route of 30 km or less, by name only — information,
   // not a crew member. The distance rule itself is applied by the service.
   helper_name: z.string().trim().max(120, 'Helper name is too long').nullable().optional(),
+
+  // Why an assigned crew is being changed (2026-11-21, like Bringg's reassign
+  // reason). Required by the service only when the booking already had a crew
+  // and this call changes the driver, second driver, helper or vehicle; the
+  // first assignment needs none. Kept in booking_crew_changes.
+  change_reason: z.string().trim().max(500, 'Keep the reason under 500 characters').nullable().optional(),
 }).superRefine((data, ctx) => {
   if (data.is_vendor_supplied) {
     if (!data.vendor_driver_user_id) {

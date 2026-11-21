@@ -14,6 +14,7 @@ export async function assignBooking(req: Request, res: Response) {
     // database or programming error carries a code or is a TypeError — 500.
     const status =
       /not found/i.test(error.message)                    ? 404 :
+      /^Say why/.test(error.message)                       ? 400 :
       error?.code || !(error instanceof Error) || error instanceof TypeError ? 500 :
       409
     res.status(status).json({ status: 'error', message: error.message })

@@ -130,6 +130,8 @@ export interface AssignBookingInput {
   second_vendor_driver_user_id?: string | null
   /** Helper's name on a route of 30 km or less; information only. */
   helper_name?:          string | null
+  /** Why an existing crew is being changed; required by the service when it changes. */
+  change_reason?:        string | null
   vendor_name?:          string | null
   vendor_contact?:       string | null
   vendor_driver_name?:   string

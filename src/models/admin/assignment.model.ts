@@ -124,6 +124,9 @@ async function assign(
   // drivers.driver_id of the optional second driver, on either path. On the
   // vendor path it is a registered vendor driver.
   secondDriverId?: string | null,
+  // Why an existing crew is being changed (required by the service then); logged
+  // with each changed seat in booking_crew_changes.
+  changeReason?: string | null,
 ): Promise<AssignmentWithRelations | null> {
   const now           = new Date().toISOString()
   const isVendor       = input.is_vendor_supplied === true
@@ -202,7 +205,7 @@ async function assign(
     }
 
     // The deliveries trigger logs every seat that changes; this names who.
-    await setCrewChangeContext(client, { userId: assignedBy, source: 'assignment' })
+    await setCrewChangeContext(client, { userId: assignedBy, source: 'assignment', reason: changeReason ?? null })
 
     const cols = Object.keys(deliveryFields)
     const vals = cols.map((c) => (deliveryFields as Record<string, unknown>)[c])
