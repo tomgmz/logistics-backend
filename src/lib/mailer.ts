@@ -1208,6 +1208,28 @@ export async function sendConversationReplyEmail(p: {
   })
 }
 
+/** The 3-day "did our reply solve it?" reminder on a support conversation (subject [CHT-…], replyable). */
+export async function sendConversationReminderEmail(p: {
+  reference: string; title: string; clientName: string; clientEmail: string; closesOn: string
+}): Promise<void> {
+  const base   = appBaseUrl()
+  const url    = base ? `${base}/client/dashboard?chat=messages` : null
+  const intro  = `Hi ${p.clientName}, did our reply${p.title ? ` about "${p.title}"` : ''} solve it? ` +
+                 `If you still need help, answer us; if we don't hear from you, the conversation closes on ${p.closesOn}.`
+  const footer = ticketRepliesTracked()
+    ? 'Reply to this email to answer; it is added to the same conversation.'
+    : 'Answer in the portal: open the help assistant and go to Messages.'
+  await deliver({
+    from:    TICKET_FROM,
+    subject: `[${p.reference}] Did our reply solve it?`,
+    html:    layoutHtml({ label: 'Message From 8338 Team', blocks: [para(escapeHtml(intro)), url ? button(url, 'Open The Conversation') : ''], footer }),
+    text:    layoutText([intro, '', url ?? ''].join('\n'), footer),
+    to:      { email: p.clientEmail, name: p.clientName },
+    ...(ticketRepliesTracked() ? { replyTo: { email: ticketReplyEmail() } } : {}),
+    what:    'support conversation reminder to client',
+  })
+}
+
 // ── Reminders to the office and clients ────────────────────────────────────
 
 /** A driver's license is about to expire: the office's copy (license-expiry.scheduler). */

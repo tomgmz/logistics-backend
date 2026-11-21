@@ -380,8 +380,10 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
     'it to you after about 15 minutes, and replying to that email adds your answer to the same conversation. Your ' +
     'conversations are listed under Messages. We reply Monday to Saturday, 8 AM to 5 PM; a message sent after ' +
     'hours gets an automatic note and is answered when we are back. For a problem with a delivery on the road ' +
-    'right now, call us. A conversation closes by itself 3 days after our reply if you do not answer, or when our ' +
-    'team marks it resolved; writing in it within 7 days opens it again, after that start a new one. Messages are ' +
+    'right now, call us. If you do not answer our reply, we send a reminder after 3 days and the conversation ' +
+    'closes after 7 days; our team can also mark it resolved. A conversation only with the assistant closes after ' +
+    '24 hours without a new question. Writing in a closed conversation within 7 days opens it again; after that ' +
+    'start a new one. Messages are ' +
     'for questions; changes to a booking are made in Booking. Clients cannot message drivers. Older one-to-one ' +
     'messages from a staff member are under Earlier messages and are read-only.', 'client'),
 ]

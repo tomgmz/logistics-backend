@@ -75,7 +75,7 @@ const SCHEDULERS = [
   {
     source:           'support-chat.scheduler',
     label:            'Client chat emails and closing',
-    description:      'Emails a client the team replies they have not read within 15 minutes, and closes conversations the client left unanswered for 3 days.',
+    description:      'Emails a client the team replies they have not read within 15 minutes; closes assistant-only chats after 24 quiet hours; reminds a client who has not answered the team for 3 days and closes the conversation at 7.',
     interval_minutes: 5,
   },
   {

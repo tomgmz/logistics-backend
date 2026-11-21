@@ -4,7 +4,8 @@ import { autoResolveQuiet, emailMissedReplies } from './conversation.service.js'
 /**
  * Client support conversations (2026-11-22), every 5 minutes:
  *   - email staff replies the client hasn't read in 15 minutes
- *   - resolve conversations the client left unanswered for 3 days
+ *   - close assistant-only chats quiet for 24 h; remind on team-replied chats
+ *     quiet 3 days, close them at 7
  * Shown on the IT Administrator dashboard as "Client chat emails and closing".
  */
 
@@ -17,7 +18,7 @@ export async function runSupportChatTick(): Promise<{ emailed: number; resolved:
     log_level:  'info',
     event_type: 'cron_job',
     source:     'support-chat.scheduler',
-    message:    `Client chats: ${emailed} missed replies emailed, ${resolved} quiet conversations closed`,
+    message:    `Client chats: ${emailed} missed replies emailed, ${resolved} quiet conversations reminded or closed`,
     metadata:   { emailed, resolved },
   })
   return { emailed, resolved }

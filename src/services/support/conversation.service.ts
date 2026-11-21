@@ -3,11 +3,10 @@ import { broadcast } from '../../lib/realtime.js'
 import { logEvent } from '../../lib/log-event.js'
 import { logSystem } from '../../lib/log-system.js'
 import { isOfficeOpen, lastClosing, AFTER_HOURS_TEXT } from '../../lib/office-hours.js'
-import { sendConversationReplyEmail } from '../../lib/mailer.js'
+import { sendConversationReplyEmail, sendConversationReminderEmail } from '../../lib/mailer.js'
 import * as notificationModel from '../../models/notification/notification.model.js'
 import * as push from '../messaging/push.service.js'
 import type { CreateNotificationInput, NotificationRow, NotificationType } from '../../types/notification.types.js'
-import { openTicketFromConversation, type TicketCategory } from './support.service.js'
 
 /**
  * Client support conversations: the help assistant, our team and email in one
@@ -20,12 +19,15 @@ import { openTicketFromConversation, type TicketCategory } from './support.servi
  *              Administrator is alerted (later: whoever replied last)
  *   replied    the team answered; waiting on the client. A reply the client
  *              hasn't read in 15 minutes is emailed; answering that email adds
- *              to the conversation. 3 days with no client reply → resolved.
+ *              to the conversation. Quiet 3 days → a reminder; 7 days → resolved.
  *   resolved   by staff or by itself. A client message within 7 days reopens
  *              it; after that they start a new conversation.
  *
  * Staff = the Company Administrator and the Operations Manager (the desk that
  * already handles tickets).
+ *
+ * Tickets are separate (user 2026-11-22: turning a conversation into a ticket
+ * was dropped as too complicated). Staff open tickets from the Tickets tab.
  *
  * Collisions (user 2026-11-22, Zendesk's three layers): the first staff
  * member to reply owns the conversation (assigned_to); anyone else must "Take
@@ -36,7 +38,17 @@ import { openTicketFromConversation, type TicketCategory } from './support.servi
 
 export const TEAM_ROLES = ['admin', 'operations_manager']
 export const REOPEN_DAYS      = 7
-export const AUTO_RESOLVE_DAYS = 3
+/**
+ * Closing timers (user 2026-11-22; Freshchat / respond.io / Zoho close a quiet
+ * bot chat after 24 h; Intercom and Zendesk close a customer-silent one after
+ * about a week, Zendesk with a reminder first):
+ *   assistant only, client quiet 24 h          → closed
+ *   team replied, client quiet 3 days          → reminder (line + bell + email)
+ *   …still quiet at 7 days (after the reminder) → closed
+ */
+export const ASSISTANT_CLOSE_HOURS = 24
+export const REMIND_AFTER_DAYS = 3
+export const AUTO_RESOLVE_DAYS = 7
 export const EMAIL_AFTER_MIN  = 15
 
 export type ConversationStatus = 'assistant' | 'waiting' | 'replied' | 'resolved'
@@ -63,6 +75,8 @@ export interface ConversationRow {
   ticket_id:              string | null
   after_hours_notice_at:  string | null
   emailed_at:             string | null
+  /** When the "did this solve it?" reminder went out (3 quiet days after a staff reply). */
+  reminded_at:            string | null
   created_at:             string
   updated_at:             string
 }
@@ -338,7 +352,13 @@ export async function appendAssistantLines(
   lines: { author: 'client' | 'assistant'; text: string; meta?: Record<string, unknown> | null }[],
 ): Promise<MessageRow[]> {
   const conv = await requireOwn(id, clientUserId)
-  if (conv.status !== 'assistant') throw err('Our team has this conversation now; write to them instead', 409)
+  // An assistant-only conversation that closed after 24 h reopens with the
+  // assistant (never handed over, so it never goes to the team by itself).
+  const assistantOnlyClosed = conv.status === 'resolved' && !conv.handed_over_at
+  if (conv.status !== 'assistant' && !assistantOnlyClosed) throw err('Our team has this conversation now; write to them instead', 409)
+  if (assistantOnlyClosed) {
+    await update(id, { status: 'assistant', resolved_at: null, resolved_by: null, resolved_reason: null })
+  }
   const out: MessageRow[] = []
   for (const l of lines) {
     const m = await insertMessage({
@@ -391,7 +411,9 @@ export async function clientMessage(
   via: 'chat' | 'email' = 'chat', emailId?: string,
 ): Promise<MessageRow> {
   const conv = await requireOwn(id, clientUserId)
-  if (conv.status === 'assistant') throw err('Ask the assistant, or tap "Talk to our team" first', 409)
+  if (conv.status === 'assistant' || (conv.status === 'resolved' && !conv.handed_over_at)) {
+    throw err('Ask the assistant, or tap "Talk to our team" first', 409)
+  }
   if (conv.status === 'resolved' && conv.resolved_at &&
       Date.now() - new Date(conv.resolved_at).getTime() > REOPEN_DAYS * 86_400_000) {
     throw err('This conversation is closed. Start a new one from Messages', 409)
@@ -492,7 +514,7 @@ export async function takeOver(id: string, staffId: string): Promise<Conversatio
 }
 
 /** Staff resolve it, or it resolves itself (scheduler). */
-export async function resolve(id: string, staffId: string | null): Promise<ConversationRow> {
+export async function resolve(id: string, staffId: string | null, autoLine?: string): Promise<ConversationRow> {
   const conv = await getConversation(id)
   if (conv.status === 'resolved') return conv
   const now = new Date().toISOString()
@@ -504,7 +526,7 @@ export async function resolve(id: string, staffId: string | null): Promise<Conve
   const fresh = data[0] as ConversationRow
   await systemLine(fresh, 'resolved', staffId
     ? `Marked resolved by our team. Write here within ${REOPEN_DAYS} days to open it again.`
-    : `Closed after ${AUTO_RESOLVE_DAYS} days with no reply. Write here within ${REOPEN_DAYS} days to open it again.`)
+    : autoLine ?? `Closed after ${AUTO_RESOLVE_DAYS} days with no reply. Write here within ${REOPEN_DAYS} days to open it again.`)
   if (staffId) {
     logEvent({ user_id: staffId, log_type: 'admin_activity', action: 'support_chat_resolved',
       description: `Resolved client conversation ${conversationRef(fresh.conversation_number)}` })
@@ -515,49 +537,72 @@ export async function resolve(id: string, staffId: string | null): Promise<Conve
   return fresh
 }
 
-/** Staff turn the conversation into a ticket (formal follow-up by email). */
-export async function toTicket(
-  id: string, staffId: string, input: { category: TicketCategory; subject: string; booking_id?: string | null },
-) {
-  const conv = await getConversation(id)
-  if (conv.ticket_id) throw err('This conversation already has a ticket', 409)
-  const messages = await messagesOf(id)
-  const authors  = await authorsOf(messages)
-  const transcript = messages.filter((m) => m.author !== 'system').slice(-20).map((m) => ({
-    from: (m.author === 'client' ? 'client' : 'bot') as 'client' | 'bot',
-    text: m.author === 'staff' ? `${authors[m.author_id ?? '']?.name ?? 'Our team'}: ${m.content}` : m.content || '(photo)',
-  }))
-  const lastClient = messages.filter((m) => m.author === 'client').pop()?.content
-  const ticket = await openTicketFromConversation(staffId, conv.client_id, {
-    category: input.category,
-    subject:  input.subject,
-    message:  `From conversation ${conversationRef(conv.conversation_number)}${conv.title ? ` ("${conv.title}")` : ''}. ` +
-              (lastClient ? `Latest from the client: ${lastClient}` : 'See the conversation below.'),
-    booking_id: input.booking_id ?? null,
-    transcript,
-  })
-  await update(id, { ticket_id: (ticket as any).ticket_id })
-  await systemLine(conv, 'ticket',
-    `Our team opened ticket ${(ticket as any).reference} for this. Updates on it come by email; you can follow it under Tickets.`)
-  return ticket
-}
-
 // ── Scheduler: auto-resolve + missed-reply emails ───────────────────────────
 
-/** Resolve conversations the client left unanswered for 3 days. */
+/**
+ * The closing timers: assistant-only chats quiet 24 h close; team-replied
+ * chats get one reminder at 3 quiet days and close at 7 (only after the
+ * reminder went out). Returns how many closed / were reminded.
+ */
 export async function autoResolveQuiet(): Promise<number> {
-  const cutoff = new Date(Date.now() - AUTO_RESOLVE_DAYS * 86_400_000).toISOString()
-  const { data, error } = await supabase.from('support_conversations')
-    .select('conversation_id, last_client_message_at, last_staff_message_at')
-    .eq('status', 'replied').lt('last_staff_message_at', cutoff).limit(200)
-  if (error) throw error
+  const day = 86_400_000
   let n = 0
-  for (const c of (data ?? []) as any[]) {
-    if (c.last_client_message_at && c.last_client_message_at > c.last_staff_message_at) continue
-    await resolve(c.conversation_id, null)
+
+  // 1. Only the assistant answered and the client went quiet for 24 hours.
+  const aiCutoff = new Date(Date.now() - ASSISTANT_CLOSE_HOURS * 3_600_000).toISOString()
+  const { data: ai, error: aiErr } = await supabase.from('support_conversations')
+    .select('conversation_id').eq('status', 'assistant').lt('last_message_at', aiCutoff).limit(200)
+  if (aiErr) throw aiErr
+  for (const c of (ai ?? []) as any[]) {
+    await resolve(c.conversation_id, null,
+      `Closed after ${ASSISTANT_CLOSE_HOURS} hours with no new question. Ask here again within ${REOPEN_DAYS} days to carry on.`)
     n++
   }
+
+  // 2. The team replied and the client went quiet.
+  const remindCutoff = new Date(Date.now() - REMIND_AFTER_DAYS * day).toISOString()
+  const { data: quiet, error } = await supabase.from('support_conversations')
+    .select('*').eq('status', 'replied').lt('last_staff_message_at', remindCutoff).limit(200)
+  if (error) throw error
+  for (const c of (quiet ?? []) as ConversationRow[]) {
+    if (c.last_client_message_at && c.last_client_message_at > (c.last_staff_message_at ?? '')) continue
+    const reminded = !!c.reminded_at && c.reminded_at >= (c.last_staff_message_at ?? '')
+    const closeAt  = new Date(new Date(c.last_staff_message_at!).getTime() + AUTO_RESOLVE_DAYS * day)
+    if (!reminded) {
+      if (await remind(c, closeAt)) n++
+    } else if (Date.now() >= closeAt.getTime()) {
+      await resolve(c.conversation_id, null)
+      n++
+    }
+  }
   return n
+}
+
+/** The 3-day "did this solve it?" reminder: a line in the chat, a bell, an email. Once per staff reply. */
+async function remind(conv: ConversationRow, closeAt: Date): Promise<boolean> {
+  const now = new Date().toISOString()
+  const base = supabase.from('support_conversations').update({ reminded_at: now }).eq('conversation_id', conv.conversation_id)
+  const { data: claimed } = await (conv.reminded_at ? base.eq('reminded_at', conv.reminded_at) : base.is('reminded_at', null)).select('conversation_id')
+  if (!claimed?.length) return false
+  const when = closeAt.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric' })
+  await systemLine(conv, 'reminder', `Did our reply solve it? Write here if you still need help. If we don't hear from you, this conversation closes on ${when}.`)
+  void notify([conv.client_user_id], 'support.chat_replied', 'Did our reply solve it?',
+    `${conv.title ? `${conv.title}: ` : ''}reply in Messages, or it closes on ${when}.`,
+    () => ({ conversation_id: conv.conversation_id, action_url: '/client/dashboard?chat=messages' }))
+  try {
+    const { data: u } = await supabase.from('users').select('first_name, last_name, email, status').eq('user_id', conv.client_user_id).maybeSingle()
+    const c: any = u
+    if (c?.email && c.status !== 'archived') {
+      await sendConversationReminderEmail({
+        reference: conversationRef(conv.conversation_number), title: conv.title,
+        clientName: personName(c) || 'there', clientEmail: c.email, closesOn: when,
+      })
+    }
+  } catch (e: any) {
+    logSystem({ log_level: 'error', event_type: 'email_event', source: 'support-chat.scheduler',
+      message: `Could not email the reminder on ${conversationRef(conv.conversation_number)}: ${e?.message ?? e}` })
+  }
+  return true
 }
 
 /**

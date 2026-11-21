@@ -7,7 +7,6 @@ import { validate } from '../middlewares/validate.middleware.js'
 import { requireModule } from '../middlewares/moduleAccess.middleware.js'
 import { pageQuery, paginate, searchQuery, matchesWords } from '../lib/paginate.js'
 import * as Chat from '../services/support/conversation.service.js'
-import { TICKET_CATEGORIES } from '../services/support/support.service.js'
 import { messageBodyColumns } from '../services/messaging/photo.service.js'
 import { PHOTO_PLACEHOLDER } from '../schema/messaging/messaging.schema.js'
 
@@ -27,7 +26,6 @@ import { PHOTO_PLACEHOLDER } from '../schema/messaging/messaging.schema.js'
  *           POST  /inbox/:id/messages         reply
  *           PATCH /inbox/:id/read
  *           POST  /inbox/:id/resolve
- *           POST  /inbox/:id/ticket           turn into a ticket
  *
  * Staff = Company Administrator + Operations Manager, gated by the Tickets
  * module (its Read Only tier blocks replies, resolving and tickets).
@@ -63,12 +61,6 @@ const linesSchema = z.object({
       faq_id: z.string().max(80).optional(),
     }).strict().nullable().optional(),
   })).min(1).max(10),
-}).strict()
-
-const toTicketSchema = z.object({
-  category:   z.enum(TICKET_CATEGORIES),
-  subject:    z.string().trim().min(3, 'Add a short subject').max(150),
-  booking_id: z.string().uuid().nullable().optional(),
 }).strict()
 
 function fail(res: Response, err: any) {
@@ -147,14 +139,16 @@ router.get('/inbox', isSupportDesk, requireModule('support-tickets'), async (req
     const counts = {
       waiting:  all.filter((c: any) => c.status === 'waiting').length,
       replied:  all.filter((c: any) => c.status === 'replied').length,
-      resolved: all.filter((c: any) => c.status === 'resolved').length,
+      // Resolved = closed after reaching the team (assistant-only ones show under All).
+      resolved: all.filter((c: any) => c.status === 'resolved' && c.handed_over_at).length,
       all:      all.length,
       mine:     all.filter(isMine).length,
     }
     const q = searchQuery(req)
     const oldestFirst = req.query.sort === 'asc'
     const rows = all
-      .filter((c: any) => (status === 'all' || (status === 'mine' ? isMine(c) : c.status === status)) &&
+      .filter((c: any) => (status === 'all' || (status === 'mine' ? isMine(c)
+        : status === 'resolved' ? c.status === 'resolved' && !!c.handed_over_at : c.status === status)) &&
         matchesWords(q, [c.reference, c.company_name, c.client_name, c.title, c.last_message?.content]))
       .sort((a: any, b: any) => (oldestFirst
         ? String(a.last_message_at).localeCompare(String(b.last_message_at))
@@ -196,12 +190,6 @@ router.patch('/inbox/:id/read', isSupportDesk, async (req: Request, res: Respons
 router.post('/inbox/:id/resolve', isSupportDesk, requireModule('support-tickets'), async (req: Request, res: Response) => {
   const id = idOf(req, res); if (!id) return
   try { res.status(200).json({ status: 'success', data: await Chat.resolve(id, req.user!.sub) }) }
-  catch (err) { fail(res, err) }
-})
-
-router.post('/inbox/:id/ticket', isSupportDesk, requireModule('support-tickets'), validate(toTicketSchema), async (req: Request, res: Response) => {
-  const id = idOf(req, res); if (!id) return
-  try { res.status(201).json({ status: 'success', data: await Chat.toTicket(id, req.user!.sub, req.body) }) }
   catch (err) { fail(res, err) }
 })
 
