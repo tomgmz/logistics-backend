@@ -34,7 +34,12 @@ export type NotificationType =
   | 'booking.pause_continuation'     // office set when a paused delivery continues -> client (date)
   | 'booking.pause_continuation_driver' // ... -> assigned driver(s) (date + call time)
   | 'booking.pause_continuation_due'    // an hour before that call time -> assigned driver(s)
-  | 'booking.pause_continuation_overdue' // call time passed, still paused -> ops + admin
+  | 'booking.pause_continuation_overdue' // call time passed, still paused -> ops + admin, every 30 min until resumed or re-dated
+  | 'booking.pause_no_date'              // paused 2 h with no continuation date, then each morning -> ops + admin
+  | 'booking.pause_unresolved_gm'        // 2 h past the call time, 24 h with no date, or a driver's request 1 h unanswered -> General Manager, once
+  | 'booking.pause_resume_requested'     // the driver pressed "Ready to continue" -> ops + admin
+  | 'booking.pause_resume_request_waiting' // ... still unanswered, every 15 min -> ops + admin
+  | 'booking.pause_resume_declined'      // the office answered "Not yet" with a reason -> the crew
   | 'booking.delivery_delayed'       // next stop 15+ min past its planned window -> client
   | 'booking.dropoff_order_later'    // driver's new drop-off order moves a drop-off 30+ min later -> client
   | 'booking.delivery_delayed_staff' // ... -> ops + admin
@@ -151,6 +156,11 @@ export type NotificationStage =
   | 'pause_continuation_driver'
   | 'pause_continuation_due'
   | 'pause_continuation_overdue'
+  | 'pause_no_date'
+  | 'pause_unresolved_gm'
+  | 'pause_resume_requested'
+  | 'pause_resume_request_waiting'
+  | 'pause_resume_declined'
   | 'delivery_delayed'
   | 'delivery_delayed_staff'
   | 'crew_roles_swapped'

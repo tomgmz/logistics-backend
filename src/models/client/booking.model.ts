@@ -101,7 +101,9 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   pauses:booking_pauses!booking_pauses_booking_id_fkey (
     expected_resume_date,
     expected_resume_call_time,
-    resumed_at
+    resumed_at,
+    resume_requested_at,
+    resume_declined_at
   ),
   created_at,
   updated_at,

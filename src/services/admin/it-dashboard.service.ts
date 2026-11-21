@@ -69,8 +69,8 @@ const SCHEDULERS = [
   },
   {
     source:           'pause-continuation.scheduler',
-    label:            'Paused delivery continuation',
-    description:      'Reminds the drivers before a paused delivery continues, and tells operations when its continuation time passes still paused.',
+    label:            'Paused delivery reminders',
+    description:      'Reminds the drivers before a paused delivery continues; reminds operations every 30 minutes once its continuation time passes still paused, and about a pause with no continuation date (after 2 hours, then each morning); reminds operations every 15 minutes while a driver\'s "Ready to continue" is unanswered; tells the General Manager after 2 hours overdue, 1 day with no date, or 1 hour of an unanswered driver request.',
     interval_minutes: 5,
   },
   {

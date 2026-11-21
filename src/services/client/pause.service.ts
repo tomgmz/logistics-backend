@@ -10,13 +10,17 @@ import { clearBreakdown } from './breakdown.service.js'
 import { continuationAt, refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { requestPauseContinuationCheck } from '../notification/pause-continuation.scheduler.js'
 import { invalidateEta } from '../maps/eta.service.js'
-import type { DriverActor } from './booking.service.js'
+import { assertCrewDriverOnBooking, type DriverActor } from './booking.service.js'
+import { confirmedAtMs } from '../driver/late-confirmation.service.js'
+import { pool } from '../../lib/database.js'
 import {
   PAUSE_REASON_LABEL,
+  resumeRequestOpen,
   type BookingPause,
   type BookingPauseWithActors,
   type PauseTripInput,
   type PauseContinuationInput,
+  type ResumeRequestInput,
 } from '../../types/client/pause.types.js'
 import type { BookingWithRelations } from '../../types/client/booking.types.js'
 
@@ -239,6 +243,7 @@ export async function staffResumeTripService(
     action:      'staff_trip_resumed',
     description:
       `Booking ${bookingRef(booking)} resumed after ${pausedFor} by the office` +
+      (resumeRequestOpen(open) ? ', answering the driver\'s request to continue' : '') +
       (resumeNote ? `: ${resumeNote}` : ''),
   })
 
@@ -342,6 +347,121 @@ export async function setPauseContinuationService(
   // A call time set less than an hour ahead is reminded at once.
   requestPauseContinuationCheck()
 
+  return saved
+}
+
+/* ── The driver asks to continue ──────────────────────────────────────────── */
+
+export type ResumeRequestState = 'sent' | 'already_sent' | 'not_paused'
+
+/** "Juan Dela Cruz", for the office's notice. */
+async function userName(userId: string | null | undefined): Promise<string | null> {
+  if (!userId) return null
+  try {
+    const { rows } = await pool.query<{ first_name: string | null; last_name: string | null }>(
+      'SELECT first_name, last_name FROM public.users WHERE user_id = $1', [userId])
+    const name = [rows[0]?.first_name, rows[0]?.last_name].filter(Boolean).join(' ').trim()
+    return name || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The driver says they are ready to move again ("Ready to continue" on the
+ * paused banner). It never ends the pause: the Operations Manager or the Company
+ * Administrator answers by ending it (End Pause) or with "Not yet" and a reason.
+ *
+ * Either driver on the crew may ask (both have the same buttons since
+ * 2026-11-21). One request at a time per pause: a second press, or the other
+ * driver's, while one is waiting is answered 'already_sent' and tells nobody.
+ *
+ * Sent through the phone's offline queue, so it can arrive late. A request that
+ * arrives after the pause ended, after the delivery left transit, or that was
+ * made before the pause now in force began (it was for an earlier one) is
+ * answered 'not_paused' with a 200: the queue drops it quietly.
+ */
+export async function driverRequestResumeService(
+  bookingId: string,
+  input: ResumeRequestInput,
+  actor: DriverActor,
+): Promise<{ state: ResumeRequestState; requested_at: string | null }> {
+  const booking = await assertCrewDriverOnBooking(bookingId, actor)
+  if (booking.status !== 'in_transit') return { state: 'not_paused', requested_at: null }
+
+  const open = await PauseModel.findOpen(bookingId)
+  if (!open) return { state: 'not_paused', requested_at: null }
+
+  const pressedAt = confirmedAtMs(input.requested_at ?? null) ?? Date.now()
+  if (pressedAt < Date.parse(open.paused_at)) return { state: 'not_paused', requested_at: null }
+
+  if (resumeRequestOpen(open)) return { state: 'already_sent', requested_at: open.resume_requested_at }
+
+  const requestedAt = new Date(pressedAt).toISOString()
+  const note = input.note?.trim() || null
+  const saved = await PauseModel.requestResume(open.pause_id, {
+    resume_requested_at: requestedAt,
+    resume_requested_by: actor.userId ?? null,
+    resume_request_note: note,
+  })
+  if (!saved) {
+    // The other driver asked a moment ago, or the office ended the pause.
+    const now = await PauseModel.findOpen(bookingId)
+    return now && resumeRequestOpen(now)
+      ? { state: 'already_sent', requested_at: now.resume_requested_at }
+      : { state: 'not_paused', requested_at: null }
+  }
+
+  logEvent({
+    user_id:     actor.userId,
+    log_type:    'booking',
+    action:      'pause_resume_requested',
+    description: `Driver asked the office to resume booking ${bookingRef(booking)}` + (note ? `: ${note}` : ''),
+  })
+
+  void notifyStage('pause_resume_requested', booking, {
+    reason:     note,
+    driverName: await userName(actor.userId),
+    pauseLabel: PAUSE_REASON_LABEL[open.reason],
+  })
+  announcePauseChanged(bookingId)
+  return { state: 'sent', requested_at: requestedAt }
+}
+
+/**
+ * The office's "Not yet" to the driver's request: the delivery stays paused and
+ * the reason goes to the crew. The driver may ask again afterwards.
+ */
+export async function staffDeclineResumeService(
+  bookingId: string,
+  note: string,
+  actor: DriverActor,
+): Promise<BookingPause> {
+  assertPauseDesk(actor, 'resume')
+  const booking = await BookingModel.findById(bookingId)
+  if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
+
+  const open = await PauseModel.findOpen(bookingId)
+  if (!open) throw new Error('Cannot answer: the delivery is not paused')
+  if (!resumeRequestOpen(open)) throw new Error('Cannot answer: the driver has no request waiting')
+
+  const reason = note.trim()
+  const saved = await PauseModel.declineResume(open.pause_id, {
+    resume_declined_at:  new Date().toISOString(),
+    resume_declined_by:  actor.userId ?? null,
+    resume_decline_note: reason,
+  })
+  if (!saved) throw new Error('Cannot answer: the delivery is not paused')
+
+  logEvent({
+    user_id:     actor.userId,
+    log_type:    'booking',
+    action:      'pause_resume_declined',
+    description: `Office answered "not yet" to the driver's request to resume booking ${bookingRef(booking)}: ${reason}`,
+  })
+
+  void notifyStage('pause_resume_declined', booking, { reason })
+  announcePauseChanged(bookingId)
   return saved
 }
 

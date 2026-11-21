@@ -19,6 +19,8 @@ import {
   setPauseContinuationService,
   staffResumeTripService,
   listPausesService,
+  driverRequestResumeService,
+  staffDeclineResumeService,
 } from '../../services/client/pause.service.js'
 import { driverStartDeliveryService } from '../../services/driver/start-delivery.service.js'
 import { driverRecordMilestoneService, staffSetMilestoneService, bookingTimeline } from '../../services/client/milestone.service.js'
@@ -363,6 +365,30 @@ export const staffResumeTrip = async (req: Request, res: Response) => {
 export const setPauseContinuation = async (req: Request, res: Response) => {
   try {
     const pause = await setPauseContinuationService(param(req.params.bookingId), req.body, driverActor(req))
+    res.status(200).json({ status: 'success', data: pause })
+  } catch (error: any) {
+    res.status(pauseStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+/**
+ * The driver's "Ready to continue". Answers the offline queue on purpose: 200
+ * for sent / already sent / no longer paused (the queue drops it, nothing to
+ * retry); 403 "not assigned" (the queue drops it with its handed-over notice);
+ * 5xx and network errors are retried.
+ */
+export const driverRequestResume = async (req: Request, res: Response) => {
+  try {
+    const data = await driverRequestResumeService(param(req.params.bookingId), req.body ?? {}, driverActor(req))
+    res.status(200).json({ status: 'success', data })
+  } catch (error: any) {
+    res.status(pauseStatus(error.message)).json({ status: 'error', message: error.message })
+  }
+}
+
+export const staffDeclineResume = async (req: Request, res: Response) => {
+  try {
+    const pause = await staffDeclineResumeService(param(req.params.bookingId), String(req.body?.note ?? ''), driverActor(req))
     res.status(200).json({ status: 'success', data: pause })
   } catch (error: any) {
     res.status(pauseStatus(error.message)).json({ status: 'error', message: error.message })

@@ -27,7 +27,7 @@ import * as AssignmentController from '../controllers/admin/assignment.controlle
 import * as TripController from '../controllers/client/trip.controller.js'
 import * as ReportController from '../controllers/driver/report.controller.js'
 import * as EmergencyCallController from '../controllers/driver/emergency-call.controller.js'
-import { setTripPlanSchema, driverCallTimeSchema, staffPauseTripSchema, staffResumeTripSchema, pauseContinuationSchema, staffSetMilestoneSchema } from '../schema/client/trip.schema.js'
+import { setTripPlanSchema, driverCallTimeSchema, staffPauseTripSchema, staffResumeTripSchema, pauseContinuationSchema, staffSetMilestoneSchema, declineResumeRequestSchema } from '../schema/client/trip.schema.js'
 import { setReportStatusSchema, classifyReportSchema } from '../schema/driver/report.schema.js'
 import * as UserController from '../controllers/admin/fetch-users.controller.js'
 import * as UserRestoreController from '../controllers/admin/user-restore.controller.js'
@@ -206,6 +206,10 @@ router.patch('/assignments/:bookingId/breakdown/dismiss', authenticate, isPauseC
 // While paused: when it continues (date for the client, date + call time for the driver).
 router.patch('/assignments/:bookingId/pause/continuation', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
   lockGuard('booking', fromParam('bookingId')), validate(pauseContinuationSchema), TripController.setPauseContinuation)
+// The driver asked to continue ("Ready to continue"); "Not yet" with a reason keeps it paused.
+// Ending the pause is the answer "yes" (/resume above).
+router.patch('/assignments/:bookingId/resume-request/decline', authenticate, isPauseControl, requireModuleFlag('booking-management', 'can_edit'),
+  lockGuard('booking', fromParam('bookingId')), validate(declineResumeRequestSchema), TripController.staffDeclineResume)
 
 // Replacing the driver and/or vehicle of a delivery already on the road. Only
 // while the delivery is paused; the booking stays in transit and keeps its

@@ -108,6 +108,17 @@ export const staffResumeTripSchema = z.object({
   note: z.string().trim().max(500).optional().nullable(),
 })
 
+/** The driver's "Ready to continue" on a paused delivery. Sent through the offline queue. */
+export const driverResumeRequestSchema = z.object({
+  note:         z.string().trim().max(300).optional().nullable(),
+  requested_at: z.string().max(40).optional().nullable(),
+})
+
+/** The office's "Not yet" to that request: the reason goes back to the driver. */
+export const declineResumeRequestSchema = z.object({
+  note: z.string().trim().min(3, 'Say why the delivery stays paused (at least 3 characters)').max(500),
+}).strict()
+
 /** Start Navigation: the booking goes in transit. `early_start` is the driver's
  *  deliberate "start before the scheduled day", as on a pickup. */
 export const startDeliverySchema = z.object({

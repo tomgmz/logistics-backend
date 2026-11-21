@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { pool } from '../../lib/database.js'
 import type {
   BookingPause,
   BookingPauseWithActors,
@@ -15,7 +16,9 @@ import type {
 const WITH_ACTORS_SELECT = `
   *,
   pauser:users!booking_pauses_paused_by_fkey ( first_name, last_name ),
-  resumer:users!booking_pauses_resumed_by_fkey ( first_name, last_name )
+  resumer:users!booking_pauses_resumed_by_fkey ( first_name, last_name ),
+  requester:users!booking_pauses_resume_requested_by_fkey ( first_name, last_name ),
+  decliner:users!booking_pauses_resume_declined_by_fkey ( first_name, last_name )
 `
 
 /** The pause in force on this booking, or null when the truck is moving. */
@@ -118,6 +121,50 @@ async function setExpectedResume(pauseId: string, fields: {
   return (data as BookingPause | null) ?? null
 }
 
+/**
+ * Record the driver's "Ready to continue" on an open pause, unless one is
+ * already waiting for an answer. Returns the updated pause, or null when the
+ * pause ended meanwhile or a request was already open (the caller re-reads).
+ * The open-request test runs in the UPDATE itself, so two drivers pressing at
+ * once record one request.
+ */
+async function requestResume(pauseId: string, fields: {
+  resume_requested_at: string
+  resume_requested_by: string | null
+  resume_request_note: string | null
+}): Promise<BookingPause | null> {
+  // One statement (no session state): PostgREST filters can't compare two columns.
+  const { rows } = await pool.query<BookingPause>(
+    `UPDATE public.booking_pauses
+        SET resume_requested_at = $2, resume_requested_by = $3, resume_request_note = $4,
+            resume_request_reminded_at = NULL
+      WHERE pause_id = $1
+        AND resumed_at IS NULL
+        AND (resume_requested_at IS NULL
+             OR (resume_declined_at IS NOT NULL AND resume_declined_at >= resume_requested_at))
+      RETURNING *`,
+    [pauseId, fields.resume_requested_at, fields.resume_requested_by, fields.resume_request_note],
+  )
+  return rows[0] ?? null
+}
+
+/** The office's "Not yet". Null when the pause ended meanwhile. */
+async function declineResume(pauseId: string, fields: {
+  resume_declined_at:  string
+  resume_declined_by:  string | null
+  resume_decline_note: string
+}): Promise<BookingPause | null> {
+  const { data, error } = await supabase
+    .from('booking_pauses')
+    .update(fields)
+    .eq('pause_id', pauseId)
+    .is('resumed_at', null)
+    .select('*')
+    .maybeSingle()
+  if (error) throw error
+  return (data as BookingPause | null) ?? null
+}
+
 /** Mirror the pause in force onto the booking, or clear it (all nulls). */
 async function setBookingPause(bookingId: string, pause: {
   paused_at:    string | null
@@ -138,6 +185,8 @@ export const PauseModel = {
   linkReport,
   close,
   setExpectedResume,
+  requestResume,
+  declineResume,
   setBookingPause,
 }
 

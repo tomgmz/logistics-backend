@@ -49,13 +49,38 @@ export interface BookingPause {
   expected_resume_call_time: string | null
   expected_resume_set_by:    string | null
   expected_resume_set_at:    string | null
+  /** The driver's latest "Ready to continue" (20261121020000_pause_resume_requests). */
+  resume_requested_at:        string | null
+  resume_requested_by:        string | null
+  resume_request_note:        string | null
+  resume_request_reminded_at: string | null
+  resume_request_gm_for:      string | null
+  /** The office's latest "Not yet". The request is open while this is null or older. */
+  resume_declined_at:         string | null
+  resume_declined_by:         string | null
+  resume_decline_note:        string | null
   created_at:  string
 }
 
-/** Staff history read: the pause plus who started and ended it. */
+/** A driver's "Ready to continue" is waiting for the office's answer. */
+export function resumeRequestOpen(p: Pick<BookingPause, 'resumed_at' | 'resume_requested_at' | 'resume_declined_at'>): boolean {
+  if (p.resumed_at || !p.resume_requested_at) return false
+  return !p.resume_declined_at || Date.parse(p.resume_declined_at) < Date.parse(p.resume_requested_at)
+}
+
+/** Staff history read: the pause plus who started and ended it, asked to continue, and said not yet. */
 export interface BookingPauseWithActors extends BookingPause {
-  pauser:  { first_name: string | null; last_name: string | null } | null
-  resumer: { first_name: string | null; last_name: string | null } | null
+  pauser:    { first_name: string | null; last_name: string | null } | null
+  resumer:   { first_name: string | null; last_name: string | null } | null
+  requester: { first_name: string | null; last_name: string | null } | null
+  decliner:  { first_name: string | null; last_name: string | null } | null
+}
+
+/** The driver's "Ready to continue". */
+export interface ResumeRequestInput {
+  note?:         string | null
+  /** When the driver pressed it, as the phone recorded it (sent late from a dead zone). */
+  requested_at?: string | null
 }
 
 /** The office sets when a paused delivery continues. */

@@ -67,6 +67,8 @@ interface StageConfig {
   // Stages about a vehicle rather than an approval step deep-link the recipient
   // into Vehicle Management instead of Booking Management.
   target?: 'booking' | 'vehicle'
+  // Send to `roles` only, without appending `admin`.
+  noAdminFallback?: boolean
 }
 
 const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
@@ -108,10 +110,20 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   trip_resumed_by_staff: { type: 'booking.trip_resumed_by_staff', audience: 'drivers' },
   pause_continuation:        { type: 'booking.pause_continuation',        audience: 'client' },
   pause_continuation_driver: { type: 'booking.pause_continuation_driver', audience: 'drivers' },
-  // pause-continuation.scheduler.ts: an hour before the continuation call time,
-  // and once that time has passed with the delivery still paused.
+  // pause-continuation.scheduler.ts: an hour before the continuation call time;
+  // once that time has passed with the delivery still paused (repeated every
+  // 30 min); a pause with no date (2 h in, then each morning); and the General
+  // Manager once when either goes unanswered. The GM notice skips the admin
+  // fallback: the Company Administrator already gets the office's own notices.
   pause_continuation_due:     { type: 'booking.pause_continuation_due',     audience: 'drivers' },
   pause_continuation_overdue: { type: 'booking.pause_continuation_overdue', roles: ['operations_manager'] },
+  pause_no_date:              { type: 'booking.pause_no_date',              roles: ['operations_manager'] },
+  pause_unresolved_gm:        { type: 'booking.pause_unresolved_gm',        roles: ['general_manager'], noAdminFallback: true },
+  // The driver's "Ready to continue" (pause.service driverRequestResumeService),
+  // its reminder while unanswered, and the office's "Not yet".
+  pause_resume_requested:       { type: 'booking.pause_resume_requested',       roles: ['operations_manager'] },
+  pause_resume_request_waiting: { type: 'booking.pause_resume_request_waiting', roles: ['operations_manager'] },
+  pause_resume_declined:        { type: 'booking.pause_resume_declined',        audience: 'drivers' },
   // delay.scheduler.ts: the next stop is running 15+ min past its planned window.
   delivery_delayed:       { type: 'booking.delivery_delayed',       audience: 'client' },
   delivery_delayed_staff: { type: 'booking.delivery_delayed_staff', roles: ['operations_manager'] },
@@ -402,7 +414,55 @@ function copyFor(
       return {
         title: 'Paused delivery not resumed',
         body:  `Booking ${label} was due to continue at ${extra?.callTimeLabel ?? 'its call time'} on ` +
-               `${extra?.continuationDate ?? 'the set date'} but is still paused. Resume it or set a new date.`,
+               `${extra?.continuationDate ?? 'the set date'} but is still paused` +
+               (extra?.minutesLeft ? ` (${formatDuration(extra.minutesLeft)} past)` : '') +
+               '. The driver cannot confirm stops until it is resumed. Resume it or set a new date. ' +
+               'You will be reminded every 30 minutes until then.',
+      }
+    case 'pause_no_date':
+      return {
+        title: 'Paused delivery has no continuation date',
+        body:  `Booking ${label} has been paused for ${extra?.pausedFor ?? 'a while'}` +
+               (extra?.pauseLabel ? ` (${extra.pauseLabel})` : '') +
+               ' with no date set to continue. Resume it, or set the date and call time it continues, ' +
+               'so the driver and the client know.',
+      }
+    case 'pause_resume_requested':
+      return {
+        title: 'Driver ready to continue',
+        body:  `${extra?.driverName ?? 'The driver'} on paused booking ${label} says they are ready to continue` +
+               (reason ? `: "${reason}"` : '.') +
+               ' End the pause if it is safe, or answer "Not yet" with a reason, in Booking Management.',
+      }
+    case 'pause_resume_request_waiting':
+      return {
+        title: 'Driver still waiting to continue',
+        body:  `The driver on paused booking ${label} asked to continue ${formatDuration(extra?.minutesLeft ?? 15)} ago and has had no answer. ` +
+               'End the pause, or answer "Not yet" with a reason.',
+      }
+    case 'pause_resume_declined':
+      return {
+        title: 'Not yet: stay paused',
+        body:  `The office answered your request to continue booking ${label}${reason ? `: ${reason}` : '.'} ` +
+               'Wait until they resume it. You can ask again if things change.',
+      }
+    case 'pause_unresolved_gm':
+      if (extra?.driverAsked) {
+        return {
+          title: 'Paused delivery needs attention',
+          body:  `The driver on paused booking ${label} asked to continue ${formatDuration(extra?.minutesLeft ?? 60)} ago and has had no answer. ` +
+                 'Operations has been reminded. Ask them to resume it or answer the driver.',
+        }
+      }
+      return {
+        title: 'Paused delivery needs attention',
+        body:  extra?.continuationDate
+          ? `Booking ${label} was due to continue at ${extra?.callTimeLabel ?? 'its call time'} on ${extra.continuationDate} ` +
+            `and is still paused${extra?.minutesLeft ? ` ${formatDuration(extra.minutesLeft)} later` : ''}. ` +
+            'Operations has been reminded. Ask them to resume it or set a new date.'
+          : `Booking ${label} has been paused for ${extra?.pausedFor ?? 'a day'}` +
+            (extra?.pauseLabel ? ` (${extra.pauseLabel})` : '') +
+            ' with no date set to continue. Operations has been reminded. Ask them to resume it or set a date.',
       }
     case 'pause_continuation_driver':
       return {
@@ -476,7 +536,9 @@ async function resolveRecipients(stage: NotificationStage, booking: BookingWithR
   }
   // Staff stage: the responsible role plus admins (RBAC fallback). Roles are
   // kept per recipient so each lands on their own module page.
-  const roles = [...new Set([...(cfg.roles ?? []), 'admin'])]
+  const roles = cfg.noAdminFallback
+    ? [...new Set(cfg.roles ?? [])]
+    : [...new Set([...(cfg.roles ?? []), 'admin'])]
   return model.resolveRecipientsByRoles(roles)
 }
 
@@ -497,6 +559,7 @@ export interface NotifyExtra {
   onTheRoad?:    boolean
   // For the pause stages: the reason category in words, and how long it lasted.
   pauseLabel?:   string
+  // How long it has lasted ("3 hrs") — trip_resumed_staff, and the pause reminders.
   pausedFor?:    string
   // For `trip_resumed`: the new expected arrival window, when a pause moved it
   // by 30 minutes or more.
@@ -518,6 +581,8 @@ export interface NotifyExtra {
   minutesLeft?:   number
   // For the pause-continuation stages: the day the delivery continues ("Oct 26, 2026").
   continuationDate?: string
+  // pause_unresolved_gm: it is about a driver's unanswered "Ready to continue".
+  driverAsked?: boolean
 }
 
 /**

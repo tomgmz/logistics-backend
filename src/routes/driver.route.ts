@@ -24,6 +24,7 @@ import {
   startDeliverySchema,
   loadTransferSchema,
   recordMilestoneSchema,
+  driverResumeRequestSchema,
 } from '../schema/client/trip.schema.js'
 import { createDriverReportSchema, enrichDriverReportSchema } from '../schema/driver/report.schema.js'
 import { startEmergencyCallSchema, endEmergencyCallSchema } from '../schema/driver/emergency-call.schema.js'
@@ -162,6 +163,10 @@ router.patch('/bookings/:bookingId/fleet-return',
 // These answer older app builds, whose offline queue may still hold one.
 router.patch('/bookings/:bookingId/pause',  authenticate, TripController.driverPauseRetired)
 router.patch('/bookings/:bookingId/resume', authenticate, TripController.driverPauseRetired)
+// "Ready to continue": the driver asks the office to end the pause. Never ends it
+// itself. Through the offline queue; see TripController.driverRequestResume.
+router.post('/bookings/:bookingId/resume-request',
+  authenticate, authenticatedLimiter, isAny, validate(driverResumeRequestSchema), TripController.driverRequestResume)
 
 // ── Reports ─────────────────────────────────────────────────────────────────
 //
