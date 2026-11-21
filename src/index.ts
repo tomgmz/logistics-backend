@@ -38,6 +38,8 @@ import { startSupportChatScheduler } from './services/support/support-chat.sched
 import { startBreakdownScheduler } from './services/notification/breakdown.scheduler.js'
 import { startLateConfirmationScheduler } from './services/notification/late-confirmation.scheduler.js'
 import { startItAdminRenderScheduler } from './services/admin/it-admin-render.scheduler.js'
+import { startSystemLogIssueScheduler } from './services/admin/system-log-issues.scheduler.js'
+import { requestMetrics, startRequestMetrics } from './lib/request-metrics.js'
 import { startLocationPruneScheduler } from './services/driver/tracking.service.js'
 import { reportEmailLinkBaseUrl } from './lib/mailer.js'
 import { reportWebauthnConfig } from './lib/webauthn-config.js'
@@ -62,6 +64,10 @@ app.use((req, res, next) => {
 
 // Trust proxy
 app.set('trust proxy', 1);
+
+// Requests per minute, failures and wait times for the IT Administrator
+// dashboard (lib/request-metrics.ts). First, so refused requests count too.
+app.use(requestMetrics);
 
 // SECURITY
 app.use(helmet({
@@ -227,6 +233,21 @@ app.use((req: Request, res: Response) => {
 // restart and the IT Admin had no way to see that anything had failed. It now
 // also lands in system_logs, which is what makes that page show anything.
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  // A website we don't allow calling the API (bots, old domains) is a refusal,
+  // not a server failure: 403 and a warning, not a 500 and an error issue
+  // (168 of these were counted as server errors by 2026-11-21).
+  if (err?.message === 'Not allowed by CORS') {
+    logSystem({
+      log_level:  'warn',
+      event_type: 'auth_event',
+      source:     'cors',
+      message:    'Request from a website that is not allowed to use the API',
+      metadata:   { origin: req.headers.origin ?? null },
+    });
+    res.status(403).json({ status: 'error', message: 'Not allowed' });
+    return;
+  }
+
   console.error('GLOBAL ERROR:', {
     message: err.message,
     stack: err.stack,
@@ -250,6 +271,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Backend running on port ${PORT}`);
+  startRequestMetrics();
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Allowed origins:`, allowedOrigins);
   reportEmailLinkBaseUrl();
@@ -285,6 +307,7 @@ app.listen(PORT, '0.0.0.0', () => {
   startBreakdownScheduler();
   startLateConfirmationScheduler();
   startItAdminRenderScheduler();
+  startSystemLogIssueScheduler();
 
   // Drops driver position breadcrumbs past their retention window. The live
   // position table is one row per driver and never needs pruning; the history

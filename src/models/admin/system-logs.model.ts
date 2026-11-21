@@ -16,22 +16,28 @@ import { readableLogs } from '../../lib/log-text.js'
  * table to count it stops being viable almost immediately.
  */
 
+// The row's issue status rides along (named FK: the only one between the two).
+const LIST_COLUMNS =
+  'log_id, log_level, event_type, source, message, metadata, resolved, user_id, timestamp, issue_id, ' +
+  'issue:system_log_issues!system_logs_issue_id_fkey ( status, event_count )'
+
 const DEFAULT_LIMIT = 15
 const MAX_LIMIT     = 200
 
 // The list and the export share this, so "export what I'm looking at" really
 // does export the same filtered, same-ordered rows.
 function filteredQuery(
-  { event_type, log_level, resolved, search, from, to, sort = 'desc' }: GetSystemLogsQuery,
+  { issue_id, event_type, log_level, resolved, search, from, to, sort = 'desc' }: GetSystemLogsQuery,
   options?: { count: 'exact' },
 ) {
   let q = supabase
     .from('system_logs')
     .select(
-      'log_id, log_level, event_type, source, message, metadata, resolved, user_id, timestamp',
+      LIST_COLUMNS,
       options,
     )
 
+  if (issue_id)            q = q.eq('issue_id', issue_id)
   if (event_type)          q = q.eq('event_type', event_type)
   if (log_level)           q = q.eq('log_level', log_level)
   if (resolved !== undefined) q = q.eq('resolved', resolved)
@@ -67,7 +73,7 @@ export async function findForExport(query: GetSystemLogsQuery, cap: number) {
 export async function findById(logId: string) {
   const { data, error } = await supabase
     .from('system_logs')
-    .select('log_id, log_level, event_type, source, message, metadata, resolved, user_id, timestamp')
+    .select(LIST_COLUMNS)
     .eq('log_id', logId)
     .maybeSingle()
 
@@ -94,6 +100,13 @@ export async function setResolved(logId: string, resolved: boolean) {
  * ~200 rows a day — and PostgREST's row cap would quietly have made the totals
  * wrong long before it got slow.
  */
+async function openIssues() {
+  const { count: n, error } = await supabase
+    .from('system_log_issues').select('issue_id', { count: 'exact', head: true }).eq('status', 'open')
+  if (error) throw error
+  return n ?? 0
+}
+
 export async function getStats() {
   const count = async (filter?: (q: any) => any) => {
     let q = supabase.from('system_logs').select('log_id', { count: 'exact', head: true })
@@ -109,7 +122,7 @@ export async function getStats() {
     count((q) => q.eq('log_level', 'warn')),
     count((q) => q.eq('log_level', 'error')),
     count((q) => q.eq('log_level', 'critical')),
-    count((q) => q.eq('resolved', false)),
+    openIssues(),
   ])
 
   return { total, info, warn, error, critical, unresolved }

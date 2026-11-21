@@ -17,13 +17,27 @@ export interface DashboardLogRow {
   timestamp:  string
 }
 
-/** A: the triage queue. */
+/** One open issue in the dashboard queue (log_id = its newest row). */
+export interface DashboardIssueRow extends DashboardLogRow {
+  issue_id:    string
+  event_count: number
+  first_seen:  string
+  regressed:   boolean
+}
+
+/**
+ * A: the triage queue. Since 2026-11-21 it counts ISSUES (repeated errors
+ * grouped, Sentry-style), not rows. `unresolved.warn` is warnings logged in
+ * the last 24 hours: warnings are never grouped or resolved.
+ */
 export interface ProblemsSection {
   unresolved: { critical: number; error: number; warn: number }
-  /** Logged in the last 24 hours, resolved or not: the metric cards' badges. */
+  /** Rows logged in the last 24 hours, resolved or not: the metric cards' badges. */
   last_24h:   { critical: number; error: number; warn: number }
-  /** Newest unresolved critical/error rows, newest first. */
-  latest:     DashboardLogRow[]
+  /** Open issues, critical first, then most recently seen. */
+  latest:     DashboardIssueRow[]
+  /** All open issues (the "View all" count). */
+  open_issues: number
 }
 
 /**
@@ -129,8 +143,65 @@ export interface AccountsSection {
   administrators:     StaffAccount[]
 }
 
+/**
+ * Plain-language health, for a reader with no IT knowledge (user 2026-11-21).
+ * Modelled on Apple's System Status and Atlassian Statuspage: one line per
+ * part of the system, a word for its state, one sentence of why.
+ */
+export type HealthState = 'working' | 'trouble' | 'down' | 'unknown'
+
+export interface HealthPart {
+  key:     string
+  /** What a user would call it: "Emails", "Maps and directions". */
+  name:    string
+  /** What it does for people, one short line. */
+  what:    string
+  state:   HealthState
+  /** Why, in a sentence: "3 emails could not be sent in the last hour." */
+  summary: string
+  /** Last time something went wrong, if ever (last 7 days). */
+  last_problem_at: string | null
+}
+
+/** One bucket of request counts (hour or minute). */
+export interface TrafficPoint {
+  start:    string
+  requests: number
+  failed:   number
+  avg_ms:   number | null
+}
+
+/**
+ * Traffic, failures and wait time (Google SRE's golden signals), from
+ * api_request_minutes. `failed` = the system failed the request (5xx);
+ * `refused` = turned away on purpose (wrong password, no permission).
+ */
+export interface TrafficWindow {
+  requests: number
+  failed:   number
+  refused:  number
+  avg_ms:   number | null
+  /** Requests that took 3 seconds or more. */
+  slow:     number
+}
+
+export interface TrafficSection {
+  last_15m: TrafficWindow
+  last_24h: TrafficWindow
+  /** Average database answer time over the last 15 minutes, ms. */
+  db_avg_ms:      number | null
+  db_failures_15m: number
+  /** 24 hourly points, oldest first (Manila hours). */
+  hourly:   TrafficPoint[]
+  /** First minute ever measured; null = measuring has not started yet. */
+  measured_since: string | null
+}
+
 export interface ItDashboardSummary {
   generated_at: string
+  /** The plain-language overview (top of the page). */
+  health:       HealthPart[]
+  traffic:      TrafficSection
   problems:     ProblemsSection
   schedulers:   SchedulerHealth[]
   services:     ServiceHealth[]

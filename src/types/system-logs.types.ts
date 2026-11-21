@@ -26,12 +26,17 @@ export interface SystemLog {
   source:      string
   message:     string
   metadata?:   Record<string, unknown> | null
+  /** @deprecated Error/critical rows are resolved through their issue; see SystemLogIssue. */
   resolved:    boolean
   user_id?:    string | null
   timestamp:   Date
+  /** The issue an error/critical row was grouped into; null for info/warn. */
+  issue_id?:   string | null
 }
 
 export interface GetSystemLogsQuery {
+  /** Only the rows grouped into this issue. */
+  issue_id?:   string
   event_type?: SystemLogEventType
   log_level?:  SystemLogLevel
   resolved?:   boolean
@@ -50,5 +55,52 @@ export interface SystemLogStats {
   warn:       number
   error:      number
   critical:   number
+  /** Open issues (grouped error/critical), not rows. */
   unresolved: number
 }
+
+/**
+ * Repeated error/critical rows grouped by fingerprint (Sentry-style). The issue
+ * is what an IT Administrator resolves; the rows stay as they were written.
+ * Grouping happens in the database (system_logs_group_issue trigger).
+ */
+export type SystemLogIssueStatus = 'open' | 'resolved' | 'ignored'
+
+export interface SystemLogIssue {
+  issue_id:            string
+  log_level:           'error' | 'critical'
+  event_type:          SystemLogEventType
+  source:              string
+  title:               string
+  last_message:        string
+  last_log_id:         string | null
+  status:              SystemLogIssueStatus
+  event_count:         number
+  first_seen:          string
+  last_seen:           string
+  resolved_at:         string | null
+  resolved_by:         string | null
+  resolved_by_name?:   string | null
+  resolution:          'manual' | 'auto' | null
+  ignored_until:       string | null
+  ignored_by:          string | null
+  regressed_at:        string | null
+  times_regressed:     number
+  count_while_ignored: number
+}
+
+export interface GetSystemLogIssuesQuery {
+  status?:     SystemLogIssueStatus
+  log_level?:  'error' | 'critical'
+  event_type?: SystemLogEventType
+  search?:     string
+  sort?:       'desc' | 'asc'
+  page?:       number
+  limit?:      number
+}
+
+/** resolve | reopen | ignore (hours = how long; null/absent = until reopened by hand). */
+export type SystemLogIssueAction =
+  | { action: 'resolve' }
+  | { action: 'reopen' }
+  | { action: 'ignore'; hours?: number | null }

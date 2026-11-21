@@ -1,6 +1,6 @@
 import axios from 'axios'
 import crypto from 'crypto'
-import { logSystem } from './log-system.js'
+import { logSystem, markSystemLogged } from './log-system.js'
 
 /**
  * Every email the system sends, through Resend (2026-11-18; Brevo before).
@@ -421,7 +421,9 @@ async function deliver(m: OutgoingEmail): Promise<void> {
       source:     MAILER_LOG_SOURCE,
       message:    `Failed to send ${m.what}: ${error}`,
     })
-    throw new Error(`Failed to send ${m.what}: ${error}`)
+    // Already in System Logs: a caller's logSystemError() skips it, so one
+    // failed email is one row, not two (seen 2026-11-21: 223 + 223).
+    throw markSystemLogged(new Error(`Failed to send ${m.what}: ${error}`))
   }
 }
 

@@ -94,3 +94,26 @@ export async function latestAuditByAction(actions: string[]) {
   if (error) throw error
   return data as { description: string; timestamp: string } | null
 }
+
+/** api_request_minutes rows since `sinceIso`, oldest first (≤ 1,440 a day). */
+export async function requestMinutes(sinceIso: string) {
+  const { data, error } = await supabase
+    .from('api_request_minutes')
+    .select('minute, requests, server_errors, refused, total_ms, over_3s, db_ms, db_failed')
+    .gte('minute', sinceIso)
+    .order('minute', { ascending: true })
+    .limit(2000)
+  if (error) throw error
+  return (data ?? []) as Array<{
+    minute: string; requests: number; server_errors: number; refused: number
+    total_ms: number; over_3s: number; db_ms: number | null; db_failed: boolean
+  }>
+}
+
+/** The first minute ever measured, or null. */
+export async function firstRequestMinute(): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('api_request_minutes').select('minute').order('minute', { ascending: true }).limit(1)
+  if (error) throw error
+  return data?.[0]?.minute ?? null
+}

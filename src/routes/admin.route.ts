@@ -399,6 +399,10 @@ router.get('/system-logs/stats',        authenticate, isItAdmin, SystemLogContro
 router.get('/system-logs/export',       authenticate, isItAdmin, SystemLogController.exportLogs)
 router.get('/system-logs/:id',          authenticate, isItAdmin, SystemLogController.getLogById)
 router.patch('/system-logs/:id/resolve', authenticate, isItAdmin, SystemLogController.setResolved)
+// Grouped errors (Sentry-style): the issue is what gets resolved, not each row.
+router.get('/system-log-issues',        authenticate, isItAdmin, SystemLogController.getIssues)
+router.get('/system-log-issues/:id',    authenticate, isItAdmin, SystemLogController.getIssue)
+router.patch('/system-log-issues/:id',  authenticate, isItAdmin, SystemLogController.actOnIssue)
 
 // IT Admin dashboard — system health, sign-in security and the account roster
 // in one read. IT Admin only, for the same reason as the system logs above.

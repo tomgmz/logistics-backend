@@ -81,6 +81,19 @@ export function logSystem(input: SystemLogInput): void {
   }
 }
 
+/**
+ * Marks an error that its thrower already wrote to System Logs, so a catch
+ * block further up that calls logSystemError() doesn't write it a second time.
+ */
+const SYSTEM_LOGGED = Symbol.for('8338.systemLogged')
+export function markSystemLogged<E extends Error>(err: E): E {
+  try { Object.defineProperty(err, SYSTEM_LOGGED, { value: true }) } catch { /* frozen */ }
+  return err
+}
+function isSystemLogged(err: unknown): boolean {
+  return !!err && typeof err === 'object' && (err as Record<symbol, unknown>)[SYSTEM_LOGGED] === true
+}
+
 /** Convenience for catch blocks: turns an unknown throw into a system row. */
 export function logSystemError(
   source: string,
@@ -88,6 +101,7 @@ export function logSystemError(
   err: unknown,
   metadata?: Record<string, unknown>,
 ): void {
+  if (isSystemLogged(err)) return
   const e = err as { message?: string; stack?: string; code?: string | number; status?: number }
   logSystem({
     log_level:  'error',

@@ -1,8 +1,13 @@
+import * as IssueModel from '../../models/admin/system-log-issues.model.js'
 import * as M from '../../models/admin/it-dashboard.model.js'
 import { getActiveStandinId } from '../../lib/it-standin.js'
 import {
   AccountsSection,
-  DashboardLogRow,
+  HealthPart,
+  HealthState,
+  TrafficPoint,
+  TrafficSection,
+  TrafficWindow,
   ItDashboardSummary,
   ItDashboardTrend,
   LockedAccount,
@@ -110,6 +115,12 @@ const SCHEDULERS = [
     interval_minutes: 60,
   },
   {
+    source:           'system-log-issues.scheduler',
+    label:            'System log issue clean-up',
+    description:      'Resolves a system log issue that has not happened again for 7 days; it reopens if it comes back.',
+    interval_minutes: 60,
+  },
+  {
     source:           'tracking.pruneLocationHistory',
     label:            'Location history cleanup',
     description:      'Deletes truck position history past its retention period.',
@@ -213,40 +224,41 @@ function preview(message: string | null | undefined): string | null {
   return text.length > MESSAGE_PREVIEW ? `${text.slice(0, MESSAGE_PREVIEW - 1)}…` : text
 }
 
-function toLogRow(r: Awaited<ReturnType<typeof M.latestSystemLogs>>[number]): DashboardLogRow {
-  return {
-    log_id:     r.log_id,
-    log_level:  r.log_level as SystemLogLevel,
-    event_type: r.event_type as SystemLogEventType,
-    source:     r.source,
-    message:    preview(r.message) ?? '',
-    timestamp:  utc(r.timestamp)!,
-  }
-}
-
 // ── A ───────────────────────────────────────────────────────────────────────
 
 async function problems(now: number): Promise<ProblemsSection> {
-  const unresolved = (level: SystemLogLevel) =>
-    M.countSystemLogs((q) => q.eq('resolved', false).eq('log_level', level))
+  // Open issues, not rows: 446 rows of one Resend outage are one problem.
+  const openIssues = (level: 'critical' | 'error') =>
+    IssueModel.count((q) => q.eq('status', 'open').eq('log_level', level))
   const dayIso = iso(now - DAY)
   const lastDay = (level: SystemLogLevel) =>
     M.countSystemLogs((q) => q.eq('log_level', level).gte('timestamp', dayIso))
 
-  const [critical, error, warn, dayCritical, dayError, dayWarn, latest] = await Promise.all([
-    unresolved('critical'),
-    unresolved('error'),
-    unresolved('warn'),
+  const [critical, error, dayCritical, dayError, dayWarn, latest] = await Promise.all([
+    openIssues('critical'),
+    openIssues('error'),
     lastDay('critical'),
     lastDay('error'),
     lastDay('warn'),
-    M.latestSystemLogs((q) => q.eq('resolved', false).in('log_level', ['critical', 'error']), 5),
+    IssueModel.latestOpen(8),
   ])
 
   return {
-    unresolved: { critical, error, warn },
-    last_24h:   { critical: dayCritical, error: dayError, warn: dayWarn },
-    latest:     latest.map(toLogRow),
+    unresolved:  { critical, error, warn: dayWarn },
+    last_24h:    { critical: dayCritical, error: dayError, warn: dayWarn },
+    open_issues: critical + error,
+    latest:      latest.map((i) => ({
+      log_id:      i.last_log_id ?? i.issue_id,
+      issue_id:    i.issue_id,
+      log_level:   i.log_level as SystemLogLevel,
+      event_type:  i.event_type as SystemLogEventType,
+      source:      i.source,
+      message:     preview(i.last_message) ?? i.title,
+      timestamp:   utc(i.last_seen)!,
+      first_seen:  utc(i.first_seen)!,
+      event_count: i.event_count,
+      regressed:   !!i.regressed_at,
+    })),
   }
 }
 
@@ -459,21 +471,186 @@ async function accounts(now: number, users: M.UserRow[]): Promise<AccountsSectio
 
 // ── Summary ─────────────────────────────────────────────────────────────────
 
+// ── Plain-language overview ─────────────────────────────────────────────────
+//
+// For a reader with no IT knowledge (user 2026-11-21). Same pattern as Apple's
+// System Status and Atlassian Statuspage: each part of the system named the way
+// a user would say it, a state word, and one sentence of why.
+
+const fmtSeconds = (ms: number | null) => (ms === null ? 'an unknown time' : `${(ms / 1000).toFixed(1)} seconds`)
+const n = (v: number) => v.toLocaleString('en-PH')
+const plural = (v: number, one: string, many = `${one}s`) => `${n(v)} ${v === 1 ? one : many}`
+
+function windowOf(rows: Awaited<ReturnType<typeof M.requestMinutes>>): TrafficWindow {
+  let requests = 0, failed = 0, refused = 0, total = 0, slow = 0
+  for (const r of rows) {
+    requests += r.requests; failed += r.server_errors; refused += r.refused
+    total += Number(r.total_ms); slow += r.over_3s
+  }
+  return { requests, failed, refused, slow, avg_ms: requests ? Math.round(total / requests) : null }
+}
+
+async function traffic(now: number): Promise<TrafficSection> {
+  const [rows, first] = await Promise.all([
+    M.requestMinutes(iso(now - DAY)),
+    M.firstRequestMinute(),
+  ])
+  const t15 = now - 15 * MIN
+  const recent = rows.filter((r) => Date.parse(r.minute) >= t15)
+  const dbTimes = recent.map((r) => r.db_ms).filter((v): v is number => typeof v === 'number')
+
+  // 24 hourly buckets (Manila is UTC+8, so whole hours line up with UTC).
+  const startHour = Math.floor(now / HOUR) * HOUR - 23 * HOUR
+  const hourly: TrafficPoint[] = Array.from({ length: 24 }, (_, i) => ({
+    start: iso(startHour + i * HOUR), requests: 0, failed: 0, avg_ms: null,
+  }))
+  const totals = new Array<number>(24).fill(0)
+  for (const r of rows) {
+    const i = Math.floor((Date.parse(r.minute) - startHour) / HOUR)
+    if (i < 0 || i > 23) continue
+    hourly[i].requests += r.requests
+    hourly[i].failed   += r.server_errors
+    totals[i]          += Number(r.total_ms)
+  }
+  hourly.forEach((h, i) => { h.avg_ms = h.requests ? Math.round(totals[i] / h.requests) : null })
+
+  return {
+    last_15m:        windowOf(recent),
+    last_24h:        windowOf(rows),
+    db_avg_ms:       dbTimes.length ? Math.round(dbTimes.reduce((a, b) => a + b, 0) / dbTimes.length) : null,
+    db_failures_15m: recent.filter((r) => r.db_failed).length,
+    hourly,
+    measured_since:  first,
+  }
+}
+
+/** What each provider is called by the people who use it. */
+const PLAIN_SERVICE: Record<string, { name: string; what: string; noun: string }> = {
+  'email':       { name: 'Emails',               what: 'Sign-in codes, password resets, reminders and replies to support tickets.', noun: 'email' },
+  'storage':     { name: 'Photos and documents', what: 'Saving and opening proof photos, licenses and documents.',                  noun: 'file' },
+  'google-maps': { name: 'Maps and directions',  what: 'Routes, arrival times and the maps drivers and staff see.',                 noun: 'map request' },
+  'push':        { name: 'Phone notifications',  what: "Alerts that pop up on drivers' and staff phones and browsers.",           noun: 'notification' },
+  'idanalyzer':  { name: 'License scanning',     what: "Reading a driver's license from a photo.",                                 noun: 'scan' },
+  'turnstile':   { name: 'Robot check',          what: 'Stops bots on the public contact form.',                                    noun: 'check' },
+  'gemini':      { name: 'Help assistant',       what: "Answers clients' typed questions.",                                        noun: 'answer' },
+  'livekit':     { name: 'Emergency calls',      what: "A driver's in-app call to Operations after an alert.",                     noun: 'call' },
+}
+
+function serviceHealth(s: ServiceHealth): HealthPart {
+  const plain = PLAIN_SERVICE[s.key] ?? { name: s.label, what: s.description, noun: 'request' }
+  const things = (v: number) => plural(v, plain.noun)
+  let state: HealthState = 'working'
+  let summary = 'No problems in the last 24 hours.'
+  if (s.failures_1h >= 5) {
+    state = 'down'
+    summary = `${things(s.failures_1h)} failed in the last hour.`
+  } else if (s.failures_1h > 0) {
+    state = 'trouble'
+    summary = `${things(s.failures_1h)} failed in the last hour.`
+  } else if (s.failures_24h > 0) {
+    summary = `Working now. ${things(s.failures_24h)} failed earlier today.`
+  }
+  return { key: s.key, name: plain.name, what: plain.what, state, summary, last_problem_at: s.last_failure_at }
+}
+
+function websiteHealth(t: TrafficSection): HealthPart {
+  const w = t.last_15m
+  const base = { key: 'website', name: 'Website and app', what: 'Signing in, bookings, tracking: everything people do in the system.' }
+  if (!t.measured_since) {
+    return { ...base, state: 'unknown', summary: 'Measuring has just started. Check back in a few minutes.', last_problem_at: null }
+  }
+  if (w.requests === 0) {
+    return { ...base, state: 'working', summary: 'Quiet: nobody used the system in the last 15 minutes.', last_problem_at: null }
+  }
+  const failedShare = w.failed / w.requests
+  const slowShare   = w.slow / w.requests
+  let state: HealthState = 'working'
+  if (w.requests >= 20 && failedShare >= 0.2) state = 'down'
+  else if (failedShare >= 0.02 || w.failed >= 5 || slowShare >= 0.1 || (w.avg_ms ?? 0) >= 1500) state = 'trouble'
+  const failedText = w.failed === 0 ? 'none failed' : `${n(w.failed)} failed`
+  return {
+    ...base, state, last_problem_at: null,
+    summary: `${plural(w.requests, 'request')} in the last 15 minutes, ${failedText}. People waited about ${fmtSeconds(w.avg_ms)}.`,
+  }
+}
+
+function databaseHealth(t: TrafficSection, dbErrors1h: number, lastDbError: string | null): HealthPart {
+  const base = { key: 'database', name: 'Saving and loading data', what: 'Where every booking, account and record is kept.' }
+  if (t.db_failures_15m >= 2) {
+    return { ...base, state: 'down', summary: `Could not be reached ${plural(t.db_failures_15m, 'time')} in the last 15 minutes.`, last_problem_at: lastDbError }
+  }
+  const slow = (t.db_avg_ms ?? 0) >= 800
+  if (t.db_failures_15m > 0 || dbErrors1h >= 3 || slow) {
+    const why = slow
+      ? `It is slow: about ${fmtSeconds(t.db_avg_ms)} per answer.`
+      : `${plural(Math.max(dbErrors1h, t.db_failures_15m), 'problem')} in the last hour.`
+    return { ...base, state: 'trouble', summary: why, last_problem_at: lastDbError }
+  }
+  if (t.db_avg_ms === null) {
+    return { ...base, state: 'unknown', summary: 'No measurement yet. Check back in a few minutes.', last_problem_at: lastDbError }
+  }
+  return { ...base, state: 'working', summary: `Answers in about ${fmtSeconds(t.db_avg_ms)}.`, last_problem_at: lastDbError }
+}
+
+function tasksHealth(jobs: SchedulerHealth[]): HealthPart {
+  const base = { key: 'tasks', name: 'Automatic tasks', what: 'Reminders, delay alerts and clean-ups the system runs on its own.' }
+  const stopped = jobs.filter((j) => j.status === 'down')
+  const late    = jobs.filter((j) => j.status === 'late')
+  const failing = jobs.filter((j) => j.status === 'failing')
+  const names = (js: SchedulerHealth[]) =>
+    js.slice(0, 3).map((j) => j.label).join(', ') + (js.length > 3 ? ` and ${js.length - 3} more` : '')
+  const lastErr = jobs.map((j) => j.last_error_at).filter((v): v is string => !!v).sort().pop() ?? null
+  if (stopped.length) {
+    return { ...base, state: 'down', summary: `${plural(stopped.length, 'task')} stopped running: ${names(stopped)}.`, last_problem_at: lastErr }
+  }
+  if (failing.length || late.length) {
+    const parts = [
+      failing.length ? `${plural(failing.length, 'task')} failing: ${names(failing)}` : null,
+      late.length    ? `${plural(late.length, 'task')} running late: ${names(late)}` : null,
+    ].filter(Boolean)
+    return { ...base, state: 'trouble', summary: `${parts.join('. ')}.`, last_problem_at: lastErr }
+  }
+  const waiting = jobs.filter((j) => j.status === 'never').length
+  const ran = jobs.length - waiting
+  return {
+    ...base, state: 'working', last_problem_at: lastErr,
+    summary: waiting ? `${n(ran)} tasks running on time; ${plural(waiting, "task")} ${waiting === 1 ? "has" : "have"} not run yet since the last restart.` : `All ${n(ran)} tasks are running on time.`,
+  }
+}
+
+async function health(now: number, t: TrafficSection, jobs: SchedulerHealth[], svc: ServiceHealth[]): Promise<HealthPart[]> {
+  const [dbErrors1h, lastDb] = await Promise.all([
+    M.countSystemLogs((q) => q.eq('event_type', 'db_event').in('log_level', ['error', 'critical']).gte('timestamp', iso(now - HOUR))),
+    M.latestSystemLogs((q) => q.eq('event_type', 'db_event').in('log_level', ['error', 'critical']).gte('timestamp', iso(now - 7 * DAY)), 1),
+  ])
+  const byKey = new Map(svc.map((s) => [s.key, s]))
+  return [
+    websiteHealth(t),
+    databaseHealth(t, dbErrors1h, utc(lastDb[0]?.timestamp)),
+    ...['email', 'storage', 'google-maps', 'push', 'gemini', 'idanalyzer', 'livekit', 'turnstile']
+      .map((k) => byKey.get(k)).filter((s): s is ServiceHealth => !!s).map(serviceHealth),
+    tasksHealth(jobs),
+  ]
+}
+
 export async function getSummary(): Promise<ItDashboardSummary> {
   const now = Date.now()
   // Read once, shared by the security and accounts sections.
   const users = await M.allUsers()
 
-  const [p, sch, svc, sec, acc] = await Promise.all([
+  const [p, sch, svc, sec, acc, trf] = await Promise.all([
     problems(now),
     schedulers(now),
     services(now),
     security(now, users),
     accounts(now, users),
+    traffic(now),
   ])
 
   return {
     generated_at: iso(now),
+    health:       await health(now, trf, sch, svc),
+    traffic:      trf,
     problems:     p,
     schedulers:   sch,
     services:     svc,
