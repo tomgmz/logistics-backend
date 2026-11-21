@@ -168,8 +168,8 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
     question: 'How will you contact me about my bookings?',
     answer:
       'Through the bell at the top of the portal (approval, rejection, delivery finished and more) and by email ' +
-      'for the important steps, like a finished delivery that needs your confirmation. Support tickets are ' +
-      'answered by email.',
+      'for the important steps, like a finished delivery that needs your confirmation. Our team also writes to ' +
+      'you in Messages (8338 Team), where you can reply. Support tickets are answered by email.',
   },
   {
     id: 'password',
@@ -367,9 +367,13 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
   P('ops-tickets', 'How do support tickets work?',
     'Open a ticket in the help assistant with a topic, an optional booking, a subject and what happened. You can ' +
     'have up to 5 open tickets. You get an email about it; reply to that email to add details. Our team answers ' +
-    'by email and you can follow it under My tickets. If a ticket was marked resolved but the problem is not ' +
+    'by email and you can follow it in the Tickets tab at the bottom of the help assistant. If a ticket was marked resolved but the problem is not ' +
     'fixed, reply to its email from the address on your account: the ticket opens again and our team is told.', 'client'),
   P('ops-messages', 'Can I message the driver or the office?',
-    'The Messages tab in the help assistant shows messages from our Company Administrator and Operations Manager. ' +
-    'Clients can read them but cannot reply there, and cannot message drivers. To reach us, open a ticket.', 'client'),
+    'Yes, the office. In the help assistant, open the Messages tab and choose 8338 Team: it is one chat with all our ' +
+    'Operations Managers and Company Administrators. Anyone on the team can answer, and you see who did. We reply ' +
+    'Monday to Saturday, 8 AM to 5 PM; a message sent after hours gets an automatic note and is answered when we are ' +
+    'back. For a problem with a delivery on the road right now, call us. Messages are for questions; changes to a ' +
+    'booking are made in Booking, and a formal complaint is a ticket. Clients cannot message drivers. Older ' +
+    'one-to-one messages from a staff member stay read-only; reply in 8338 Team.', 'client'),
 ]

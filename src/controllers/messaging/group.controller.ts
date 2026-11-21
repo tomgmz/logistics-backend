@@ -56,8 +56,8 @@ export async function createGroup(req: Request, res: Response, next: NextFunctio
 
 export async function getGroups(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { user_id } = getAuth(req)
-    res.json({ success: true, data: await service.getGroups(user_id) })
+    const { user_id, role } = getAuth(req)
+    res.json({ success: true, data: await service.getGroups(user_id, role) })
   } catch (err) { next(err) }
 }
 

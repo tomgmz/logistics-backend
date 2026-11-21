@@ -60,6 +60,8 @@ export type GroupSystemEvent =
   | { event: 'removed'; user_id: string; name: string }
   /** An invited person accepted; the line is sent in their name (2026-11-06). */
   | { event: 'joined'; user_id: string; name: string }
+  /** The automatic "our team is back at 8 AM" line in a client's team chat (2026-11-22). */
+  | { event: 'after_hours' }
 
 /** users.status of the other person: anything but 'active' closes the reply box. */
 export type AccountStatus = 'active' | 'inactive' | 'archived'
@@ -105,6 +107,9 @@ export interface GroupRow {
   created_at: string
   updated_at: string
   last_message_at: string | null
+  /** Set: this group is that client's "8338 Team" chat (2026-11-22). */
+  client_id?: string | null
+  after_hours_notice_at?: string | null
 }
 
 export interface GroupMemberRow {

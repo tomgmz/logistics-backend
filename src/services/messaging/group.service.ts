@@ -6,6 +6,9 @@ import { broadcast } from '../../lib/realtime.js'
 import type { GroupWithDetails, GroupMessageRow, GroupSystemEvent } from '../../types/messaging.types.js'
 
 import { messageBodyColumns } from './photo.service.js'
+import * as team from './team-thread.service.js'
+import * as notificationModel from '../../models/notification/notification.model.js'
+import type { CreateNotificationInput, NotificationRow } from '../../types/notification.types.js'
 import { PHOTO_PLACEHOLDER } from '../../schema/messaging/messaging.schema.js'
 
 const admin = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -93,6 +96,7 @@ async function pushGroup(
   recipients: string[],
   content: string,
   messageId: string,
+  titleFor: (uid: string) => string = () => groupName,
 ): Promise<void> {
   const names = new Map<string, Promise<string>>()
   const nameOf = (id: string) => {
@@ -109,7 +113,7 @@ async function pushGroup(
       ? await Promise.all(unread.messages.map(async (m) => `${await nameOf(m.sender_id)}: ${m.content}`))
       : [`${await nameOf(senderId)}: ${content}`]
     await push.sendToUsers([uid], {
-      title: push.stackedTitle(groupName, total),
+      title: push.stackedTitle(titleFor(uid), total),
       body:  push.stackedBody(lines, total),
       data,
       tag,
@@ -156,6 +160,7 @@ async function announceGroupChange(groupId: string, alsoNotify: string[] = []): 
 /** Only the creator renames the group; everyone in it sees the new name live. */
 export async function renameGroup(groupId: string, userId: string, name: string): Promise<{ name: string }> {
   const before = await requireGroup(groupId)
+  team.assertNotTeamThread(before)
   requireCreator(before, userId, 'rename it')
   if (before.name.trim() === name.trim()) return { name }
   await groupModel.renameGroup(groupId, name)
@@ -279,6 +284,7 @@ export async function addMembers(
 ): Promise<{ added: number; requested: number }> {
   await requireAcceptedMember(groupId, userId)
   const group  = await requireGroup(groupId)
+  team.assertNotTeamThread(group)
   const people = await vetNewMembers(groupId, userId, memberIds)
 
   if (group.created_by === userId) {
@@ -301,6 +307,7 @@ export async function removeMember(
 ): Promise<{ removed: boolean; requested: boolean }> {
   await requireAcceptedMember(groupId, userId)
   const group = await requireGroup(groupId)
+  team.assertNotTeamThread(group)
   if (targetId === group.created_by)
     throw Object.assign(new Error('The person who created the group cannot be removed'), { statusCode: 400 })
   if (targetId === userId)
@@ -329,6 +336,7 @@ export interface GroupMemberRequestView {
 /** The creator's queue of requests waiting on them. */
 export async function listMemberRequests(groupId: string, userId: string): Promise<GroupMemberRequestView[]> {
   const group = await requireGroup(groupId)
+  team.assertNotTeamThread(group)
   requireCreator(group, userId, 'review member requests')
 
   const { data, error } = await admin
@@ -368,6 +376,7 @@ export async function decideMemberRequest(
   approve: boolean,
 ): Promise<void> {
   const group = await requireGroup(groupId)
+  team.assertNotTeamThread(group)
   requireCreator(group, userId, 'approve member requests')
 
   const { data: req, error } = await admin
@@ -400,11 +409,88 @@ export async function decideMemberRequest(
   await announceGroupChange(groupId, [req.requested_by])
 }
 
-export async function getGroups(userId: string): Promise<GroupWithDetails[]> {
-  return groupModel.getGroupsByUserId(userId)
+/**
+ * The caller's group chats. A client's "8338 Team" thread is made (and its
+ * members brought up to date) on their first load; Operations Managers and
+ * Company Administrators are joined to every team thread, but see one only
+ * once it has a message (fifteen empty client chats are noise).
+ */
+export async function getGroups(userId: string, role = ''): Promise<GroupWithDetails[]> {
+  try {
+    if (role === 'client') await team.ensureTeamThreadForClient(userId)
+    else if (team.TEAM_ROLES.includes(role)) await team.joinStaffToTeamThreads(userId)
+  } catch (err) {
+    console.error('[messaging] team thread sync failed', userId, err)
+  }
+  const groups = await groupModel.getGroupsByUserId(userId)
+  return role === 'client' ? groups : groups.filter(g => !g.client_id || g.last_message)
+}
+
+/**
+ * Who hears about a message in a team thread (user 2026-11-22). From the
+ * client: whoever on the team replied last, else every Operations Manager and
+ * Company Administrator. From the team: the client only; colleagues see it
+ * live and in the unread count.
+ */
+async function teamRecipients(thread: team.TeamThread, senderId: string, memberIds: string[]): Promise<string[]> {
+  if (senderId !== thread.client_user_id) return memberIds.includes(thread.client_user_id) ? [thread.client_user_id] : []
+  const { data } = await admin
+    .from('group_messages').select('sender_id')
+    .eq('group_id', thread.group_id).neq('sender_id', thread.client_user_id)
+    .neq('message_type', 'system').is('deleted_at', null)
+    .order('sent_at', { ascending: false }).limit(1)
+  const last = (data?.[0] as { sender_id: string } | undefined)?.sender_id
+  if (last && memberIds.includes(last)) return [last]
+  return memberIds.filter(id => id !== thread.client_user_id)
+}
+
+/** Bell notices for a team-thread message (the push goes out with the chat push). */
+async function notifyTeamMessage(
+  thread: team.TeamThread, groupName: string, senderId: string, recipients: string[], content: string,
+): Promise<void> {
+  if (!recipients.length) return
+  try {
+    const sender = await push.getDisplayName(senderId)
+    const toTeam = senderId === thread.client_user_id
+    const type   = toTeam ? 'messaging.client_message' : 'messaging.team_reply'
+    const title  = toTeam ? `Message from ${groupName}` : `${sender} from 8338 Team`
+    const body   = toTeam ? `${sender}: ${push.preview(content)}` : push.preview(content)
+    const rows: CreateNotificationInput[] = recipients.map(user_id => ({
+      user_id, type, title, body, booking_id: null,
+      data: {
+        type, group_id: thread.group_id,
+        action_url: user_id === thread.client_user_id ? '/client/dashboard?chat=messages' : '/messages',
+      },
+    }))
+    const inserted = await notificationModel.insertMany(rows)
+    void Promise.allSettled(inserted.map((row: NotificationRow) =>
+      broadcast(`notifications:user:${row.user_id}`, 'new_notification', row)))
+  } catch (err) {
+    console.error('[messaging] team message notice failed', thread.group_id, err)
+  }
+}
+
+/**
+ * Outside office hours, a client's message gets one automatic line saying when
+ * the team is back: at most once per closed period (the column remembers the
+ * last one; a second message the same night adds nothing).
+ */
+async function maybeAfterHoursNotice(thread: team.TeamThread, group: { after_hours_notice_at?: string | null }): Promise<void> {
+  const now = new Date()
+  if (team.isOfficeOpen(now)) return
+  const last = group.after_hours_notice_at ? new Date(group.after_hours_notice_at) : null
+  if (last && last >= team.lastClosing(now)) return
+  // Claim the notice first (guarded on the old value), so two quick messages post it once.
+  const base = admin.from('group_conversations').update({ after_hours_notice_at: now.toISOString() }).eq('group_id', thread.group_id)
+  const { data, error } = await (group.after_hours_notice_at
+    ? base.eq('after_hours_notice_at', group.after_hours_notice_at)
+    : base.is('after_hours_notice_at', null)).select('group_id')
+  if (error || !data?.length) return
+  await postSystemEvent(thread.group_id, thread.client_user_id, team.AFTER_HOURS_TEXT, { event: 'after_hours' })
 }
 
 export async function respondToInvite(groupId: string, userId: string, accept: boolean): Promise<void> {
+  team.assertNotTeamThread(await requireGroup(groupId))
   const member = await groupModel.getGroupMember(groupId, userId)
   if (!member) throw Object.assign(new Error('Invite not found'), { statusCode: 404 })
   if (member.status !== 'pending') throw Object.assign(new Error('Invite already responded to'), { statusCode: 400 })
@@ -436,7 +522,16 @@ export async function sendGroupMessage(
     groupModel.getGroupMember(groupId, senderId),
   ])
   if (!group) throw Object.assign(new Error('Group not found'), { statusCode: 404 })
-  if (!member || member.status !== 'accepted') throw Object.assign(new Error('Must accept invite before messaging'), { statusCode: 403 })
+
+  // A team thread: bring the members up to date first, so someone archived or
+  // re-roled since can't send, and a new Operations Manager is in.
+  const thread = await team.teamThreadOf(group)
+  if (thread) {
+    const members = await team.syncTeamMembers(thread)
+    if (!members.includes(senderId)) throw Object.assign(new Error('Only the client and our team can write in this chat'), { statusCode: 403 })
+  } else if (!member || member.status !== 'accepted') {
+    throw Object.assign(new Error('Must accept invite before messaging'), { statusCode: 403 })
+  }
 
   let reply_to: { message_id: string; content: string; sender_id: string } | null = null
   if (replyToMessageId) {
@@ -468,6 +563,17 @@ export async function sendGroupMessage(
     'new_group_message',
     payload
   )
+
+  if (thread) {
+    const recipients = await teamRecipients(thread, senderId, memberIds)
+    if (recipients.length) {
+      void pushGroup(groupId, group.name, senderId, recipients, body.content, message.message_id,
+        uid => (uid === thread.client_user_id ? '8338 Team' : group.name))
+      void notifyTeamMessage(thread, group.name, senderId, recipients, body.content)
+    }
+    if (senderId === thread.client_user_id) void maybeAfterHoursNotice(thread, group)
+    return payload
+  }
 
   const recipients = memberIds.filter((uid: string) => uid !== senderId)
   if (recipients.length) {
