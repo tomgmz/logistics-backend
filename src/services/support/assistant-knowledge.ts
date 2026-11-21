@@ -99,15 +99,15 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
       'choose Edit & Resubmit: fix what the reason mentions (often the date, cargo details or an address) and ' +
       'resubmit; it goes back for approval with the same booking number. A booking can be resubmitted at most 3 ' +
       'times; after that you can only cancel it and make a new booking. Or choose Cancel Booking. If the reason ' +
-      'is unclear, open a ticket and we will explain.',
+      'is unclear, tap "Talk to our team" in the help assistant and we will explain.',
   },
   {
     id: 'change-cancel',
     question: 'Can I change or cancel a booking?',
     answer:
       'Once a booking is approved, changes and cancellations go through our team so the vehicle and driver can ' +
-      'be updated too. Open a ticket with the booking reference and what you need changed, and we will reply ' +
-      'by email.',
+      'be updated too. In the help assistant tap "Talk to our team" and send the booking reference and what you ' +
+      'need changed; we reply in the same conversation (and by email if you are away).',
   },
   {
     id: 'track',
@@ -168,8 +168,9 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
     question: 'How will you contact me about my bookings?',
     answer:
       'Through the bell at the top of the portal (approval, rejection, delivery finished and more) and by email ' +
-      'for the important steps, like a finished delivery that needs your confirmation. Our team also writes to ' +
-      'you in Messages (8338 Team), where you can reply. Support tickets are answered by email.',
+      'for the important steps, like a finished delivery that needs your confirmation. When you talk to our team ' +
+      'in the help assistant, their replies show in Messages, and by email if you are away. Support tickets are ' +
+      'answered by email.',
   },
   {
     id: 'password',
@@ -188,8 +189,9 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
     id: 'account-details',
     question: 'How do I change my company details or contact person?',
     answer:
-      'Company details are kept by our team so your bookings stay consistent. Open a ticket with what needs to ' +
-      'change (company name, address, contact person, phone) and we will update it and confirm by email.',
+      'Company details are kept by our team so your bookings stay consistent. In the help assistant tap "Talk to ' +
+      'our team" and tell us what needs to change (company name, address, contact person, phone); we update it ' +
+      'and confirm in the conversation.',
  
     audience: 'client',
   },
@@ -199,7 +201,7 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
     answer:
       'This system handles bookings and deliveries only: no prices, amounts or payments are shown or taken ' +
       'here. Rates and payment are arranged with our team directly. Send us your question through the contact ' +
-      'form, or a ticket in the help assistant if you are already a client, and we will reply by email.',
+      'form, or through "Talk to our team" in the help assistant if you are already a client.',
   },
   {
     id: 'second-driver',
@@ -228,8 +230,8 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
     'records (stamped photo proof at every stop, documents and times kept per booking).'),
   P('biz-contact', 'How do I contact 8338 Logistics?',
     'Phone: +63 9685 536 8975. Email: 8338LogisticsServices@gmail.com. Office: Blk. 6 Lot 8 Lynville Enclave, ' +
-    'Mamatid, City of Cabuyao, Laguna. Clients can also open a ticket in the help assistant; tickets are answered ' +
-    'by email.'),
+    'Mamatid, City of Cabuyao, Laguna. Clients can also tap "Talk to our team" in the help assistant and get our ' +
+    'reply in the same conversation (and by email if they are away).'),
   P('biz-area', 'Where do you deliver?',
     'Pickups and drop-offs must be in the Philippines; the booking map only accepts places in the Philippines.'),
   P('biz-fmcg-only', 'What kind of booking can I make?',
@@ -365,15 +367,21 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
     'bookings, confirm deliveries and report problems, but not make new bookings. After those 7 days sign-in ' +
     'closes until the contract is renewed. Bookings made before the end still go ahead.', 'client'),
   P('ops-tickets', 'How do support tickets work?',
-    'Open a ticket in the help assistant with a topic, an optional booking, a subject and what happened. You can ' +
-    'have up to 5 open tickets. You get an email about it; reply to that email to add details. Our team answers ' +
-    'by email and you can follow it in the Tickets tab at the bottom of the help assistant. If a ticket was marked resolved but the problem is not ' +
-    'fixed, reply to its email from the address on your account: the ticket opens again and our team is told.', 'client'),
+    'A ticket is for something that needs a formal follow-up, like a failed delivery or a complaint. Start with a ' +
+    'question in the help assistant and tap "Talk to our team"; when it needs a ticket, our team opens one from ' +
+    'that conversation (we also open one ourselves when a delivery fails). You get an email about it; reply to ' +
+    'that email to add details. Our team answers by email and you can follow it in the Tickets tab at the bottom ' +
+    'of the help assistant. If a ticket was marked resolved but the problem is not fixed, reply to its email from ' +
+    'the address on your account: the ticket opens again and our team is told.', 'client'),
   P('ops-messages', 'Can I message the driver or the office?',
-    'Yes, the office. In the help assistant, open the Messages tab and choose 8338 Team: it is one chat with all our ' +
-    'Operations Managers and Company Administrators. Anyone on the team can answer, and you see who did. We reply ' +
-    'Monday to Saturday, 8 AM to 5 PM; a message sent after hours gets an automatic note and is answered when we are ' +
-    'back. For a problem with a delivery on the road right now, call us. Messages are for questions; changes to a ' +
-    'booking are made in Booking, and a formal complaint is a ticket. Clients cannot message drivers. Older ' +
-    'one-to-one messages from a staff member stay read-only; reply in 8338 Team.', 'client'),
+    'Yes, the office. Ask your question in the help assistant; if it cannot help, or you want a person, tap ' +
+    '"Talk to our team". The same conversation goes to our Operations Managers and Company Administrators: anyone ' +
+    'on the team can answer, you see who did, and you reply right there. If you are away when we reply, we email ' +
+    'it to you after about 15 minutes, and replying to that email adds your answer to the same conversation. Your ' +
+    'conversations are listed under Messages. We reply Monday to Saturday, 8 AM to 5 PM; a message sent after ' +
+    'hours gets an automatic note and is answered when we are back. For a problem with a delivery on the road ' +
+    'right now, call us. A conversation closes by itself 3 days after our reply if you do not answer, or when our ' +
+    'team marks it resolved; writing in it within 7 days opens it again, after that start a new one. Messages are ' +
+    'for questions; changes to a booking are made in Booking. Clients cannot message drivers. Older one-to-one ' +
+    'messages from a staff member are under Earlier messages and are read-only.', 'client'),
 ]

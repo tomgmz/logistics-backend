@@ -1171,6 +1171,41 @@ export async function sendTicketStaffReplyToClient(p: {
   })
 }
 
+/**
+ * A staff reply in a client's support conversation the client hasn't read
+ * within 15 minutes (user 2026-11-22, Intercom's "reply by email"). The subject
+ * carries [CHT-000123] and Reply-To is the tracked reply address, so answering
+ * the email adds to the same conversation (ticket-replies.service routes it).
+ */
+export async function sendConversationReplyEmail(p: {
+  reference:   string
+  title:       string
+  clientName:  string
+  clientEmail: string
+  replies:     { name: string; text: string }[]
+}): Promise<void> {
+  const base   = appBaseUrl()
+  const url    = base ? `${base}/client/dashboard?chat=messages` : null
+  const intro  = `Hi ${p.clientName}, our team replied to your message${p.title ? ` "${p.title}"` : ''}:`
+  const footer = ticketRepliesTracked()
+    ? 'Reply to this email to answer; it is added to the same conversation. You can also answer in the portal.'
+    : 'Answer in the portal: open the help assistant and go to Messages.'
+  const blocks = [
+    para(escapeHtml(intro)),
+    ...p.replies.map((r) => quoted(r.name, r.text || '(photo)')),
+    url ? button(url, 'Open The Conversation') : '',
+  ]
+  await deliver({
+    from:    TICKET_FROM,
+    subject: `[${p.reference}] Our team replied to your message`,
+    html:    layoutHtml({ label: 'Message From 8338 Team', blocks, footer }),
+    text:    layoutText([intro, '', ...p.replies.map((r) => `${r.name}: ${r.text || '(photo)'}`), '', url ?? ''].join('\n'), footer),
+    to:      { email: p.clientEmail, name: p.clientName },
+    ...(ticketRepliesTracked() ? { replyTo: { email: ticketReplyEmail() } } : {}),
+    what:    'support conversation reply to client',
+  })
+}
+
 // ── Reminders to the office and clients ────────────────────────────────────
 
 /** A driver's license is about to expire: the office's copy (license-expiry.scheduler). */

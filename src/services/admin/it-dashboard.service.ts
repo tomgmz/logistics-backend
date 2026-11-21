@@ -68,6 +68,12 @@ const SCHEDULERS = [
     interval_minutes: 5,
   },
   {
+    source:           'support-chat.scheduler',
+    label:            'Client chat emails and closing',
+    description:      'Emails a client the team replies they have not read within 15 minutes, and closes conversations the client left unanswered for 3 days.',
+    interval_minutes: 5,
+  },
+  {
     source:           'late-start.scheduler',
     label:            'Late start detection',
     description:      'Flags a booking still Assigned 15 minutes after its call time: reminds the drivers once, tells the Operations Manager and Company Administrator and repeats every 30 minutes (for up to a day), and tells the client only when the first drop-off can no longer make its planned window.',

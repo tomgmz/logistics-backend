@@ -93,9 +93,12 @@ export type NotificationType =
   | 'support.ticket_reopened'         // client replied to a resolved ticket -> same
   | 'support.ticket_resolved'         // staff resolved it -> the client
   | 'support.ticket_logged'           // staff opened a ticket for a client -> that client
-  // A client's "8338 Team" chat (2026-11-22). Carry `group_id` + `action_url`.
-  | 'messaging.client_message'        // client wrote -> last team replier, else every Ops Manager + Company Administrator
-  | 'messaging.team_reply'            // the team replied -> the client
+  // Client support conversations (assistant + team + email, 2026-11-22).
+  // Carry `conversation_id` + `action_url`.
+  | 'support.chat_waiting'            // handed to the team / client wrote -> last replier, else every Ops Manager + Company Administrator
+  | 'support.chat_replied'            // the team replied -> the client
+  | 'support.chat_resolved'           // staff resolved it -> the client
+  | 'support.chat_taken_over'         // a colleague took over a conversation you owned -> you
   // The email provider's webhook says an email we sent was not delivered (bounce, block,
   // invalid address, receiver error). Carries `recipient`, `email_kind`,
   // `reason` in `data`; no booking. Client/driver/unknown -> Company

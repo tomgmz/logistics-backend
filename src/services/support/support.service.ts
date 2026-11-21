@@ -130,6 +130,15 @@ export async function openTicketForClient(staffUserId: string, input: StaffTicke
 }
 
 /**
+ * Staff turn a client conversation into a ticket (2026-11-22): opened in the
+ * staff member's name, with the conversation as the ticket's transcript.
+ */
+export async function openTicketFromConversation(staffUserId: string, clientId: string, input: OpenTicketInput) {
+  const { data: staff } = await supabase.from('users').select('first_name, last_name').eq('user_id', staffUserId).maybeSingle()
+  return createTicket(clientId, staffUserId, input, { userId: staffUserId, name: personName(staff as any) ?? 'The office' })
+}
+
+/**
  * A booking ended Failed (no drop-off delivered): 8338 opens the follow-up
  * ticket for the client itself, so redelivery / claim talk has a tracked home
  * instead of waiting for the client to complain (couriers notify the shipper of

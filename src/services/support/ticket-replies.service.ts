@@ -5,6 +5,7 @@ import { logSystem } from '../../lib/log-system.js'
 import { sendTicketReplyForward, sendTicketStaffReplyToClient, supportInboxEmail } from '../../lib/mailer.js'
 import { notifyTicketReplied } from '../notification/support-ticket-notify.service.js'
 import { ticketRef } from './support.service.js'
+import { conversationNumberFrom, conversationRef, recordEmailReply } from './conversation.service.js'
 
 /**
  * Email replies on support tickets (user 2026-11-18, the Zendesk pattern).
@@ -143,6 +144,26 @@ export async function handleInboundTicketEmail(emailId: string): Promise<void> {
     const inbox   = supportInboxEmail().toLowerCase()
     const recipients   = [...(mail.to ?? []), ...(mail.cc ?? [])].map((a) => parseAddress(a).email)
     const reachedInbox = recipients.includes(inbox)
+
+    // A reply to a client conversation email ([CHT-000123], 2026-11-22): added
+    // to that conversation when it comes from the client's own address.
+    const chatNumber = conversationNumberFrom(subject)
+    if (chatNumber) {
+      const dmarcFailed = String(mail.authentication?.dmarc ?? '').toLowerCase() === 'fail'
+      const result = await recordEmailReply({ number: chatNumber, senderEmail: sender.email, dmarcFailed, body, emailId })
+      if (result !== 'added' && result !== 'duplicate') {
+        logSystem({
+          log_level: 'info', event_type: 'email_event', source: 'support-chat.inbound',
+          message: `An email reply to conversation ${conversationRef(chatNumber)} was not added (${
+            result === 'not_client' ? 'not from the client\'s account email' : result === 'closed' ? 'the conversation is closed' : 'no such conversation'
+          }); passed on to the inbox.`,
+        })
+        if (!reachedInbox && sender.email !== inbox) {
+          await sendTicketReplyForward({ subject: subject || '(no subject)', reference: conversationRef(chatNumber), fromEmail: sender.email, fromName: sender.name, body })
+        }
+      }
+      return
+    }
 
     const number = ticketNumberFrom(subject)
     const { data: ticket } = number
