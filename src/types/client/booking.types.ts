@@ -48,6 +48,8 @@ export interface BookingCargoItem {
   length_cm?:     number | null
   width_cm?:      number | null
   height_cm?:     number | null
+  /** Unit the client typed the size in (display only; sizes are cm). null = cm. */
+  dimension_unit?: 'cm' | 'm' | 'in' | null
   notes?:         string | null
   created_at?:    Date
   updated_at?:    Date
@@ -75,6 +77,7 @@ export interface CreateCargoItemInput {
   length_cm?:      number
   width_cm?:       number
   height_cm?:      number
+  dimension_unit?:  'cm' | 'm' | 'in'
   notes?:          string
 }
 

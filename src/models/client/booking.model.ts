@@ -157,6 +157,7 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
     length_cm,
     width_cm,
     height_cm,
+    dimension_unit,
     notes,
     created_at,
     updated_at,
@@ -516,6 +517,7 @@ const CARGO_INSERT_COLUMNS = [
   'length_cm',
   'width_cm',
   'height_cm',
+  'dimension_unit',
   'notes',
 ] as const
 
@@ -1464,6 +1466,7 @@ async function upsertCargoItem(
     length_cm:      item.length_cm      ?? null,
     width_cm:       item.width_cm       ?? null,
     height_cm:      item.height_cm      ?? null,
+    dimension_unit: item.dimension_unit ?? null,
     notes:          item.notes          ?? null,
     ...(item.item_id ? { item_id: item.item_id } : {}),
   }

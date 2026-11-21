@@ -247,7 +247,10 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
   P('ops-booking-cargo', 'What cargo details does a booking need?',
     'For each drop-off you enter the goods as Palletized (the default) or Loose. Palletized: number of pallets, ' +
     'pallet type (Standard 120x100 cm, Euro 120x80 cm, Half 60x80 cm, or Custom), and gross and net weight per ' +
-    'pallet. Loose: number of pieces, size in cm and weight. Net weight must be less than gross weight. You also ' +
+    'pallet. Loose: number of pieces, size and weight. Sizes can be typed in centimetres, metres or inches, and ' +
+    'weights in kilograms or pounds; they are converted to centimetres and kilograms for the calculations, and ' +
+    'sizes are shown back in the unit you typed them in. Net weight must be ' +
+    'less than gross weight. You also ' +
     'pick the commodity, product and special handling code, and mark the goods as stackable or not, non-tiltable, ' +
     'or oversize. Volume and density are worked out for you.'),
   P('ops-booking-files', 'What files do I need to attach to a booking?',

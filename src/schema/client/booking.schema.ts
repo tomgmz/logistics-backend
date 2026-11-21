@@ -16,6 +16,8 @@ export const createCargoItemSchema = z.object({
   length_cm:      z.number().min(0).optional(),
   width_cm:       z.number().min(0).optional(),
   height_cm:      z.number().min(0).optional(),
+  // The unit the client typed the size in; the *_cm fields are always cm.
+  dimension_unit: z.enum(['cm', 'm', 'in']).optional(),
   notes:          z.string().optional(),
   // Which drop-off this line is for, by the `sequence_order` the caller gave
   // that destination in this same request. Optional: a booking may still record
