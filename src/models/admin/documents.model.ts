@@ -495,11 +495,14 @@ export interface NewStaffDocument {
   bytes:         number
   notes:         string | null
   uploaded_by:   string | null
+  /** 'approved' for a type that needs no review (needsReview); reviewed_by stays null. */
+  status:        'pending' | 'approved'
+  reviewed_at:   string | null
 }
 
 export async function insertStaffDocuments(docs: NewStaffDocument[]): Promise<string[]> {
   if (docs.length === 0) return []
-  const cols = ['booking_id', 'client_id', 'truck_id', 'document_type', 'other_label', 'file_url', 'original_name', 'public_id', 'file_format', 'bytes', 'notes', 'uploaded_by'] as const
+  const cols = ['booking_id', 'client_id', 'truck_id', 'document_type', 'other_label', 'file_url', 'original_name', 'public_id', 'file_format', 'bytes', 'notes', 'uploaded_by', 'status', 'reviewed_at'] as const
   const params: unknown[] = []
   const tuples = docs.map((d) => {
     const slots = cols.map((c) => {

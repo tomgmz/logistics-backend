@@ -4,7 +4,7 @@ import { logEvent } from '../../lib/log-event.js'
 import { logSystemError } from '../../lib/log-system.js'
 import { badRequest, conflict, HttpError, notFound } from '../../lib/http-error.js'
 import * as DocumentsModel from '../../models/admin/documents.model.js'
-import { OTHER_LABEL_MAX, VEHICLE_DOCUMENT_TYPES } from '../../types/documents.types.js'
+import { OTHER_LABEL_MAX, VEHICLE_DOCUMENT_TYPES, needsReview } from '../../types/documents.types.js'
 import type {
   DocumentFolderQuery,
   DocumentListQuery,
@@ -158,6 +158,10 @@ export async function uploadStaffDocuments(input: {
 
   const uploaded = await Promise.all(input.files.map((f, i) => uploadOne(f, target.folder, plan[i].displayName)))
 
+  // Contract and Proof of Delivery wait for a second person; internal papers count at once.
+  const reviewed   = needsReview(input.documentType)
+  const approvedAt = reviewed ? null : new Date().toISOString()
+
   const ids = await DocumentsModel.insertStaffDocuments(uploaded.map((u, i) => ({
     booking_id:    target.booking_id,
     client_id:     target.client_id,
@@ -171,15 +175,17 @@ export async function uploadStaffDocuments(input: {
     bytes:         u.bytes,
     notes:         input.notes,
     uploaded_by:   input.uploadedBy,
+    status:        reviewed ? 'pending' : 'approved',
+    reviewed_at:   approvedAt,
   })))
 
   logEvent({
     log_type:    'document_activity',
     action:      'document_uploaded',
-    description: `${ids.length} ${otherLabel ? `Other (${otherLabel})` : TYPE_WORDS[input.documentType]} document(s) attached to ${target.label}:${input.files.map((f) => f.originalname).join(', ')}`,
+    description: `${ids.length} ${otherLabel ? `Other (${otherLabel})` : TYPE_WORDS[input.documentType]} document(s) attached to ${target.label}${reviewed ? '' : ' (no review needed)'}:${input.files.map((f) => f.originalname).join(', ')}`,
   })
 
-  return { document_ids: ids }
+  return { document_ids: ids, needs_review: reviewed }
 }
 
 export async function reviewStaffDocument(input: {
