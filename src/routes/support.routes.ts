@@ -162,6 +162,23 @@ router.get('/tickets', authenticate, authenticatedLimiter, isSupportDesk, requir
   })
 
 // Resolving is an edit: a Read Only Tickets tier can read the queue but not close it.
+const ticketReplySchema = z.object({
+  body: z.string().trim().min(1, 'Write a reply').max(4000),
+}).strict()
+
+// Staff answer a ticket from the Support page; it is emailed to the client.
+router.post('/tickets/:id/reply', authenticate, authenticatedLimiter, isSupportDesk, requireModule('support-tickets'), validate(ticketReplySchema),
+  async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id)
+      if (!z.string().uuid().safeParse(id).success) return res.status(400).json({ status: 'error', message: 'Invalid ticket' })
+      res.status(201).json({ status: 'success', data: await Support.replyToTicket(id, req.user!.sub, req.body.body) })
+    } catch (err: any) {
+      if (err?.statusCode) return res.status(err.statusCode).json({ status: 'error', message: err.message })
+      fail(res, err)
+    }
+  })
+
 router.patch('/tickets/:id/resolve', authenticate, authenticatedLimiter, isSupportDesk, requireModule('support-tickets'), validate(resolveSchema),
   async (req: Request, res: Response) => {
     try {

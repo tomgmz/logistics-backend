@@ -7,6 +7,7 @@ import { validate } from '../middlewares/validate.middleware.js'
 import { requireModule } from '../middlewares/moduleAccess.middleware.js'
 import { pageQuery, paginate, searchQuery, matchesWords } from '../lib/paginate.js'
 import * as Chat from '../services/support/conversation.service.js'
+import { TICKET_CATEGORIES } from '../services/support/support.service.js'
 import { messageBodyColumns } from '../services/messaging/photo.service.js'
 import { PHOTO_PLACEHOLDER } from '../schema/messaging/messaging.schema.js'
 
@@ -26,6 +27,7 @@ import { PHOTO_PLACEHOLDER } from '../schema/messaging/messaging.schema.js'
  *           POST  /inbox/:id/messages         reply
  *           PATCH /inbox/:id/read
  *           POST  /inbox/:id/resolve
+ *           POST  /inbox/:id/ticket           turn into a ticket (the conversation closes)
  *
  * Staff = Company Administrator + Operations Manager, gated by the Tickets
  * module (its Read Only tier blocks replies, resolving and tickets).
@@ -49,6 +51,12 @@ const staffReplySchema = z.object({
   last_seen_message_id: z.string().uuid().nullable().optional(),
   force:                z.boolean().optional(),
 }).refine((v) => v.content.length > 0 || !!v.attachment_url, { message: 'Type a message or add a photo', path: ['content'] })
+
+const toTicketSchema = z.object({
+  category:   z.enum(TICKET_CATEGORIES),
+  subject:    z.string().trim().min(3, 'Add a short subject').max(150),
+  booking_id: z.string().uuid().nullable().optional(),
+}).strict()
 
 const startSchema = z.object({ title: z.string().trim().max(150).optional().default('') }).strict()
 
@@ -190,6 +198,12 @@ router.patch('/inbox/:id/read', isSupportDesk, async (req: Request, res: Respons
 router.post('/inbox/:id/resolve', isSupportDesk, requireModule('support-tickets'), async (req: Request, res: Response) => {
   const id = idOf(req, res); if (!id) return
   try { res.status(200).json({ status: 'success', data: await Chat.resolve(id, req.user!.sub) }) }
+  catch (err) { fail(res, err) }
+})
+
+router.post('/inbox/:id/ticket', isSupportDesk, requireModule('support-tickets'), validate(toTicketSchema), async (req: Request, res: Response) => {
+  const id = idOf(req, res); if (!id) return
+  try { res.status(201).json({ status: 'success', data: await Chat.toTicket(id, req.user!.sub, req.body) }) }
   catch (err) { fail(res, err) }
 })
 

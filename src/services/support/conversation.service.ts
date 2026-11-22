@@ -4,6 +4,7 @@ import { logEvent } from '../../lib/log-event.js'
 import { logSystem } from '../../lib/log-system.js'
 import { isOfficeOpen, lastClosing, AFTER_HOURS_TEXT } from '../../lib/office-hours.js'
 import { sendConversationReplyEmail, sendConversationReminderEmail } from '../../lib/mailer.js'
+import { openTicketFromConversation, ticketRef, type TicketCategory } from './support.service.js'
 import * as notificationModel from '../../models/notification/notification.model.js'
 import * as push from '../messaging/push.service.js'
 import type { CreateNotificationInput, NotificationRow, NotificationType } from '../../types/notification.types.js'
@@ -26,8 +27,12 @@ import type { CreateNotificationInput, NotificationRow, NotificationType } from 
  * Staff = the Company Administrator and the Operations Manager (the desk that
  * already handles tickets).
  *
- * Tickets are separate (user 2026-11-22: turning a conversation into a ticket
- * was dropped as too complicated). Staff open tickets from the Tickets tab.
+ * Tickets (user 2026-11-22, simple hand-off): staff may turn a conversation
+ * into a ticket. The ticket carries the whole conversation; the conversation
+ * closes at once with "Continued as ticket TCK-…". The link is for reference
+ * only (each shows the other's number); statuses are never synced, so one
+ * thing is open at a time. A client message within 7 days reopens the chat as
+ * a normal conversation and leaves the ticket alone.
  *
  * Collisions (user 2026-11-22, Zendesk's three layers): the first staff
  * member to reply owns the conversation (assigned_to); anyone else must "Take
@@ -193,7 +198,12 @@ async function requireOwn(id: string, clientUserId: string): Promise<Conversatio
 /** One conversation with its messages and writers' names. */
 async function detail(conv: ConversationRow) {
   const messages = await messagesOf(conv.conversation_id)
-  return { ...conv, reference: conversationRef(conv.conversation_number), messages, authors: await authorsOf(messages) }
+  let ticket_reference: string | null = null
+  if (conv.ticket_id) {
+    const { data: t } = await supabase.from('support_tickets').select('ticket_number').eq('ticket_id', conv.ticket_id).maybeSingle()
+    ticket_reference = t ? ticketRef((t as any).ticket_number) : null
+  }
+  return { ...conv, ticket_reference, reference: conversationRef(conv.conversation_number), messages, authors: await authorsOf(messages) }
 }
 
 export async function getForClient(id: string, clientUserId: string) {
@@ -514,7 +524,9 @@ export async function takeOver(id: string, staffId: string): Promise<Conversatio
 }
 
 /** Staff resolve it, or it resolves itself (scheduler). */
-export async function resolve(id: string, staffId: string | null, autoLine?: string): Promise<ConversationRow> {
+export async function resolve(
+  id: string, staffId: string | null, autoLine?: string, opts: { line?: string; quiet?: boolean } = {},
+): Promise<ConversationRow> {
   const conv = await getConversation(id)
   if (conv.status === 'resolved') return conv
   const now = new Date().toISOString()
@@ -524,10 +536,10 @@ export async function resolve(id: string, staffId: string | null, autoLine?: str
   if (error) throw error
   if (!data?.length) return getConversation(id)
   const fresh = data[0] as ConversationRow
-  await systemLine(fresh, 'resolved', staffId
+  await systemLine(fresh, 'resolved', opts.line ? opts.line : staffId
     ? `Marked resolved by our team. Write here within ${REOPEN_DAYS} days to open it again.`
     : autoLine ?? `Closed after ${AUTO_RESOLVE_DAYS} days with no reply. Write here within ${REOPEN_DAYS} days to open it again.`)
-  if (staffId) {
+  if (staffId && !opts.quiet) {
     logEvent({ user_id: staffId, log_type: 'admin_activity', action: 'support_chat_resolved',
       description: `Resolved client conversation ${conversationRef(fresh.conversation_number)}` })
     void notify([fresh.client_user_id], 'support.chat_resolved', 'Your conversation was resolved',
@@ -535,6 +547,41 @@ export async function resolve(id: string, staffId: string | null, autoLine?: str
       () => ({ conversation_id: id, action_url: '/client/dashboard?chat=messages' }))
   }
   return fresh
+}
+
+/** Staff turn the conversation into a ticket: the ticket carries it, the conversation closes. */
+export async function toTicket(
+  id: string, staffId: string, input: { category: TicketCategory; subject: string; booking_id?: string | null },
+) {
+  const conv = await getConversation(id)
+  if (conv.status === 'assistant') throw err('The client is still with the assistant; this conversation was not passed to the team', 409)
+  if (conv.ticket_id) throw err('This conversation already became a ticket', 409)
+  const messages = await messagesOf(id)
+  const authors  = await authorsOf(messages)
+  const transcript = messages.filter((m) => m.author !== 'system').slice(-20).map((m) => ({
+    from: (m.author === 'client' ? 'client' : 'bot') as 'client' | 'bot',
+    text: m.author === 'staff' ? `${authors[m.author_id ?? '']?.name ?? 'Our team'}: ${m.content}` : m.content || '(photo)',
+  }))
+  const lastClient = messages.filter((m) => m.author === 'client').pop()?.content
+  const ref = conversationRef(conv.conversation_number)
+  const ticket: any = await openTicketFromConversation(staffId, conv.client_id, {
+    category: input.category,
+    subject:  input.subject,
+    message:  `From conversation ${ref}${conv.title ? ` ("${conv.title}")` : ''}. ` +
+              (lastClient ? `Latest from the client: ${lastClient}` : 'See the conversation below.'),
+    booking_id: input.booking_id ?? null,
+    transcript,
+  })
+  await update(id, { ticket_id: ticket.ticket_id })
+  // Close it now (the ticket's own email tells the client; no second notice).
+  await resolve(id, staffId, undefined, {
+    quiet: true,
+    line:  `Continued as ticket ${ticket.reference}. Our team will reply by email, and you can follow it in the Tickets tab. ` +
+           `Write here within ${REOPEN_DAYS} days if you have a new question.`,
+  })
+  logEvent({ user_id: staffId, log_type: 'admin_activity', action: 'support_chat_to_ticket',
+    description: `Turned client conversation ${ref} into ticket ${ticket.reference}` })
+  return ticket
 }
 
 // ── Scheduler: auto-resolve + missed-reply emails ───────────────────────────

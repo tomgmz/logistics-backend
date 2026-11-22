@@ -367,12 +367,16 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
     'bookings, confirm deliveries and report problems, but not make new bookings. After those 7 days sign-in ' +
     'closes until the contract is renewed. Bookings made before the end still go ahead.', 'client'),
   P('ops-tickets', 'How do support tickets work?',
-    'A ticket is for something that needs a formal follow-up, like a failed delivery or a complaint. Start with a ' +
-    'question in the help assistant and tap "Talk to our team"; when it needs a ticket, our team opens one from ' +
-    'that conversation (we also open one ourselves when a delivery fails). You get an email about it; reply to ' +
-    'that email to add details. Our team answers by email and you can follow it in the Tickets tab at the bottom ' +
-    'of the help assistant. If a ticket was marked resolved but the problem is not fixed, reply to its email from ' +
-    'the address on your account: the ticket opens again and our team is told.', 'client'),
+    'A ticket is for something that needs a formal record, like a complaint, a claim or damaged goods; for a ' +
+    'quick question, ask in the help assistant and tap "Talk to our team" instead. To submit a ticket, open the ' +
+    'help assistant, go to the Tickets tab at the bottom and tap "Submit a ticket": choose a topic, the booking if ' +
+    'it is about one, a subject and what happened. You can have up to 5 open tickets. Our team can also open a ' +
+    'ticket for you, or turn your conversation into one (the conversation then closes with the ticket number and ' +
+    'everything you wrote goes with it), and we open one ourselves when a delivery fails. You get an email about ' +
+    'each ticket; reply to ' +
+    'that email to add details. Our team answers by email and you can follow your tickets in the Tickets tab. If a ' +
+    'ticket was marked resolved but the problem is not fixed, reply to its email from the address on your account: ' +
+    'the ticket opens again and our team is told.', 'client'),
   P('ops-messages', 'Can I message the driver or the office?',
     'Yes, the office. Ask your question in the help assistant; if it cannot help, or you want a person, tap ' +
     '"Talk to our team". The same conversation goes to our Operations Managers and Company Administrators: anyone ' +

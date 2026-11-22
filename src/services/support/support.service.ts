@@ -5,7 +5,9 @@ import { bookingRef } from '../../lib/booking-ref.js'
 import {
   sendSupportTicketEmail,
   sendSupportTicketResolvedEmail,
+  sendTicketStaffReplyToClient,
 } from '../../lib/mailer.js'
+import { randomUUID } from 'node:crypto'
 import { notifyTicketLogged, notifyTicketOpened, notifyTicketResolved } from '../notification/support-ticket-notify.service.js'
 
 /**
@@ -130,6 +132,16 @@ export async function openTicketForClient(staffUserId: string, input: StaffTicke
 }
 
 /**
+ * Staff turn a client conversation into a ticket (2026-11-22, simple
+ * hand-off): opened in the staff member's name, with the conversation as the
+ * ticket's transcript. The conversation closes; nothing else is linked.
+ */
+export async function openTicketFromConversation(staffUserId: string, clientId: string, input: OpenTicketInput) {
+  const { data: staff } = await supabase.from('users').select('first_name, last_name').eq('user_id', staffUserId).maybeSingle()
+  return createTicket(clientId, staffUserId, input, { userId: staffUserId, name: personName(staff as any) ?? 'The office' })
+}
+
+/**
  * A booking ended Failed (no drop-off delivered): 8338 opens the follow-up
  * ticket for the client itself, so redelivery / claim talk has a tracked home
  * instead of waiting for the client to complain (couriers notify the shipper of
@@ -236,6 +248,63 @@ async function createTicket(
   }
 
   return ticket
+}
+
+const ROLE_NAME: Record<string, string> = { admin: 'Company Administrator', operations_manager: 'Operations Manager' }
+
+/**
+ * A staff reply written on the Support page (user 2026-11-22, the Zendesk
+ * model: agents answer inside the help desk, which sends the email). Emailed
+ * to the client in the ticket's thread ([TCK-…], Reply-To = the tracked reply
+ * address, CC the support inbox so the Gmail thread stays whole), signed with
+ * the staff member's name, and recorded on the ticket. Replying does not change
+ * the status (a resolved ticket stays resolved, as in Zendesk).
+ */
+export async function replyToTicket(ticketId: string, staffUserId: string, body: string) {
+  const { data: row, error } = await supabase.from('support_tickets').select(TICKET_SELECT).eq('ticket_id', ticketId).maybeSingle()
+  if (error) throw error
+  if (!row) throw Object.assign(new Error('Ticket not found'), { statusCode: 404 })
+  const ticket = withRef(row as any)
+  const { contact, company } = contactOf(row)
+  if (!contact?.email) throw Object.assign(new Error('This client has no email address, so the reply cannot be sent'), { statusCode: 409 })
+
+  const { data: staff } = await supabase.from('users').select('first_name, last_name, email, role').eq('user_id', staffUserId).maybeSingle()
+  const staffName = personName(staff as any) ?? 'Our team'
+  const signed = `${body}\n\n— ${staffName}${(staff as any)?.role && ROLE_NAME[(staff as any).role] ? `, ${ROLE_NAME[(staff as any).role]}` : ''}, 8338 Logistics`
+
+  // Send first: a reply that never left is not recorded as sent.
+  try {
+    await sendTicketStaffReplyToClient({
+      subject:     `Re: [${ticket.reference}] ${ticket.subject}`,
+      reference:   ticket.reference,
+      clientName:  personName(contact) || company || 'there',
+      clientEmail: contact.email,
+      body:        signed,
+    })
+  } catch (e: any) {
+    throw Object.assign(new Error(`The email could not be sent: ${e?.message ?? 'try again'}`), { statusCode: 502 })
+  }
+
+  const now = new Date().toISOString()
+  const { error: insErr } = await supabase.from('support_ticket_replies').insert({
+    ticket_id:  ticketId,
+    direction:  'staff',
+    from_email: (staff as any)?.email ?? 'support',
+    from_name:  staffName,
+    body_text:  body.slice(0, 4000),
+    // Not a received email: a marker id (the column is unique and required).
+    email_id:   `sent-${randomUUID()}`,
+  })
+  if (insErr) throw insErr
+  await supabase.from('support_tickets').update({ staff_last_reply_at: now, updated_at: now }).eq('ticket_id', ticketId)
+
+  logEvent({
+    user_id:     staffUserId,
+    log_type:    'admin_activity',
+    action:      'support_ticket_staff_replied',
+    description: `${staffName} replied to support ticket ${ticket.reference} from the Support page`,
+  })
+  return { ok: true }
 }
 
 export async function listClientTickets(clientId: string) {
