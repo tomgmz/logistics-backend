@@ -59,7 +59,9 @@ export async function completeReset(req: Request, res: Response) {
     }
 
     console.error('PASSWORD RESET ERROR:', err)
-    res.status(500).json({ status: 'error', message })
+    // Never the internal error text (database / provider messages): it would
+    // show in the browser's Network tab. The detail stays in the server log.
+    res.status(500).json({ status: 'error', message: 'Could not reset your password. Please try again.' })
   }
 }
 
