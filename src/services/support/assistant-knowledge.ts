@@ -183,7 +183,11 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
       'own. Any email address works for an account (Gmail, Yahoo, Outlook or a company domain), as long as you ' +
       'can receive mail there. After 3 wrong passwords or codes in a row, the account locks for 3 minutes; wait, ' +
       'then try again. After 9 wrong tries in a row (three of those locks) it stays locked until you reset your ' +
-      'password with "Forgot password"; we email you when that happens, and the IT Administrator is told.',
+      'password with "Forgot password"; we email you when that happens, and the IT Administrator is told. ' +
+      'Already signed in and want a new password? Open Profile (your name at the bottom of the sidebar) and ' +
+      'choose Request Password Reset: it goes to the IT Administrator the same way, and after you set the new ' +
+      'password you sign in again on every device. Profile also has the User Guide, a step-by-step PDF of the ' +
+      'system that opens in a new tab.',
   },
   {
     id: 'account-details',

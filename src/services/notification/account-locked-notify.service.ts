@@ -3,6 +3,7 @@ import { sendAccountLockedEmail, formatManilaTimestamp } from '../../lib/mailer.
 import * as notificationModel from '../../models/notification/notification.model.js'
 import * as push from '../messaging/push.service.js'
 import { CreateNotificationInput, NotificationRow } from '../../types/notification.types.js'
+import { canSelfResetByOtp } from '../auth/password-reset.service.js'
 
 /**
  * An account was locked for good after 9 wrong passwords or codes in a row
@@ -43,7 +44,7 @@ export async function notifyAccountLocked(account: {
     to:        account.email,
     firstName: account.first_name,
     lockedAt,
-    selfReset: account.role === 'it_admin',
+    selfReset: canSelfResetByOtp(account.role),
   })
 
   const recipients = (await notificationModel.resolveRecipientsByRoles(['it_admin']))

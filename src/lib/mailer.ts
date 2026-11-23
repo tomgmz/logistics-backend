@@ -699,7 +699,7 @@ export interface AccountLockedEmailParams {
   firstName: string | null
   /** When it locked, already formatted for reading (formatManilaTimestamp). */
   lockedAt:  string
-  /** The IT Administrator resets by emailed code; everyone else asks for a reset link. */
+  /** IT Administrator, Company Administrator and General Manager reset by emailed code; everyone else asks for a reset link. */
   selfReset: boolean
 }
 
@@ -713,7 +713,7 @@ export async function sendAccountLockedEmail(params: AccountLockedEmailParams): 
   const { to, firstName, lockedAt, selfReset } = params
   const name   = firstName ?? 'there'
   const howTo  = selfReset
-    ? 'On the sign-in page, enter your email, choose Forgot password, then "IT Administrator? Reset with an emailed code", and set a new password. That also unlocks your account.'
+    ? 'On the sign-in page, enter your email, choose Forgot password, then "Reset with an emailed code", and set a new password. That also unlocks your account.'
     : 'On the sign-in page, enter your email and choose Forgot password, then Request Reset Link. The IT Administrator will email you a link to set a new password. That also unlocks your account.'
   const footer = 'This is a security notification sent because your account was locked. It cannot be turned off.'
 

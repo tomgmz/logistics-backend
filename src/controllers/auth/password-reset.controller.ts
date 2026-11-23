@@ -13,7 +13,7 @@ const NEUTRAL_REQUEST_MESSAGE =
 // deactivated account, and a resend inside the cooldown. The endpoint must not
 // become a way to ask which mailbox administers the system.
 const NEUTRAL_OTP_MESSAGE =
-  'If that address belongs to an IT Administrator account, a 6-digit code is on its way to it.'
+  'If that address belongs to an IT Administrator, Company Administrator or General Manager account, a 6-digit code is on its way to it.'
 
 export async function requestReset(req: Request, res: Response) {
   // The service never throws; it logs and returns so that a failure cannot be

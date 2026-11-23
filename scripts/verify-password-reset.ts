@@ -187,9 +187,9 @@ async function main() {
     ? ok('expireStale() retires the stale row and clears its token hash')
     : bad(`stale row is ${afterSweep?.status}, hash=${afterSweep?.token_hash}`)
 
-  console.log('\n9. The IT Admin resets themselves by code')
+  console.log('\n9. IT Admin, Company Admin and General Manager reset themselves by code')
 
-  ;[['it_admin', true], ['admin', false], ['general_manager', false], ['driver', false]]
+  ;[['it_admin', true], ['admin', true], ['general_manager', true], ['operations_manager', false], ['fleet_manager', false], ['client', false], ['driver', false]]
     .forEach(([role, expected]) => {
       ResetService.canSelfResetByOtp(role as string) === expected
         ? ok(`canSelfResetByOtp(${role}) -> ${expected}`)

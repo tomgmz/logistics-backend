@@ -471,9 +471,19 @@ export async function completeReset(
 // writes a new password, lifts the lockout and cuts every live session.
 // ---------------------------------------------------------------------------
 
-/** Who is allowed to reset themselves by code. Deliberately one role. */
+/**
+ * Who resets themselves by emailed code instead of waiting on the queue.
+ *
+ * The IT Admin, because the queue is theirs. Since 2026-11-23 also the Company
+ * Administrator and the General Manager (user decision): the two senior office
+ * accounts, which should not sit locked out behind a colleague's Send button.
+ * Every other role still raises a request for the IT Admin. The mediated path
+ * stays open to these three as well - the code is an extra way in, not the only.
+ */
+export const SELF_RESET_ROLES: readonly string[] = ['it_admin', 'admin', 'general_manager']
+
 export function canSelfResetByOtp(role: string): boolean {
-  return role === 'it_admin'
+  return SELF_RESET_ROLES.includes(role)
 }
 
 function generateOtp(): string {
@@ -507,7 +517,7 @@ export async function requestItAdminOtp(input: {
         email,
         attempt_status: 'failed_inactive',
         failure_reason: user
-          ? `Self-service reset code requested by non-IT-Administrator account (${user.role})`
+          ? `Self-service reset code requested by an account that cannot self-reset (${user.role})`
           : 'Self-service reset code requested for unknown email',
       })
       return
@@ -595,7 +605,7 @@ export async function requestItAdminOtp(input: {
       user_id:     user.user_id,
       log_type:    'auth',
       action:      'password_reset_otp_sent',
-      description: `Self-service reset code sent to IT Administrator ${email}, request ${request.request_id}`,
+      description: `Self-service reset code sent to ${email} (${user.role}), request ${request.request_id}`,
     })
   } catch (err) {
     // Swallowed for the same reason requestPasswordReset swallows: a failure that
@@ -696,7 +706,7 @@ export async function verifyItAdminOtp(input: {
     user_id:     user.user_id,
     log_type:    'auth',
     action:      'password_reset_otp_verified',
-    description: `IT Administrator ${email} verified a self-service reset code, request ${request.request_id}`,
+    description: `${email} (${user.role}) verified a self-service reset code, request ${request.request_id}`,
   })
 
   return { token, expires_at: expiresAt.toISOString() }
