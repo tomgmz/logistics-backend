@@ -17,8 +17,6 @@ import {
   requestPasswordResetSchema,
   verifyResetTokenSchema,
   completeResetSchema,
-  requestResetOtpSchema,
-  verifyResetOtpSchema,
 } from '../schema/auth/password-reset.schema.js'
 import {
   verifyInviteSchema,
@@ -56,18 +54,9 @@ router.post('/forgot-password',       resetRequestIpLimiter, authLimiter, valida
 router.post('/reset-password/verify', passwordResetLimiter, validate(verifyResetTokenSchema),     PasswordResetController.verifyToken)
 router.post('/reset-password',        passwordResetLimiter, validate(completeResetSchema), PasswordResetController.completeReset)
 
-// The IT Admin's self-service reset, by emailed code.
-//
-// Throttled exactly like the mediated request - per email and per IP - so the
-// pair cannot be used against each other: hitting the ceiling on one does not
-// hand anyone a fresh budget on the other for the same address. The service
-// enforces its own one-code-per-minute cooldown on top, because a limiter that
-// counts requests cannot tell a resend from a first ask.
-router.post('/it-admin/forgot-password', resetRequestIpLimiter, authLimiter, validate(requestResetOtpSchema), PasswordResetController.requestOtp)
-// Guessing IS the threat here - a six-digit code is small enough to brute-force
-// at any useful request rate - so this is keyed per email and backed by the
-// five-attempt budget on the request row itself, which is what actually stops it.
-router.post('/it-admin/verify-otp',      authLimiter,                          validate(verifyResetOtpSchema),  PasswordResetController.verifyOtp)
+// The emailed-code reset (/it-admin/forgot-password, /it-admin/verify-otp) was
+// retired on 2026-11-23: IT Administrator, Company Administrator and General
+// Manager now get a reset link straight away from /forgot-password.
 
 // Passkeys, for outside-vendor drivers.
 //

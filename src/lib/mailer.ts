@@ -427,7 +427,7 @@ async function deliver(m: OutgoingEmail): Promise<void> {
   }
 }
 
-// ── One-time codes (sign-in, IT Admin password reset) ──────────────────────
+// ── One-time codes (sign-in) ──────────────────────
 
 interface OtpCopy {
   label:   string   // the band caption
@@ -486,31 +486,6 @@ export async function sendOtpEmail(to: string, code: string, firstName?: string 
     ...otpEmail(firstName ?? 'there', code, LOGIN_OTP_COPY),
     to:      { email: to, name: firstName },
     what:    'OTP email',
-  })
-}
-
-export interface PasswordResetOtpEmailParams {
-  to:               string
-  firstName:        string | null
-  code:             string
-  expiresInMinutes: number
-}
-
-/** The reset code an IT Admin sends themselves. No link, no password. */
-export async function sendPasswordResetOtpEmail(params: PasswordResetOtpEmailParams): Promise<void> {
-  const { to, firstName, code, expiresInMinutes } = params
-  await deliver({
-    personAsked: true,
-    subject: `Your ${APP_NAME} password reset code`,
-    ...otpEmail(firstName ?? 'there', code, {
-      label:   'Password Reset Code',
-      noun:    'password reset code',
-      intro:   'Here is your one-time password reset code',
-      because: 'a password reset was requested for your Administrator account',
-      minutes: expiresInMinutes,
-    }),
-    to:   { email: to, name: firstName },
-    what: 'password reset code email',
   })
 }
 
@@ -583,24 +558,34 @@ export interface PasswordResetEmailParams {
   firstName:        string | null
   resetUrl:         string
   expiresInMinutes: number
+  /** Sent straight away to IT Administrator / Company Administrator / General Manager (no approval). */
+  selfService?:     boolean
 }
 
-/** The one-time reset link an administrator sends. No password in it. */
+/** The one-time reset link: sent by the IT Administrator, or straight away (selfService). No password in it. */
 export async function sendPasswordResetEmail(params: PasswordResetEmailParams): Promise<void> {
-  const { to, firstName, resetUrl, expiresInMinutes: minutes } = params
+  const { to, firstName, resetUrl, expiresInMinutes: minutes, selfService } = params
   const name   = firstName ?? 'there'
-  const footer = 'This is a transactional email sent because a password reset was approved for your account.'
+  const footer = selfService
+    ? 'This is a transactional email sent because a password reset was requested for your account.'
+    : 'This is a transactional email sent because a password reset was approved for your account.'
+  const opening = selfService
+    ? 'You asked to reset your password. Here is your link.'
+    : 'Your Administrator has approved your password reset request.'
+  const ifNotYou = selfService
+    ? 'If you did not ask for a reset, ignore this email and tell the IT Administrator.'
+    : 'If you did not ask for a reset, contact your Administrator immediately.'
 
   const html = layoutHtml({
     label:     'Password Reset',
-    preheader: `Your Administrator sent you a link to set a new ${APP_NAME} password. It expires in ${minutes} minutes.`,
+    preheader: `Your link to set a new ${APP_NAME} password. It expires in ${minutes} minutes.`,
     blocks: [
       greeting(name),
-      para('Your Administrator has approved your password reset request.'),
+      para(opening),
       para(`Use the button below to choose a new password. This link works <strong>once</strong> and expires in <strong>${minutes} minutes</strong>. Setting a new password also unlocks your account.`, { muted: true }),
       button(resetUrl, 'Set A New Password'),
       linkFallback(resetUrl),
-      notice('<strong>Do not forward this email.</strong> Anyone with this link can set your password until it is used or expires. If you did not ask for a reset, contact your Administrator immediately.'),
+      notice(`<strong>Do not forward this email.</strong> Anyone with this link can set your password until it is used or expires. ${ifNotYou}`),
       help(`Link expired? Request another reset from the sign-in screen, or reach us at ${supportLink()}.`),
     ],
     footer,
@@ -609,7 +594,7 @@ export async function sendPasswordResetEmail(params: PasswordResetEmailParams): 
   const text = layoutText(`
 Hi ${name},
 
-Your Administrator has approved your password reset request.
+${opening}
 
 Open this link to choose a new password:
 
@@ -619,7 +604,7 @@ This link works ONCE and expires in ${minutes} minutes. Setting a new password a
 unlocks your account.
 
 DO NOT FORWARD THIS EMAIL. Anyone with this link can set your password until it is
-used or expires. If you did not ask for a reset, contact your Administrator immediately.
+used or expires. ${ifNotYou}
 
 Link expired? Request another reset from the sign-in screen, or reach us at ${APP_SUPPORT_EMAIL}.`, footer)
 
@@ -699,7 +684,7 @@ export interface AccountLockedEmailParams {
   firstName: string | null
   /** When it locked, already formatted for reading (formatManilaTimestamp). */
   lockedAt:  string
-  /** IT Administrator, Company Administrator and General Manager reset by emailed code; everyone else asks for a reset link. */
+  /** IT Administrator, Company Administrator and General Manager get the link straight away; everyone else after approval. */
   selfReset: boolean
 }
 
@@ -713,7 +698,7 @@ export async function sendAccountLockedEmail(params: AccountLockedEmailParams): 
   const { to, firstName, lockedAt, selfReset } = params
   const name   = firstName ?? 'there'
   const howTo  = selfReset
-    ? 'On the sign-in page, enter your email, choose Forgot password, then "Reset with an emailed code", and set a new password. That also unlocks your account.'
+    ? 'On the sign-in page, enter your email, choose Forgot password, then Request Reset Link. The link is emailed to you straight away; open it within 5 minutes and set a new password. That also unlocks your account.'
     : 'On the sign-in page, enter your email and choose Forgot password, then Request Reset Link. The IT Administrator will email you a link to set a new password. That also unlocks your account.'
   const footer = 'This is a security notification sent because your account was locked. It cannot be turned off.'
 

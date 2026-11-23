@@ -1,5 +1,4 @@
 import crypto from 'crypto'
-import bcrypt from 'bcrypt'
 import * as AuthModel from '../../models/auth/auth.model.js'
 import * as ResetModel from '../../models/auth/password-reset.model.js'
 import { hashToken, passwordMatches, samePasswordError } from './auth.service.js'
@@ -11,7 +10,6 @@ import {
   sendPasswordChangedEmail,
   sendPasswordResetAlertEmail,
   sendPasswordResetEmail,
-  sendPasswordResetOtpEmail,
 } from '../../lib/mailer.js'
 import { logEvent } from '../../lib/log-event.js'
 import {
@@ -39,29 +37,11 @@ const TOKEN_TTL_MINS = 5
 // repeatedly cannot bury the bell. The request itself is always reused.
 const RENOTIFY_COOLDOWN_MINS = 15
 
-// --- The IT Admin's self-service OTP path -----------------------------------
-//
-// Short, because this code is the only thing standing between an emailed inbox
-// and the account that administers every other account.
-const OTP_TTL_MINS = 10
-
-// One email per minute per account, so the button cannot be used to bury someone
-// in mail or to keep minting fresh codes while guesses run against the old one.
-const OTP_RESEND_COOLDOWN_SECS = 60
-
-// Wrong codes allowed before the request is torn down and the IT Admin has to ask
-// for a new one. Five guesses against a six-digit code is a 1-in-200,000 chance,
-// and the teardown means the odds do not accumulate across attempts.
-const MAX_OTP_ATTEMPTS = 5
-
-// How long the token minted by a verified code stays good. Only long enough to
-// choose a password on the page the verification just opened - unlike an emailed
-// link, nobody has to find this one in an inbox later.
-const OTP_RESET_TOKEN_TTL_MINS = 15
-
-// bcrypt cost, matching auth.service so a reset code is stored exactly like a
-// sign-in code.
-const BCRYPT_ROUNDS = 12
+// Self-service links (IT Administrator, Company Administrator, General Manager):
+// one email per minute per account, so the button cannot be used to bury
+// someone in mail. Inside the minute nothing is sent and nothing is said; the
+// link from a moment ago is still in the inbox.
+const SELF_SERVICE_RESEND_COOLDOWN_SECS = 60
 
 // Statuses a reset must never resurrect. A deactivated or archived account was
 // switched off deliberately; that decision outranks a forgotten password.
@@ -155,6 +135,12 @@ export async function requestPasswordReset(input: {
         attempt_status: 'failed_inactive',
         failure_reason: `Password reset requested on ${user.status} account`,
       })
+      return
+    }
+
+    // The three senior office roles get their link straight away, no approval.
+    if (canSelfServeReset(user.role)) {
+      await sendSelfServiceLink(user, email)
       return
     }
 
@@ -458,258 +444,105 @@ export async function completeReset(
 }
 
 // ---------------------------------------------------------------------------
-// The IT Admin's self-service reset.
+// Self-service reset links (2026-11-23, user decision).
 //
-// Every other role waits for an admin to press Send. The IT Admin cannot: their
-// queue is the one they staff, so a locked-out IT Admin raising a mediated
-// request is waiting on themselves. They prove control of the registered mailbox
-// with a six-digit code instead.
+// The IT Administrator, Company Administrator and General Manager do not wait
+// for anyone: asking for a reset emails them the same one-time link (5 minutes,
+// works once) that the IT Administrator sends everyone else after approving it.
+// Industry pattern: Auth0 / Okta "email me a reset link", Microsoft Entra and
+// Google Workspace self-service reset turned on for chosen groups. It replaced
+// the emailed 6-digit code (2026-11-16 .. 11-23): a link cannot be guessed, and a
+// refresh of the reset page keeps working until the link is used or expires.
 //
-// What the code is NOT is the thing that changes the password. Verifying it mints
-// the same opaque token an emailed link carries, and the same
-// /auth/reset-password endpoint spends it - so there stays exactly one place that
-// writes a new password, lifts the lockout and cuts every live session.
+// The request still goes on the queue row, marked sent by the person
+// themselves, so the IT Administrator's Password Reset list keeps a record; the
+// IT Administrator is told when the reset completes (notifyResetCompleted).
 // ---------------------------------------------------------------------------
 
-/**
- * Who resets themselves by emailed code instead of waiting on the queue.
- *
- * The IT Admin, because the queue is theirs. Since 2026-11-23 also the Company
- * Administrator and the General Manager (user decision): the two senior office
- * accounts, which should not sit locked out behind a colleague's Send button.
- * Every other role still raises a request for the IT Admin. The mediated path
- * stays open to these three as well - the code is an extra way in, not the only.
- */
-export const SELF_RESET_ROLES: readonly string[] = ['it_admin', 'admin', 'general_manager']
+export const SELF_SERVICE_RESET_ROLES: readonly string[] = ['it_admin', 'admin', 'general_manager']
 
-export function canSelfResetByOtp(role: string): boolean {
-  return SELF_RESET_ROLES.includes(role)
-}
-
-function generateOtp(): string {
-  // randomInt is rejection-sampled, so every code in the range is equally likely.
-  // Taking a random uint32 modulo 1,000,000 is not: it biases the low codes, which
-  // is a real edge when the whole secret is six digits.
-  return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0')
+/** Who gets a reset link straight away instead of waiting for approval. */
+export function canSelfServeReset(role: string): boolean {
+  return SELF_SERVICE_RESET_ROLES.includes(role)
 }
 
 /**
- * Email a reset code to an IT Admin.
- *
- * Resolves the same way for an unknown address, a non-IT-Admin account, a
- * deactivated one and a genuine send, because the controller answers from this
- * function's silence. Anything that sets those cases apart - a different message,
- * a different status, a slower failure - turns the endpoint into a way of asking
- * "is this address the IT Admin's?", which is the single most useful question an
- * attacker could ask of this system.
+ * Email a self-service link. Called from requestPasswordReset only, so it
+ * inherits that function's rule: whatever happens here, the caller answers the
+ * same way, and errors are swallowed there.
  */
-export async function requestItAdminOtp(input: {
-  email: string
-}): Promise<void> {
-  const email = input.email.trim().toLowerCase()
-
-  try {
-    const user = await AuthModel.findUserByEmail(email)
-
-    if (!user || !canSelfResetByOtp(user.role)) {
-      await AuthModel.createLoginHistory({
-        user_id: user?.user_id,
-        email,
-        attempt_status: 'failed_inactive',
-        failure_reason: user
-          ? `Self-service reset code requested by an account that cannot self-reset (${user.role})`
-          : 'Self-service reset code requested for unknown email',
-      })
-      return
-    }
-
-    if (UNRESETTABLE_STATUSES.includes(user.status)) {
-      await AuthModel.createLoginHistory({
-        user_id: user.user_id,
-        email,
-        attempt_status: 'failed_inactive',
-        failure_reason: `Self-service reset code requested on ${user.status} account`,
-      })
-      return
-    }
-
-    await ResetModel.expireStaleOtps().catch((err) =>
-      console.error('[password-reset] expireStaleOtps failed', err),
-    )
-
-    const existing = await ResetModel.findOpenByUser(user.user_id)
-
-    // An outstanding code is refreshed in place. Anything else open is superseded
-    // and closed, because it holds the one open slot this user gets:
-    //
-    //   - a mediated request: the IT Admin has decided to serve themselves rather
-    //     than wait for a colleague to press Send;
-    //   - a code already verified ('sent', holding a live token): they verified
-    //     but never finished choosing a password, and are now back asking for a
-    //     code. Refreshing is impossible — that row is past the point a code
-    //     lives on it — so it is closed and a fresh request opened, which also
-    //     retires the token nobody used.
-    const open = existing && existing.delivery_method === 'otp' && existing.status === 'pending'
-      ? existing
-      : null
-
-    if (existing && !open) {
-      await ResetModel.cancel(existing.request_id).catch((err) =>
-        console.error('[password-reset] could not supersede open request', err),
-      )
-    }
-
-    if (open) {
-      const lastSent = open.otp_sent_at ? new Date(open.otp_sent_at).getTime() : 0
-      if (Date.now() - lastSent < OTP_RESEND_COOLDOWN_SECS * 1000) {
-        // Inside the cooldown. The previous code is still live and still in their
-        // inbox, so the honest outcome is to send nothing - and to say nothing,
-        // because a distinguishable "wait" is a signal that the address is real.
-        return
-      }
-    }
-
-    const code      = generateOtp()
-    const codeHash  = await bcrypt.hash(code, BCRYPT_ROUNDS)
-    const expiresAt = new Date(Date.now() + OTP_TTL_MINS * 60 * 1000)
-
-    const request = open
-      ? await ResetModel.refreshOtp(open.request_id, codeHash, expiresAt)
-      : await ResetModel.createOtpRequest({
-          user_id:        user.user_id,
-          email,
-          requested_role: user.role,
-          otp_hash:       codeHash,
-          otp_expires_at: expiresAt,
-        })
-
-    // refreshOtp comes back null when the row moved on under us - verified or
-    // cancelled in another tab. Nothing to send, and nothing to say about it.
-    if (!request) return
-
-    try {
-      await sendPasswordResetOtpEmail({
-        to:               email,
-        firstName:        user.first_name ?? null,
-        code,
-        expiresInMinutes: OTP_TTL_MINS,
-      })
-    } catch (err) {
-      // No code reached the mailbox, so the row is a dead end. Close it rather
-      // than leave a request nobody can satisfy sitting in the one open slot.
-      await ResetModel.cancel(request.request_id).catch(() => {})
-      throw err
-    }
-
-    logEvent({
-      user_id:     user.user_id,
-      log_type:    'auth',
-      action:      'password_reset_otp_sent',
-      description: `Self-service reset code sent to ${email} (${user.role}), request ${request.request_id}`,
-    })
-  } catch (err) {
-    // Swallowed for the same reason requestPasswordReset swallows: a failure that
-    // answered differently from a success would be the oracle this endpoint is
-    // written to avoid.
-    if ((err as { code?: string })?.code === '23505') {
-      console.info('[password-reset] concurrent OTP request for', email, '- existing row kept')
-      return
-    }
-    console.error('[password-reset] requestItAdminOtp failed for', email, err)
-  }
-}
-
-/**
- * Spend a code and hand back a one-time reset token.
- *
- * Unlike the request side, this one does talk: whoever is here holds a code that
- * was emailed to the account, and telling them "that code is wrong, 2 tries left"
- * is worth more to them than it is to an attacker who has to be reading the
- * mailbox already. What it never does is distinguish a wrong code from an expired
- * one from a request that does not exist - all three are the same sentence, so
- * the reply cannot be used to map the state of an account.
- */
-export async function verifyItAdminOtp(input: {
-  email: string
-  code:  string
-}): Promise<{ token: string; expires_at: string }> {
-  const email = input.email.trim().toLowerCase()
-  const code  = input.code.trim()
-
-  const invalid = () => {
-    const err = new Error('That code is invalid or has expired. Please request a new one.')
-    ;(err as any).code = 'RESET_OTP_INVALID'
-    return err
-  }
-
-  const user = await AuthModel.findUserByEmail(email)
-  if (!user || !canSelfResetByOtp(user.role) || UNRESETTABLE_STATUSES.includes(user.status)) {
-    throw invalid()
-  }
-
+async function sendSelfServiceLink(
+  user:  { user_id: string; role: string; first_name?: string | null },
+  email: string,
+): Promise<void> {
+  await ResetModel.expireStale().catch((err) =>
+    console.error('[password-reset] expireStale failed', err),
+  )
+  // Old code requests (before 2026-11-23) must not hold the one open slot.
   await ResetModel.expireStaleOtps().catch((err) =>
     console.error('[password-reset] expireStaleOtps failed', err),
   )
 
-  const request = await ResetModel.findOpenOtpByUser(user.user_id)
-  if (!request || !request.otp_hash || !request.otp_expires_at) throw invalid()
-  if (new Date(request.otp_expires_at).getTime() <= Date.now()) throw invalid()
+  const existing = await ResetModel.findOpenByUser(user.user_id)
 
-  if (request.otp_attempts >= MAX_OTP_ATTEMPTS) {
-    await ResetModel.cancel(request.request_id).catch(() => {})
-    throw invalid()
+  if (existing && existing.status === 'sent' && existing.sent_at) {
+    const sinceLast = Date.now() - new Date(existing.sent_at).getTime()
+    if (sinceLast < SELF_SERVICE_RESEND_COOLDOWN_SECS * 1000) return
   }
 
-  const matches = await bcrypt.compare(code, request.otp_hash)
-
-  if (!matches) {
-    const attempts = await ResetModel.bumpOtpAttempts(request.request_id, request.otp_attempts)
-    const left     = MAX_OTP_ATTEMPTS - attempts
-
-    await AuthModel.createLoginHistory({
-      user_id: user.user_id,
-      email,
-      attempt_status: 'failed_otp',
-      failure_reason: `Wrong self-service reset code (${Math.max(0, left)} attempts left)`,
-    })
-
-    if (left <= 0) {
-      // Out of guesses. The request is torn down so the odds cannot be run up
-      // across a long session - a new code means a new secret to guess.
-      await ResetModel.cancel(request.request_id).catch(() => {})
-      const err = new Error('Too many incorrect codes. Please request a new one.')
-      ;(err as any).code = 'RESET_OTP_EXHAUSTED'
-      throw err
-    }
-
-    const err = new Error(
-      `Incorrect code. ${left} attempt${left === 1 ? '' : 's'} left before you need a new one.`,
+  // Anything still open is replaced: a queue request (no need to wait any more),
+  // an earlier self-service link (only the newest link works), an old code.
+  if (existing) {
+    await ResetModel.cancel(existing.request_id).catch((err) =>
+      console.error('[password-reset] could not supersede open request', err),
     )
-    ;(err as any).code = 'RESET_OTP_INCORRECT'
+  }
+  await closeReplacedRequests(user.user_id)
+
+  const request = await ResetModel.create({
+    user_id:        user.user_id,
+    email,
+    requested_role: user.role,
+    handler_group:  handlerGroupFor(user.role),
+  })
+
+  const token     = crypto.randomBytes(32).toString('base64url')
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MINS * 60 * 1000)
+  // Built before the row is marked sent: a missing app address throws here, and
+  // the request is closed below rather than left saying "sent".
+  let resetUrl: string
+  try {
+    resetUrl = buildResetUrl(token, user.role)
+  } catch (err) {
+    await ResetModel.cancel(request.request_id).catch(() => {})
     throw err
   }
 
-  const token     = crypto.randomBytes(32).toString('base64url')
-  const expiresAt = new Date(Date.now() + OTP_RESET_TOKEN_TTL_MINS * 60 * 1000)
+  // sent_by = the person themselves: the queue shows it was self-service.
+  const sent = await ResetModel.markSent(request.request_id, hashToken(token), expiresAt, user.user_id)
+  if (!sent) return
 
-  const verified = await ResetModel.markOtpVerified(
-    request.request_id,
-    hashToken(token),
-    expiresAt,
-    user.user_id,
-  )
-  // Lost the race with another tab that spent the same code. The token that won
-  // is the one in that tab, and it is not ours to hand out.
-  if (!verified) throw invalid()
+  try {
+    await sendPasswordResetEmail({
+      to:               email,
+      firstName:        user.first_name ?? null,
+      resetUrl,
+      expiresInMinutes: TOKEN_TTL_MINS,
+      selfService:      true,
+    })
+  } catch (err) {
+    // No email went out, so the row is a dead end; close it. The person can ask
+    // again (or the IT Administrator can help) once mail works.
+    await ResetModel.cancel(request.request_id).catch(() => {})
+    throw err
+  }
 
   logEvent({
     user_id:     user.user_id,
     log_type:    'auth',
-    action:      'password_reset_otp_verified',
-    description: `${email} (${user.role}) verified a self-service reset code, request ${request.request_id}`,
+    action:      'password_reset_link_self_service',
+    description: `Self-service reset link sent to ${email} (${user.role}), request ${request.request_id}`,
   })
-
-  return { token, expires_at: expiresAt.toISOString() }
 }
 
 /**
