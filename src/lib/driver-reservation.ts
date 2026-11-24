@@ -22,11 +22,10 @@ const FINISHED_BOOKING_STATUSES = ['delivered', 'completed', 'failed', 'cancelle
  * A booking is `completed` when the last box is off the truck, but neither the
  * driver nor the vehicle is free then — they are both wherever the last drop-off
  * was. The job ends when the truck is home, which is what `fleet_return_at`
- * records. Between those two moments `releaseCrew` has already put both back in
- * the pool, so `drivers.status` says 'available', `trucks.status` says
- * 'available', and the calendar may well tick today: nothing in either status
- * column can express "done delivering, still out there". This is that question,
- * asked directly of the booking.
+ * records. Since 2026-11-24 the status columns stay 'assigned' / 'in_use' over
+ * that gap (only the fleet-return confirmation calls `releaseCrew`), but the
+ * gates still ask the booking directly: it is the one fact that cannot drift,
+ * and crews released under the old rule may still read 'available'.
  *
  * One driver, one booking; one truck, one booking. Until the vehicle is back in
  * the 8338 lot neither can be crewed onto anything else.
@@ -299,7 +298,7 @@ export async function hasLiveDelivery(driverId: string): Promise<boolean> {
   // As the main driver or as the second driver.
   const { data, error } = await supabase
     .from('deliveries')
-    .select('delivery_id, bookings ( status )')
+    .select('delivery_id, bookings ( status, fleet_return_at )')
     .or(`driver_id.eq.${driverId},second_driver_id.eq.${driverId}`)
 
   if (error) throw error
@@ -309,7 +308,11 @@ export async function hasLiveDelivery(driverId: string): Promise<boolean> {
     // A delivery whose booking is gone is itself an orphan — exactly the state
     // this guards against, so it counts for nothing.
     if (!status) return false
-    return !FINISHED_BOOKING_STATUSES.includes(status)
+    if (status === 'cancelled') return false
+    // Done delivering but the vehicle is not back at the parking: the driver is
+    // still out with it, and the reservation is real (it is released only by
+    // the fleet-return confirmation).
+    return !FINISHED_BOOKING_STATUSES.includes(status) || !row.bookings.fleet_return_at
   })
 }
 

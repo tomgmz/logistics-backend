@@ -161,7 +161,7 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
     question: 'Where can I see the proof of delivery?',
     answer:
       'Open the booking in Transaction History. It shows the photo taken at each drop-off (with time, place and ' +
-      'plate stamped on it), the loading photos, and the delivery documents our team has approved.',
+      'plate stamped on it), the proof of pickup photos, and the delivery documents our team has approved.',
   },
   {
     id: 'notifications',
@@ -265,8 +265,9 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
     'Oversize marks goods that may need a larger vehicle. Our team checks the load when assigning a vehicle.'),
   P('ops-call-time', 'What is the call time?',
     'The call time is the time on the booking day when the delivery should start at your pickup point. You pick ' +
-    'it in 5-minute steps when booking. Our Operations team may give the driver an earlier call time of their ' +
-    'own (for example the night before an early-morning start) so the truck is ready on time.'),
+    'it in 5-minute steps when booking. After the vehicle and driver are assigned, our Operations team confirms ' +
+    'the driver\'s own call time: the same as yours, or earlier (for example the night before an early-morning ' +
+    'start) so the truck is ready on time. It is never later than your call time.'),
   P('ops-after-hours', 'What happens if I book after office hours?',
     'You can send a booking at any time. One sent outside office hours (Monday to Saturday, 8:00 AM to 5:00 PM) ' +
     'is reviewed when the office opens.'),
@@ -358,8 +359,11 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
   P('ops-statuses', 'What do the booking statuses mean?',
     'Pending: waiting for approval. Approved: approved, waiting for a vehicle and driver. Assigned: vehicle and ' +
     'driver chosen. In Transit: on the road. Delivered: every drop-off done, waiting for your confirmation. ' +
-    'Completed: confirmed by you, or automatically 3 days after delivery. Cancelled: rejected or cancelled. ' +
-    'Failed: nothing could be delivered.'),
+    'Completed: confirmed by you, or automatically 3 days after delivery. Rejected: the booking was not ' +
+    'accepted, or was stopped and will not go ahead. Failed: nothing could be delivered. Extra notes such as ' +
+    'Resubmitted, Delayed, Paused, Partly Failed or Problem Reported show in small text under the status; ' +
+    'when there are several, the first is written out and the rest show as "+1", "+2" and so on, which you ' +
+    'can tap or click to see all of them.'),
   P('ops-records', 'How long are my booking records kept?',
     'Every booking stays in Transaction History with its proof photos, documents, decisions and stop times, ' +
     'including after it is completed.'),

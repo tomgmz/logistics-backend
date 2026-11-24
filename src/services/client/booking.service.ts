@@ -590,11 +590,12 @@ export async function updateBookingStatusService(
     void notifyStage('approved_admin', advanced ?? booking, { reason: approvalRemarks!.trim() })
   }
 
-  // The delivery is over: settle the delivery record and hand the driver and
-  // vehicle back to the pool.
+  // The delivery is over: settle the delivery record. The driver and vehicle
+  // are NOT freed here: they are freed only when the vehicle is confirmed back
+  // at the 8338 parking (driverConfirmFleetReturnService). Releasing again on a
+  // completion days later could also wipe a reservation on their next booking.
   if (status === 'completed') {
     await BookingModel.settleDelivery(bookingId, 'delivered')
-    void releaseBookingCrew(bookingId)
   } else if (status === 'cancelled') {
     await BookingModel.settleDelivery(bookingId, 'failed')
     void releaseBookingCrew(bookingId)
@@ -1189,7 +1190,8 @@ export async function driverCompleteBookingService(
       void openFailedDeliveryTicket(failed as any, null, null)
     }
     await BookingModel.settleDelivery(bookingId, 'failed')
-    void releaseBookingCrew(bookingId)
+    // The truck still went out: driver and vehicle stay held until it is back
+    // at the parking (driverConfirmFleetReturnService frees them).
     return failed
   }
 
@@ -1207,11 +1209,10 @@ export async function driverCompleteBookingService(
   void notifyStage('delivery_confirm', updated)
   void emailDeliveryConfirm(updated, AUTO_COMPLETE_DAYS)
 
-  // Close the delivery record before the crew is released — once the driver is
-  // off the booking, `crewOnBooking` is the only thing that still knows who was
-  // on it, and it reads that same row.
+  // Close the delivery record. The driver and vehicle stay held ('assigned' /
+  // 'in_use'): they are still at the last drop-off, and only the "back at the
+  // parking" confirmation frees them (driverConfirmFleetReturnService).
   await BookingModel.settleDelivery(bookingId, 'delivered')
-  void releaseBookingCrew(bookingId)
 
   return updated
 }

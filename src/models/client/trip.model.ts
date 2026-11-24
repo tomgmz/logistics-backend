@@ -370,7 +370,7 @@ async function createDefaultPlan(bookingId: string): Promise<TripWithStops[]> {
   }], { insertOnly: true })
 }
 
-/** Record the driver's proof of loading for one trip and put it on the road. */
+/** Record the driver's proof of pickup for one trip and put it on the road. */
 async function setTripPickupProof(
   tripId: string,
   proofPhotoUrl: string | null,

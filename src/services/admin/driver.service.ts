@@ -255,7 +255,9 @@ export async function standDownDriver(userId: string, actorId?: string | null) {
   const live = await liveDeliveryFor(record.driver_id)
   if (live) {
     throw new Error(
-      `This driver is on an active delivery for booking ${live.reference} — finish or cancel that booking to release them`,
+      live.awaitingReturn
+        ? `This driver has not brought the vehicle back to the parking for booking ${live.reference} — confirm the return to release them`
+        : `This driver is on an active delivery for booking ${live.reference} — finish or cancel that booking to release them`,
     )
   }
 
@@ -277,20 +279,22 @@ export async function standDownDriver(userId: string, actorId?: string | null) {
 }
 
 /** The unfinished booking a driver is actually out on, if any. */
-async function liveDeliveryFor(driverId: string): Promise<{ reference: string } | null> {
+async function liveDeliveryFor(driverId: string): Promise<{ reference: string; awaitingReturn: boolean } | null> {
   // As the main driver or as a booking's second driver.
   const { data, error } = await supabase
     .from('deliveries')
-    .select('booking_id, bookings ( status, reference_number )')
+    .select('booking_id, bookings ( status, reference_number, fleet_return_at )')
     .or(`driver_id.eq.${driverId},second_driver_id.eq.${driverId}`)
 
   if (error) throw error
 
   for (const row of (data ?? []) as any[]) {
     const booking = row.bookings
-    if (!booking?.status) continue
-    if (booking.status === 'delivered' || booking.status === 'completed' || booking.status === 'failed' || booking.status === 'cancelled') continue
-    return { reference: bookingRef({ ...booking, booking_id: row.booking_id }) }
+    if (!booking?.status || booking.status === 'cancelled') continue
+    const finished = booking.status === 'delivered' || booking.status === 'completed' || booking.status === 'failed'
+    // Finished but the vehicle is not back at the parking: still held.
+    if (finished && booking.fleet_return_at) continue
+    return { reference: bookingRef({ ...booking, booking_id: row.booking_id }), awaitingReturn: finished }
   }
   return null
 }

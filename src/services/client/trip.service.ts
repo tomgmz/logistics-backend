@@ -3,7 +3,7 @@ import { BookingModel } from '../../models/client/booking.model.js'
 import { noticeClientOfLaterDropoffs } from '../notification/stop-order-client-notice.js'
 import { logEvent } from '../../lib/log-event.js'
 import * as TruckModel from '../../models/admin/truck.model.js'
-import { assertBookingVehicleInService, crewNamesOnBooking, crewOnBooking } from '../admin/fleet-availability.service.js'
+import { assertBookingVehicleInService, crewNamesOnBooking, crewOnBooking, releaseCrew } from '../admin/fleet-availability.service.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { bookingRef } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay } from '../../lib/ph-date.js'
@@ -218,11 +218,15 @@ export async function setTripPlanService(
 }
 
 /**
- * Operations sets when the driver should be at the pickup point — or clears it
- * (null), and the driver follows the client's call time again.
+ * Operations sets when the driver should be at the pickup point.
  *
- * Guidance, not a gate: nothing refuses a start before it. Only before the
- * delivery starts — once the truck is out, a call time has nothing left to say.
+ * A required step after assignment (user 2026-11-24): Booking Management shows
+ * it as the step after "vehicle and driver", and it can no longer be cleared
+ * back to empty — "same as the client's time" saves the client's time as the
+ * value. Clearing (null) is refused. It is still guidance for the driver, not a
+ * gate: nothing refuses a start before it or without it, so a driver is never
+ * stuck at the warehouse because the office forgot. Only before the delivery
+ * starts — once the truck is out, a call time has nothing left to say.
  */
 export async function setDriverCallTimeService(
   bookingId: string,
@@ -234,6 +238,9 @@ export async function setDriverCallTimeService(
   if (!booking) throw new Error(`Booking with ID ${bookingId} not found`)
   if (booking.status !== 'assigned') {
     throw new Error(`Cannot set the driver's call time while the booking is '${booking.status}'`)
+  }
+  if (!driverCallTime) {
+    throw badRequest("The driver call time is required. Pick a time, or use the client's call time.")
   }
 
   const scheduleDay = String(booking.schedule_date ?? '').slice(0, 10)
@@ -518,7 +525,7 @@ export async function recordTripLoaded(
     throw new Error(`Cannot load a trip while the booking is '${booking.status}'`)
   }
   if (!proofPhotoUrl && !actor.office) {
-    throw new Error('A proof-of-loading photo is required to confirm this pickup')
+    throw new Error('A proof of pickup photo is required to confirm this pickup')
   }
   // The Fleet Manager pulled the vehicle — no new load goes on it, including a
   // later run of a booking already under way.
@@ -1064,17 +1071,29 @@ export async function driverConfirmFleetReturnService(
       (actor.office ? ` — reason: ${actor.office.reason}` : ''),
   })
 
-  // The return expires the vehicle's BLOWBAGETS pass. Put it on hold so the fleet
-  // shows it as not ready, and tell the people who have to re-check it. A vendor
-  // vehicle is not ours to inspect, so it has neither.
+  // Back at the parking is the moment the driver(s) and the vehicle are free
+  // again — not the last drop-off. The return also expires the vehicle's
+  // BLOWBAGETS pass: put it on hold so the fleet shows it as not ready, and tell
+  // the people who have to re-check it. A vendor vehicle is not ours to inspect,
+  // so it has neither.
   const updated = await BookingModel.findById(bookingId)
-  void holdReturnedVehicle(updated ?? booking)
+  await releaseReturnedCrew(updated ?? booking)
   return updated ?? booking
 }
 
-async function holdReturnedVehicle(booking: BookingWithRelations): Promise<void> {
+/**
+ * Free the driver(s) and vehicle of a booking whose vehicle is back, and put
+ * the vehicle on its post-trip re-check. Awaited (the next screen the office
+ * opens must already see them free); the notice goes out in the background.
+ * Best effort: a failure here leaves them held, which the assignment gate and
+ * reconcileDriverStatus already tolerate, never double-booked.
+ */
+async function releaseReturnedCrew(booking: BookingWithRelations): Promise<void> {
   try {
-    const { truck_id } = await crewOnBooking(booking.booking_id)
+    const { driver_id, truck_id, second_driver_id } = await crewOnBooking(booking.booking_id)
+    // Drivers → 'available'; the vehicle → 'available' unless it is out of
+    // service (a breakdown hold outlives the return).
+    await releaseCrew(driver_id, truck_id, second_driver_id)
     if (!truck_id) return
     const truck = await TruckModel.findById(truck_id)
     if (!truck) return
@@ -1085,6 +1104,17 @@ async function holdReturnedVehicle(booking: BookingWithRelations): Promise<void>
       await TruckModel.update(truck_id, { status: 'recheck_due' })
     }
 
+    void notifyReturnedVehicle(booking, truck)
+  } catch (err) {
+    console.error('[trip] failed to release the returned crew', booking.booking_id, err)
+  }
+}
+
+async function notifyReturnedVehicle(
+  booking: BookingWithRelations,
+  truck:   NonNullable<Awaited<ReturnType<typeof TruckModel.findById>>>,
+): Promise<void> {
+  try {
     const model = (truck as { truck_models?: { name?: string | null } | null }).truck_models?.name
     const { driverName } = await crewNamesOnBooking(booking.booking_id)
     await notifyStage('vehicle_returned', booking, {
@@ -1093,7 +1123,7 @@ async function holdReturnedVehicle(booking: BookingWithRelations): Promise<void>
       driverName,
     })
   } catch (err) {
-    console.error('[trip] failed to hold returned vehicle', booking.booking_id, err)
+    console.error('[trip] failed to send the vehicle-returned notice', booking.booking_id, err)
   }
 }
 

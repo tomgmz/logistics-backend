@@ -159,8 +159,9 @@ export const staffSetMilestoneSchema = z.object({
 }).strict()
 
 /**
- * The driver's call time, set by operations in the Trip Planner. `null` clears
- * it, and the driver follows the client's call time again.
+ * The driver's call time, set by operations in Booking Management. Still
+ * nullable here so an older web build gets the service's plain "required"
+ * message instead of a schema error; the service refuses null.
  */
 export const driverCallTimeSchema = z.object({
   driver_call_time: z.string()

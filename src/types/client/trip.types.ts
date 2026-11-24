@@ -17,7 +17,7 @@ export interface BookingTrip {
   trip_number: number
   status:      TripStatus
 
-  // Proof of loading for THIS run. Every trip carries its own: a single photo
+  // Proof of pickup for THIS run. Every trip carries its own: a single photo
   // cannot evidence the second time the truck was filled.
   pickup_proof_photo_url?:       string | null
   pickup_proof_at?:              string | null

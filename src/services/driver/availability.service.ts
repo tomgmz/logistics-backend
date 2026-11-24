@@ -45,13 +45,19 @@ export const VENDOR_NO_SCHEDULE = 'Vendor drivers do not set a work schedule'
 
 /** Whether the driver — main or second — is on a booking that is under way. */
 async function isInTransit(driverId: string): Promise<boolean> {
-  const { count, error } = await supabase
+  // On the road also covers "done delivering, driving back to the parking":
+  // the driver stays held until the return is confirmed, and the app's pill
+  // should read "On delivery" then, not "Assigned".
+  const { data, error } = await supabase
     .from('deliveries')
-    .select('delivery_id, bookings!inner ( status )', { count: 'exact', head: true })
+    .select('delivery_id, bookings!inner ( status, fleet_return_at )')
     .or(`driver_id.eq.${driverId},second_driver_id.eq.${driverId}`)
-    .eq('bookings.status', 'in_transit')
+    .in('bookings.status', ['in_transit', 'delivered', 'completed', 'failed'])
   if (error) throw error
-  return (count ?? 0) > 0
+  return (data ?? []).some((row: any) => {
+    const b = Array.isArray(row.bookings) ? row.bookings[0] : row.bookings
+    return b?.status === 'in_transit' || !b?.fleet_return_at
+  })
 }
 
 async function findDriverByUser(userId: string): Promise<{ driver_id: string; status: string; is_external: boolean }> {

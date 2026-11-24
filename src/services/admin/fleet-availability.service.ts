@@ -26,9 +26,10 @@ import { registrationStatus } from '../../lib/registration-expiry.js'
  *                truck returns to the yard, so every booking is preceded by a
  *                fresh check.
  *
- * Assigning reserves both (driver -> 'assigned', truck -> 'in_use'); finishing or
- * cancelling the booking releases them (driver -> 'unavailable' so they must opt
- * back in, truck -> 'available').
+ * Assigning reserves both (driver -> 'assigned', truck -> 'in_use'). They are
+ * released (driver -> 'available', truck -> 'available', then 'recheck_due') only
+ * when the vehicle is confirmed back at the 8338 parking, or when the booking is
+ * cancelled. Finishing the last drop-off does NOT release them (2026-11-24).
  */
 
 export interface TruckInspectionRow {
@@ -164,10 +165,10 @@ export async function assertTruckPassedInspection(truckId: string): Promise<void
  *
  * The mirror of `assertDriverAssignable`, and it exists for the same reason: a
  * booking is completed when the cargo is off, but the truck is still at the last
- * drop-off until someone confirms it is back in the 8338 lot. `trucks.status` is
- * no help — `releaseCrew` set it to 'available' at completion, and no assignment
- * path reads it anyway. Without this a vehicle that is physically out gets
- * offered to the next booking.
+ * drop-off until someone confirms it is back in the 8338 lot. Since 2026-11-24
+ * `trucks.status` stays 'in_use' until that confirmation (only the fleet return
+ * calls `releaseCrew`), but no assignment path reads that column, and vehicles
+ * released before then may still say 'available'. So the booking is asked.
  */
 export async function assertTruckAssignable(
   truckId: string,
@@ -309,17 +310,12 @@ export async function assertDriverAssignable(
     throw new Error('This is a vendor-supplied driver and cannot be assigned as a company driver')
   }
 
-  // A driver still flagged 'assigned' from a delivery that no longer exists is
-  // not busy, just stuck — clear that before it reads as a refusal and quietly
-  // keeps them out of the pool for good.
-  const status  = await reconcileDriverStatus(driverId, data.status)
-  const blocked = BLOCKING_DRIVER_STATUSES[status]
-  if (blocked) throw new Error(`This driver ${blocked} and cannot be assigned`)
-
-  // Checked before the calendar: a driver who finished a delivery but has not
-  // brought the vehicle back is holding it, and their status says 'available'
-  // because completion released the crew. Ticking today changes nothing while
-  // the truck is still out — one driver, one booking, until it is home.
+  // Checked first so the refusal names the real reason: a driver who finished a
+  // delivery but has not brought the vehicle back is still 'assigned' (only the
+  // fleet-return confirmation frees them), and "already out on another
+  // delivery" would hide that the return is what is missing. Ticking today
+  // changes nothing while the truck is still out — one driver, one booking,
+  // until it is home.
   const unreturned = await awaitingFleetReturn(driverId)
   if (unreturned) {
     throw new Error(
@@ -327,6 +323,13 @@ export async function assertDriverAssignable(
       `${unreturned.reference_number ?? unreturned.booking_id} — they cannot take another booking until it is back`,
     )
   }
+
+  // A driver still flagged 'assigned' from a delivery that no longer exists is
+  // not busy, just stuck — clear that before it reads as a refusal and quietly
+  // keeps them out of the pool for good.
+  const status  = await reconcileDriverStatus(driverId, data.status)
+  const blocked = BLOCKING_DRIVER_STATUSES[status]
+  if (blocked) throw new Error(`This driver ${blocked} and cannot be assigned`)
 
   if (!(await driverCalendarAllows(driverId, scheduleDate))) {
     throw new Error(
