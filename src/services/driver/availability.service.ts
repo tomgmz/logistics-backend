@@ -110,10 +110,136 @@ export interface DriverAvailabilityMonth {
   // Today in Philippine time, so the app locks past days without trusting the
   // device clock.
   today: string
+  // The days of this month the driver may change right now (see
+  // `editableDays`). Every other day is shown but cannot be ticked or unticked.
+  editable: string[]
+  // True when this week (Sunday to Saturday) already has a ticked day, so the
+  // whole week is fixed.
+  week_locked: boolean
+  // Only on a read of the current month: next month, when its first week is open
+  // (from the second-to-last week of this month), so the app can show it on the
+  // same calendar without a second round trip. null otherwise.
+  next: DriverAvailabilityMonth | null
 }
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
 const DAY_PATTERN   = /^\d{4}-\d{2}-\d{2}$/
+
+/* ── What the driver may change, and when ───────────────────────────────────
+ *
+ * Weeks run Sunday to Saturday, the rows of the calendar the driver sees.
+ *
+ *   1. This month, today onward, can be set.
+ *   2. Next month opens one week early: from the second-to-last week (row) of
+ *      this month, the driver can also set next month's first week (the days of
+ *      next month in the row that holds its 1st). The rest of next month opens
+ *      on the 1st. Operations plans a week ahead, so the driver's answer for the
+ *      start of next month has to be in before that week arrives.
+ *   3. Once this week has a ticked day, this week is fixed: nothing in it can be
+ *      added or removed. Operations assigns against those days, so a driver
+ *      cannot pull out of a day mid-week from the app (they call the Operations
+ *      Manager instead). A driver with nothing ticked this week can still add a
+ *      day; that first save then fixes the week.
+ *
+ * Industry practice: shift schedulers (When I Work, Deputy, Homebase) lock
+ * availability changes inside a notice window and only open the schedule a set
+ * time ahead; this is the same idea with a one-week window.
+ */
+
+function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+/** The Sunday that starts `day`'s calendar row. */
+function weekStart(day: string): string {
+  return addDays(day, -new Date(`${day}T00:00:00Z`).getUTCDay())
+}
+
+export interface AvailabilityWindow {
+  today:          string
+  currentMonth:   string
+  nextMonth:      string
+  // This week, Sunday to Saturday (may run into next month).
+  weekFrom:       string
+  weekTo:         string
+  // The day next month's first week opens: the Sunday of this month's
+  // second-to-last row.
+  nextOpensOn:    string
+  nextMonthOpen:  boolean
+  // Last day of next month's first week (the Saturday of the row with its 1st).
+  nextFirstWeekTo: string
+}
+
+export function availabilityWindow(today: string = phDay()): AvailabilityWindow {
+  const currentMonth = today.slice(0, 7)
+  const { nextFirst } = monthRange(currentMonth)
+  const lastDay      = addDays(nextFirst, -1)
+  const nextOpensOn  = addDays(weekStart(lastDay), -7)
+  const weekFrom     = weekStart(today)
+  return {
+    today,
+    currentMonth,
+    nextMonth:       nextFirst.slice(0, 7),
+    weekFrom,
+    weekTo:          addDays(weekFrom, 6),
+    nextOpensOn,
+    nextMonthOpen:   today >= nextOpensOn,
+    nextFirstWeekTo: addDays(weekStart(nextFirst), 6),
+  }
+}
+
+/** The days of `month` the driver may change now, ascending. */
+export function editableDays(month: string, w: AvailabilityWindow, weekLocked: boolean): string[] {
+  const { first, nextFirst } = monthRange(month)
+  let to: string
+  if (month === w.currentMonth)                  to = addDays(nextFirst, -1)
+  else if (month === w.nextMonth && w.nextMonthOpen) to = w.nextFirstWeekTo
+  else return []
+
+  const out: string[] = []
+  for (let day = first > w.today ? first : w.today; day <= to; day = addDays(day, 1)) {
+    if (weekLocked && day >= w.weekFrom && day <= w.weekTo) continue
+    out.push(day)
+  }
+  return out
+}
+
+/** Whether this week (Sunday to Saturday) already has a ticked day. */
+async function weekIsLocked(driverId: string, w: AvailabilityWindow): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('driver_availability_days')
+    .select('available_on', { count: 'exact', head: true })
+    .eq('driver_id', driverId)
+    .gte('available_on', w.weekFrom)
+    .lte('available_on', w.weekTo)
+  if (error) throw error
+  return (count ?? 0) > 0
+}
+
+function monthName(month: string): string {
+  const [y, m] = month.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })
+}
+
+function longDay(day: string): string {
+  return new Date(`${day}T00:00:00Z`).toLocaleString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })
+}
+
+/** Why `day` cannot be changed now, in the driver's words. */
+function lockedReason(day: string, month: string, w: AvailabilityWindow, weekLocked: boolean): string {
+  if (weekLocked && day >= w.weekFrom && day <= w.weekTo) {
+    return 'You already have days set this week, so this week can no longer be changed. '
+      + 'Call the Operations Manager if you cannot work a day you set.'
+  }
+  if (month === w.nextMonth) {
+    return w.nextMonthOpen
+      ? `Only the first week of ${monthName(month)} can be set now. The rest opens on ${longDay(`${month}-01`)}.`
+      : `You can set the first week of ${monthName(month)} from ${longDay(w.nextOpensOn)}.`
+  }
+  return 'You can only set days for this month and, near the end of the month, the first week of next month.'
+}
 
 /** Half-open [first, nextFirst) bounds of a 'YYYY-MM' month. */
 function monthRange(month: string): { first: string; nextFirst: string } {
@@ -130,39 +256,65 @@ function monthRange(month: string): { first: string; nextFirst: string } {
   }
 }
 
+async function savedDays(driverId: string, month: string): Promise<string[]> {
+  const { first, nextFirst } = monthRange(month)
+  const { data, error } = await supabase
+    .from('driver_availability_days')
+    .select('available_on')
+    .eq('driver_id', driverId)
+    .gte('available_on', first)
+    .lt('available_on', nextFirst)
+    .order('available_on', { ascending: true })
+
+  if (error) throw error
+  return (data ?? []).map((row: any) => String(row.available_on).slice(0, 10))
+}
+
+async function readMonth(
+  driverId: string,
+  month:    string,
+  w:        AvailabilityWindow,
+  locked:   boolean,
+): Promise<DriverAvailabilityMonth> {
+  return {
+    driver_id:   driverId,
+    month,
+    days:        await savedDays(driverId, month),
+    today:       w.today,
+    editable:    editableDays(month, w, locked),
+    week_locked: locked,
+    next:        null,
+  }
+}
+
 export async function getAvailabilityDays(
   userId: string,
   month:  string,
 ): Promise<DriverAvailabilityMonth> {
   const driver = await findDriverByUser(userId)
   if (driver.is_external) throw new Error(VENDOR_NO_SCHEDULE)
-  const { first, nextFirst } = monthRange(month)
+  monthRange(month)
 
-  const { data, error } = await supabase
-    .from('driver_availability_days')
-    .select('available_on')
-    .eq('driver_id', driver.driver_id)
-    .gte('available_on', first)
-    .lt('available_on', nextFirst)
-    .order('available_on', { ascending: true })
-
-  if (error) throw error
-
-  return {
-    driver_id: driver.driver_id,
-    month,
-    days:      (data ?? []).map((row: any) => String(row.available_on).slice(0, 10)),
-    today:     phDay(),
-  }
+  const w      = availabilityWindow()
+  const locked = await weekIsLocked(driver.driver_id, w)
+  const [current, next] = await Promise.all([
+    readMonth(driver.driver_id, month, w, locked),
+    month === w.currentMonth && w.nextMonthOpen
+      ? readMonth(driver.driver_id, w.nextMonth, w, locked)
+      : Promise.resolve(null),
+  ])
+  return { ...current, next }
 }
 
 /**
  * Replace the driver's plan for one month with `days`.
  *
  * The whole month is sent, not a diff, because that is what the calendar screen
- * holds — but only today onward is rewritten. Days that have already passed are
- * left exactly as they were: they record what the driver committed to at the
- * time, and there is nothing useful about letting them be edited afterwards.
+ * holds — but only the days the driver may change now (`editableDays`) are
+ * rewritten. Days already past are left as they were and silently ignored (a
+ * stale screen sends them back unchanged). A change to any other locked day — a
+ * fixed week, next month before it opens — is refused with the reason, so an
+ * older app that doesn't grey those days out can't change them either.
  */
 export async function setAvailabilityDays(
   userId: string,
@@ -172,24 +324,34 @@ export async function setAvailabilityDays(
   const driver = await findDriverByUser(userId)
   if (driver.is_external) throw new Error(VENDOR_NO_SCHEDULE)
   const { first, nextFirst } = monthRange(month)
-  const today = phDay()
 
-  const wanted = [...new Set(days.map((day) => String(day).slice(0, 10)))].sort()
+  const wanted = [...new Set((Array.isArray(days) ? days : []).map((day) => String(day).slice(0, 10)))].sort()
   for (const day of wanted) {
     if (!DAY_PATTERN.test(day)) throw new Error(`Invalid day '${day}' — expected YYYY-MM-DD`)
     if (day < first || day >= nextFirst) throw new Error(`${day} is not a day in ${month}`)
   }
 
-  const editableFrom = first > today ? first : today
-  const toInsert     = wanted.filter((day) => day >= editableFrom)
+  const w        = availabilityWindow()
+  const locked   = await weekIsLocked(driver.driver_id, w)
+  const editable = new Set(editableDays(month, w, locked))
+  const saved    = new Set(await savedDays(driver.driver_id, month))
+  const wantedSet = new Set(wanted)
 
-  const { error: clearError } = await supabase
-    .from('driver_availability_days')
-    .delete()
-    .eq('driver_id', driver.driver_id)
-    .gte('available_on', editableFrom)
-    .lt('available_on', nextFirst)
-  if (clearError) throw clearError
+  for (const day of new Set([...wanted, ...saved])) {
+    if (editable.has(day) || day < w.today) continue
+    if (wantedSet.has(day) !== saved.has(day)) throw new Error(lockedReason(day, month, w, locked))
+  }
+
+  const toInsert = wanted.filter((day) => editable.has(day))
+
+  if (editable.size > 0) {
+    const { error: clearError } = await supabase
+      .from('driver_availability_days')
+      .delete()
+      .eq('driver_id', driver.driver_id)
+      .in('available_on', [...editable])
+    if (clearError) throw clearError
+  }
 
   if (toInsert.length > 0) {
     const { error: insertError } = await supabase
