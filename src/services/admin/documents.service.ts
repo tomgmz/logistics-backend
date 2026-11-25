@@ -59,8 +59,14 @@ export function searchBookingsForUpload(search: string) {
   return DocumentsModel.searchBookings(search)
 }
 
+/**
+ * The upload form's Client dropdown (Figma 2026-11-25) reads the whole list
+ * once with an empty search and filters it in the browser; a typed search
+ * still answers with the first 10 matches.
+ */
+export const CLIENT_PICKER_CAP = 500
 export function searchClientsForUpload(search: string) {
-  return DocumentsModel.searchClients(search)
+  return DocumentsModel.searchClients(search, search.trim() ? 10 : CLIENT_PICKER_CAP)
 }
 
 export function listOtherLabels(target: 'booking' | 'vehicle') {

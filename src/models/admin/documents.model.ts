@@ -395,14 +395,23 @@ export async function findFolders(q: DocumentFolderQuery): Promise<DocumentFolde
     // Fleet: "Search plate".
     const plate = wordsMatch(params, q.search, [`COALESCE(t.plate_number, '')`])
     if (plate) where.push(plate)
+    // The Fleet table (Figma 2026-11-25) also shows each vehicle's photo,
+    // regular driver, type, model and status. Joined by name here, never as
+    // embeds, so no FK hint is involved.
     const { rows } = await pool.query<DocumentFolder>(
       `SELECT t.truck_id::text AS id, t.plate_number AS name,
               NULL::text AS client_id, NULL::text AS company_name,
               NULL::text AS booking_status, NULL::text AS schedule_date,
-              COUNT(DISTINCT l.booking_id)::int AS booking_count, ${FOLDER_COUNTS}
+              COUNT(DISTINCT l.booking_id)::int AS booking_count, ${FOLDER_COUNTS},
+              t.status::text AS vehicle_status,
+              fm.vehicle_type, fm.name AS model_name, fm.image_url AS model_image_url,
+              NULLIF(TRIM(CONCAT_WS(' ', fdu.first_name, fdu.last_name)), '') AS driver_name
          ${FROM_SQL}
+         LEFT JOIN truck_models fm  ON fm.model_id   = t.model_id
+         LEFT JOIN drivers      fd  ON fd.driver_id  = t.assigned_driver_id
+         LEFT JOIN users        fdu ON fdu.user_id   = fd.user_id
         WHERE ${where.join(' AND ')}
-        GROUP BY t.truck_id, t.plate_number
+        GROUP BY t.truck_id, t.plate_number, t.status, fm.model_id, fm.vehicle_type, fm.name, fm.image_url, fdu.user_id, fdu.first_name, fdu.last_name
         ORDER BY t.plate_number ASC NULLS LAST
         LIMIT ${FOLDER_CAP}`,
       params,
@@ -455,10 +464,17 @@ export async function findFolders(q: DocumentFolderQuery): Promise<DocumentFolde
             c.client_id::text AS client_id, c.company_name,
             b.status::text AS booking_status,
             to_char(b.schedule_date, 'YYYY-MM-DD') AS schedule_date,
-            1 AS booking_count, ${FOLDER_COUNTS}
+            1 AS booking_count, ${FOLDER_COUNTS},
+            -- What the status sub-tags read (Delayed, Paused, Late Start,
+            -- Problem Reported, Resubmitted…), so the folder row shows the
+            -- same status line as every other booking table.
+            b.delayed_since, b.delay_minutes, b.delay_max_minutes,
+            b.paused_at, b.pause_reason, b.late_start_for, b.breakdown_reported_at,
+            b.client_issue_reported_at, b.client_issue_resolved_at, b.client_issue_note,
+            b.resubmission_count
        ${FROM_SQL}
       WHERE ${where.join(' AND ')}
-      GROUP BY l.booking_id, b.reference_number, b.status, b.schedule_date, b.created_at, c.client_id, c.company_name
+      GROUP BY l.booking_id, b.booking_id, c.client_id, c.company_name
       ORDER BY b.created_at DESC NULLS LAST, l.booking_id DESC
       LIMIT ${FOLDER_CAP}`,
     params,

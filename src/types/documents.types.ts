@@ -180,6 +180,24 @@ export interface DocumentFolder {
   file_count:     number
   pending_review: number
   last_upload:    string | null
+  /** vehicles level only: what the Fleet table shows beside the plate. */
+  vehicle_status?:  string | null
+  vehicle_type?:    string | null
+  model_name?:      string | null
+  model_image_url?: string | null
+  driver_name?:     string | null
+  /** bookings level only: the fields the status sub-tags read. */
+  delayed_since?:            string | null
+  delay_minutes?:            number | null
+  delay_max_minutes?:        number | null
+  paused_at?:                string | null
+  pause_reason?:             string | null
+  late_start_for?:           string | null
+  breakdown_reported_at?:    string | null
+  client_issue_reported_at?: string | null
+  client_issue_resolved_at?: string | null
+  client_issue_note?:        string | null
+  resubmission_count?:       number | null
 }
 
 export interface DocumentCounts {
