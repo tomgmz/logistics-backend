@@ -17,6 +17,22 @@ import { daysBetween } from './registration-expiry.js'
  */
 export const CONTRACT_GRACE_DAYS = 7
 
+/**
+ * A client contract runs 1 year at most (user, 2026-11-26): the date entered
+ * at creation, or a new date on renewal, is no later than the same calendar
+ * day next year, Philippine time (Feb 29 → Feb 28).
+ * Mirrored in logistics-frontend/src/lib/contract-status.ts.
+ */
+export const CONTRACT_MAX_YEARS = 1
+export const CONTRACT_TOO_LONG = 'A contract can run for 1 year at most. Pick a date no later than one year from today.'
+
+export function contractMaxDay(today: string = phDay()): string {
+  const [y, m, d] = today.split('-').map(Number)
+  const year = y + CONTRACT_MAX_YEARS
+  const last = new Date(Date.UTC(year, m, 0)).getUTCDate()
+  return `${year}-${String(m).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`
+}
+
 export type ContractState = 'ok' | 'grace' | 'ended'
 
 export interface ContractStatus {

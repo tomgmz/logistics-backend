@@ -37,7 +37,7 @@ export async function updateClient(req: Request, res: Response) {
     const data = await ClientService.updateClient(param(req.params.id), req.body, userId)
     res.status(200).json({ status: 'success', data })
   } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message })
+    res.status(err.status ?? 500).json({ status: 'error', message: err.message })
   }
 }
 

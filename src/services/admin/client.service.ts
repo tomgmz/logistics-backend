@@ -8,6 +8,8 @@ import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import { assertPhoneAvailable } from '../../lib/phone-unique.js'
 import { errorMessage } from '../../lib/error-message.js'
 import { requestContractExpiryCheck } from '../notification/contract-expiry.scheduler.js'
+import { CONTRACT_TOO_LONG, contractMaxDay } from '../../lib/contract-status.js'
+import { asDay } from '../../lib/ph-date.js'
 
 export async function getAllClient() {
   return ClientModel.findAll()
@@ -83,6 +85,17 @@ export async function updateClient(
   actorId?: string | null,
 ) {
   await assertPhoneAvailable(input.phone, userId)
+
+  // A new contract date runs 1 year at most. Only a changed date is checked, so
+  // a client saved before the rule with a longer date can still be edited.
+  if (input.contract_valid_until && input.contract_valid_until > contractMaxDay()) {
+    const { data, error } = await supabase
+      .from('clients').select('contract_valid_until').eq('user_id', userId).maybeSingle()
+    if (error) throw error
+    if (asDay(data?.contract_valid_until ?? null) !== input.contract_valid_until) {
+      throw Object.assign(new Error(CONTRACT_TOO_LONG), { status: 400 })
+    }
+  }
 
   if (input.email) {
     const { error: authError } = await supabase.auth.admin.updateUserById(userId, {

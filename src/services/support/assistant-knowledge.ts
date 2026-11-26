@@ -375,7 +375,8 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
     'Your contract end date is shown on your Profile (Contract validity) and in a banner in the portal, and you ' +
     'get reminders in the month before it ends. For 7 days after it ends you can still sign in to view your ' +
     'bookings, confirm deliveries and report problems, but not make new bookings. After those 7 days sign-in ' +
-    'closes until the contract is renewed. Bookings made before the end still go ahead.', 'client'),
+    'closes until the contract is renewed. Bookings made before the end still go ahead. A contract with 8338 ' +
+    'runs for up to 1 year at a time, so each renewal sets a new end date no more than one year ahead.', 'client'),
   P('ops-tickets', 'How do support tickets work?',
     'A ticket is for something that needs a formal record, like a complaint, a claim or damaged goods; for a ' +
     'quick question, ask in the help assistant and tap "Talk to our team" instead. To submit a ticket, open the ' +
