@@ -16,12 +16,11 @@ import { pool } from '../../lib/database.js'
 const MANILA = `'Asia/Manila'`
 const naiveToTz = (col: string) => `(${col} AT TIME ZONE 'UTC')`
 
-export type Period = 'monthly' | 'quarterly' | 'annually'
-export const PERIODS: readonly Period[] = ['monthly', 'quarterly', 'annually']
+export type Period = 'monthly' | 'annually'
+export const PERIODS: readonly Period[] = ['monthly', 'annually']
 
 const PERIOD_SQL: Record<Period, { unit: string; step: string; points: number }> = {
   monthly:   { unit: 'month',   step: '1 month',  points: 12 },
-  quarterly: { unit: 'quarter', step: '3 months', points: 8 },
   annually:  { unit: 'year',    step: '1 year',   points: 5 },
 }
 
@@ -156,7 +155,7 @@ export async function getOverview(period: Period) {
       SELECT COUNT(*) FILTER (WHERE status <> 'archived')::int AS total,
              COUNT(*) FILTER (WHERE status = 'in_use')::int    AS on_route
         FROM trucks`),
-    pool.query<{ start: string; booked: number; started: number; delivered: number }>(`
+    pool.query<{ start: string; booked: number; delivered: number }>(`
       WITH s AS (
         SELECT generate_series(
                  date_trunc($1, ${nowManila}) - ($2::int - 1) * $3::interval,
@@ -167,23 +166,15 @@ export async function getOverview(period: Period) {
         SELECT date_trunc($1, ${naiveToTz('created_at')} AT TIME ZONE ${MANILA}) AS k, COUNT(*)::int AS n
           FROM bookings GROUP BY 1
       ),
-      started AS (
-        SELECT date_trunc($1, t) AS k, COUNT(*)::int AS n
-          FROM (SELECT MIN(${naiveToTz('pickup_time')}) AT TIME ZONE ${MANILA} AS t
-                  FROM deliveries WHERE pickup_time IS NOT NULL GROUP BY booking_id) x
-         GROUP BY 1
-      ),
       delivered AS (
         SELECT date_trunc($1, delivered_at AT TIME ZONE ${MANILA}) AS k, COUNT(*)::int AS n
           FROM bookings WHERE delivered_at IS NOT NULL GROUP BY 1
       )
       SELECT to_char(s.k, 'YYYY-MM-DD') AS start,
              COALESCE(booked.n, 0)    AS booked,
-             COALESCE(started.n, 0)   AS started,
              COALESCE(delivered.n, 0) AS delivered
         FROM s
         LEFT JOIN booked    ON booked.k    = s.k
-        LEFT JOIN started   ON started.k   = s.k
         LEFT JOIN delivered ON delivered.k = s.k
        ORDER BY s.k`, [p.unit, p.points, p.step]),
     // The link's "last viewed delivery": the delivery on the road that started
