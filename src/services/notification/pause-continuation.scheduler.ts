@@ -1,7 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { BookingModel } from '../../models/client/booking.model.js'
 import { notifyStage } from './notification.service.js'
-import { continuationAt } from '../maps/planned-eta.service.js'
+import { continuationAt } from '../maps/stop-allowances.js'
 import { logSystem, logSystemError } from '../../lib/log-system.js'
 import { formatDuration } from '../../lib/duration.js'
 import { PAUSE_REASON_LABEL, resumeRequestOpen, type PauseReason } from '../../types/client/pause.types.js'

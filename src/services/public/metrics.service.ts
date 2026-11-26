@@ -14,7 +14,7 @@ import { supabase } from '../../lib/supabase.js'
  */
 
 export interface PublicMetrics {
-  /** % of delivered drop-offs that arrived inside their planned window. */
+  /** % of pick-ups the truck reached by the client's pick-up time. */
   onTimeRate:        number | null
   /** % of finished drop-offs that were delivered rather than failed. */
   deliverySuccessRate: number | null
@@ -27,11 +27,9 @@ export interface PublicMetrics {
   generatedAt:       string
 }
 
-// Mirrors the frontend's arrival window (src/lib/arrival-window.ts): it opens at
-// the planned arrival rounded down to 5 minutes and runs 30 minutes past it.
-// Arriving any time up to the end of the window the client was shown is on time.
-const WINDOW_MS = 30 * 60_000
-const ROUND_MS  = 5 * 60_000
+// On time = the truck reached the pick-up point by the client's pick-up time
+// (bookings.pickup_arrived_at, stamped by delay.scheduler since 2026-11-26).
+// The planned arrival per drop-off it used to be measured against is gone.
 
 const CACHE_MS = 10 * 60_000
 let cached: { at: number; value: PublicMetrics } | null = null
@@ -43,10 +41,10 @@ function percent(part: number, whole: number): number | null {
 }
 
 async function compute(): Promise<PublicMetrics> {
-  const [stopsRes, bookingsRes, servedRes] = await Promise.all([
+  const [stopsRes, bookingsRes, servedRes, pickupRes] = await Promise.all([
     supabase
       .from('booking_trip_stops')
-      .select('status, delivered_at, planned_arrival_at')
+      .select('status')
       .in('status', ['delivered', 'failed']),
     supabase
       .from('bookings')
@@ -57,28 +55,31 @@ async function compute(): Promise<PublicMetrics> {
       .from('bookings')
       .select('client_id')
       .in('status', ['delivered', 'completed']),
+    supabase
+      .from('bookings')
+      .select('schedule_date, call_time, pickup_arrived_at')
+      .not('pickup_arrived_at', 'is', null),
   ])
 
   if (stopsRes.error)    throw stopsRes.error
   if (bookingsRes.error) throw bookingsRes.error
   if (servedRes.error)   throw servedRes.error
+  if (pickupRes.error)   throw pickupRes.error
 
   const stops     = stopsRes.data ?? []
   const delivered = stops.filter((s) => s.status === 'delivered')
   const failed    = stops.length - delivered.length
 
-  // Only stops that had a plan can be judged on time; one delivered without a
-  // planned arrival is left out rather than counted either way.
   let timed = 0
   let onTime = 0
-  for (const s of delivered) {
-    if (!s.delivered_at || !s.planned_arrival_at) continue
-    const planned = Date.parse(s.planned_arrival_at)
-    const actual  = Date.parse(s.delivered_at)
-    if (!Number.isFinite(planned) || !Number.isFinite(actual)) continue
+  for (const b of pickupRes.data ?? []) {
+    const day = String(b.schedule_date ?? '').slice(0, 10)
+    const hm  = String(b.call_time ?? '').slice(0, 5)
+    const due = Date.parse(`${day}T${hm}:00+08:00`)
+    const at  = Date.parse(String(b.pickup_arrived_at))
+    if (!Number.isFinite(due) || !Number.isFinite(at)) continue
     timed++
-    const windowEnd = Math.floor(planned / ROUND_MS) * ROUND_MS + WINDOW_MS
-    if (actual <= windowEnd) onTime++
+    if (at <= due) onTime++
   }
 
   const clients = new Set((servedRes.data ?? []).map((b) => b.client_id).filter(Boolean))

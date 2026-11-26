@@ -27,8 +27,8 @@ export interface BookingTrip {
   pickup_proof_distance_m?:      number | null
   pickup_proof_override_reason?: string | null
 
-  // The planned estimate (planned-eta.service.ts): Google's predicted drive
-  // times plus flat unloading/reloading allowances, chained run to run.
+  // Reserved: the planned estimate was removed 2026-11-26 (live ETA only);
+  // the columns stay and are no longer written.
   planned_departure_at?: string | null
   /** Arrival at this run's last stop. */
   planned_arrival_at?:   string | null

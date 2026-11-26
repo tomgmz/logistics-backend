@@ -8,9 +8,11 @@ import { logSystem, logSystemError } from '../../lib/log-system.js'
  * in the mobile app (row + realtime + push).
  *
  * The call time is the one operations set in the Trip Planner
- * (`bookings.driver_call_time`), or the client's `call_time` when operations set
- * none. It is a time to be at the pickup point, not a gate: the driver may start
- * earlier, and a booking already started (in transit) is not reminded at all.
+ * (`bookings.driver_call_time`): when the driver should start the delivery so
+ * the truck is at the pickup point by the client's pick-up time. It is never
+ * the client's time (user 2026-11-26): with none set there is no reminder (the
+ * booking's progress shows the step as missing). Not a gate: the driver may
+ * start earlier, and a booking already started is not reminded at all.
  *
  * Once per call instant: `driver_call_reminder_for` holds the instant the
  * reminder went out for, written only after the fan-out resolves. Moving the
@@ -53,6 +55,12 @@ export function formatClock(at: Date): string {
   }).format(at)
 }
 
+/** The client's pick-up time ("8:00 AM"), or undefined. */
+export function pickupLabel(scheduleDate: string, callTime: string | null): string | undefined {
+  const at = callAt(scheduleDate, callTime)
+  return at ? formatClock(at) : undefined
+}
+
 /** Assigned bookings around today — a narrow window keeps the tick cheap. */
 async function findCandidates(now: Date): Promise<CandidateRow[]> {
   const dateOnly = (d: Date) => d.toISOString().slice(0, 10)
@@ -74,11 +82,9 @@ export async function runDriverCallTick(now = new Date()): Promise<number> {
   let sent = 0
 
   for (const row of rows) {
-    // The driver's call has its own day (booking day or the day before);
-    // the client's call time is always on the booking day.
-    const at = row.driver_call_time
-      ? callAt(row.driver_call_date ?? row.schedule_date, row.driver_call_time)
-      : callAt(row.schedule_date, row.call_time)
+    // The driver's call has its own day (booking day or the day before).
+    if (!row.driver_call_time) continue
+    const at = callAt(row.driver_call_date ?? row.schedule_date, row.driver_call_time)
     if (!at) continue
 
     const left = at.getTime() - now.getTime()
@@ -92,6 +98,7 @@ export async function runDriverCallTick(now = new Date()): Promise<number> {
       await notifyStage('driver_call_reminder', booking, {
         callTimeLabel: formatClock(at),
         minutesLeft:   Math.max(1, Math.round(left / MINUTE_MS)),
+        pickupTimeLabel: pickupLabel(row.schedule_date, row.call_time),
       })
       await BookingModel.markDriverCallReminded(row.booking_id, at)
       sent++

@@ -7,7 +7,6 @@ import { logEvent } from '../../lib/log-event.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { emailVendorDriversAssigned } from '../../lib/vendor-access.js'
 import { bookingRefById } from '../../lib/booking-ref.js'
-import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { getRouteDistance, type RouteDistance } from '../maps/route-distance.service.js'
 import { busyDriversFor, driverBusyMessage } from '../../lib/driver-reservation.js'
 import {
@@ -289,9 +288,6 @@ export async function assignBookingService(
       : input.vendor_vehicle_plate ?? 'A vendor-supplied vehicle'
     void notifyStage('vehicle_assigned', booking, { vehicleLabel: label })
   }
-
-  // First moment the booking has a truck, and so a plan to estimate.
-  void refreshPlannedEta(bookingId)
 
   return { ...assignment, capacity_warning: capacityWarning }
 }

@@ -135,9 +135,9 @@ export async function getStaffDashboard() {
   const dispatchToday  = bookings.filter((b) => b.status === 'assigned' && b.schedule_date === today)
   const dispatchTomorrow = bookings.filter((b) => b.status === 'assigned' && b.schedule_date === tomorrow)
   const inTransit      = bookings.filter((b) => b.status === 'in_transit')
-  // Running 15+ min past the next stop's planned window (delay.scheduler); a
+  // Not at the pick-up point by the client's pick-up time (delay.scheduler); a
   // paused one is explained by its pause instead.
-  const delayed        = bookings.filter((b) => b.status === 'in_transit' && !!(b as any).delayed_since && !(b as any).paused_at)
+  const delayed        = bookings.filter((b) => ['approved', 'assigned', 'in_transit'].includes(b.status) && !!(b as any).delayed_since && !(b as any).paused_at)
   // Still Assigned 15+ min after its call time (late-start.scheduler).
   const lateStart      = bookings.filter((b) => b.status === 'assigned' && !!(b as any).late_start_for)
   const lateConfirmations = bookings.filter((b) => lateIds.has(b.booking_id))

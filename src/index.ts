@@ -298,7 +298,7 @@ app.listen(PORT, '0.0.0.0', () => {
   // Paused deliveries: reminds the crew before the continuation call time and
   // the office when it passes still paused.
   startPauseContinuationScheduler();
-  // Flags a delivery running 15+ min past its planned window, and tells the client.
+  // Flags a booking whose truck is not at the pick-up point by the client's pick-up time, and tells the client.
   startDelayScheduler();
   // Flags a booking still Assigned 15 min after its call time; tells the drivers + office.
   startLateStartScheduler();

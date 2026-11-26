@@ -127,10 +127,11 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
   },
   {
     id: 'arrival-window',
-    question: 'What does the planned arrival time mean?',
+    question: 'When will my delivery arrive?',
     answer:
-      'Once a vehicle is assigned, each drop-off gets a planned arrival shown as a 30-minute window. While the ' +
-      'truck is on the road, Transit Tracking also shows a live estimate based on traffic.',
+      'There is no planned arrival time given in advance. The truck must be at your pickup point by your call ' +
+      'time (the pick-up time you booked). Once the driver starts the delivery, Transit Tracking shows a live ' +
+      'estimate for each drop-off based on traffic, which updates as the truck moves.',
   },
   {
     id: 'multi-trip',
@@ -264,10 +265,10 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
   P('ops-oversize', 'What does Oversize mean on a booking?',
     'Oversize marks goods that may need a larger vehicle. Our team checks the load when assigning a vehicle.'),
   P('ops-call-time', 'What is the call time?',
-    'The call time is the time on the booking day when the delivery should start at your pickup point. You pick ' +
-    'it in 5-minute steps when booking. After the vehicle and driver are assigned, our Operations team confirms ' +
-    'the driver\'s own call time: the same as yours, or earlier (for example the night before an early-morning ' +
-    'start) so the truck is ready on time. It is never later than your call time.'),
+    'The call time is the time on the booking day when the truck should be at your pickup point. You pick it in ' +
+    '5-minute steps when booking. After the vehicle and driver are assigned, our Operations team sets the ' +
+    'driver\'s own call time: when the driver leaves so the truck reaches you on time. It is always earlier than ' +
+    'your call time (it can be the night before an early-morning pick-up).'),
   P('ops-after-hours', 'What happens if I book after office hours?',
     'You can send a booking at any time. One sent outside office hours (Monday to Saturday, 8:00 AM to 5:00 PM) ' +
     'is reviewed when the office opens.'),
@@ -313,14 +314,15 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
   P('ops-driver-reorder', 'Can the driver change the order of my drop-offs?',
     'Yes, the driver may change the order on the road, for example when a bay is closed or because of traffic. ' +
     'Our office is told why. If the new order makes one of your drop-offs about 30 minutes or more later than ' +
-    'planned, you get a notification with the new estimated time.'),
+    'its earlier estimate, you get a notification with the new estimated time.'),
   P('ops-delay', 'What happens if my delivery is running late?',
-    'Our system checks every few minutes. When the next stop is 15 minutes or more past its planned window, the ' +
-    'booking is marked Delayed and you are notified, then again for every further 30 minutes of delay, with a new ' +
-    'expected time. The Delayed mark clears once the truck is back within its window. A truck with no signal is ' +
-    'not called late while its window is still open. If the delivery has not started 15 minutes after its call ' +
-    'time, our office is alerted and follows it up with the driver; you are notified that it is running late only ' +
-    'when a late start would make your first drop-off 15 minutes or more past its planned window.'),
+    'Delayed means the truck has not reached your pickup point by your call time (the pick-up time you booked). ' +
+    'Our system checks every few minutes; once your call time passes without the truck there, the booking is ' +
+    'marked Delayed and you are notified, with the time it is now expected there when the truck is reporting its ' +
+    'position, then again for every further 30 minutes. The Delayed mark clears when the truck reaches your ' +
+    'pickup point. After pick-up there is no Delayed mark: Transit Tracking shows a live estimate for each ' +
+    'drop-off. If the driver has not started on time, our office is alerted earlier and follows it up with the ' +
+    'driver. A paused delivery is not marked Delayed; the pause notice explains why.'),
   P('ops-pause', 'Why was my delivery paused?',
     'Our office can pause a delivery on the road, for example for weather, a vehicle breakdown, a closed pickup or ' +
     'drop-off, or a closed road. You are notified with the reason. If it continues on another day you get the new ' +

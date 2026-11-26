@@ -23,7 +23,6 @@ import { requestDriverCallCheck } from '../notification/driver-call.scheduler.js
 import { bookingRef, bookingRefById } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay, phDay, phDayPlusMonth, phTimeHHMM, SAME_DAY_LATEST_CALL_TIME, sameDayBookingOpen } from '../../lib/ph-date.js'
 import { notifyStage, hasGmApprovers, emailDeliveryConfirm } from '../notification/notification.service.js'
-import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { assertBookingVehicleInService, crewOnBooking, releaseCrew } from '../admin/fleet-availability.service.js'
 import {
   assertStopProximity,
@@ -462,12 +461,6 @@ export async function updateBookingService(
 
   const booking = await BookingModel.update(bookingId, input)
   if (!booking) throw new Error('Failed to update booking')
-
-  // A moved departure or pickup point moves every planned arrival. No-op unless
-  // the booking is crewed.
-  const moved = ['schedule_date', 'call_time', 'origin_latitude', 'origin_longitude']
-    .some((k) => k in (input as Record<string, unknown>))
-  if (moved) void refreshPlannedEta(bookingId)
 
   // The driver's call time was set against the old start; a new day or start
   // time could leave it after the start (or two days early). Clear it so the

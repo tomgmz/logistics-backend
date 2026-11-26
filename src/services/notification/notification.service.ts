@@ -124,7 +124,7 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   pause_resume_requested:       { type: 'booking.pause_resume_requested',       roles: ['operations_manager'] },
   pause_resume_request_waiting: { type: 'booking.pause_resume_request_waiting', roles: ['operations_manager'] },
   pause_resume_declined:        { type: 'booking.pause_resume_declined',        audience: 'drivers' },
-  // delay.scheduler.ts: the next stop is running 15+ min past its planned window.
+  // delay.scheduler.ts: the truck is not at the pick-up point by the client's pick-up time.
   delivery_delayed:       { type: 'booking.delivery_delayed',       audience: 'client' },
   delivery_delayed_staff: { type: 'booking.delivery_delayed_staff', roles: ['operations_manager'] },
   // The driver chose a different drop-off order ("Go here next"), with their reason.
@@ -370,7 +370,7 @@ function copyFor(
         title: 'Driver changed the drop-off order',
         body:  `The driver on booking ${label} changed the drop-off order` +
                (extra?.tripNumber ? ` on trip ${extra.tripNumber}` : '') +
-               `. Reason: ${reason ?? 'no reason given'}. Arrival times have been re-planned.`,
+               `. Reason: ${reason ?? 'no reason given'}. The live arrival times follow the new order.`,
       }
     case 'dropoff_order_later':
       return {
@@ -405,15 +405,17 @@ function copyFor(
       }
     case 'delivery_delayed':
       return {
-        title: 'Your delivery is running late',
-        body:  `Delivery ${label} is running about ${extra?.minutesLeft ? formatDuration(extra.minutesLeft) : 'a few minutes'} behind schedule.` +
-               (extra?.newArrival ? ` Now expected: ${extra.newArrival}.` : ' We will update you as soon as we have a new time.'),
+        title: 'Your truck is running late',
+        body:  `The truck for delivery ${label} has not reached your pick-up point by ${extra?.callTimeLabel ?? 'the pick-up time'}` +
+               (extra?.minutesLeft ? ` (about ${formatDuration(extra.minutesLeft)} late)` : '') + '.' +
+               (extra?.newArrival ? ` Now expected there at ${extra.newArrival}.` : ' We will update you as soon as we have a new time.'),
       }
     case 'delivery_delayed_staff':
       return {
-        title: 'Delivery delayed',
-        body:  `Booking ${label} is running about ${extra?.minutesLeft ? formatDuration(extra.minutesLeft) : 'a few minutes'} past its planned arrival` +
-               (extra?.newArrival ? ` (now expected ${extra.newArrival}).` : ' and the truck has no recent position.'),
+        title: 'Truck late for pick-up',
+        body:  `The truck for booking ${label} is not at the pick-up point by the client's pick-up time, ${extra?.callTimeLabel ?? 'already passed'}` +
+               (extra?.minutesLeft ? ` (about ${formatDuration(extra.minutesLeft)} late)` : '') +
+               (extra?.newArrival ? `. Now expected there at ${extra.newArrival}.` : '. The truck has no recent position.'),
       }
     case 'pause_continuation_overdue':
       return {
@@ -509,20 +511,24 @@ function copyFor(
         title: extra?.minutesLeft != null && extra.minutesLeft < 55
           ? `Call time in ${extra.minutesLeft} minutes`
           : 'Call time in 1 hour',
-        body:  `Be at the pickup point for booking ${label} by ${extra?.callTimeLabel ?? 'your call time'}` +
-               `${booking.origin ? ` (${booking.origin})` : ''}. You can start earlier if you are ready.`,
+        body:  `Leave for the pickup point for booking ${label} at ${extra?.callTimeLabel ?? 'your call time'}` +
+               `${booking.origin ? ` (${booking.origin})` : ''}` +
+               (extra?.pickupTimeLabel ? ` so you are there by the client's pick-up time, ${extra.pickupTimeLabel}` : '') +
+               '. You can start earlier if you are ready.',
       }
     case 'late_start_driver':
       return {
         title: 'Your delivery has not started',
         body:  `Your call time for booking ${label} was ${extra?.callTimeLabel ?? 'earlier'}` +
-               `${booking.origin ? ` at ${booking.origin}` : ''}. Start the delivery in the app, or tell the office if something is holding you up.`,
+               (extra?.pickupTimeLabel ? ` and the client expects the truck at the pickup point by ${extra.pickupTimeLabel}` : '') +
+               '. Start the delivery in the app, or tell the office if something is holding you up.',
       }
     case 'late_start_staff':
       return {
         title: extra?.repeat ? 'Delivery still not started' : 'Delivery not started',
         body:  `Booking ${label} was due to start at ${extra?.callTimeLabel ?? 'its call time'} and is still Assigned` +
                (extra?.minutesLeft ? ` (${formatDuration(extra.minutesLeft)} past)` : '') +
+               (extra?.pickupTimeLabel ? `. The client's pick-up time is ${extra.pickupTimeLabel}` : '') +
                '. Call the driver, set a new call time, or replace the driver or vehicle. ' +
                'You will be reminded every 30 minutes until it starts.',
       }
@@ -598,6 +604,8 @@ export interface NotifyExtra {
   // minutes left when the reminder went out late (the time was set inside the hour).
   callTimeLabel?: string
   minutesLeft?:   number
+  /** The client's pick-up time ("8:00 AM"), next to the driver's call time. */
+  pickupTimeLabel?: string
   // For the pause-continuation stages: the day the delivery continues ("Oct 26, 2026").
   continuationDate?: string
   // pause_unresolved_gm: it is about a driver's unanswered "Ready to continue".

@@ -11,7 +11,6 @@ import { assertStopProximity, stopCoordinates, type StopProofPosition } from '..
 import { BookingModel } from '../../models/client/booking.model.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { emailVendorDriversAssigned } from '../../lib/vendor-access.js'
-import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { invalidateEta } from '../maps/eta.service.js'
 import { getRouteDistance } from '../maps/route-distance.service.js'
 import { assertCrewDriverOnBooking, type DriverActor } from '../client/booking.service.js'
@@ -356,7 +355,6 @@ export async function replaceCrewService(
 
   // The truck on the map and its arrival times are now the new crew's.
   void invalidateEta(bookingId).catch(() => {})
-  void refreshPlannedEta(bookingId)
 
   return replacement
 }
@@ -448,6 +446,5 @@ export async function driverConfirmLoadTransferService(
       (fence.override_reason ? ` about ${fence.distance_m} m from the hand-over point — reason given: ${fence.override_reason}` : ''),
   })
   void invalidateEta(bookingId).catch(() => {})
-  void refreshPlannedEta(bookingId)
   return { confirmed: true }
 }

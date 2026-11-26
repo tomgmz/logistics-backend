@@ -1,7 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { broadcast } from '../../lib/realtime.js'
 import { logSystemThrottled, EXTERNAL_FAILURE_LOG_WINDOW_MS } from '../../lib/log-system.js'
-import { LOAD_MINUTES_PER_TRIP } from './planned-eta.service.js'
+import { LOAD_MINUTES_PER_TRIP } from './stop-allowances.js'
 
 /**
  * How long until the truck reaches each remaining stop.
@@ -239,7 +239,7 @@ export async function maybeRefreshEta(
   // as an empty list rather than left alone so the client stops showing an ETA
   // to a stop that has already been delivered.
   if (stops.length === 0) {
-    await writeEta(driverId, bookingId, [], position)
+    await writeEta(driverId, bookingId, [], position, null)
     return
   }
 
@@ -259,7 +259,10 @@ export async function maybeRefreshEta(
     eta_at:      new Date(Date.parse(e.eta_at) + loadS * 1000).toISOString(),
   }))
 
-  await writeEta(driverId, bookingId, etas, position)
+  // The time to the pick-up point itself: delay.scheduler gives it as the new
+  // time when the truck is late for the client's pick-up time.
+  const pickupAt = pickup ? legs[0]?.eta_at ?? null : null
+  await writeEta(driverId, bookingId, etas, position, pickupAt)
 }
 
 /**
@@ -293,6 +296,7 @@ async function writeEta(
   bookingId: string,
   etas:      StopEta[],
   position:  { latitude: number; longitude: number },
+  pickupAt:  string | null,
 ): Promise<void> {
   const { error } = await supabase.rpc('record_driver_eta', {
     p_driver_id:  driverId,
@@ -302,6 +306,11 @@ async function writeEta(
     p_origin_lng: position.longitude,
   })
   if (error) throw error
+  const { error: pickupError } = await supabase
+    .from('driver_locations')
+    .update({ eta_pickup_at: pickupAt })
+    .eq('driver_id', driverId)
+  if (pickupError) throw pickupError
 
   // Pushed on its own event rather than folded into the position broadcast: the
   // ETA is recomputed every few minutes while positions arrive every few

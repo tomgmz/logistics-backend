@@ -7,7 +7,7 @@ import { broadcast } from '../../lib/realtime.js'
 import { notifyStage } from '../notification/notification.service.js'
 import { createReportService } from '../driver/report.service.js'
 import { clearBreakdown } from './breakdown.service.js'
-import { continuationAt, refreshPlannedEta } from '../maps/planned-eta.service.js'
+import { continuationAt } from '../maps/stop-allowances.js'
 import { requestPauseContinuationCheck } from '../notification/pause-continuation.scheduler.js'
 import { invalidateEta } from '../maps/eta.service.js'
 import { assertCrewDriverOnBooking, type DriverActor } from './booking.service.js'
@@ -51,24 +51,6 @@ function durationLabel(fromIso: string, toIso: string): string {
   const m = minutes % 60
   if (h === 0) return `${m} min`
   return m === 0 ? `${h} h` : `${h} h ${m} min`
-}
-
-/** A delay this long or longer earns the client a new expected arrival in the resume notice. */
-const NOTIFY_SHIFT_MIN = 30
-
-/**
- * "4:35 – 5:05 PM", or "Oct 18, 4:35 – 5:05 PM" when not today — the same
- * 30-minute window (start rounded down to 5 min) the web shows, in Manila time.
- */
-function arrivalWindowPh(iso: string): string {
-  const ROUND = 5 * 60_000
-  const start = new Date(Math.floor(Date.parse(iso) / ROUND) * ROUND)
-  const end   = new Date(start.getTime() + 30 * 60_000)
-  const opts  = { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' } as const
-  const day   = (d: Date) => d.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' })
-  const today = day(new Date())
-  const range = `${start.toLocaleTimeString('en-US', opts)} – ${end.toLocaleTimeString('en-US', opts)}`
-  return day(start) === today ? range : `${day(start)}, ${range}`
 }
 
 /**
@@ -247,18 +229,12 @@ export async function staffResumeTripService(
       (resumeNote ? `: ${resumeNote}` : ''),
   })
 
-  // The pause moved every arrival after it. Re-plan (pause time is added in
-  // refreshPlannedEta) and let the next ping buy a fresh live ETA.
-  const before = (booking as { estimated_delivery?: string | null }).estimated_delivery ?? null
-  await refreshPlannedEta(bookingId)
+  // The pause moved every arrival after it: the next ping buys a fresh live
+  // ETA, which the client sees on the tracking page (no planned time to quote).
   void invalidateEta(bookingId).catch(() => {})
   const replanned = await BookingModel.findById(bookingId)
-  const after = (replanned as { estimated_delivery?: string | null } | null)?.estimated_delivery ?? null
-  const shiftMin = before && after ? (Date.parse(after) - Date.parse(before)) / 60_000 : 0
 
-  void notifyStage('trip_resumed', replanned ?? booking, {
-    newArrival: after && shiftMin >= NOTIFY_SHIFT_MIN ? arrivalWindowPh(after) : undefined,
-  })
+  void notifyStage('trip_resumed', replanned ?? booking)
   void notifyStage('trip_resumed_by_staff', booking, { reason: resumeNote })
   void notifyStage('trip_resumed_staff', booking, { pausedFor })
   announcePauseChanged(bookingId)
@@ -292,10 +268,8 @@ function todayPh(): string {
  * the client, and that date plus a call time for the driver. Can be changed as
  * often as the plan changes; each change is announced again.
  *
- * The planned arrival is re-planned from that day's call time, so the client is
- * told a real arrival window on the new day. The live ETA stays blank ("Paused")
- * until the office resumes the delivery and the truck reports again; resuming
- * earlier or later than planned re-plans from the actual resume.
+ * The client is told the day. The live ETA stays blank ("Paused") until the
+ * office resumes the delivery and the truck reports again.
  * pause-continuation.scheduler.ts reminds the crew before the call time and the
  * office when it passes with the delivery still paused.
  */
@@ -332,16 +306,9 @@ export async function setPauseContinuationService(
     description: `Booking ${bookingRef(booking)} expected to continue on ${continuationDate}, driver call time ${callTimeLabel}`,
   })
 
-  // The pause now runs to that day's call time: every arrival after it moves,
-  // and the client is told the new window, not just the day.
-  await refreshPlannedEta(bookingId)
-  const replanned = await BookingModel.findById(bookingId)
-  const after = (replanned as { estimated_delivery?: string | null } | null)?.estimated_delivery ?? null
-
-  void notifyStage('pause_continuation', replanned ?? booking, {
-    continuationDate,
-    newArrival: after ? arrivalWindowPh(after) : undefined,
-  })
+  // The client is told the day; the arrival time follows from the live ETA
+  // once the truck is moving again.
+  void notifyStage('pause_continuation', booking, { continuationDate })
   void notifyStage('pause_continuation_driver', booking, { continuationDate, callTimeLabel })
   announcePauseChanged(bookingId)
   // A call time set less than an hour ahead is reminded at once.

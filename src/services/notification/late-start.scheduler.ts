@@ -3,17 +3,17 @@ import { BookingModel } from '../../models/client/booking.model.js'
 import { notifyStage } from './notification.service.js'
 import { logSystem, logSystemError } from '../../lib/log-system.js'
 import { phDay } from '../../lib/ph-date.js'
-import { callAt, formatClock } from './driver-call.scheduler.js'
+import { callAt, formatClock, pickupLabel } from './driver-call.scheduler.js'
 
 /**
- * Late start: a booking still Assigned after its call time. The call time is
- * the driver call time operations set in the Trip Planner, or the client's call
- * time when none was set (the same instant the 1-hour reminder uses).
+ * Late start: a booking still Assigned 15 min after the driver call time
+ * operations set in the Trip Planner (when the driver should start so the truck
+ * is at the pickup point by the client's pick-up time). Never the client's own
+ * time (user 2026-11-26): with no driver call time there is no Late start, and
+ * the Delayed mark (delay.scheduler) covers the client's pick-up time itself.
  *
- * The Delayed mark (delay.scheduler) only looks at deliveries already on the
- * road, so without this a driver who never starts (dead phone, overslept, truck
- * won't start) left nobody told. Industry: Onfleet counts an assigned task that
- * hasn't started as delayed once its time passes and alerts the dispatcher;
+ * The office's early warning, before the client is affected. Industry: Onfleet
+ * alerts the dispatcher when an assigned task hasn't started by its time;
  * Samsara tracks a route from before its scheduled start.
  *
  *   call time + 15 min, still Assigned → `late_start_for` set (the "Late start"
@@ -21,16 +21,11 @@ import { callAt, formatClock } from './driver-call.scheduler.js'
  *     Company Administrator
  *   every 30 min after that → the office again, until it starts, is cancelled,
  *     or gets a new call time; the repeats stop 24 h after the call time (the
- *     mark and the dashboard row stay) so a forgotten booking doesn't page the
- *     office for days
- *   the client → told once ("running late"), only when starting now would put
- *     the first drop-off 15+ min past its planned window; a start a few minutes
- *     late that still makes the window is not the client's concern
+ *     mark and the dashboard row stay)
+ *   the client → never from here; the Delayed mark tells them once the pick-up
+ *     time passes without the truck
  *
- * Cleared when the booking is no longer Assigned or its call time moved (a new
- * call time can only be set in the future, so it is not late).
- *
- * Same in-process shape as the other schedulers.
+ * Cleared when the booking is no longer Assigned or its call time moved.
  */
 
 const MINUTE_MS     = 60_000
@@ -39,9 +34,6 @@ const TICK_MS       = 5 * MINUTE_MS
 const GRACE_MS      = 15 * MINUTE_MS
 const REMIND_MS     = 30 * MINUTE_MS
 const STOP_REMIND_MS = DAY_MS
-const WINDOW_MS     = 30 * MINUTE_MS
-const ROUND_MS      = 5 * MINUTE_MS
-const CLIENT_LATE_MIN = 15
 
 const CLEAR = { late_start_for: null, late_start_reminded_at: null }
 
@@ -61,11 +53,9 @@ const COLUMNS =
   'booking_id, status, schedule_date, call_time, driver_call_time, driver_call_date, ' +
   'late_start_for, late_start_reminded_at, late_start_client_for'
 
-/** The instant the crew was due: the driver call, else the client's call time. */
-export function dueAt(r: Pick<Row, 'schedule_date' | 'call_time' | 'driver_call_time' | 'driver_call_date'>): Date | null {
-  return r.driver_call_time
-    ? callAt(r.driver_call_date ?? r.schedule_date, r.driver_call_time)
-    : callAt(r.schedule_date, r.call_time)
+/** The instant the driver was due to start: the driver call time only. */
+export function dueAt(r: Pick<Row, 'schedule_date' | 'driver_call_time' | 'driver_call_date'>): Date | null {
+  return r.driver_call_time ? callAt(r.driver_call_date ?? r.schedule_date, r.driver_call_time) : null
 }
 
 /** Write only while the booking is still Assigned, so a start in between wins. */
@@ -76,35 +66,6 @@ async function updateIfAssigned(bookingId: string, fields: Record<string, unknow
     .select('booking_id')
   if (error) throw error
   return (data ?? []).length > 0
-}
-
-/**
- * Minutes past the first drop-off's window if the truck started loading now,
- * or null when there is no planned arrival to measure against. Planned arrivals
- * are chained from the client's call time (planned-eta.service), so the run
- * keeps its planned length and just starts later.
- */
-async function firstDropoffLateMin(r: Row, now: number): Promise<number | null> {
-  const clientStart = callAt(r.schedule_date, r.call_time)
-  if (!clientStart) return null
-  const { data, error } = await supabase
-    .from('booking_trips')
-    .select('trip_number, booking_trip_stops ( status, sequence_order, planned_arrival_at )')
-    .eq('booking_id', r.booking_id)
-    .order('trip_number', { ascending: true })
-    .limit(1)
-  if (error) throw error
-  const stops = ((data?.[0]?.booking_trip_stops ?? []) as Array<{ status: string; sequence_order: number; planned_arrival_at: string | null }>)
-    .filter((s) => s.status !== 'delivered' && s.planned_arrival_at)
-    .sort((a, b) => a.sequence_order - b.sequence_order)
-  const planned = stops[0]?.planned_arrival_at
-  if (!planned) return null
-
-  const p         = Date.parse(planned)
-  const start     = clientStart.getTime()
-  const projected = Math.max(now, start) + (p - start)
-  const windowEnd = Math.floor(p / ROUND_MS) * ROUND_MS + WINDOW_MS
-  return Math.round((projected - windowEnd) / MINUTE_MS)
 }
 
 async function evaluate(r: Row, now: number): Promise<'set' | 'reminded' | 'cleared' | null> {
@@ -123,7 +84,7 @@ async function evaluate(r: Row, now: number): Promise<'set' | 'reminded' | 'clea
   const callIso   = at!.toISOString()
   const flagged   = !!r.late_start_for && Date.parse(r.late_start_for) === at!.getTime()
   const minsLate  = Math.round((now - at!.getTime()) / MINUTE_MS)
-  const extra     = { callTimeLabel: formatClock(at!), minutesLeft: minsLate }
+  const extra     = { callTimeLabel: formatClock(at!), minutesLeft: minsLate, pickupTimeLabel: pickupLabel(r.schedule_date, r.call_time) }
   let result: 'set' | 'reminded' | null = null
 
   if (!flagged) {
@@ -144,16 +105,6 @@ async function evaluate(r: Row, now: number): Promise<'set' | 'reminded' | 'clea
     result = 'reminded'
   }
 
-  // The client, once per call instant, only when the first drop-off is at risk.
-  const clientTold = !!r.late_start_client_for && Date.parse(r.late_start_client_for) === at!.getTime()
-  if (!clientTold) {
-    const lateMin = await firstDropoffLateMin(r, now)
-    if (lateMin != null && lateMin >= CLIENT_LATE_MIN &&
-        await updateIfAssigned(r.booking_id, { late_start_client_for: callIso })) {
-      const booking = await BookingModel.findById(r.booking_id)
-      if (booking) await notifyStage('delivery_delayed', booking, { minutesLeft: lateMin })
-    }
-  }
   return result
 }
 

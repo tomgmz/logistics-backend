@@ -9,7 +9,6 @@ import { bookingRef } from '../../lib/booking-ref.js'
 import { isBeforeScheduledDay } from '../../lib/ph-date.js'
 import { invalidateEta } from '../maps/eta.service.js'
 import { broadcast } from '../../lib/realtime.js'
-import { refreshPlannedEta } from '../maps/planned-eta.service.js'
 import { requestDriverCallCheck } from '../notification/driver-call.scheduler.js'
 import { badRequest } from '../../lib/http-error.js'
 import {
@@ -203,7 +202,6 @@ export async function setTripPlanService(
   }
 
   const trips = await TripModel.replacePlan(bookingId, plan)
-  void refreshPlannedEta(bookingId)
 
   logEvent({
     user_id:     actor.userId,
@@ -218,12 +216,14 @@ export async function setTripPlanService(
 }
 
 /**
- * Operations sets when the driver should be at the pickup point.
+ * Operations sets when the driver should start the delivery so the truck is at
+ * the pickup point by the client's pick-up time (user 2026-11-26).
  *
  * A required step after assignment (user 2026-11-24): Booking Management shows
- * it as the step after "vehicle and driver", and it can no longer be cleared
- * back to empty — "same as the client's time" saves the client's time as the
- * value. Clearing (null) is refused. It is still guidance for the driver, not a
+ * it as the step after "vehicle and driver", and it can't be cleared. It is
+ * never the client's own time: it must be before the pick-up time (the drive
+ * there takes time), so "same as the client's time" is gone. Clearing (null)
+ * is refused. It is still guidance for the driver, not a
  * gate: nothing refuses a start before it or without it, so a driver is never
  * stuck at the warehouse because the office forgot. Only before the delivery
  * starts — once the truck is out, a call time has nothing left to say.
@@ -240,7 +240,7 @@ export async function setDriverCallTimeService(
     throw new Error(`Cannot set the driver's call time while the booking is '${booking.status}'`)
   }
   if (!driverCallTime) {
-    throw badRequest("The driver call time is required. Pick a time, or use the client's call time.")
+    throw badRequest('The driver call time is required. Pick when the driver should start.')
   }
 
   const scheduleDay = String(booking.schedule_date ?? '').slice(0, 10)
@@ -258,9 +258,9 @@ export async function setDriverCallTimeService(
     const callAt  = phInstant(callDay, driverCallTime)
     const startAt = phInstant(scheduleDay, String(booking.call_time ?? ''))
     if (!callAt) throw badRequest('The driver call time is not a valid date and time.')
-    if (startAt && callAt.getTime() > startAt.getTime()) {
+    if (startAt && callAt.getTime() >= startAt.getTime()) {
       throw badRequest(
-        `The driver call time can't be after the booking starts (${formatPhDateTime(startAt)}).`,
+        `The driver call time must be before the client's pick-up time (${formatPhDateTime(startAt)}), so the truck can get there in time.`,
       )
     }
     if (callAt.getTime() <= Date.now()) {
@@ -597,8 +597,6 @@ export async function recordTripLoaded(
     await BookingModel.setPickupProof(trip.booking_id, proofPhotoUrl || null, position, fence)
   }
 
-  // The run's real departure replaces its planned one, and moves every run after it.
-  void refreshPlannedEta(trip.booking_id)
   announceRouteChanged(trip.booking_id)
 
   logEvent({
@@ -697,7 +695,6 @@ export async function driverSetStopOrderService(
   }
 
   void invalidateEta(trip.booking_id).catch(() => {})
-  void refreshPlannedEta(trip.booking_id)
   announceRouteChanged(trip.booking_id)
 
   return TripModel.findById(tripId)
@@ -963,8 +960,6 @@ async function completeTripIfAllStopsDone(
     const trips     = await TripModel.findByBookingId(bookingId)
     const remaining = trips.filter((t) => t.status !== 'completed' && t.status !== 'cancelled')
     if (remaining.length > 0) {
-      // The next run's start is now knowable from when this one actually ended.
-      void refreshPlannedEta(bookingId)
       return
     }
 

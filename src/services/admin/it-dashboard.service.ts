@@ -69,7 +69,7 @@ const SCHEDULERS = [
   {
     source:           'delay.scheduler',
     label:            'Delayed delivery detection',
-    description:      'Flags a delivery whose next stop is running 15+ minutes past its planned arrival, and tells the client and operations.',
+    description:      'Flags a booking whose truck has not reached the pick-up point by the client’s pick-up time, and tells the client and operations.',
     interval_minutes: 5,
   },
   {
@@ -81,7 +81,7 @@ const SCHEDULERS = [
   {
     source:           'late-start.scheduler',
     label:            'Late start detection',
-    description:      'Flags a booking still Assigned 15 minutes after its call time: reminds the drivers once, tells the Operations Manager and Company Administrator and repeats every 30 minutes (for up to a day), and tells the client only when the first drop-off can no longer make its planned window.',
+    description:      'Flags a booking still Assigned 15 minutes after the driver call time: reminds the drivers once, tells the Operations Manager and Company Administrator and repeats every 30 minutes (for up to a day). The client is told by the Delayed check instead.',
     interval_minutes: 5,
   },
   {
@@ -153,7 +153,7 @@ const SERVICES: { key: string; label: string; description: string; filter: (q: a
   {
     key:         'google-maps',
     label:       'Google Maps',
-    description: 'Directions, live and planned arrival times, route optimisation.',
+    description: 'Directions, live arrival times, driver call time checks, route optimisation.',
     filter:      (q) => q.like('source', 'google-maps.%'),
   },
   {

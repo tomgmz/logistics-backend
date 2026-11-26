@@ -1,3 +1,4 @@
+import { checkDriverCallService } from '../../services/maps/call-time-check.service.js'
 import { pausedRefusal, sendPausedRefusal } from '../../services/driver/pause-guard.js'
 import { dismissBreakdownService } from '../../services/client/breakdown.service.js'
 import { Request, Response } from 'express'
@@ -135,6 +136,21 @@ export const setDriverCallTime = async (req: Request, res: Response) => {
       error.message.includes('not found') ? 404 :
       error.message.includes('Cannot ')   ? 409 : 500
     res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+export const checkDriverCall = async (req: Request, res: Response) => {
+  try {
+    const day  = String(req.query.date ?? '')
+    const time = String(req.query.time ?? '')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !/^\d{2}:\d{2}$/.test(time)) {
+      res.status(400).json({ status: 'error', message: 'date (YYYY-MM-DD) and time (HH:MM) are required' })
+      return
+    }
+    const data = await checkDriverCallService(param(req.params.bookingId), day, time)
+    res.status(200).json({ status: 'success', data })
+  } catch (error: any) {
+    res.status(error.message?.includes('not found') ? 404 : 500).json({ status: 'error', message: error.message })
   }
 }
 

@@ -185,8 +185,11 @@ router.patch('/assignments/:bookingId/status', authenticate, isOperations, lockG
 // (admin, IT, fleet, GM, operations) and nobody else.
 router.get('/assignments/:bookingId/trips',  authenticate, isCrewRelease, TripController.getTrips)
 router.put('/assignments/:bookingId/trips',  authenticate, isCrewRelease, lockGuard('booking', fromParam('bookingId')), validate(setTripPlanSchema), TripController.setTripPlan)
-// When the driver should be at the pickup point (null = the client's call time).
-// Guidance only; the driver can still start earlier. Reminded an hour ahead.
+// When the driver should start so the truck is at the pickup point by the
+// client's pick-up time. Required, never the client's own time. Guidance only;
+// the driver can still start earlier. Reminded an hour ahead.
+// The check = drive time from the parking at that call time (a warning only).
+router.get('/assignments/:bookingId/driver-call-check', authenticate, isCallTimeDesk, TripController.checkDriverCall)
 router.put('/assignments/:bookingId/driver-call-time', authenticate, isCallTimeDesk, requireModuleFlag('booking-management', 'can_edit'),
   lockGuard('booking', fromParam('bookingId')), validate(driverCallTimeSchema), TripController.setDriverCallTime)
 

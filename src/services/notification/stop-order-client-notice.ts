@@ -1,7 +1,7 @@
 import { supabase } from '../../lib/supabase.js'
 import { formatDuration } from '../../lib/duration.js'
 import { computeLegEtas, type EtaStop } from '../maps/eta.service.js'
-import { UNLOAD_MINUTES_PER_STOP } from '../maps/planned-eta.service.js'
+import { UNLOAD_MINUTES_PER_STOP } from '../maps/stop-allowances.js'
 import { notifyStage } from './notification.service.js'
 import { BookingModel } from '../../models/client/booking.model.js'
 

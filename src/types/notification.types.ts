@@ -40,7 +40,7 @@ export type NotificationType =
   | 'booking.pause_resume_requested'     // the driver pressed "Ready to continue" -> ops + admin
   | 'booking.pause_resume_request_waiting' // ... still unanswered, every 15 min -> ops + admin
   | 'booking.pause_resume_declined'      // the office answered "Not yet" with a reason -> the crew
-  | 'booking.delivery_delayed'       // next stop 15+ min past its planned window -> client
+  | 'booking.delivery_delayed'       // truck not at the pick-up by the pick-up time -> client
   | 'booking.dropoff_order_later'    // driver's new drop-off order moves a drop-off 30+ min later -> client
   | 'booking.delivery_delayed_staff' // ... -> ops + admin
   | 'booking.crew_roles_swapped'     // office swapped main/second driver -> the crew

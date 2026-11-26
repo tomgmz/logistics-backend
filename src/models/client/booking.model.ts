@@ -97,6 +97,7 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   delay_expected_at,
   delay_destination_id,
   delay_max_minutes,
+  pickup_arrived_at,
   late_start_for,
   breakdown_reported_at,
   breakdown_report_id,
@@ -262,10 +263,10 @@ export const PARTLY_FAILED_SQL = (t: string) =>
      SELECT 1 FROM booking_destinations pf
       WHERE pf.booking_id = ${t}.booking_id AND pf.status = 'failed')`
 
-/** In transit, flagged late by delay.scheduler, and not paused. */
+/** Flagged late for the pick-up by delay.scheduler (approved, assigned or in transit), and not paused. */
 
 const DELAYED_NOW_SQL = (t: string) =>
-  `${t}.status = 'in_transit' AND ${t}.delayed_since IS NOT NULL AND ${t}.paused_at IS NULL`
+  `${t}.status IN ('approved', 'assigned', 'in_transit') AND ${t}.delayed_since IS NOT NULL AND ${t}.paused_at IS NULL`
 
 async function findAllPaginated(q: BookingListQuery): Promise<{ rows: BookingWithRelations[]; total: number }> {
   const page   = Math.max(1, q.page)
