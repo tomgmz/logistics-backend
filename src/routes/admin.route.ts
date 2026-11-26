@@ -413,6 +413,8 @@ router.patch('/system-log-issues/:id',  authenticate, isItAdmin, SystemLogContro
 // in one read. IT Admin only, for the same reason as the system logs above.
 router.get('/it-dashboard', authenticate, isItAdmin, ItDashboardController.getSummary)
 router.get('/it-dashboard/trend', authenticate, isItAdmin, ItDashboardController.getTrend)
+router.get('/it-dashboard/logistics',  authenticate, isItAdmin, ItDashboardController.getLogistics)
+router.get('/it-dashboard/activities', authenticate, isItAdmin, ItDashboardController.getActivities)
 
 // Staff dashboards — each desk's queues, plus the Company Administrator's
 // analytics. Counts and short reference lists only.
