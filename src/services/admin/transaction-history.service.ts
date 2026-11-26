@@ -1,4 +1,5 @@
 import { crewChangeEvents, crewChangeRowsFor, type CrewChangeEvent, type CrewChangeExportRow } from './crew-change-log.service.js'
+import { bookingHistory, type BookingHistory } from './booking-history.service.js'
 import {
   TransactionHistoryModel,
   type TransactionFilters,
@@ -145,6 +146,8 @@ export interface TransactionRecord {
   approvals:   TransactionApprovals
   /** Every change of driver, second driver, helper and vehicle, and navigation take-overs, oldest first. */
   crew_changes: CrewChangeEvent[]
+  /** The History section's three groups (null when it could not be read). */
+  history:     BookingHistory | null
 }
 
 export interface DecisionActor {
@@ -240,12 +243,17 @@ export async function getTransactionRecordService(bookingId: string): Promise<Tr
   if (error) throw error
   if (!booking) return null
 
-  const [delivery, trips, reports, approvals, crew_changes] = await Promise.all([
+  const [delivery, trips, reports, approvals, crew_changes, history] = await Promise.all([
     AssignmentModel.findByBookingId(bookingId),
     TripModel.findByBookingId(bookingId),
     ReportModel.findByBookingId(bookingId),
     loadApprovals(bookingId),
     crewChangeEvents(bookingId),
+    // The History section only: a failure here leaves the rest of the record on screen.
+    bookingHistory(bookingId).catch((err) => {
+      console.error('[transaction-history] history unavailable', (err as Error).message)
+      return null
+    }),
   ])
 
   // Inspections belong to the vehicle, not the booking. The one that matters is
@@ -269,5 +277,5 @@ export async function getTransactionRecordService(bookingId: string): Promise<Tr
     inspection = all.find((i) => i.passed && new Date(i.inspected_at).getTime() <= assignedAt) ?? null
   }
 
-  return { delivery, trips, reports, inspection, approvals, crew_changes }
+  return { delivery, trips, reports, inspection, approvals, crew_changes, history }
 }

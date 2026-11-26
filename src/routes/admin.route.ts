@@ -249,6 +249,8 @@ router.post('/assignments/:bookingId/late-confirmations/:lateId/dismiss', authen
   lockGuard('booking', fromParam('bookingId')), validate(lateDismissSchema), OfficeProgressController.dismissLate)
 router.get('/assignments/:bookingId/swap-preview', authenticate, isCrewRelease, OfficeProgressController.getSwapPreview)
 router.get('/assignments/:bookingId/events', authenticate, isCrewRelease, OfficeProgressController.getEvents)
+// The History section's three groups (Approvals / Transaction / Transit), same cards as Transaction History.
+router.get('/assignments/:bookingId/activity', authenticate, isCrewRelease, OfficeProgressController.getActivity)
 
 // Times at each stop (arrival, docking, start, finish, departure), with the
 // office's corrections. Filling in / correcting one: the pause desk's call.

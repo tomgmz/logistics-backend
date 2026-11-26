@@ -13,6 +13,7 @@ import {
   listLateConfirmations,
   swapPreview,
 } from '../../services/admin/late-confirmation-office.service.js'
+import { bookingHistory } from '../../services/admin/booking-history.service.js'
 
 /** 404 missing, 409 out of order / wrong state (the same words the driver flow uses), 500 otherwise. */
 function statusFor(message: string): number {
@@ -67,3 +68,10 @@ export const dismissLate = run((req, userId) =>
 export const getSwapPreview = run((req) => swapPreview(param(req.params.bookingId)))
 
 export const getEvents = run((req) => deliveryEvents(param(req.params.bookingId)))
+
+/** Booking Management's History section (booking-history.service). */
+export const getActivity = run(async (req) => {
+  const history = await bookingHistory(param(req.params.bookingId))
+  if (!history) throw new Error('Booking not found')
+  return history
+})
