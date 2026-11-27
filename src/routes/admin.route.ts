@@ -56,7 +56,7 @@ import * as LandlinePrefixController from '../controllers/admin/landline-prefix.
 import { createVehicleTypeSchema, updateVehicleTypeSchema } from '../schema/admin/vehicle-type.schema.js'
 import * as VehicleTypeController from '../controllers/admin/vehicle-type.controller.js'
 import * as DocumentsController from '../controllers/admin/documents.controller.js'
-import { uploadStaffDocumentsSchema, reviewDocumentSchema } from '../schema/admin/documents.schema.js'
+import { uploadStaffDocumentsSchema } from '../schema/admin/documents.schema.js'
 import { uploadDocuments } from '../middlewares/uploadDocuments.middleware.js'
 
 const router = Router()
@@ -187,6 +187,8 @@ router.patch('/assignments/:bookingId/status', authenticate, isOperations, lockG
 // the system, not merely their own. isCrewRelease is the crewing audience
 // (admin, IT, fleet, GM, operations) and nobody else.
 router.get('/assignments/:bookingId/trips',  authenticate, isCrewRelease, TripController.getTrips)
+// Each drop-off's proof state ("Proof missing" / "Proof in review") for the stop card.
+router.get('/assignments/:bookingId/dropoff-proof', authenticate, isCrewRelease, DocumentsController.listBookingDropoffs)
 router.put('/assignments/:bookingId/trips',  authenticate, isCrewRelease, lockGuard('booking', fromParam('bookingId')), validate(setTripPlanSchema), TripController.setTripPlan)
 // When the driver should start so the truck is at the pickup point by the
 // client's pick-up time. Required, never the client's own time. Guidance only;
@@ -437,12 +439,11 @@ router.get('/dashboard', authenticate, authorize('admin', 'it_admin', 'general_m
 router.get('/documents',                authenticate, isDocuments, DocumentsController.listDocuments)
 router.get('/documents/export',         authenticate, isDocuments, requireModuleFlag('document-management', 'can_export'), DocumentsController.exportDocuments)
 router.get('/documents/bookings',       authenticate, isDocuments, DocumentsController.searchBookings)
-router.get('/documents/clients',        authenticate, isDocuments, DocumentsController.searchClients)
+router.get('/documents/bookings/:bookingId/dropoffs', authenticate, isDocuments, DocumentsController.listBookingDropoffs)
 router.get('/documents/vehicles',       authenticate, isDocuments, DocumentsController.searchVehicles)
 router.get('/documents/other-labels',   authenticate, isDocuments, DocumentsController.listOtherLabels)
 router.get('/documents/folders',        authenticate, isDocuments, DocumentsController.listFolders)
 router.post('/documents',               authenticate, isDocuments, handleDocumentUpload, validate(uploadStaffDocumentsSchema), DocumentsController.uploadDocuments)
-router.patch('/documents/:id/review',   authenticate, isDocuments, validate(reviewDocumentSchema), DocumentsController.reviewDocument)
 router.post('/documents/:id/archive',   authenticate, isDocuments, requireModuleFlag('document-management', 'can_delete'), DocumentsController.archiveDocument)
 router.post('/documents/:id/restore',   authenticate, isDocuments, requireModuleFlag('document-management', 'can_delete'), DocumentsController.restoreDocument)
 

@@ -165,7 +165,9 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
     question: 'Where can I see the proof of delivery?',
     answer:
       'Open the booking in Transaction History. It shows the photo taken at each drop-off (with time, place and ' +
-      'plate stamped on it), the proof of pickup photos, and the delivery documents our team has approved.',
+      'plate stamped on it), the proof of pickup photos, and the delivery documents our team has added. ' +
+      'If a drop-off has no photo (for example the driver\'s phone failed), our team adds the signed delivery ' +
+      'receipt for it, and it appears there.',
   },
   {
     id: 'notifications',
@@ -314,6 +316,11 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
     'At the pickup and at every drop-off the driver records four steps in order: arrived (only within 300 m of ' +
     'the stop), started loading or unloading, finished, then a proof photo. The photo is stamped with the plate, ' +
     'time, place and driver, and must be taken near the stop. These stop times are shown on your booking.'),
+  P('ops-proof-no-photo', 'Why does one of my drop-offs have no proof photo?',
+    'If the driver could not record a drop-off (for example the phone was stolen, lost or out of battery), our ' +
+    'office records it for the driver, so the drop-off shows as delivered without a photo. The proof then comes ' +
+    'from the signed delivery receipt: our team uploads it and it appears with ' +
+    'your booking\'s documents in Transaction History. Until then our office is reminded every working morning.'),
   P('ops-driver-reorder', 'Can the driver change the order of my drop-offs?',
     'Yes, the driver may change the order on the road, for example when a bay is closed or because of traffic. ' +
     'Our office is told why. If the new order makes one of your drop-offs about 30 minutes or more later than ' +

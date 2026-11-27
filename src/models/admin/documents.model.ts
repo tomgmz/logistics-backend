@@ -35,7 +35,9 @@ const LIBRARY_SQL = `
     d.file_url,
     COALESCE(d.original_name, regexp_replace(d.file_url, '^.*/', '')) AS file_name,
     d.uploaded_at,
-    NULL::text                          AS detail,
+    -- A Proof of Delivery names the drop-off it proves (2026-11-27).
+    (SELECT 'Drop-off ' || bd.sequence_order || ' · ' || bd.address
+       FROM booking_destinations bd WHERE bd.destination_id = d.destination_id) AS detail,
     d.notes,
     NULL::text                          AS override_reason,
     d.booking_id,
@@ -502,6 +504,8 @@ export interface NewStaffDocument {
   client_id:     string | null
   /** A vehicle's paperwork; booking_id and client_id are then null. */
   truck_id:      string | null
+  /** The drop-off a Proof of Delivery proves (clears its "Proof missing" once approved). */
+  destination_id: string | null
   document_type: StaffDocumentType
   other_label:   string | null
   file_url:      string
@@ -511,14 +515,14 @@ export interface NewStaffDocument {
   bytes:         number
   notes:         string | null
   uploaded_by:   string | null
-  /** 'approved' for a type that needs no review (needsReview); reviewed_by stays null. */
+  /** Always 'approved' since 2026-11-27 (no review step); reviewed_by stays null. */
   status:        'pending' | 'approved'
   reviewed_at:   string | null
 }
 
 export async function insertStaffDocuments(docs: NewStaffDocument[]): Promise<string[]> {
   if (docs.length === 0) return []
-  const cols = ['booking_id', 'client_id', 'truck_id', 'document_type', 'other_label', 'file_url', 'original_name', 'public_id', 'file_format', 'bytes', 'notes', 'uploaded_by', 'status', 'reviewed_at'] as const
+  const cols = ['booking_id', 'client_id', 'truck_id', 'destination_id', 'document_type', 'other_label', 'file_url', 'original_name', 'public_id', 'file_format', 'bytes', 'notes', 'uploaded_by', 'status', 'reviewed_at'] as const
   const params: unknown[] = []
   const tuples = docs.map((d) => {
     const slots = cols.map((c) => {
@@ -542,26 +546,6 @@ export async function findStaffDocument(documentId: string): Promise<StaffDocume
     [documentId],
   )
   return rows[0] ?? null
-}
-
-/**
- * Record a review decision. Conditional on the document still awaiting review
- * and not archived, so two reviewers racing on the same file cannot both win —
- * the loser gets false back and is told it has already been decided.
- */
-export async function reviewStaffDocument(
-  documentId: string,
-  status: 'approved' | 'rejected',
-  reason: string | null,
-  reviewerId: string | null,
-): Promise<boolean> {
-  const { rowCount } = await pool.query(
-    `UPDATE documents
-        SET status = $2, rejection_reason = $3, reviewed_at = now(), reviewed_by = $4
-      WHERE document_id = $1 AND status = 'pending' AND archived_at IS NULL`,
-    [documentId, status, status === 'rejected' ? reason : null, reviewerId],
-  )
-  return (rowCount ?? 0) > 0
 }
 
 export async function setArchived(documentId: string, archived: boolean, actorId: string | null): Promise<boolean> {
@@ -635,17 +619,6 @@ export async function findVehicleDocuments(truckId: string): Promise<{ name: str
   return rows
 }
 
-/** A client's contracts (not archived), for numbering and refusing the same file twice. */
-export async function findClientContracts(clientId: string): Promise<{ name: string; url: string }[]> {
-  const { rows } = await pool.query<{ name: string; url: string }>(
-    `SELECT COALESCE(original_name, regexp_replace(file_url, '^.*/', '')) AS name, file_url AS url
-       FROM documents
-      WHERE client_id = $1 AND document_type = 'contract' AND archived_at IS NULL`,
-    [clientId],
-  )
-  return rows
-}
-
 /**
  * Types typed in for Other before, most used first, so the next uploader
  * picks "Invoice" instead of typing "invoice" or "INV". Spellings that differ
@@ -671,35 +644,6 @@ export async function findOtherLabels(target: 'booking' | 'vehicle', limit = 50)
 export interface ClientOption {
   client_id:    string
   company_name: string | null
-}
-
-/** The client picker for uploading a contract. */
-export async function searchClients(search: string, limit = 10): Promise<ClientOption[]> {
-  const params: unknown[] = []
-  let where = ''
-  if (search.trim()) {
-    params.push(likeTerm(search.trim()))
-    where = `WHERE COALESCE(c.company_name, '') ILIKE $1 ESCAPE '\\'`
-  }
-  params.push(limit)
-  const { rows } = await pool.query<ClientOption>(
-    `SELECT c.client_id::text AS client_id, c.company_name
-       FROM clients c
-       JOIN users u ON u.user_id = c.user_id
-      ${where}${where ? ' AND' : ' WHERE'} u.status <> 'archived'
-      ORDER BY c.company_name ASC NULLS LAST
-      LIMIT $${params.length}`,
-    params,
-  )
-  return rows
-}
-
-export async function findClient(clientId: string): Promise<ClientOption | null> {
-  const { rows } = await pool.query<ClientOption>(
-    `SELECT client_id::text AS client_id, company_name FROM clients WHERE client_id = $1`,
-    [clientId],
-  )
-  return rows[0] ?? null
 }
 
 export interface VehicleOption {

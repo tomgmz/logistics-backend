@@ -4,12 +4,14 @@ import { logEvent } from '../../lib/log-event.js'
 import { logSystemError } from '../../lib/log-system.js'
 import { badRequest, conflict, HttpError, notFound } from '../../lib/http-error.js'
 import * as DocumentsModel from '../../models/admin/documents.model.js'
-import { OTHER_LABEL_MAX, VEHICLE_DOCUMENT_TYPES, needsReview } from '../../types/documents.types.js'
+import * as ProofModel from '../../models/admin/proof-missing.model.js'
+import { OTHER_LABEL_MAX, VEHICLE_DOCUMENT_TYPES } from '../../types/documents.types.js'
 import type {
   DocumentFolderQuery,
   DocumentListQuery,
   DocumentScope,
   StaffDocumentType,
+  UploadableDocumentType,
 } from '../../types/documents.types.js'
 
 const OUT_OF_SCOPE = 'You can only work with vehicle documents.'
@@ -59,14 +61,9 @@ export function searchBookingsForUpload(search: string) {
   return DocumentsModel.searchBookings(search)
 }
 
-/**
- * The upload form's Client dropdown (Figma 2026-11-25) reads the whole list
- * once with an empty search and filters it in the browser; a typed search
- * still answers with the first 10 matches.
- */
-export const CLIENT_PICKER_CAP = 500
-export function searchClientsForUpload(search: string) {
-  return DocumentsModel.searchClients(search, search.trim() ? 10 : CLIENT_PICKER_CAP)
+/** A booking's drop-offs with their proof state, for the upload form's Drop-off choice. */
+export function listBookingDropoffs(bookingId: string) {
+  return ProofModel.findDropoffProof(bookingId)
 }
 
 export function listOtherLabels(target: 'booking' | 'vehicle') {
@@ -95,15 +92,17 @@ async function uploadOne(file: Express.Multer.File, folder: string, displayName:
 
 /**
  * Staff paperwork. Proof of Delivery and Other go on a booking (Other with the
- * type the uploader typed in); a Contract goes on a client, in that client's
- * Contract folder. Either way a same-named file is numbered and the same file
- * already there is refused (lib/booking-files.ts).
+ * type the uploader typed in); vehicle papers (and Other) on a vehicle. A
+ * same-named file is numbered and the same file already there is refused
+ * (lib/booking-files.ts). Contract is no longer uploaded and nothing waits for
+ * review (user 2026-11-27): every upload is saved approved and counts at once.
  */
 export async function uploadStaffDocuments(input: {
   bookingId:    string | null
-  clientId:     string | null
   truckId:      string | null
-  documentType: StaffDocumentType
+  /** The drop-off a Proof of Delivery proves; on a one-drop-off booking it is filled in. */
+  destinationId?: string | null
+  documentType: UploadableDocumentType
   otherLabel:   string | null
   notes:        string | null
   files:        Express.Multer.File[]
@@ -131,12 +130,6 @@ export async function uploadStaffDocuments(input: {
     // Under vehicle_documents/, a sensitive prefix (lib/storage.ts): short-lived links.
     target   = { booking_id: null, client_id: null, truck_id: truck.truck_id, folder: `vehicle_documents/${truck.truck_id}`, label: `vehicle ${truck.plate_number ?? truck.truck_id}` }
     existing = await DocumentsModel.findVehicleDocuments(truck.truck_id)
-  } else if (input.documentType === 'contract') {
-    if (!input.clientId) throw badRequest('Choose the client this contract is for.')
-    const client = await DocumentsModel.findClient(input.clientId)
-    if (!client) throw notFound('That client could not be found.')
-    target   = { booking_id: null, client_id: client.client_id, truck_id: null, folder: `client_documents/${client.client_id}/contracts`, label: `client ${client.company_name ?? client.client_id}` }
-    existing = await DocumentsModel.findClientContracts(client.client_id)
   } else {
     if (input.documentType === 'vehicle_registration' || input.documentType === 'vehicle_insurance') {
       throw badRequest('Choose the vehicle this document belongs to.')
@@ -148,30 +141,42 @@ export async function uploadStaffDocuments(input: {
     existing = await DocumentsModel.findBookingAttachedFiles(booking.booking_id)
   }
 
+  // Which drop-off a Proof of Delivery proves: it clears that drop-off's
+  // "Proof missing". A booking with one drop-off needs no choice.
+  let destinationId: string | null = null
+  if (input.documentType === 'proof_of_delivery' && target.booking_id) {
+    if (input.destinationId) {
+      if (!(await ProofModel.destinationOnBooking(input.destinationId, target.booking_id))) {
+        throw badRequest('That drop-off is not on this booking.')
+      }
+      destinationId = input.destinationId
+    } else {
+      destinationId = await ProofModel.findOnlyDestination(target.booking_id)
+    }
+  } else if (input.destinationId) {
+    throw badRequest('Only a Proof of Delivery is filed on a drop-off.')
+  }
+
   let plan: { displayName: string }[]
   try {
     plan = await planBookingUploads(input.files, existing.map((e) => ({ name: e.name, ref: isFileRef(e.url) ? e.url : null })))
   } catch (err) {
     if (err instanceof DuplicateBookingFileError) {
-      throw conflict(
-        target.truck_id ? err.message.replace('this booking', 'this vehicle')
-          : input.documentType === 'contract' ? err.message.replace('this booking', 'this client')
-          : err.message,
-      )
+      throw conflict(target.truck_id ? err.message.replace('this booking', 'this vehicle') : err.message)
     }
     throw err
   }
 
   const uploaded = await Promise.all(input.files.map((f, i) => uploadOne(f, target.folder, plan[i].displayName)))
 
-  // Contract and Proof of Delivery wait for a second person; internal papers count at once.
-  const reviewed   = needsReview(input.documentType)
-  const approvedAt = reviewed ? null : new Date().toISOString()
+  // No review step (2026-11-27): saved approved; reviewed_by stays empty.
+  const approvedAt = new Date().toISOString()
 
   const ids = await DocumentsModel.insertStaffDocuments(uploaded.map((u, i) => ({
     booking_id:    target.booking_id,
     client_id:     target.client_id,
     truck_id:      target.truck_id,
+    destination_id: destinationId,
     document_type: input.documentType,
     other_label:   otherLabel,
     file_url:      u.url,
@@ -181,54 +186,27 @@ export async function uploadStaffDocuments(input: {
     bytes:         u.bytes,
     notes:         input.notes,
     uploaded_by:   input.uploadedBy,
-    status:        reviewed ? 'pending' : 'approved',
+    status:        'approved',
     reviewed_at:   approvedAt,
   })))
 
   logEvent({
     log_type:    'document_activity',
     action:      'document_uploaded',
-    description: `${ids.length} ${otherLabel ? `Other (${otherLabel})` : TYPE_WORDS[input.documentType]} document(s) attached to ${target.label}${reviewed ? '' : ' (no review needed)'}:${input.files.map((f) => f.originalname).join(', ')}`,
+    description: `${ids.length} ${otherLabel ? `Other (${otherLabel})` : TYPE_WORDS[input.documentType]} document(s) attached to ${target.label}${destinationId ? ' (for one drop-off)' : ''}: ${input.files.map((f) => f.originalname).join(', ')}`,
   })
 
-  return { document_ids: ids, needs_review: reviewed }
-}
-
-export async function reviewStaffDocument(input: {
-  documentId: string
-  decision:   'approved' | 'rejected'
-  reason:     string | null
-  reviewerId: string | null
-  scope:      DocumentScope
-}) {
-  const doc = await DocumentsModel.findStaffDocument(input.documentId)
-  // Out of scope reads as not found: the Fleet Manager learns nothing about other files.
-  if (!doc || (input.scope === 'fleet' && !doc.truck_id)) throw notFound('Document not found.')
-  if (doc.archived_at) throw conflict('This document is archived. Restore it before reviewing.')
-  // Four eyes: whoever attached a document does not also sign it off.
-  if (input.reviewerId && doc.uploaded_by === input.reviewerId) {
-    throw new HttpError(403, 'You cannot review a document you uploaded. Ask another reviewer.')
-  }
-  if (input.decision === 'rejected' && !input.reason?.trim()) {
-    throw badRequest('Give a reason for rejecting the document.')
-  }
-
-  const ok = await DocumentsModel.reviewStaffDocument(
-    input.documentId, input.decision, input.reason?.trim() || null, input.reviewerId,
-  )
-  // The conditional update found nothing: someone else decided it first.
-  if (!ok) throw conflict('This document has already been reviewed.')
-
-  logEvent({
-    log_type:    'document_activity',
-    action:      input.decision === 'approved' ? 'document_approved' : 'document_rejected',
-    description: `${input.decision === 'approved' ? 'Approved' : 'Rejected'} "${doc.original_name ?? doc.file_url}"${input.reason ? `: ${input.reason.trim()}` : ''}`,
-  })
+  return { document_ids: ids, needs_review: false }
 }
 
 export async function setDocumentArchived(documentId: string, archived: boolean, actorId: string | null, scope: DocumentScope) {
   const doc = await DocumentsModel.findStaffDocument(documentId)
   if (!doc || (scope === 'fleet' && !doc.truck_id)) throw notFound('Document not found.')
+  // Contracts are no longer kept here (2026-11-27): restored, one would sit in
+  // no folder. They stay in the Archive module.
+  if (!archived && doc.document_type === 'contract') {
+    throw conflict('Contracts are no longer kept in Document Management, so this one stays archived.')
+  }
 
   const ok = await DocumentsModel.setArchived(documentId, archived, actorId)
   if (!ok) throw conflict(archived ? 'This document is already archived.' : 'This document is not archived.')

@@ -29,14 +29,14 @@ export type StaffDocumentType = (typeof STAFF_DOCUMENT_TYPES)[number]
 /** What can be filed on a vehicle (documents.truck_id; chk_documents_vehicle). */
 export const VEHICLE_DOCUMENT_TYPES = ['vehicle_registration', 'vehicle_insurance', 'other'] as const satisfies readonly StaffDocumentType[]
 /**
- * The types that wait for a second person (four eyes) before they count: the
- * client-facing Proof of Delivery and the client's Contract. Every other staff
- * type (vehicle papers, Other) is internal and is approved on upload (2026-11-21).
+ * What staff can upload (user 2026-11-27): no Contract any more (older contract
+ * files stay, archived, and still read as "Contract"), and no review step:
+ * every upload counts at once. Industry: Onfleet, Samsara and Motive accept
+ * staff uploads without a second person; the uploader confirms a Proof of
+ * Delivery on the form before it reaches the client.
  */
-export const REVIEWED_DOCUMENT_TYPES = ['contract', 'proof_of_delivery'] as const satisfies readonly StaffDocumentType[]
-export function needsReview(type: StaffDocumentType): boolean {
-  return (REVIEWED_DOCUMENT_TYPES as readonly string[]).includes(type)
-}
+export const UPLOADABLE_DOCUMENT_TYPES = ['proof_of_delivery', 'vehicle_registration', 'vehicle_insurance', 'other'] as const satisfies readonly StaffDocumentType[]
+export type UploadableDocumentType = (typeof UPLOADABLE_DOCUMENT_TYPES)[number]
 /** What can be filed on a booking. */
 export const BOOKING_DOCUMENT_TYPES = ['proof_of_delivery', 'other'] as const satisfies readonly StaffDocumentType[]
 

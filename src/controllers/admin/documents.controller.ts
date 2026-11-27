@@ -179,11 +179,13 @@ export async function searchBookings(req: Request, res: Response) {
   }
 }
 
-/** The client picker for uploading a contract. */
-export async function searchClients(req: Request, res: Response) {
+/** A booking's drop-offs and their proof state, for a Proof of Delivery's Drop-off choice. */
+export async function listBookingDropoffs(req: Request, res: Response) {
   if (scopeOf(req) === 'fleet') return outOfScope(res)
+  const bookingId = param(req.params.bookingId)
+  if (!UUID_RE.test(bookingId)) return res.status(400).json({ status: 'error', message: 'Invalid booking id.' })
   try {
-    const data = await DocumentsService.searchClientsForUpload(str(req.query.search)?.slice(0, 100) ?? '')
+    const data = await DocumentsService.listBookingDropoffs(bookingId)
     res.status(200).json({ status: 'success', data })
   } catch (err) {
     fail(res, err)
@@ -219,8 +221,8 @@ export async function uploadDocuments(req: Request, res: Response) {
     const { userId } = getRequestMeta(req)
     const data = await DocumentsService.uploadStaffDocuments({
       bookingId:    req.body.booking_id ?? null,
-      clientId:     req.body.client_id ?? null,
       truckId:      req.body.truck_id ?? null,
+      destinationId: req.body.destination_id ?? null,
       documentType: req.body.document_type,
       otherLabel:   req.body.other_label ?? null,
       notes:        req.body.notes?.trim() || null,
@@ -229,22 +231,6 @@ export async function uploadDocuments(req: Request, res: Response) {
       scope:        scopeOf(req),
     })
     res.status(201).json({ status: 'success', data })
-  } catch (err) {
-    fail(res, err)
-  }
-}
-
-export async function reviewDocument(req: Request, res: Response) {
-  try {
-    const { userId } = getRequestMeta(req)
-    await DocumentsService.reviewStaffDocument({
-      documentId: param(req.params.id),
-      decision:   req.body.decision,
-      reason:     req.body.reason ?? null,
-      reviewerId: userId,
-      scope:      scopeOf(req),
-    })
-    res.status(200).json({ status: 'success' })
   } catch (err) {
     fail(res, err)
   }

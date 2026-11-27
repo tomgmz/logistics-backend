@@ -149,6 +149,9 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   // and reminded every 30 min until it starts or gets a new call time.
   late_start_driver:     { type: 'booking.late_start_driver',     audience: 'drivers' },
   late_start_staff:      { type: 'booking.late_start_staff',      roles: ['operations_manager'] },
+  // proof-missing.scheduler.ts: a drop-off delivered without a photo and no
+  // Proof of Delivery yet; each office morning until there is one.
+  proof_missing_staff:   { type: 'booking.proof_missing_staff',   roles: ['operations_manager'] },
   // The office replaced the driver and/or vehicle of a delivery on the road. The
   // driver taken off is no longer on the crew, so they are named explicitly
   // (NotifyExtra.onlyUserIds); 'drivers' resolves to the crew now on it.
@@ -523,6 +526,16 @@ function copyFor(
                (extra?.pickupTimeLabel ? ` and the client expects the truck at the pickup point by ${extra.pickupTimeLabel}` : '') +
                '. Start the delivery in the app, or tell the office if something is holding you up.',
       }
+    case 'proof_missing_staff': {
+      const n = extra?.dropoffCount ?? 1
+      const which = n === 1 ? 'A drop-off' : `${n} drop-offs`
+      return {
+        title: 'Proof of delivery missing',
+        body:  `Booking ${label}: ${which} ${n === 1 ? 'was' : 'were'} recorded without a photo and ${n === 1 ? 'has' : 'have'} no Proof of Delivery. ` +
+               'Upload the signed delivery receipt as a Proof of Delivery for the drop-off; the client sees it at once. ' +
+               'You will be reminded each office morning until it is uploaded.',
+      }
+    }
     case 'late_start_staff':
       return {
         title: extra?.repeat ? 'Delivery still not started' : 'Delivery not started',
@@ -612,6 +625,8 @@ export interface NotifyExtra {
   driverAsked?: boolean
   // late_start_staff: a repeat of the office notice, not the first one.
   repeat?: boolean
+  // proof_missing_staff: how many drop-offs still have no proof.
+  dropoffCount?:  number
 }
 
 /**

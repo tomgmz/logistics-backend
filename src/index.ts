@@ -34,6 +34,7 @@ import { startDriverCallScheduler } from './services/notification/driver-call.sc
 import { startPauseContinuationScheduler } from './services/notification/pause-continuation.scheduler.js'
 import { startDelayScheduler } from './services/notification/delay.scheduler.js'
 import { startLateStartScheduler } from './services/notification/late-start.scheduler.js'
+import { startProofMissingScheduler } from './services/notification/proof-missing.scheduler.js'
 import { startSupportChatScheduler } from './services/support/support-chat.scheduler.js'
 import { startBreakdownScheduler } from './services/notification/breakdown.scheduler.js'
 import { startLateConfirmationScheduler } from './services/notification/late-confirmation.scheduler.js'
@@ -302,6 +303,8 @@ app.listen(PORT, '0.0.0.0', () => {
   startDelayScheduler();
   // Flags a booking still Assigned 15 min after its call time; tells the drivers + office.
   startLateStartScheduler();
+  // Reminds the office each office morning about drop-offs with no proof (no photo, no approved Proof of Delivery).
+  startProofMissingScheduler();
   startSupportChatScheduler();
   // Reminds the office every 15 min about a driver-reported breakdown with no decision.
   startBreakdownScheduler();
