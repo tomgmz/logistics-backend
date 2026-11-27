@@ -114,6 +114,70 @@ function lastDays(days: number): string[] {
   return Array.from({ length: days }, (_, i) => phDay(now - (days - 1 - i) * DAY_MS))
 }
 
+// ── Weekly / Monthly analytics (dashboard chart toggle, 2026-11-27) ─────────
+// The chart buckets by week (Monday start, ISO) or calendar month, 12 of each;
+// the status donut and busiest clients count the last 7 or 30 days (rolling, so
+// they are never empty on a Monday or the 1st).
+
+export type AnalyticsPeriod = 'weekly' | 'monthly'
+const BUCKETS = 12
+const WINDOW_DAYS: Record<AnalyticsPeriod, number> = { weekly: 7, monthly: 30 }
+
+/** The Monday of a PH `YYYY-MM-DD` (pure date math, no zone involved). */
+function weekStart(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
+  return d.toISOString().slice(0, 10)
+}
+const monthStart = (day: string) => `${day.slice(0, 7)}-01`
+
+/** The 12 bucket starts ending with the current one, oldest first. */
+function bucketStarts(period: AnalyticsPeriod, today: string): string[] {
+  const d = new Date(`${(period === 'weekly' ? weekStart : monthStart)(today)}T00:00:00Z`)
+  return Array.from({ length: BUCKETS }, (_, i) => {
+    const x = new Date(d)
+    if (period === 'weekly') x.setUTCDate(x.getUTCDate() - (BUCKETS - 1 - i) * 7)
+    else x.setUTCMonth(x.getUTCMonth() - (BUCKETS - 1 - i))
+    return x.toISOString().slice(0, 10)
+  }).sort()
+}
+
+function periodAnalytics(bookings: BookingRow[], period: AnalyticsPeriod, today: string) {
+  const toBucket = period === 'weekly' ? weekStart : monthStart
+  const starts    = bucketStarts(period, today)
+  const created   = new Map(starts.map((s) => [s, 0]))
+  const delivered = new Map(starts.map((s) => [s, 0]))
+  const since     = Date.now() - WINDOW_DAYS[period] * DAY_MS
+  const statusMix: Record<string, number> = {}
+  const byClient  = new Map<string, number>()
+  let total = 0
+
+  for (const b of bookings) {
+    const c = toBucket(phDay(new Date(b.created_at)))
+    if (created.has(c)) created.set(c, created.get(c)! + 1)
+    if (b.delivered_at) {
+      const d = toBucket(phDay(new Date(b.delivered_at)))
+      if (delivered.has(d)) delivered.set(d, delivered.get(d)! + 1)
+    }
+    if (Date.parse(b.created_at) < since) continue
+    total++
+    statusMix[b.status] = (statusMix[b.status] ?? 0) + 1
+    const name = toItem(b).client ?? 'Unknown client'
+    byClient.set(name, (byClient.get(name) ?? 0) + 1)
+  }
+
+  return {
+    window_days: WINDOW_DAYS[period],
+    series:      starts.map((s) => ({ start: s, created: created.get(s)!, delivered: delivered.get(s)! })),
+    status_mix:  statusMix,
+    top_clients: [...byClient.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([client, count]) => ({ client, count })),
+    total,
+  }
+}
+
 export async function getStaffDashboard() {
   const [bookings, trucks, reports, flaggedVendors, openTickets] = await Promise.all([
     loadBookings(),
@@ -251,6 +315,12 @@ export async function getStaffDashboard() {
         bookings:  bookings.length,
         completed: statusMix.completed ?? 0,
         cancelled: statusMix.cancelled ?? 0,
+      },
+      // The Weekly / Monthly toggle's data. The fields above stay for a web
+      // build that predates the toggle.
+      periods: {
+        weekly:  periodAnalytics(bookings, 'weekly', today),
+        monthly: periodAnalytics(bookings, 'monthly', today),
       },
     },
   }

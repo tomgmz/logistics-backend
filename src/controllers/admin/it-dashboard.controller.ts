@@ -42,11 +42,11 @@ export async function getTrend(req: Request, res: Response) {
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 
-/** GET /admin/it-dashboard/logistics?period=monthly|annually — cards, chart, tracked delivery. */
+/** GET /admin/it-dashboard/logistics?period=weekly|monthly|annually — cards, chart, tracked delivery. */
 export async function getLogistics(req: Request, res: Response) {
   const period = String(req.query.period ?? 'monthly') as ItLogistics.Period
   if (!ItLogistics.PERIODS.includes(period)) {
-    res.status(400).json({ status: 'error', message: 'period must be monthly or annually' })
+    res.status(400).json({ status: 'error', message: 'period must be weekly, monthly or annually' })
     return
   }
   try {

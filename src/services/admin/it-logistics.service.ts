@@ -16,10 +16,12 @@ import { pool } from '../../lib/database.js'
 const MANILA = `'Asia/Manila'`
 const naiveToTz = (col: string) => `(${col} AT TIME ZONE 'UTC')`
 
-export type Period = 'monthly' | 'annually'
-export const PERIODS: readonly Period[] = ['monthly', 'annually']
+export type Period = 'weekly' | 'monthly' | 'annually'
+export const PERIODS: readonly Period[] = ['weekly', 'monthly', 'annually']
 
+// date_trunc('week') starts on Monday (ISO), like the Company Administrator's chart.
 const PERIOD_SQL: Record<Period, { unit: string; step: string; points: number }> = {
+  weekly:    { unit: 'week',    step: '1 week',   points: 12 },
   monthly:   { unit: 'month',   step: '1 month',  points: 12 },
   annually:  { unit: 'year',    step: '1 year',   points: 5 },
 }
