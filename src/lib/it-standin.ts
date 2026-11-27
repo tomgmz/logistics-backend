@@ -4,9 +4,10 @@ import { supabase } from './supabase.js'
  * The IT Administrator stand-in (user's rule, 2026-11-06).
  *
  * When the IT Administrator resigns and no successor has confirmed within the
- * 30-day render, the Company Administrator named on the handover takes over
- * every IT Administrator power until the new IT Administrator sets their own
- * password. Their role stays 'admin' (they keep all their own work); the
+ * 30-day render, the General Manager takes over (2026-11-27; it was a named
+ * Company Administrator before) every IT Administrator power until the new IT
+ * Administrator sets their own password. Their role stays 'general_manager'
+ * (they keep all their own work); the
  * server ALSO treats them as 'it_admin' (see authenticate → req.user.it_standin,
  * authorize, moduleGuard, password resets).
  *
@@ -44,8 +45,8 @@ export async function getActiveStandinId(): Promise<string | null> {
   return cached.id
 }
 
-/** Whether this signed-in user is the active stand-in. Only a Company Administrator can be. */
+/** Whether this signed-in user is the active stand-in. Only the General Manager can be (2026-11-27). */
 export async function isActiveStandin(userId: string, role: string): Promise<boolean> {
-  if (role !== 'admin') return false
+  if (role !== 'general_manager') return false
   return (await getActiveStandinId()) === userId
 }

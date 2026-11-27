@@ -200,6 +200,12 @@ const MODULE_ROUTE_MAP: { prefix: string; module: ModuleKey }[] = [
 // (relative, e.g. "/trucks") and absolute ("/api/admin/trucks") forms.
 export function moduleForPath(path: string): ModuleKey | null {
   const p = path.replace(/^\/api\/admin/, '')
+  // The IT Administrator handover is not User Management work: the General
+  // Manager runs it (2026-11-27) without any User Management access. Its routes
+  // carry their own gates (authorize it_admin / general_manager, and the service
+  // checks the actor is the outgoing IT Administrator or the active General
+  // Manager), so no module tier applies.
+  if (p === '/it-admins/handover' || p.startsWith('/it-admins/handover/')) return null
   for (const { prefix, module } of MODULE_ROUTE_MAP) {
     if (p === prefix || p.startsWith(prefix + '/')) return module
   }

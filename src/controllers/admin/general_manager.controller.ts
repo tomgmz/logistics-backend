@@ -51,7 +51,8 @@ export async function deleteGeneralManager(req: Request, res: Response) {
     await GeneralManagerService.deleteGeneralManager(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'General Manager archived successfully' })
   } catch (error: any) {
-    res.status(500).json({ status: 'error', message: error.message })
+    // Standing in as IT Administrator: refused until the new one confirms.
+    res.status(error?.code === 'STANDIN_LOCKED' ? 409 : 500).json({ status: 'error', code: error?.code, message: error.message })
   }
 }
 
@@ -61,7 +62,8 @@ export async function deactivateGeneralManager(req: Request, res: Response) {
     const data = await GeneralManagerService.deactivateGeneralManager(param(req.params.id), userId)
     res.status(200).json({ status: 'success', message: 'General Manager deactivated', data })
   } catch (error: any) {
-    const status = error.message.includes('not found') ? 404
+    const status = error?.code === 'STANDIN_LOCKED' ? 409
+      : error.message.includes('not found') ? 404
       : error.message.includes('already') ? 409
       : 500
     res.status(status).json({ status: 'error', message: error.message })

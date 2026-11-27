@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase.js'
+import { pool } from '../../lib/database.js'
 import { createUserWithProfile } from '../../lib/user-provisioning.js'
 import { CreateITAdminInput, ITAdminHandover, UpdateITAdminInput } from '../../types/it-admin.types.js'
 
@@ -143,4 +144,65 @@ async function remove(userId: string) {
   return true
 }
 
-export { findAll, findById, findActive, findSeatHolders, findOpenHandover, findConfirmedButOpen, updateHandover, create, update, remove }
+/**
+ * The IT Administrator holding the seat for an emergency takeover: not archived,
+ * not already rendering, whatever else their status (an active one who stopped
+ * answering, a locked one, a deactivated one). Null when the seat is empty.
+ */
+async function findSeatForTakeover() {
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id, email, first_name, last_name, status, last_login_at')
+    .eq('role', 'it_admin')
+    .neq('status', 'archived')
+    .is('render_ends_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data ?? null
+}
+
+/**
+ * The General Manager starts an emergency handover on an IT Administrator who
+ * can't be reached (2026-11-27). Same rows as start_it_admin_handover, in one
+ * transaction, but it also takes a locked or deactivated IT Administrator and
+ * records the General Manager as created_by and stand-in. Returns null when
+ * the seat changed meanwhile; throws HANDOVER_OPEN when one is already open.
+ */
+async function startEmergencyHandover(outgoingId: string, gmId: string, reason: string, waitDays: number) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const seat = await client.query(
+      `SELECT 1 FROM users
+        WHERE user_id = $1 AND role = 'it_admin' AND status <> 'archived' AND render_ends_at IS NULL
+        FOR UPDATE`,
+      [outgoingId],
+    )
+    if (seat.rowCount === 0) { await client.query('ROLLBACK'); return null }
+    const open = await client.query(`SELECT 1 FROM it_admin_handovers WHERE ended_at IS NULL AND cancelled_at IS NULL`)
+    if ((open.rowCount ?? 0) > 0) { await client.query('ROLLBACK'); throw new Error('HANDOVER_OPEN') }
+    await client.query(
+      `UPDATE users SET render_ends_at = now() + make_interval(days => $2), updated_at = now() WHERE user_id = $1`,
+      [outgoingId, waitDays],
+    )
+    const inserted = await client.query<ITAdminHandover>(
+      `INSERT INTO it_admin_handovers (outgoing_id, reason, render_due_at, created_by, standin_id, standin_named_at)
+       VALUES ($1, $2, now() + make_interval(days => $3), $4, $4, now())
+       RETURNING *`,
+      [outgoingId, reason, waitDays, gmId],
+    )
+    await client.query('COMMIT')
+    return inserted.rows[0]
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    // The one-open-handover index, if two requests raced.
+    if ((err as { code?: string })?.code === '23505') throw new Error('HANDOVER_OPEN')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+export { findAll, findById, findActive, findSeatHolders, findOpenHandover, findConfirmedButOpen, updateHandover, create, update, remove, findSeatForTakeover, startEmergencyHandover }

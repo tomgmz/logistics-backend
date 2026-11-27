@@ -57,7 +57,6 @@ export interface ITAdminSuccessorInput {
 export interface StartHandoverInput {
   reason:      string
   successor?:  ITAdminSuccessorInput | null
-  standin_id:  string
 }
 
 export interface UpdateITAdminInput {

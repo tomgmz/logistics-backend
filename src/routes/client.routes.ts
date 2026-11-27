@@ -101,7 +101,9 @@ router.post('/',                authenticate, authenticatedLimiter, isClient, at
 router.patch('/:id',            authenticate, authenticatedLimiter, isClient, attachClientScope, requireOpenContract, lockGuard('booking', fromParam('id')), validate(updateBookingSchema),       BookingController.updateBooking)
 // A booking 8338 turned down goes back to the client: they correct and resubmit
 // it (it re-enters the General Manager's queue), or cancel it for good.
-router.post('/:id/resubmit',    authenticate, authenticatedLimiter, isClient, attachClientScope, requireOpenContract, lockGuard('booking', fromParam('id')), validate(resubmitBookingSchema), BookingController.resubmitBooking)
+// The whole booking, while it still waits for the General Manager (same body as resubmit).
+router.post('/:id/edit',        authenticate, authenticatedLimiter, isClient, attachClientScope, requireOpenContract, lockGuard('booking', fromParam('id')), validate(resubmitBookingSchema), BookingController.editPendingBooking)
+router.post('/:id/resubmit',   authenticate, authenticatedLimiter, isClient, attachClientScope, requireOpenContract, lockGuard('booking', fromParam('id')), validate(resubmitBookingSchema), BookingController.resubmitBooking)
 router.post('/:id/close',       authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), BookingController.closeRejectedBooking)
 router.patch('/:id/status',     authenticate, authenticatedLimiter, isCompanyAdmin, attachClientScope, canManageBooking, lockGuard('booking', fromParam('id')), validate(updateBookingStatusSchema), BookingController.updateBookingStatus)
 router.delete('/:id',           authenticate, authenticatedLimiter, isClient, attachClientScope, lockGuard('booking', fromParam('id')), BookingController.deleteBooking)

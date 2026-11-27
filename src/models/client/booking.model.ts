@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase.js'
 import type { GeofenceOutcome, StopProofPosition } from '../../lib/stop-geofence.js'
+import type { PoolClient } from 'pg'
 import { pool } from '../../lib/database.js'
 import {
   CreateBookingInput,
@@ -648,6 +649,109 @@ async function create(input: CreateBookingInput): Promise<BookingWithRelations |
   return findById(bookingId)
 }
 
+type DbClient = PoolClient
+
+/**
+ * Replace a booking's drop-offs and cargo with a full new statement, inside the
+ * caller's transaction (resubmit, editPending). The old ones go first; cargo
+ * before destinations, because a cargo line points at its drop-off.
+ */
+async function restateStopsAndCargo(
+  client: DbClient,
+  bookingId: string,
+  destinations: ResubmitBookingInput['destinations'],
+  cargo_items: ResubmitBookingInput['cargo_items'],
+): Promise<void> {
+  await client.query(`DELETE FROM booking_cargo_items  WHERE booking_id = $1`, [bookingId])
+  await client.query(`DELETE FROM booking_destinations WHERE booking_id = $1`, [bookingId])
+
+  const destinationIdByOrder = new Map<number, string>()
+
+  if (destinations.length > 0) {
+    const rows = destinations.map((d) => ({ ...d, booking_id: bookingId }))
+    const { sql, params: destParams } = bulkValues(rows, DESTINATION_INSERT_COLUMNS)
+    const inserted = await client.query<{ destination_id: string; sequence_order: number }>(
+      `INSERT INTO booking_destinations (${DESTINATION_INSERT_COLUMNS.join(', ')})
+       VALUES ${sql}
+       RETURNING destination_id, sequence_order`,
+      destParams,
+    )
+    for (const row of inserted.rows) {
+      destinationIdByOrder.set(Number(row.sequence_order), row.destination_id)
+    }
+  }
+
+  if (cargo_items && cargo_items.length > 0) {
+    const rows = cargo_items.map((item) => {
+      const { dropoff_sequence_order, ...rest } = item as typeof item & {
+        dropoff_sequence_order?: number
+      }
+      return {
+        ...rest,
+        booking_id:     bookingId,
+        destination_id: dropoff_sequence_order != null
+          ? destinationIdByOrder.get(dropoff_sequence_order) ?? null
+          : null,
+      }
+    })
+    const { sql, params: cargoParams } = bulkValues(rows, CARGO_INSERT_COLUMNS)
+    await client.query(
+      `INSERT INTO booking_cargo_items (${CARGO_INSERT_COLUMNS.join(', ')}) VALUES ${sql}`,
+      cargoParams,
+    )
+  }
+}
+
+/**
+ * The client changes a booking that still waits for the General Manager (user
+ * 2026-11-27: editable until it is approved). Rewritten in place in one
+ * transaction like `resubmit`, but it stays a plain pending request: no
+ * booking_revisions row (no change history while pending, the user's call) and
+ * no resubmission count. The row lock plus the guard mean an edit never lands
+ * on a booking the General Manager decided a moment earlier, and a decision
+ * waits for an edit already in flight. Returns null when the guard refused.
+ */
+async function editPending(
+  bookingId: string,
+  input: ResubmitBookingInput,
+): Promise<BookingWithRelations | null> {
+  const { destinations, cargo_items, ...bookingData } = input
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const locked = await client.query(
+      `SELECT 1 FROM bookings
+        WHERE booking_id = $1 AND status = 'pending' AND gm_status = 'pending'
+          AND COALESCE(ops_status, 'pending') <> 'assigned'
+        FOR UPDATE`,
+      [bookingId],
+    )
+    if (locked.rowCount === 0) {
+      await client.query('ROLLBACK')
+      return null
+    }
+    const columns = BOOKING_INSERT_COLUMNS.filter(
+      (col) => col !== 'client_id' && col !== 'idempotency_key',
+    )
+    const params = columns.map((col) => (bookingData as Record<string, unknown>)[col] ?? null)
+    await client.query(
+      `UPDATE bookings
+          SET ${columns.map((col, i) => `${col} = $${i + 2}`).join(', ')},
+              updated_at = now()
+        WHERE booking_id = $1`,
+      [bookingId, ...params],
+    )
+    await restateStopsAndCargo(client, bookingId, destinations, cargo_items)
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
+  return findById(bookingId)
+}
+
 /**
  * Put a rejected booking back in front of the General Manager, rewritten with
  * the client's corrections — as ONE transaction, for the same reason `create`
@@ -725,46 +829,7 @@ async function resubmit(
       return null
     }
 
-    // The stops and cargo are restated in full, so the old ones go first.
-    // Cargo before destinations: a cargo line points at its drop-off.
-    await client.query(`DELETE FROM booking_cargo_items  WHERE booking_id = $1`, [bookingId])
-    await client.query(`DELETE FROM booking_destinations WHERE booking_id = $1`, [bookingId])
-
-    const destinationIdByOrder = new Map<number, string>()
-
-    if (destinations.length > 0) {
-      const rows = destinations.map((d) => ({ ...d, booking_id: bookingId }))
-      const { sql, params: destParams } = bulkValues(rows, DESTINATION_INSERT_COLUMNS)
-      const inserted = await client.query<{ destination_id: string; sequence_order: number }>(
-        `INSERT INTO booking_destinations (${DESTINATION_INSERT_COLUMNS.join(', ')})
-         VALUES ${sql}
-         RETURNING destination_id, sequence_order`,
-        destParams,
-      )
-      for (const row of inserted.rows) {
-        destinationIdByOrder.set(Number(row.sequence_order), row.destination_id)
-      }
-    }
-
-    if (cargo_items && cargo_items.length > 0) {
-      const rows = cargo_items.map((item) => {
-        const { dropoff_sequence_order, ...rest } = item as typeof item & {
-          dropoff_sequence_order?: number
-        }
-        return {
-          ...rest,
-          booking_id:     bookingId,
-          destination_id: dropoff_sequence_order != null
-            ? destinationIdByOrder.get(dropoff_sequence_order) ?? null
-            : null,
-        }
-      })
-      const { sql, params: cargoParams } = bulkValues(rows, CARGO_INSERT_COLUMNS)
-      await client.query(
-        `INSERT INTO booking_cargo_items (${CARGO_INSERT_COLUMNS.join(', ')}) VALUES ${sql}`,
-        cargoParams,
-      )
-    }
+    await restateStopsAndCargo(client, bookingId, destinations, cargo_items)
 
     await client.query(
       `UPDATE booking_revisions SET after_snapshot = booking_snapshot($1)
@@ -1518,6 +1583,7 @@ export const BookingModel = {
   updateStatus,
   cancelBooking,
   resubmit,
+  editPending,
   findRevisions,
   closeByClient,
   updateGmStatus,

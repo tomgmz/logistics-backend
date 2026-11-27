@@ -748,6 +748,65 @@ export async function resubmitBookingService(
 }
 
 /**
+ * The client changes a booking still waiting for the General Manager: the full
+ * booking (pickup, date, drop-offs, cargo, attachments), through the same form
+ * as a new booking (user 2026-11-27). Once the General Manager approves or
+ * rejects it, this is refused: an approved booking changes through a support
+ * ticket, a rejected one through Edit & Resubmit (Lalamove / Grab Express: an
+ * order can be changed until it is accepted). It stays pending and keeps its
+ * place in the General Manager's queue; no change history is kept while pending.
+ */
+export async function editPendingBookingService(
+  bookingId: string,
+  input: ResubmitBookingInput,
+  viewer: BookingViewer,
+  userId?: string | null,
+): Promise<BookingWithRelations> {
+  const existing = await BookingModel.findById(bookingId)
+  if (!existing) throw notFound('Booking not found')
+  assertBookingOwnership(existing, viewer)
+
+  const NOT_EDITABLE = 'This booking has already been reviewed, so it can no longer be changed here. Open a support ticket to ask for a change.'
+  if (existing.status !== 'pending' || existing.gm_status !== 'pending') throw conflict(NOT_EDITABLE)
+
+  if (!input.destinations || input.destinations.length === 0) {
+    throw badRequest('At least one destination is required')
+  }
+  if (input.destinations.length > MAX_DESTINATIONS_PER_BOOKING) {
+    throw badRequest(`A booking can have at most ${MAX_DESTINATIONS_PER_BOOKING} drop-offs`)
+  }
+  validateScheduleDate(input.schedule_date, input.call_time)
+  const orders = input.destinations.map((d) => d.sequence_order)
+  if (new Set(orders).size !== orders.length) {
+    throw badRequest('sequence_order must be unique per destination')
+  }
+
+  const booking = await BookingModel.editPending(bookingId, input)
+  // The General Manager decided between the read above and the row lock.
+  if (!booking) throw conflict(NOT_EDITABLE)
+
+  // Same rule as updateBookingService: a driver call time set against the old
+  // start would now be wrong, so it is cleared until operations set a new one.
+  const startMoved =
+    String(input.schedule_date).slice(0, 10) !== String(existing.schedule_date ?? '').slice(0, 10) ||
+    String(input.call_time ?? '').slice(0, 5) !== String(existing.call_time ?? '').slice(0, 5)
+  if (startMoved && existing.driver_call_time) {
+    await BookingModel.setDriverCallTime(bookingId, null)
+    requestDriverCallCheck()
+  }
+
+  logEvent({
+    user_id:     userId,
+    log_type:    'booking',
+    action:      'booking_updated',
+    description: `Booking ${bookingRef(booking)} edited by the client while waiting for approval`,
+  })
+
+  void reoptimizeBookingStops(booking)
+  return booking
+}
+
+/**
  * The client does not want to correct a rejected booking. It stays cancelled
  * and is taken off their Needs Your Attention list for good.
  */

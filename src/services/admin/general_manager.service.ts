@@ -7,6 +7,7 @@ import { generateSecurePassword, sendWelcomeEmail } from '../../lib/mailer.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import { assertPhoneAvailable } from '../../lib/phone-unique.js'
 import { errorMessage } from '../../lib/error-message.js'
+import { assertNotStandin } from './it-admin.service.js'
 
 interface UpdateGeneralManagerDTO {
   first_name?: string
@@ -102,6 +103,8 @@ export async function updateGeneralManager(userId: string, dto: UpdateGeneralMan
 }
 
 export async function deleteGeneralManager(userId: string, actorId?: string | null) {
+  // Not while they stand in as IT Administrator (it-admin.service).
+  await assertNotStandin(userId)
   const result = await GeneralManagerModel.remove(userId)
   await banArchivedAuthUser(userId)
 
@@ -117,6 +120,7 @@ export async function deleteGeneralManager(userId: string, actorId?: string | nu
 }
 
 export async function deactivateGeneralManager(userId: string, actorId?: string | null) {
+  await assertNotStandin(userId)
   return deactivateUserWithBan(userId, 'general_manager', 'general_manager_deactivated', 'General Manager', actorId)
 }
 

@@ -105,6 +105,9 @@ export const ASSISTANT_KNOWLEDGE: KnowledgePassage[] = [
     id: 'change-cancel',
     question: 'Can I change or cancel a booking?',
     answer:
+      'While a booking is still waiting for approval you can change it yourself: open it in Transaction History ' +
+      'and choose Edit Booking. You can change any detail (date, time, pick-up, drop-offs, cargo and documents); ' +
+      'saving keeps the same booking number and its place in the approval queue. ' +
       'Once a booking is approved, changes and cancellations go through our team so the vehicle and driver can ' +
       'be updated too. In the help assistant tap "Talk to our team" and send the booking reference and what you ' +
       'need changed; we reply in the same conversation (and by email if you are away).',

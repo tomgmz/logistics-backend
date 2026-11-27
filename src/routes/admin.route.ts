@@ -11,7 +11,7 @@ import { createTruckModelSchema, updateTruckModelSchema }             from '../s
 import { createGeneralManagerSchema, updateGeneralManagerSchema }     from '../schema/admin/general_manager.schema.js'
 import { createFleetAdminSchema, updateFleetAdminSchema }             from '../schema/admin/admin_roles.schema.js'
 import { createOperationsAdminSchema, updateOperationsAdminSchema }   from '../schema/admin/admin_roles.schema.js'
-import { updateITAdminSchema, startHandoverSchema, setStandinSchema, itAdminSuccessorSchema } from '../schema/admin/it-admin.schema.js'
+import { updateITAdminSchema, startHandoverSchema, startTakeoverSchema, itAdminSuccessorSchema } from '../schema/admin/it-admin.schema.js'
 import { assignBookingSchema, replaceCrewSchema, updateDeliveryStatusSchema, officeStepSchema, officeIncidentSchema, lateAcceptSchema, lateDismissSchema } from '../schema/admin/assignment.schema.js'
 import * as OfficeProgressController from '../controllers/admin/office-progress.controller.js'
 import * as AdminController           from '../controllers/admin/admin.controller.js'
@@ -77,6 +77,9 @@ const canRestoreUsers   = requireModuleFlag('user-management', 'can_delete')
 const isAdmin = authorize('admin', 'it_admin')
 // System logs are IT Admin's alone — deliberately narrower than isAdmin.
 const isItAdmin = authorize('it_admin')
+// The IT Administrator, or the General Manager stepping in on the handover.
+const isHandoverHandler = authorize('it_admin', 'general_manager')
+const isGm = authorize('general_manager')
 // Staff only. Until 2026-11-19 isFleet, isOperations and isFleetRead also
 // admitted 'client', and moduleGuard waves clients through (not a managed role),
 // so a signed-in client could create drivers and vehicles, assign any booking,
@@ -345,16 +348,22 @@ router.get('/it-admins',        authenticate, isItAdmin, ITAdminController.getAl
 // The handover, run by the outgoing IT Admin on themselves (2026-10-25): start
 // the 30-day render, add the successor (now or later), resend their sign-in
 // email, replace them, or cancel. It ends when the successor sets a password.
-router.get('/it-admins/handover',                  authenticate, isItAdmin, ITAdminController.getHandoverStatus)
+// The General Manager handles it whenever the IT Administrator is not there
+// (2026-11-27): status and the successor steps; the service checks they are the
+// active General Manager. Start and cancel stay the IT Administrator's own.
+router.get('/it-admins/handover',                  authenticate, isHandoverHandler, ITAdminController.getHandoverStatus)
 router.post('/it-admins/handover/start',           authenticate, isItAdmin, validate(startHandoverSchema), ITAdminController.startHandover)
-router.post('/it-admins/handover/successor',       authenticate, isItAdmin, validate(itAdminSuccessorSchema), ITAdminController.addSuccessor)
-router.post('/it-admins/handover/successor/resend', authenticate, isItAdmin, ITAdminController.resendSuccessor)
-router.delete('/it-admins/handover/successor',     authenticate, isItAdmin, ITAdminController.replaceSuccessor)
-router.post('/it-admins/handover/cancel',          authenticate, isItAdmin, ITAdminController.cancelHandover)
-// The Company Administrator who takes over if no replacement confirms within
-// the 30 days (2026-11-06). Only the outgoing IT Admin names one (the service checks).
-router.get('/it-admins/handover/standin-candidates', authenticate, isItAdmin, ITAdminController.listStandinCandidates)
-router.put('/it-admins/handover/standin',          authenticate, isItAdmin, validate(setStandinSchema), ITAdminController.setStandin)
+router.post('/it-admins/handover/successor',       authenticate, isHandoverHandler, validate(itAdminSuccessorSchema), ITAdminController.addSuccessor)
+router.post('/it-admins/handover/successor/resend', authenticate, isHandoverHandler, ITAdminController.resendSuccessor)
+router.delete('/it-admins/handover/successor',     authenticate, isHandoverHandler, ITAdminController.replaceSuccessor)
+router.post('/it-admins/handover/cancel',          authenticate, isHandoverHandler, ITAdminController.cancelHandover)
+// The IT Administrator can't be reached (2026-11-27): the General Manager asks
+// to take over (the IT Administrator is emailed and can cancel for 3 days), or,
+// with no IT Administrator on record at all, adds one. The service checks the
+// caller is the active General Manager.
+router.post('/it-admins/handover/takeover',        authenticate, isGm, validate(startTakeoverSchema), ITAdminController.startTakeover)
+router.post('/it-admins/handover/empty-seat',      authenticate, isGm, validate(itAdminSuccessorSchema), ITAdminController.addToEmptySeat)
+// No stand-in to name since 2026-11-27: the General Manager takes over on day 30.
 router.get('/it-admins/:id',    authenticate, isItAdmin, ITAdminController.getITAdminById)
 router.patch('/it-admins/:id',  authenticate, isItAdmin, lockGuard('user', fromParam('id')), validate(updateITAdminSchema), ITAdminController.updateITAdmin)
 router.patch('/it-admins/:id/deactivate', authenticate, isItAdmin, lockGuard('user', fromParam('id')), ITAdminController.deactivateITAdmin)

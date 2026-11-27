@@ -18,8 +18,8 @@ export interface AuthPayload {
   iat: number
   exp: number
   /**
-   * Set (server-side only, never in the JWT) on the Company Administrator who is
-   * standing in for a departed IT Administrator. Their role stays 'admin';
+   * Set (server-side only, never in the JWT) on the General Manager who is
+   * standing in for a departed IT Administrator. Their role stays 'general_manager';
    * authorize() and the module guard also let them through as 'it_admin'.
    * See lib/it-standin.ts.
    */

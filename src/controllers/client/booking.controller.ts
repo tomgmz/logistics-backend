@@ -13,6 +13,7 @@ import {
   updateBookingStatusService,
   deleteBookingService,
   resubmitBookingService,
+  editPendingBookingService,
   closeRejectedBookingService,
   gmReviewService,
   confirmCompletionService,
@@ -175,6 +176,17 @@ export const updateBooking = async (req: Request, res: Response) => {
         ? 400
         : 500)
     res.status(status).json({ status: 'error', message: error.message })
+  }
+}
+
+// The client changes the whole booking while it still waits for the General Manager.
+export const editPendingBooking = async (req: Request, res: Response) => {
+  try {
+    const { userId } = getRequestMeta(req)
+    const booking = await editPendingBookingService(param(req.params.id), req.body, viewerFrom(req), userId)
+    res.status(200).json({ status: 'success', data: booking })
+  } catch (error: any) {
+    res.status(statusOf(error)).json({ status: 'error', message: error.message })
   }
 }
 

@@ -733,6 +733,59 @@ Someone may be trying to get into your account. Choose a new password that you d
   })
 }
 
+// ── Emergency IT Administrator takeover ─────────────────────────────────────
+
+export interface ItAdminTakeoverEmailParams {
+  to:        string
+  firstName: string | null
+  gmName:    string
+  reason:    string
+  /** When the General Manager takes over unless it is cancelled, already formatted (formatManilaTimestamp). */
+  takesOverAt: string
+}
+
+/**
+ * Sent to the IT Administrator the moment the General Manager asks to take over
+ * because they can't be reached (2026-11-27). The whole point of the waiting
+ * period is that they hear about it, so it cannot be turned off and says how to
+ * stop it. No link: they sign in as usual.
+ */
+export async function sendItAdminTakeoverEmail(params: ItAdminTakeoverEmailParams): Promise<void> {
+  const { to, firstName, gmName, reason, takesOverAt } = params
+  const name   = firstName ?? 'there'
+  const footer = 'This is a security notification about your IT Administrator account. It cannot be turned off.'
+  const html = layoutHtml({
+    label:     'IT Administrator Takeover',
+    preheader: `The General Manager asked to take over the IT Administrator role. Cancel by ${takesOverAt} if you are still here.`,
+    blocks: [
+      greeting(name),
+      para(`<strong>${esc(gmName)}</strong> (General Manager) asked to take over the ${esc(APP_NAME)} IT Administrator role because you could not be reached.`),
+      quoted('Their reason', reason),
+      notice(`<strong>Still here?</strong> Sign in and choose <strong>Cancel Handover</strong> on your dashboard before <strong>${esc(takesOverAt)}</strong>. Nothing changes until then.`),
+      para(`If you do nothing, at that time the General Manager takes over the IT Administrator work and your IT Administrator account is closed. Questions: ${supportLink()}.`),
+    ],
+    footer,
+  })
+  const text = layoutText(`
+Hi ${name},
+
+${gmName} (General Manager) asked to take over the ${APP_NAME} IT Administrator role because you could not be reached.
+
+Their reason: ${reason}
+
+STILL HERE?
+Sign in and choose Cancel Handover on your dashboard before ${takesOverAt}. Nothing changes until then.
+
+If you do nothing, at that time the General Manager takes over the IT Administrator work and your IT Administrator account is closed. Questions: ${APP_SUPPORT_EMAIL}.`, footer)
+
+  await deliver({
+    subject: `The General Manager asked to take over your IT Administrator role`,
+    html, text,
+    to:   { email: to, name: firstName },
+    what: 'IT Administrator takeover email',
+  })
+}
+
 // ── Company copy of every password reset / change ──────────────────────────
 //
 // Goes to the company mailbox so someone other than the (possibly compromised)

@@ -60,6 +60,8 @@ export async function getHandoverStatus(req: Request, res: Response) {
 const HANDOVER_CONFLICTS = new Set([
   'NOT_SEAT_HOLDER', 'HANDOVER_OPEN', 'NO_OPEN_HANDOVER', 'SUCCESSOR_PENDING',
   'NO_SUCCESSOR', 'SUCCESSOR_CONFIRMED', 'BAD_STANDIN', 'STANDIN_ACTIVE',
+  // Emergency takeover by the General Manager (2026-11-27).
+  'NOT_GM', 'SEAT_EMPTY', 'SEAT_TAKEN', 'SEAT_CHANGED', 'TAKEOVER_WAITING', 'NOT_OUTGOING',
 ])
 
 /** One handler shape for every handover step. The actor is always the caller. */
@@ -99,24 +101,19 @@ export const replaceSuccessor = handoverStep(
   (_req, actor) => ITAdminService.replaceSuccessor(actor),
   'Replacement removed. You can add a different one.',
 )
-export const setStandin = handoverStep(
-  (req, actor) => ITAdminService.setStandin(req.body.standin_id ?? null, actor),
-  'Stand-in saved.',
-)
-
-/** Active Company Administrators who can be named stand-in. */
-export async function listStandinCandidates(_req: Request, res: Response) {
-  try {
-    const data = await ITAdminService.listStandinCandidates()
-    res.status(200).json({ status: 'success', data })
-  } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message })
-  }
-}
-
 export const cancelHandover = handoverStep(
   (_req, actor) => ITAdminService.cancelHandover(actor),
-  'Handover cancelled. You remain the IT Administrator.',
+  'Handover cancelled. The IT Administrator keeps the role.',
+)
+export const startTakeover = handoverStep(
+  (req, actor) => ITAdminService.startEmergencyTakeover(req.body.reason, actor),
+  'Takeover requested. The IT Administrator was emailed and can cancel it during the waiting period.',
+  true,
+)
+export const addToEmptySeat = handoverStep(
+  (req, actor) => ITAdminService.addItAdminToEmptySeat(req.body, actor),
+  'IT Administrator added. They were emailed a temporary password.',
+  true,
 )
 
 export async function updateITAdmin(req: Request, res: Response) {

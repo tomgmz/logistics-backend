@@ -137,7 +137,7 @@ export interface AccountsSection {
   dormant:            number
   dormant_days:       number
   it_admin:           StaffAccount | null
-  /** Company Administrator standing in for a departed IT Administrator (2026-11-06), else null. */
+  /** The General Manager standing in for a departed IT Administrator (2026-11-27), else null. */
   it_standin:         StaffAccount | null
   last_handover:      { at: string; description: string } | null
   administrators:     StaffAccount[]

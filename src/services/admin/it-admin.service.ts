@@ -4,7 +4,8 @@ import { activateUserWithUnban, banArchivedAuthUser, deactivateUserWithBan } fro
 import * as WebauthnModel from '../../models/auth/webauthn.model.js'
 import { ITAdminHandover, ITAdminSuccessorInput, StartHandoverInput, UpdateITAdminInput } from '../../types/it-admin.types.js'
 import { logEvent } from '../../lib/log-event.js'
-import { generateSecurePassword, sendWelcomeEmail, TEMP_PASSWORD_TTL_DAYS } from '../../lib/mailer.js'
+import { formatManilaTimestamp, generateSecurePassword, sendItAdminTakeoverEmail, sendWelcomeEmail, TEMP_PASSWORD_TTL_DAYS } from '../../lib/mailer.js'
+import { logSystem } from '../../lib/log-system.js'
 import { deleteAuthUserSafely } from '../../lib/auth-helpers.js'
 import { invalidateUserPermissions } from '../../middlewares/moduleAccess.middleware.js'
 import * as ResetModel from '../../models/auth/password-reset.model.js'
@@ -162,16 +163,36 @@ export async function activateITAdmin(
  */
 
 /**
+ * The General Manager handles the handover whenever the IT Administrator is
+ * not there (user 2026-11-27; replaces the named Company Administrator
+ * stand-in of 2026-11-06). There is only ever one General Manager
+ * (one-general-manager), so nobody is "named": the stand-in is whoever is the
+ * active General Manager, read fresh each time. A General Manager replaced
+ * mid-handover therefore hands it on to the new one by itself.
+ */
+async function findActiveGm() {
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id, role, status, first_name, last_name, email')
+    .eq('role', 'general_manager')
+    .eq('status', 'active')
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data ?? null
+}
+
+/**
  * The open handover `actorId` may act on, or a coded refusal: the outgoing IT
- * Admin's own, or (with allowStandin) the one whose stand-in the actor is,
- * once the stand-in has taken over. The stand-in may add / re-send / replace
- * the successor; only the outgoing IT Admin may cancel or name the stand-in.
+ * Admin's own, or (with allowStandin) the active General Manager's, at any
+ * point of the handover (they step in whenever the IT Administrator is not
+ * there). The General Manager may add / re-send / replace the successor; only
+ * the outgoing IT Admin may cancel.
  */
 async function openHandoverOf(actorId: string, opts: { allowStandin?: boolean } = {}) {
   const handover = await ITAdminModel.findOpenHandover()
   const isOutgoing = !!handover && handover.outgoing_id === actorId
-  const isStandin  = !!handover && !!opts.allowStandin
-    && handover.standin_id === actorId && !!handover.standin_activated_at
+  const isStandin  = !!handover && !!opts.allowStandin && (await findActiveGm())?.user_id === actorId
   if (!handover || (!isOutgoing && !isStandin)) {
     throw coded('There is no handover in progress on your account.', 'NO_OPEN_HANDOVER')
   }
@@ -194,110 +215,146 @@ async function notifyHandover(userIds: string[], title: string, body: string, ac
   }
 }
 
-/** An active Company Administrator, or a coded refusal. */
-async function assertStandinCandidate(userId: string) {
-  const { data, error } = await supabase
-    .from('users')
-    .select('user_id, role, status, first_name, last_name, email')
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (error) throw error
-  if (!data || data.role !== 'admin' || data.status !== 'active') {
-    throw coded('The stand-in must be an active Company Administrator.', 'BAD_STANDIN')
-  }
-  return data
-}
-
 function personName(u: { first_name: string | null; last_name: string | null; email?: string | null } | null): string {
-  return (u ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() : '') || u?.email || 'a Company Administrator'
+  return (u ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() : '') || u?.email || 'the General Manager'
+}
+
+const GM_DASHBOARD = '/general_manager/dashboard'
+
+/**
+ * Emergency takeover (2026-11-27): the General Manager starts a handover on an
+ * IT Administrator who can't be reached. They are emailed and told at once and
+ * can cancel within this many days (Bitwarden / LastPass emergency access,
+ * Apple account recovery: a waiting period the owner can stop). After it the
+ * General Manager takes over exactly as on an overdue resignation.
+ */
+export const EMERGENCY_WAIT_DAYS = 3
+
+/** Started by the General Manager, not by the IT Administrator on themselves. */
+function isEmergency(h: ITAdminHandover): boolean {
+  return !!h.created_by && h.created_by !== h.outgoing_id
 }
 
 /**
- * Refuse to deactivate or archive the Company Administrator named as stand-in
- * on the open handover. Without this the stand-in could be switched off before
- * (or after) day 30, leaving the IT seat with nobody: exactly what the required
- * stand-in exists to prevent. The outgoing IT Admin names someone else first;
- * after the stand-in took over, it lasts until the new IT Admin confirms.
+ * The General Manager asks to take over an IT Administrator who can't be
+ * reached (active but silent, locked, or deactivated).
  */
-export async function assertNotStandin(userId: string): Promise<void> {
-  const handover = await ITAdminModel.findOpenHandover()
-  if (!handover || handover.standin_id !== userId) return
-  throw coded(
-    handover.standin_activated_at
-      ? 'This Company Administrator is standing in as IT Administrator. They can be deactivated or archived once the new IT Administrator has set their password.'
-      : 'This Company Administrator is the named IT Administrator stand-in. Ask the IT Administrator to name a different stand-in first.',
-    'STANDIN_LOCKED',
-  )
-}
-
-/** Active Company Administrators the outgoing IT Admin can name as stand-in. */
-export async function listStandinCandidates() {
-  const { data, error } = await supabase
-    .from('users')
-    .select('user_id, first_name, last_name, email')
-    .eq('role', 'admin')
-    .eq('status', 'active')
-    .order('first_name', { ascending: true })
-  if (error) throw error
-  return data ?? []
-}
-
-/**
- * The outgoing IT Admin names the Company Administrator who takes over if
- * nobody has confirmed by the render target. Required (2026-11-06): it can be
- * changed until the stand-in has taken over, never cleared.
- */
-export async function setStandin(standinId: string | null, actorId: string) {
-  if (!standinId) {
-    throw coded('A stand-in is required: the IT Administrator cannot stay past the render time. Choose a different Company Administrator instead.', 'BAD_STANDIN')
+export async function startEmergencyTakeover(reason: string, actorId: string) {
+  const gm = await findActiveGm()
+  if (!gm || gm.user_id !== actorId) throw coded('Only the General Manager can take over the IT Administrator role.', 'NOT_GM')
+  const seat = await ITAdminModel.findSeatForTakeover()
+  if (!seat) {
+    throw coded('There is no IT Administrator to take over. Add the new IT Administrator instead.', 'SEAT_EMPTY')
   }
-  const handover = await openHandoverOf(actorId)
-  if (handover.standin_activated_at) {
-    throw coded('The stand-in has already taken over and can no longer be changed.', 'STANDIN_ACTIVE')
+  let handover: ITAdminHandover | null
+  try {
+    handover = await ITAdminModel.startEmergencyHandover(seat.user_id, gm.user_id, reason, EMERGENCY_WAIT_DAYS)
+  } catch (err) {
+    if ((err as Error).message === 'HANDOVER_OPEN') throw rpcRefusal('HANDOVER_OPEN')!
+    throw err
   }
-  const person   = standinId ? await assertStandinCandidate(standinId) : null
-  const previous = handover.standin_id ?? null
-  if (previous === standinId) return { standin_id: standinId }
-
-  await ITAdminModel.updateHandover(handover.handover_id, {
-    standin_id:       standinId,
-    standin_named_at: standinId ? new Date().toISOString() : null,
-  })
+  if (!handover) throw coded('The IT Administrator changed meanwhile. Reload and try again.', 'SEAT_CHANGED')
+  invalidateUserPermissions(seat.user_id)
 
   logEvent({
     user_id:     actorId,
     log_type:    'user_management',
-    action:      'it_admin_standin_named',
-    description: standinId
-      ? `Company Administrator ${personName(person)} (${standinId}) named IT Administrator stand-in; takes over on ${handover.render_due_at} if no replacement has confirmed`
-      : 'IT Administrator stand-in cleared',
+    action:      'it_admin_takeover_requested',
+    description: `General Manager ${personName(gm)} asked to take over from IT Administrator ${seat.email} (${seat.user_id}); takes effect ${handover.render_due_at} unless cancelled. Reason: ${reason}`,
   })
 
-  const due = new Date(handover.render_due_at).toLocaleDateString('en-PH', {
-    timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric',
-  })
-  if (standinId) {
-    void notifyHandover([standinId], 'You are the IT Administrator stand-in',
-      `The IT Administrator is leaving. If no replacement has set their password by ${due}, you will take over the IT Administrator's work until the new IT Administrator starts.`,
-      '/admin/dashboard')
-  }
-  if (previous) {
-    void notifyHandover([previous], 'No longer the IT Administrator stand-in',
-      'The IT Administrator named someone else (or nobody) to stand in for them.', '/admin/dashboard')
-  }
-  return { standin_id: standinId }
+  const takesOverAt = formatManilaTimestamp(handover.render_due_at)
+  // Email first: an IT Administrator who has gone quiet may never open the app.
+  void sendItAdminTakeoverEmail({ to: seat.email, firstName: seat.first_name ?? null, gmName: personName(gm), reason, takesOverAt })
+    .catch((err: unknown) => logSystem({
+      log_level: 'error', event_type: 'auth_event', source: 'it-admin.service',
+      message:   `IT Administrator takeover email failed for ${seat.email}: ${errorMessage(err)}`,
+    }))
+  void notifyHandover([seat.user_id], 'The General Manager asked to take over your role',
+    `${personName(gm)} could not reach you. If you are still here, choose Cancel Handover before ${takesOverAt}; otherwise they take over then.`,
+    '/it_admin/dashboard')
+  const admins = await notificationModel.resolveUserIdsByRoles(['admin']).catch(() => [] as string[])
+  void notifyHandover(admins, 'IT Administrator takeover requested',
+    `${personName(gm)} (General Manager) asked to take over the IT Administrator role; it takes effect ${takesOverAt} unless the IT Administrator cancels.`,
+    '/admin/dashboard')
+  return { handover }
 }
 
 /**
- * Day 30 (render scheduler): an overdue handover with a named stand-in and no
- * confirmed successor hands the IT Administrator powers to the stand-in and
- * archives the outgoing IT Admin. If the named stand-in is no longer an active
- * Company Administrator, nothing happens (the outgoing stays, as before) and
- * the outgoing IT Admin is told. Returns how many stand-ins took over.
+ * No IT Administrator account at all (and no handover open): the General
+ * Manager adds one directly, with an emailed temporary password (2026-11-27).
+ */
+export async function addItAdminToEmptySeat(input: ITAdminSuccessorInput, actorId: string) {
+  const gm = await findActiveGm()
+  if (!gm || gm.user_id !== actorId) throw coded('Only the General Manager can add the IT Administrator.', 'NOT_GM')
+  if (await ITAdminModel.findOpenHandover()) throw rpcRefusal('HANDOVER_OPEN')!
+  if (await ITAdminModel.findSeatForTakeover()) {
+    throw coded('There is already an IT Administrator. Use Take Over if they cannot be reached.', 'SEAT_TAKEN')
+  }
+  await assertPhoneAvailable(input.phone)
+
+  const password = generateSecurePassword()
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email: input.email, password, email_confirm: true, user_metadata: { role: 'it_admin' },
+  })
+  if (authError) throw new Error(`Auth Error: ${authError.message}`)
+  const id = authData.user.id
+  let created
+  try {
+    created = await ITAdminModel.create(id, { ...input, created_by: actorId } as Parameters<typeof ITAdminModel.create>[1])
+  } catch (err) {
+    const ok = await deleteAuthUserSafely(id)
+    if (!ok) console.error('ROLLBACK FAILED. Orphan auth user with ID:', id)
+    if ((err as { code?: string })?.code === '23505') {
+      throw coded('There is already an IT Administrator. Reload the page.', 'SEAT_TAKEN')
+    }
+    throw err
+  }
+  sendWelcomeEmail({ to: input.email, firstName: input.first_name ?? null, role: 'it_admin', password })
+    .catch((err: unknown) => console.error(`WELCOME_EMAIL_FAILED for it_admin ${id}:`, errorMessage(err)))
+  logEvent({
+    user_id:     actorId,
+    log_type:    'user_management',
+    action:      'it_admin_added_by_gm',
+    description: `No IT Administrator on record: General Manager ${personName(gm)} added ${input.email} (${id})`,
+  })
+  return created
+}
+
+/**
+ * Refuse to deactivate or archive the General Manager while they stand in as
+ * IT Administrator: that would leave the IT seat with nobody until the new IT
+ * Administrator confirms. Before day 30 nothing is refused; whoever is General
+ * Manager on day 30 takes over.
+ */
+export async function assertNotStandin(userId: string): Promise<void> {
+  const handover = await ITAdminModel.findOpenHandover()
+  if (!handover || !handover.standin_activated_at || handover.standin_id !== userId) return
+  throw coded(
+    'This General Manager is standing in as IT Administrator. They can be deactivated or archived once the new IT Administrator has set their password.',
+    'STANDIN_LOCKED',
+  )
+}
+
+/** Record the current General Manager on the handover (for the panels and the log). */
+async function pointStandinAtGm(handover: ITAdminHandover, gm: { user_id: string }) {
+  if (handover.standin_id === gm.user_id) return
+  await ITAdminModel.updateHandover(handover.handover_id, {
+    standin_id:       gm.user_id,
+    standin_named_at: new Date().toISOString(),
+  })
+}
+
+/**
+ * Day 30 (render scheduler): an overdue handover with no confirmed successor
+ * hands the IT Administrator powers to the active General Manager and archives
+ * the outgoing IT Admin. With no active General Manager nothing happens (the
+ * outgoing stays, as before) and the outgoing IT Admin is told. Returns how
+ * many stand-ins took over.
  */
 export async function activateOverdueStandins(): Promise<number> {
   const handover = await ITAdminModel.findOpenHandover()
-  if (!handover || handover.standin_activated_at || !handover.standin_id) return 0
+  if (!handover || handover.standin_activated_at) return 0
   if (new Date(handover.render_due_at).getTime() > Date.now()) return 0
 
   // A successor who has already set their password is completed by
@@ -308,13 +365,11 @@ export async function activateOverdueStandins(): Promise<number> {
     if (succ && succ.status === 'active' && !succ.must_change_password) return 0
   }
 
-  let standin
-  try {
-    standin = await assertStandinCandidate(handover.standin_id)
-  } catch {
-    console.error('[it-admin] stand-in is not an active Company Administrator; the outgoing IT Administrator stays', handover.standin_id)
-    void notifyHandover([handover.outgoing_id], 'Your stand-in cannot take over',
-      'The Company Administrator you named is no longer active. Name another stand-in, or add your replacement.',
+  const standin = await findActiveGm()
+  if (!standin) {
+    console.error('[it-admin] no active General Manager to take over; the outgoing IT Administrator stays')
+    void notifyHandover([handover.outgoing_id], 'Nobody can take over yet',
+      'There is no active General Manager to take over the IT Administrator work, so your account stays open. Add your replacement.',
       '/it_admin/dashboard')
     return 0
   }
@@ -322,7 +377,7 @@ export async function activateOverdueStandins(): Promise<number> {
   // Guarded on still-not-activated, so two server instances act once.
   const { data: claimed, error } = await supabase
     .from('it_admin_handovers')
-    .update({ standin_activated_at: new Date().toISOString() })
+    .update({ standin_activated_at: new Date().toISOString(), standin_id: standin.user_id, standin_named_at: new Date().toISOString() })
     .eq('handover_id', handover.handover_id)
     .is('standin_activated_at', null)
     .is('ended_at', null)
@@ -341,17 +396,17 @@ export async function activateOverdueStandins(): Promise<number> {
     user_id:     null,
     log_type:    'user_management',
     action:      'it_admin_standin_activated',
-    description: `IT Administrator render overdue with no confirmed replacement: Company Administrator ${personName(standin)} (${standin.user_id}) now holds the IT Administrator powers; the outgoing IT Administrator ${handover.outgoing_id} was archived`,
+    description: `${isEmergency(handover) ? 'Emergency takeover not cancelled within the waiting period' : 'IT Administrator render overdue with no confirmed replacement'}: General Manager ${personName(standin)} (${standin.user_id}) now holds the IT Administrator powers; the outgoing IT Administrator ${handover.outgoing_id} was archived`,
   })
 
   void notifyHandover([standin.user_id], 'You are now standing in as IT Administrator',
-    'No replacement IT Administrator confirmed within 30 days. You now have the IT Administrator pages (User Management, password resets, Logs) until the new IT Administrator sets their password. Add them from the IT Administrator dashboard.',
-    '/it_admin/dashboard')
-  // The other Company Administrators should know who holds IT now.
-  const others = (await notificationModel.resolveUserIdsByRoles(['admin']).catch(() => [] as string[]))
-    .filter((id) => id !== standin.user_id)
+    (isEmergency(handover) ? 'The IT Administrator did not cancel the takeover. ' : 'No replacement IT Administrator confirmed within 30 days. ') +
+    'You now have the IT Administrator pages (User Management, password resets, Logs) until the new IT Administrator sets their password. Add them from your dashboard.',
+    GM_DASHBOARD)
+  // The Company Administrators should know who holds IT now.
+  const others = await notificationModel.resolveUserIdsByRoles(['admin']).catch(() => [] as string[])
   void notifyHandover(others, 'IT Administrator stand-in',
-    `${personName(standin)} is standing in as IT Administrator until a new IT Administrator starts.`,
+    `${personName(standin)} (General Manager) is standing in as IT Administrator until a new IT Administrator starts.`,
     '/admin/dashboard')
   return 1
 }
@@ -375,8 +430,16 @@ function rpcRefusal(message: string): Error | null {
  */
 export async function getHandoverStatus(actorId: string) {
   const handover  = await ITAdminModel.findOpenHandover()
-  const isStandin = !!handover && handover.standin_id === actorId && !!handover.standin_activated_at
+  const gm        = await findActiveGm()
+  const actorIsGm = gm?.user_id === actorId
+  // The General Manager sees the handover from its first day (user 2026-11-27).
+  const isStandin = !!handover && actorIsGm
   const mine      = handover && (handover.outgoing_id === actorId || isStandin) ? handover : null
+
+  // With nothing open, the General Manager sees who holds the seat (or that
+  // nobody does), for Take Over / Add the IT Administrator.
+  let seat: { user_id: string; email: string; first_name: string | null; last_name: string | null; status: string; last_login_at: string | null } | null = null
+  if (actorIsGm && !handover) seat = await ITAdminModel.findSeatForTakeover()
 
   let successor: {
     user_id: string; email: string; first_name: string | null; last_name: string | null
@@ -391,20 +454,18 @@ export async function getHandoverStatus(actorId: string) {
     successor = data ?? null
   }
 
-  let standin: { user_id: string; email: string; first_name: string | null; last_name: string | null } | null = null
-  if (mine?.standin_id) {
-    const { data } = await supabase
-      .from('users')
-      .select('user_id, email, first_name, last_name')
-      .eq('user_id', mine.standin_id)
-      .maybeSingle()
-    standin = data ?? null
-  }
+  // Who takes (or took) over: the General Manager of the day.
+  const standin = gm
+    ? { user_id: gm.user_id, email: gm.email, first_name: gm.first_name, last_name: gm.last_name }
+    : null
 
   return {
     render_days: RENDER_DAYS,
-    /** 'outgoing' = the resigning IT Admin; 'standin' = the Company Administrator who took over. */
-    viewer: mine ? (isStandin ? 'standin' : 'outgoing') : null,
+    emergency_wait_days: EMERGENCY_WAIT_DAYS,
+    /** 'outgoing' = the resigning IT Admin; 'standin' = the General Manager, who handles it when the IT Administrator is not there. */
+    viewer: mine ? (isStandin ? 'standin' : 'outgoing') : actorIsGm ? 'standin' : null,
+    /** General Manager with nothing open: the IT Administrator on record, or null when the seat is empty. */
+    seat: actorIsGm && !handover ? seat : undefined,
     handover: mine && {
       handover_id:    mine.handover_id,
       reason:         mine.reason,
@@ -414,6 +475,8 @@ export async function getHandoverStatus(actorId: string) {
       successor,
       standin,
       standin_active: !!mine.standin_activated_at,
+      /** Started by the General Manager because the IT Administrator could not be reached. */
+      emergency:      isEmergency(mine),
     },
   }
 }
@@ -423,10 +486,12 @@ export async function getHandoverStatus(actorId: string) {
  * call (the replacement is already known).
  */
 export async function startHandover(input: StartHandoverInput, actorId: string) {
-  // Checked before the render starts: a handover never exists without a valid
-  // stand-in, so the outgoing IT Admin can't stay past the 30 days.
-  if (!input.standin_id) throw coded('Choose the Company Administrator who stands in after the 30 days.', 'BAD_STANDIN')
-  await assertStandinCandidate(input.standin_id)
+  // Checked before the render starts: a handover never exists without someone
+  // to take over, so the outgoing IT Admin can't stay past the 30 days.
+  const gm = await findActiveGm()
+  if (!gm) {
+    throw coded('There is no active General Manager to take over if your replacement has not started in 30 days. Ask for a General Manager account first.', 'BAD_STANDIN')
+  }
 
   const { data, error } = await supabase.rpc('start_it_admin_handover', {
     p_outgoing_id: actorId,
@@ -445,7 +510,13 @@ export async function startHandover(input: StartHandoverInput, actorId: string) 
 
   // A failed successor here leaves a started handover with none added yet,
   // which the panel shows with "Add your replacement": nothing to undo.
-  await setStandin(input.standin_id, actorId)
+  await pointStandinAtGm(handover, gm)
+  const due = new Date(handover.render_due_at).toLocaleDateString('en-PH', {
+    timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric',
+  })
+  void notifyHandover([gm.user_id], 'The IT Administrator is leaving',
+    `You handle the handover whenever the IT Administrator is not there: you can add, re-send or replace their replacement from your dashboard. If nobody has set their password by ${due}, you take over the IT Administrator's work until the new IT Administrator starts.`,
+    GM_DASHBOARD)
   const successor = input.successor ? await addSuccessor(input.successor, actorId) : null
   return { handover, successor }
 }
@@ -454,6 +525,12 @@ export async function startHandover(input: StartHandoverInput, actorId: string) 
 export async function addSuccessor(input: ITAdminSuccessorInput, actorId: string) {
   const handover = await openHandoverOf(actorId, { allowStandin: true })
   if (handover.successor_id) throw rpcRefusal('SUCCESSOR_PENDING')!
+  // An emergency takeover's waiting period is the IT Administrator's chance to
+  // say "I'm here": a replacement confirming inside it would close their
+  // account before it ends. The General Manager adds one once it is over.
+  if (isEmergency(handover) && handover.outgoing_id !== actorId && !handover.standin_activated_at) {
+    throw coded(`You can add the new IT Administrator once the waiting period ends (${formatManilaTimestamp(handover.render_due_at)}), if the IT Administrator has not cancelled.`, 'TAKEOVER_WAITING')
+  }
   await assertPhoneAvailable(input.phone)
 
   const password = generateSecurePassword()
@@ -546,24 +623,48 @@ export async function replaceSuccessor(actorId: string) {
   await ITAdminModel.updateHandover(handover.handover_id, { successor_id: null, successor_added_at: null })
 }
 
-/** Stop the handover before anyone confirmed: the caller keeps the role. */
+/**
+ * Stop the handover before anyone confirmed: the IT Administrator keeps the
+ * role. The IT Administrator may cancel any of theirs (an emergency takeover is
+ * how they say "I'm still here"); the General Manager may withdraw an emergency
+ * takeover they started, during its waiting period.
+ */
 export async function cancelHandover(actorId: string) {
-  const handover = await openHandoverOf(actorId)
+  const handover = await openHandoverOf(actorId, { allowStandin: true })
+  const byOutgoing = handover.outgoing_id === actorId
+  if (!byOutgoing && !isEmergency(handover)) {
+    throw coded('Only the IT Administrator can cancel their handover.', 'NOT_OUTGOING')
+  }
   if (handover.standin_activated_at) {
-    throw coded('The stand-in has already taken over; the handover ends when the new IT Administrator sets their password.', 'STANDIN_ACTIVE')
+    throw coded('The General Manager has already taken over; the handover ends when the new IT Administrator sets their password.', 'STANDIN_ACTIVE')
   }
   if (handover.successor_id) await archiveUnconfirmedSuccessor(handover.successor_id, actorId)
 
   await ITAdminModel.updateHandover(handover.handover_id, { cancelled_at: new Date().toISOString() })
-  const { error } = await supabase.from('users').update({ render_ends_at: null }).eq('user_id', actorId)
+  const { error } = await supabase.from('users').update({ render_ends_at: null }).eq('user_id', handover.outgoing_id)
   if (error) throw error
+  invalidateUserPermissions(handover.outgoing_id)
 
   logEvent({
     user_id:     actorId,
     log_type:    'user_management',
     action:      'it_admin_handover_cancelled',
-    description: 'IT Administrator handover cancelled; the role stays with the current IT Administrator',
+    description: isEmergency(handover)
+      ? `Emergency takeover cancelled by the ${byOutgoing ? 'IT Administrator' : 'General Manager'}; the role stays with the current IT Administrator`
+      : 'IT Administrator handover cancelled; the role stays with the current IT Administrator',
   })
+
+  // The other side of an emergency takeover hears that it stopped.
+  if (isEmergency(handover)) {
+    const other = byOutgoing ? handover.created_by : handover.outgoing_id
+    if (other) {
+      void notifyHandover([other], 'IT Administrator takeover cancelled',
+        byOutgoing
+          ? 'The IT Administrator answered and cancelled the takeover. They keep the role.'
+          : 'The General Manager withdrew the takeover request. You keep the role.',
+        byOutgoing ? GM_DASHBOARD : '/it_admin/dashboard')
+    }
+  }
 }
 
 async function archiveUnconfirmedSuccessor(successorId: string, actorId: string) {

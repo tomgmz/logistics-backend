@@ -49,14 +49,14 @@ function requesterLabel(request: PasswordResetRequestRow, name?: string | null):
 
 /**
  * Who staffs a queue: everyone with its role, plus (for the IT Administrator's
- * queue) the Company Administrator standing in for a departed IT Administrator.
+ * queue) the General Manager standing in for a departed IT Administrator.
  */
 async function queueStaff(group: ResetHandlerGroup): Promise<{ user_id: string }[]> {
   const staff = await notificationModel.resolveRecipientsByRoles([GROUP_ROLE[group]])
   if (group !== 'it_admin') return staff
   const standin = await getActiveStandinId()
   if (!standin || staff.some((r) => r.user_id === standin)) return staff
-  return [...staff, { user_id: standin, role: 'admin' }]
+  return [...staff, { user_id: standin, role: 'general_manager' }]
 }
 
 function queueUrl(group: ResetHandlerGroup, requestId: string): string {
