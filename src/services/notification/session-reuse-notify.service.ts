@@ -1,3 +1,4 @@
+import { maskText } from '../../lib/masked-id.js'
 import { broadcast } from '../../lib/realtime.js'
 import * as notificationModel from '../../models/notification/notification.model.js'
 import * as push from '../messaging/push.service.js'
@@ -44,8 +45,8 @@ export async function notifySessionReuse(account: {
     + 'which can mean it was copied. They need to sign in again. If they did not expect this, '
     + 'reset their password or deactivate the account.'
   const actionUrl = STAFF_ROLES.has(account.role)
-    ? `/it_admin/administrator-management?search=${encodeURIComponent(account.email)}`
-    : `/it_admin/administrator-management?tab=people&search=${encodeURIComponent(account.email)}`
+    ? `/it_admin/administrator-management?account=${maskText('account', account.email)}`
+    : `/it_admin/administrator-management?tab=people&account=${maskText('account', account.email)}`
   const data = {
     type:         'auth.session_reuse',
     account:      account.email,

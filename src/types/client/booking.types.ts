@@ -20,7 +20,8 @@ export interface BlowbagetsItems {
   gas:     boolean
   engine:  boolean
   tires:   boolean
-  self:    boolean
+  /** The driver's own fitness. Only on inspections before 2026-11-28; now answered by the driver at Start Navigation. */
+  self?:   boolean
 }
 
 // The snapshot persisted on the booking at the moment of the fleet review.
@@ -138,6 +139,12 @@ export interface Booking {
   gm_status?:             GmStatus | null
   ops_status?:            OpsStatus | null
   blowbagets_check?:      BlowbagetsCheck | null
+  /** BLOWBAGETS "Self": the driver said they were fit to drive, at Start Navigation (2026-11-28). */
+  driver_self_check_at?:   string | null
+  driver_self_check_name?: string | null
+  /** The driver said they were NOT fit to drive; the start was refused and the office told. */
+  driver_unfit_at?:        string | null
+  driver_unfit_name?:      string | null
   rejection_reason?:      string | null
   approval_remarks?:      string | null
   cancelled_by?:          string | null

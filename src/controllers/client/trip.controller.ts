@@ -221,6 +221,7 @@ export const driverStartDelivery = async (req: Request, res: Response) => {
       param(req.params.bookingId),
       driverActor(req),
       req.body?.early_start === true,
+      typeof req.body?.self_fit === 'boolean' ? req.body.self_fit : undefined,
     )
     res.status(200).json({ status: 'success', data: { booking, started } })
   } catch (error: any) {

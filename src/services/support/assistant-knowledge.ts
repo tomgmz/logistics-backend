@@ -289,7 +289,9 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
     'sometimes a vendor-supplied vehicle and driver from a partner is used.'),
   P('ops-vehicle-safety', 'How do you make sure the truck is safe?',
     'A vehicle can only be assigned after it passes a BLOWBAGETS safety inspection, and it is inspected again ' +
-    'after every delivery before its next job. A vehicle with an overdue service, an expired registration, or one ' +
+    'after every delivery before its next job. The last check, Self, is the driver’s own: before setting off, ' +
+    'the driver confirms in the app that they are rested, well, sober and carrying their license, and a driver ' +
+    'who is not fit to drive cannot start the delivery (our team arranges another driver). A vehicle with an overdue service, an expired registration, or one ' +
     'under maintenance cannot be assigned. Before each delivery our team re-checks the vehicle the day before and ' +
     'on the day.'),
   P('ops-driver-checks', 'Are your drivers licensed and checked?',
@@ -318,7 +320,9 @@ export const BUSINESS_KNOWLEDGE: KnowledgePassage[] = [
     'time, place and driver, and must be taken near the stop. These stop times are shown on your booking.'),
   P('ops-proof-no-photo', 'Why does one of my drop-offs have no proof photo?',
     'If the driver could not record a drop-off (for example the phone was stolen, lost or out of battery), our ' +
-    'office records it for the driver, so the drop-off shows as delivered without a photo. The proof then comes ' +
+    'office records it for the driver, so the drop-off shows as delivered without a photo, and its stop time ' +
+    'reads "recorded by the office" instead of "proof sent". If the office recorded it later than the actual ' +
+    'delivery, it corrects that time to when the goods really arrived. The proof then comes ' +
     'from the signed delivery receipt: our team uploads it and it appears with ' +
     'your booking\'s documents in Transaction History. Until then our office is reminded every working morning.'),
   P('ops-driver-reorder', 'Can the driver change the order of my drop-offs?',

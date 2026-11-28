@@ -1077,9 +1077,12 @@ export async function driverConfirmPickupService(
   // Settles the crew under the booking row lock and moves the booking to
   // 'in_transit' if Start Navigation has not already — see claimDeliveryStart.
   await claimDeliveryStart(bookingId, actor)
-  await BookingModel.setPickupProof(bookingId, proofPhotoUrl, position, fence)
+  const won = await BookingModel.setPickupProof(bookingId, proofPhotoUrl, position, fence)
   const updated = await BookingModel.findById(bookingId)
   if (!updated) throw new Error('Failed to update booking status')
+  // The other driver's phone confirmed the pickup a moment earlier: their
+  // photo stands, and the pickup is already logged under their name.
+  if (!won) return updated
 
   if (fence.override_reason) {
     logEvent({

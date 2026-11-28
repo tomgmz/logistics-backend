@@ -52,6 +52,7 @@ export type NotificationType =
   | 'booking.driver_call_reminder' // one hour before the driver's call time -> assigned driver(s)
   | 'booking.late_start_driver'    // still Assigned 15 min after the call time -> assigned driver(s), once
   | 'booking.late_start_staff'     // ... -> ops + admin, then every 30 min until it starts
+  | 'booking.driver_unfit_staff'   // BLOWBAGETS Self "not fit" at Start Navigation -> ops
   | 'booking.proof_missing_staff'  // drop-off delivered without a photo, no approved Proof of Delivery -> ops + admin each office morning
   | 'booking.crew_replaced_off'    // office replaced the crew on the road -> the driver taken off
   | 'booking.crew_replaced_on'     // ... -> the crew now on it (continue where it stopped)
@@ -182,6 +183,8 @@ export type NotificationStage =
   | 'driver_call_reminder'
   | 'late_start_driver'
   | 'late_start_staff'
+  // BLOWBAGETS Self: the driver said they are not fit to drive (2026-11-28).
+  | 'driver_unfit_staff'
   | 'proof_missing_staff'
   | 'crew_replaced_off'
   | 'crew_replaced_on'

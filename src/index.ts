@@ -50,6 +50,7 @@ import { fileUrls } from './middlewares/fileUrls.middleware.js'
 import { clientRedact } from './middlewares/clientRedact.middleware.js'
 import filesRoutes from './routes/files.routes.js'
 import webhooksRoutes from './routes/webhooks.routes.js'
+import userGuideRoutes from './routes/user-guide.routes.js'
 import { allowedOrigins } from './lib/allowed-origins.js'
 
 dotenv.config();
@@ -193,6 +194,7 @@ app.use('/api/admin', authenticate, moduleGuard, adminRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/messaging', messagingRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/user-guide', userGuideRoutes);
 
 // Client support tickets from the web FAQ chatbot; resolved by email.
 app.use('/api/support', supportRoutes);

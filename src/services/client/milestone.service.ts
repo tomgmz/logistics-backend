@@ -56,7 +56,12 @@ const CLOCK_FLAG_MS = 60_000
 
 export interface StepTime {
   at:         string
-  source:     'driver' | 'staff' | 'proof'
+  /**
+   * 'office' = a picked-up / delivered time the office recorded in place of the
+   * driver, with no photo (2026-11-28). It reads "recorded by the office", never
+   * "proof sent", and the office may correct it.
+   */
+  source:     'driver' | 'staff' | 'proof' | 'office'
   corrected?: boolean
   note?:      string | null
   /** The phone's clock had to be overridden to keep the steps in order. */
@@ -92,17 +97,43 @@ export interface TimelineTrip {
 }
 
 const emptyTimes = (): StopTimes => ({ arrived: null, started: null, finished: null, proof: null })
+
+/** The office confirmed the stop for the driver (trip.service stopFence writes this prefix). */
+const OFFICE_REASON = /^Confirmed by the office/i
+/**
+ * A corrected office time is marked by this tag in the same reason column,
+ * followed by why (no new column; the previous time is in the audit log).
+ */
+const CORRECTED_TAG = ' · Time corrected: '
+
+const officeRecorded = (photo: unknown, reason: unknown) =>
+  !photo && typeof reason === 'string' && OFFICE_REASON.test(reason)
+
+/** The picked-up / delivered step: a photo confirmation, or the office's record of one. */
+function proofStep(at: unknown, photo: unknown, reason: unknown, withNotes: boolean): StepTime {
+  const iso = at instanceof Date ? at.toISOString() : String(at)
+  if (!officeRecorded(photo, reason)) return { at: iso, source: 'proof' }
+  const text = String(reason)
+  const cut  = text.lastIndexOf(CORRECTED_TAG)
+  return {
+    at: iso,
+    source: 'office',
+    ...(cut >= 0 ? { corrected: true } : {}),
+    ...(withNotes && cut >= 0 ? { note: text.slice(cut + CORRECTED_TAG.length) } : {}),
+  }
+}
 const shownStage = (stage: string): stage is MilestoneStage => (MILESTONE_STAGES as readonly string[]).includes(stage)
 
 /** Every run of the booking, with the times at its loading and each drop-off. */
 export async function bookingTimeline(bookingId: string, { withNotes = false } = {}): Promise<TimelineTrip[]> {
   const [{ rows: trips }, { rows: stops }, { rows: marks }, { rows: loaded }] = await Promise.all([
     pool.query(
-      `SELECT trip_id, trip_number, status, pickup_proof_at
+      `SELECT trip_id, trip_number, status, pickup_proof_at, pickup_proof_photo_url, pickup_proof_override_reason
          FROM booking_trips WHERE booking_id = $1 AND status <> 'cancelled' ORDER BY trip_number`,
       [bookingId]),
     pool.query(
       `SELECT s.trip_stop_id, s.trip_id, s.destination_id, s.sequence_order, s.status, s.delivered_at,
+              s.proof_photo_url, s.proof_override_reason,
               d.address, d.sequence_order AS stop_number
          FROM booking_trip_stops s
          JOIN booking_trips t ON t.trip_id = s.trip_id
@@ -138,7 +169,7 @@ export async function bookingTimeline(bookingId: string, { withNotes = false } =
 
   return trips.map((t: any) => {
     const loading = emptyTimes()
-    if (t.pickup_proof_at) loading.proof = { at: iso(t.pickup_proof_at), source: 'proof' }
+    if (t.pickup_proof_at) loading.proof = proofStep(t.pickup_proof_at, t.pickup_proof_photo_url, t.pickup_proof_override_reason, withNotes)
     for (const m of marks) {
       const st: string = m.stage
       if (m.trip_id === t.trip_id && !m.trip_stop_id && shownStage(st)) loading[st] = step(m)
@@ -152,7 +183,7 @@ export async function bookingTimeline(bookingId: string, { withNotes = false } =
       loading,
       stops: stops.filter((s: any) => s.trip_id === t.trip_id).map((s: any) => {
         const times = emptyTimes()
-        if (s.delivered_at) times.proof = { at: iso(s.delivered_at), source: 'proof' }
+        if (s.delivered_at) times.proof = proofStep(s.delivered_at, s.proof_photo_url, s.proof_override_reason, withNotes)
         for (const m of marks) {
           const st: string = m.stage
           if (m.trip_stop_id === s.trip_stop_id && shownStage(st)) times[st] = step(m)
@@ -211,7 +242,7 @@ async function timesOf(target: Target): Promise<Partial<Record<typeof ORDER[numb
 }
 
 /** Latest time of any step before `stage` — a step can't come before it. */
-function floorFor(stage: MilestoneStage, times: Partial<Record<typeof ORDER[number], number>>): number | null {
+function floorFor(stage: typeof ORDER[number], times: Partial<Record<typeof ORDER[number], number>>): number | null {
   const before = ORDER.slice(0, ORDER.indexOf(stage)).map((s) => times[s]).filter((x): x is number => x != null)
   return before.length ? Math.max(...before) : null
 }
@@ -332,9 +363,12 @@ export const STOP_TIME_EDITABLE = ['in_transit', 'delivered', 'completed', 'fail
  */
 export async function staffSetMilestoneService(
   bookingId: string,
-  body: { trip_id: string; trip_stop_id?: string | null; stage: MilestoneStage; at: string; note: string },
+  body: { trip_id: string; trip_stop_id?: string | null; stage: MilestoneStage | 'proof'; at: string; note: string },
   staff: { userId: string | null },
 ) {
+  if (body.stage === 'proof') {
+    return staffSetOfficeProofTime(bookingId, { ...body, stage: 'proof' }, staff)
+  }
   if (!MILESTONE_STAGES.includes(body.stage)) throw new Error('Cannot set an unknown step')
   const note = body.note?.trim() ?? ''
   if (note.length < 3) throw new Error('Say why the time is being changed')
@@ -391,6 +425,124 @@ export async function staffSetMilestoneService(
       `${target.tripStopId ? `drop-off visit ${target.tripStopId}` : `the loading of trip ${target.tripId}`} ` +
       (previous ? `changed from ${new Date(previous.at).toISOString()} (${previous.source}) ` : 'filled in ') +
       `to ${new Date(at).toISOString()}. Reason: ${note}`,
+  })
+  return bookingTimeline(bookingId, { withNotes: true })
+}
+
+/**
+ * The office corrects the picked-up / delivered time of a stop IT recorded for
+ * the driver (user 2026-11-28). Confirming for the driver stamps the moment the
+ * office pressed the button, often hours after the truck was really there, and
+ * that time was locked like a driver's photo time.
+ *
+ * Only an office record with no photo: a driver's photo carries its own stamped
+ * time, and the record must not disagree with its evidence. Same rules as the
+ * other steps: a reason, never in the future, never before the step before it
+ * (and a drop-off never before its run's loading; a loading never after its
+ * run's first drop-off). The previous time goes to the audit log; the reason is
+ * kept with the stop (CORRECTED_TAG), so the time reads "(corrected)".
+ *
+ * Moves the stop's own time only. The booking's finish time (and the client's
+ * 3-day confirmation window counted from it) stays when the booking was
+ * actually closed.
+ */
+async function staffSetOfficeProofTime(
+  bookingId: string,
+  body: { trip_id: string; trip_stop_id?: string | null; stage: 'proof'; at: string; note: string },
+  staff: { userId: string | null },
+) {
+  const note = body.note?.trim() ?? ''
+  if (note.length < 3) throw new Error('Say why the time is being changed')
+  const at = Date.parse(body.at)
+  if (!Number.isFinite(at)) throw new Error('Cannot read that time')
+  if (at > Date.now() + 60_000) throw new Error('Cannot set a time in the future')
+
+  const { data: bk } = await supabase.from('bookings').select('status').eq('booking_id', bookingId).maybeSingle()
+  if (!bk) throw new Error('Booking not found')
+  if (!STOP_TIME_EDITABLE.includes(bk.status)) {
+    throw new Error('Cannot set stop times before the delivery has started')
+  }
+
+  const target = await resolveTarget(bookingId, body)
+  const times  = await timesOf(target)
+  const floor  = floorFor('proof', times)
+  const newAt  = new Date(at).toISOString()
+  const keep   = (reason: string) => {
+    const base = reason.includes(CORRECTED_TAG) ? reason.slice(0, reason.indexOf(CORRECTED_TAG)) : reason
+    return `${base}${CORRECTED_TAG}${note}`
+  }
+
+  let previous: Date
+  let where: string
+  if (target.tripStopId) {
+    const { rows: [s] } = await pool.query(
+      `SELECT s.status, s.delivered_at, s.proof_photo_url, s.proof_override_reason, s.destination_id,
+              t.pickup_proof_at, d.address
+         FROM booking_trip_stops s
+         JOIN booking_trips t ON t.trip_id = s.trip_id
+         LEFT JOIN booking_destinations d ON d.destination_id = s.destination_id
+        WHERE s.trip_stop_id = $1`,
+      [target.tripStopId])
+    if (!s || s.status !== 'delivered' || !s.delivered_at) throw new Error('This drop-off has not been delivered yet')
+    if (!officeRecorded(s.proof_photo_url, s.proof_override_reason)) {
+      throw new Error('Only a delivery the office recorded without a photo can have its time changed; a driver’s photo time is the record')
+    }
+    if (floor != null && at < floor) throw new Error('Cannot set the delivery before the step before it')
+    if (s.pickup_proof_at && at < new Date(s.pickup_proof_at).getTime()) {
+      throw new Error('Cannot set the delivery before this run was loaded')
+    }
+    previous = new Date(s.delivered_at)
+    where = `drop-off ${s.address ?? target.tripStopId}`
+    await pool.query(
+      `UPDATE booking_trip_stops SET delivered_at = $2, proof_override_reason = $3, updated_at = now()
+        WHERE trip_stop_id = $1`,
+      [target.tripStopId, newAt, keep(String(s.proof_override_reason))])
+    // The drop-off's own time, when this visit is the one that closed it.
+    await pool.query(
+      `UPDATE booking_destinations SET delivered_at = $2
+        WHERE destination_id = $1 AND delivered_at = $3 AND proof_photo_url IS NULL`,
+      [s.destination_id, newAt, previous])
+  } else {
+    const { rows: [t] } = await pool.query(
+      `SELECT trip_number, pickup_proof_at, pickup_proof_photo_url, pickup_proof_override_reason
+         FROM booking_trips WHERE trip_id = $1`,
+      [target.tripId])
+    if (!t || !t.pickup_proof_at) throw new Error('This run has not been loaded yet')
+    if (!officeRecorded(t.pickup_proof_photo_url, t.pickup_proof_override_reason)) {
+      throw new Error('Only a loading the office recorded without a photo can have its time changed; a driver’s photo time is the record')
+    }
+    if (floor != null && at < floor) throw new Error('Cannot set the pick-up before the step before it')
+    // Nothing on this run can be unloaded (or even reached) before it was loaded.
+    const { rows: [first] } = await pool.query(
+      `SELECT LEAST(
+                (SELECT MIN(m.at) FROM stop_milestones m WHERE m.trip_id = $1 AND m.trip_stop_id IS NOT NULL),
+                (SELECT MIN(s.delivered_at) FROM booking_trip_stops s WHERE s.trip_id = $1)
+              ) AS at`,
+      [target.tripId])
+    if (first?.at && at > new Date(first.at).getTime()) {
+      throw new Error('Cannot set the pick-up after this run’s first drop-off')
+    }
+    previous = new Date(t.pickup_proof_at)
+    where = `the loading of trip ${t.trip_number}`
+    await pool.query(
+      `UPDATE booking_trips SET pickup_proof_at = $2, pickup_proof_override_reason = $3, updated_at = now()
+        WHERE trip_id = $1`,
+      [target.tripId, newAt, keep(String(t.pickup_proof_override_reason))])
+    // The booking's pick-up time, when this is the first run's (no photo on it).
+    await pool.query(
+      `UPDATE bookings SET pickup_proof_at = $2
+        WHERE booking_id = $1 AND pickup_proof_at = $3 AND pickup_proof_photo_url IS NULL`,
+      [bookingId, newAt, previous])
+  }
+
+  const booking = await BookingModel.findById(bookingId)
+  logEvent({
+    user_id:     staff.userId,
+    log_type:    'booking',
+    action:      'stop_time_corrected',
+    description:
+      `Booking ${booking ? bookingRef(booking) : bookingId}: office-recorded ${target.tripStopId ? 'delivery' : 'pick-up'} time at ` +
+      `${where} changed from ${previous.toISOString()} to ${newAt}. Reason: ${note}`,
   })
   return bookingTimeline(bookingId, { withNotes: true })
 }

@@ -1,3 +1,4 @@
+import { maskText } from '../../lib/masked-id.js'
 import { supabase } from '../../lib/supabase.js'
 import { logSystem } from '../../lib/log-system.js'
 import { broadcast } from '../../lib/realtime.js'
@@ -257,9 +258,9 @@ export async function handleDeliveryEvent(ev: DeliveryEvent): Promise<void> {
         const actionUrl = !account
           ? null
           : staffAccount
-            ? `/it_admin/administrator-management?search=${encodeURIComponent(email)}`
+            ? `/it_admin/administrator-management?account=${maskText('account', email)}`
             : account.role === 'client' || account.role === 'driver'
-              ? `/admin/user-management?search=${encodeURIComponent(email)}`
+              ? `/admin/user-management?account=${maskText('account', email)}`
               : null // the IT Administrator's own address: no page of theirs to open
         const subjectName = account?.name ?? email
         const sent = await notify(

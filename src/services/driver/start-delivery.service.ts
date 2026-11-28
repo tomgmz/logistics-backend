@@ -1,4 +1,6 @@
 import { withBookingRowLock, crewSeatFor } from '../../lib/booking-row-lock.js'
+import { pool } from '../../lib/database.js'
+import { driverIdOf } from './crew-actor.js'
 import { isBeforeScheduledDay } from '../../lib/ph-date.js'
 import { logEvent } from '../../lib/log-event.js'
 import { bookingRef } from '../../lib/booking-ref.js'
@@ -67,9 +69,23 @@ export async function driverStartDeliveryService(
   bookingId: string,
   actor: DriverActor,
   earlyStart = false,
+  /**
+   * BLOWBAGETS "Self" (2026-11-28): true = the driver said they are fit to
+   * drive, false = not fit (refused, the office is told), undefined = an older
+   * app that doesn't ask (the start goes ahead, nothing recorded).
+   */
+  selfFit?: boolean,
 ): Promise<{ booking: BookingWithRelations; started: boolean }> {
   const before = await BookingModel.findById(bookingId)
   if (!before) throw new Error(`Booking with ID ${bookingId} not found`)
+
+  if (selfFit === false) {
+    await recordUnfit(before, actor)
+    throw new Error(
+      'Cannot start: you said you are not fit to drive. The office has been told and will arrange another driver. ' +
+      'Call the office if you need help.',
+    )
+  }
 
   const early = isBeforeScheduledDay(before.schedule_date)
   if (before.status === 'assigned') {
@@ -82,6 +98,12 @@ export async function driverStartDeliveryService(
   }
 
   const started = await claimDeliveryStart(bookingId, actor)
+  // Recorded once the start went through (claimDeliveryStart checked this
+  // driver is on the crew): by the driver who set off, or the first answer on
+  // a booking already moving (a start that reached us without one).
+  if (selfFit === true && (started || !before.driver_self_check_at)) {
+    await recordFit(bookingId, actor)
+  }
   const booking = (await BookingModel.findById(bookingId)) ?? before
 
   if (started) {
@@ -97,4 +119,50 @@ export async function driverStartDeliveryService(
   }
 
   return { booking, started }
+}
+
+/** "Juan Dela Cruz", for the record and the office's notice. */
+async function driverName(actor: DriverActor): Promise<string | null> {
+  if (!actor.userId) return null
+  const { rows: [u] } = await pool.query(
+    `SELECT first_name, last_name FROM users WHERE user_id = $1`, [actor.userId])
+  const name = u ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() : ''
+  return name || null
+}
+
+/** BLOWBAGETS "Self" passed: who said they were fit to drive, and when. */
+async function recordFit(bookingId: string, actor: DriverActor): Promise<void> {
+  const [driverId, name] = await Promise.all([driverIdOf(actor), driverName(actor)])
+  await pool.query(
+    `UPDATE bookings
+        SET driver_self_check_at = now(), driver_self_check_by = $2, driver_self_check_name = $3
+      WHERE booking_id = $1`,
+    [bookingId, driverId, name])
+  logEvent({
+    user_id:     actor.userId,
+    log_type:    'booking',
+    action:      'driver_self_check_fit',
+    description: `${name ?? 'Driver'} confirmed they are fit to drive (BLOWBAGETS Self) for booking ${bookingId}`,
+  })
+}
+
+/**
+ * The driver said they are NOT fit to drive. Recorded and the office told
+ * (Operations Manager; same audience as a late start), so they can replace the
+ * driver. Only a driver on the crew is believed; anyone else is refused as usual.
+ */
+async function recordUnfit(booking: BookingWithRelations, actor: DriverActor): Promise<void> {
+  const seat = actor.userId ? await crewSeatFor(pool as any, booking.booking_id, actor.userId) : null
+  if (!seat) throw new Error('You are not assigned to this booking')
+  const name = await driverName(actor)
+  await pool.query(
+    `UPDATE bookings SET driver_unfit_at = now(), driver_unfit_name = $2 WHERE booking_id = $1`,
+    [booking.booking_id, name])
+  logEvent({
+    user_id:     actor.userId,
+    log_type:    'booking',
+    action:      'driver_self_check_unfit',
+    description: `${name ?? 'Driver'} said they are not fit to drive (BLOWBAGETS Self) for booking ${bookingRef(booking)}; start refused`,
+  })
+  void notifyStage('driver_unfit_staff', booking, { driverName: name ?? undefined })
 }

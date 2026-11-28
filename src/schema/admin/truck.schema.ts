@@ -78,7 +78,9 @@ export const recordTruckInspectionSchema = z.object({
     gas:     z.boolean(),
     engine:  z.boolean(),
     tires:   z.boolean(),
-    self:    z.boolean(),
+    // Self is the driver's, answered at Start Navigation (2026-11-28); an older
+    // web build still sends it and it is ignored.
+    self:    z.boolean().optional(),
   }),
   notes: z.string().max(500).optional().nullable(),
 })

@@ -149,6 +149,8 @@ const STAGE_CONFIG: Record<NotificationStage, StageConfig> = {
   // and reminded every 30 min until it starts or gets a new call time.
   late_start_driver:     { type: 'booking.late_start_driver',     audience: 'drivers' },
   late_start_staff:      { type: 'booking.late_start_staff',      roles: ['operations_manager'] },
+  // start-delivery.service: the driver answered BLOWBAGETS Self "not fit to drive".
+  driver_unfit_staff:    { type: 'booking.driver_unfit_staff',    roles: ['operations_manager'] },
   // proof-missing.scheduler.ts: a drop-off delivered without a photo and no
   // Proof of Delivery yet; each office morning until there is one.
   proof_missing_staff:   { type: 'booking.proof_missing_staff',   roles: ['operations_manager'] },
@@ -536,6 +538,13 @@ function copyFor(
                'You will be reminded each office morning until it is uploaded.',
       }
     }
+    case 'driver_unfit_staff':
+      return {
+        title: 'Driver not fit to drive',
+        body:  `${extra?.driverName ?? 'The driver'} said they are not fit to drive booking ${label} ` +
+               '(BLOWBAGETS Self check at Start Navigation), so the delivery did not start. ' +
+               'Call the driver and replace them if needed.',
+      }
     case 'late_start_staff':
       return {
         title: extra?.repeat ? 'Delivery still not started' : 'Delivery not started',

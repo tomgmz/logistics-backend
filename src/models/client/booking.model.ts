@@ -59,6 +59,10 @@ export const BOOKING_WITH_RELATIONS_SELECT = `
   ops_status,
   ops_assigned_at,
   blowbagets_check,
+  driver_self_check_at,
+  driver_self_check_name,
+  driver_unfit_at,
+  driver_unfit_name,
   rejection_reason,
   approval_remarks,
   cancelled_by,
@@ -1452,14 +1456,22 @@ async function updateDestinationStatus(
   return data
 }
 
-/** Record the driver's proof-of-pickup photo on the booking. */
+/**
+ * Record the driver's proof-of-pickup photo on the booking.
+ *
+ * First wins: both drivers can confirm the pickup (2026-11-21), and the
+ * service's "already has a photo" check runs a few round trips before this
+ * write. Two phones confirming in that gap would otherwise both write, and the
+ * second would replace the first photo, time and position. Returns false when
+ * a photo was already there, so the caller can skip its own audit entry.
+ */
 async function setPickupProof(
   bookingId: string,
   proofPhotoUrl: string | null,
   position?: StopProofPosition | null,
   fence?: GeofenceOutcome | null,
-): Promise<void> {
-  const { error } = await supabase
+): Promise<boolean> {
+  const { data, error } = await supabase
     .from('bookings')
     .update({
       pickup_proof_photo_url: proofPhotoUrl,
@@ -1468,8 +1480,11 @@ async function setPickupProof(
       ...proofPositionColumns('pickup_proof', position, fence),
     })
     .eq('booking_id', bookingId)
+    .is('pickup_proof_photo_url', null)
+    .select('booking_id')
 
   if (error) throw error
+  return (data?.length ?? 0) > 0
 }
 
 /**

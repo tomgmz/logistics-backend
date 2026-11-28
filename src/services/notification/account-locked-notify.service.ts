@@ -1,3 +1,4 @@
+import { maskText } from '../../lib/masked-id.js'
 import { broadcast } from '../../lib/realtime.js'
 import { sendAccountLockedEmail, formatManilaTimestamp } from '../../lib/mailer.js'
 import * as notificationModel from '../../models/notification/notification.model.js'
@@ -57,8 +58,8 @@ export async function notifyAccountLocked(account: {
     const body  = `${name} (${role}) was locked after 9 wrong passwords or sign-in codes in a row. `
       + 'A password reset unlocks it. If they say it was not them, someone may be guessing their password.'
     const actionUrl = STAFF_ROLES.has(account.role)
-      ? `/it_admin/administrator-management?search=${encodeURIComponent(account.email)}`
-      : `/it_admin/administrator-management?tab=people&search=${encodeURIComponent(account.email)}`
+      ? `/it_admin/administrator-management?account=${maskText('account', account.email)}`
+      : `/it_admin/administrator-management?tab=people&account=${maskText('account', account.email)}`
     const data = {
       type:         'auth.account_locked',
       account:      account.email,

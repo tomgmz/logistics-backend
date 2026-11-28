@@ -4,6 +4,7 @@ import { broadcast } from '../../lib/realtime.js'
 import { CreateNotificationInput, NotificationRow } from '../../types/notification.types.js'
 import { PasswordResetRequestRow, ResetHandlerGroup } from '../../types/password-reset.types.js'
 import { getActiveStandinId } from '../../lib/it-standin.js'
+import { maskId } from '../../lib/masked-id.js'
 
 /**
  * Fan-out for password-reset requests.
@@ -60,7 +61,8 @@ async function queueStaff(group: ResetHandlerGroup): Promise<{ user_id: string }
 }
 
 function queueUrl(group: ResetHandlerGroup, requestId: string): string {
-  return `${GROUP_QUEUE_PATH[group]}?tab=password-resets&request=${encodeURIComponent(requestId)}`
+  // The address carries the masked code, never the raw id (2026-11-28).
+  return `${GROUP_QUEUE_PATH[group]}?tab=password-resets&request=${encodeURIComponent(maskId('request', requestId))}`
 }
 
 /**

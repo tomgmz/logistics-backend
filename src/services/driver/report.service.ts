@@ -6,6 +6,7 @@ import { logEvent } from '../../lib/log-event.js'
 import { holdVehicleForBreakdown, isBreakdownHold } from '../admin/vehicle-breakdown.service.js'
 import { flagBreakdown, isBlockingBreakdown } from '../client/breakdown.service.js'
 import { supabase } from '../../lib/supabase.js'
+import { maskId } from '../../lib/masked-id.js'
 import {
   isVehicleIncident,
   type DriverReport,
@@ -43,7 +44,8 @@ function responderRolesFor(report: Pick<DriverReport, 'incident_type'>): string[
 
 /** Where each responder's tap lands — their own Reports page. */
 function reportUrlForRole(role: string, reportId: string): string {
-  const id = encodeURIComponent(reportId)
+  // The address carries the masked code, never the raw id (2026-11-28).
+  const id = encodeURIComponent(maskId('report', reportId))
   switch (role) {
     case 'operations_manager': return `/operations_admin/reports?report=${id}`
     case 'fleet_manager':      return `/fleet_admin/reports?report=${id}`

@@ -123,13 +123,15 @@ export const declineResumeRequestSchema = z.object({
  *  deliberate "start before the scheduled day", as on a pickup. */
 export const startDeliverySchema = z.object({
   early_start: z.boolean().optional(),
+  // BLOWBAGETS "Self", answered by the driver at Start Navigation (2026-11-28).
+  // Left out by an older app: the start goes ahead and nothing is recorded.
+  self_fit:    z.boolean().optional(),
 }).strict()
 
 /** The new driver moved the load across after a crew replacement. Photo +
  *  position, exactly like a stop confirmation. */
 export const loadTransferSchema = driverStopProofSchema
 
-const MILESTONE_STAGE = z.enum(['arrived', 'started', 'finished'])
 /** What a phone may send: today's steps, plus the old ones an older app's queue
  *  still holds (the service maps or drops them). */
 const DRIVER_MILESTONE_STAGE = z.enum(['arrived', 'started', 'finished', 'arrived_parking', 'docked', 'departed'])
@@ -153,7 +155,9 @@ export const recordMilestoneSchema = z.object({
 export const staffSetMilestoneSchema = z.object({
   trip_id:      z.string().uuid(),
   trip_stop_id: z.string().uuid().optional().nullable(),
-  stage:        MILESTONE_STAGE,
+  // 'proof' = the picked-up / delivered time, only where the office recorded it
+  // with no photo (the service refuses a driver-photo time).
+  stage:        z.enum(['arrived', 'started', 'finished', 'proof']),
   at:           z.string().datetime({ offset: true }),
   note:         z.string().trim().min(3, 'Say why the time is being changed').max(500),
 }).strict()

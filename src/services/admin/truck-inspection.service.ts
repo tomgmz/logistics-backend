@@ -8,8 +8,13 @@ import { notifyStage } from '../notification/notification.service.js'
 
 // The ten items of the BLOWBAGETS mnemonic. Battery and Brakes both start with
 // B, so the keys — not the letters — are the stable identifiers.
+//
+// The last S, Self, is the driver's own fitness: the inspector can't answer it
+// for whoever drives that day, so it is not part of the vehicle's inspection
+// (user 2026-11-28). The driver answers it at Start Navigation
+// (start-delivery.service). Older inspections still carry a `self` value.
 export const BLOWBAGETS_KEYS: (keyof BlowbagetsItems)[] = [
-  'battery', 'lights', 'oil', 'water', 'brakes', 'air', 'gas', 'engine', 'tires', 'self',
+  'battery', 'lights', 'oil', 'water', 'brakes', 'air', 'gas', 'engine', 'tires',
 ]
 
 export interface RecordInspectionInput {
